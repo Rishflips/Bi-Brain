@@ -95,3 +95,8 @@ Prioritize M0 and M1. Once verified, continue the next unblocked milestone under
 
 
 
+
+## Review follow-up — 2026-09-28
+
+Cross-project purge, dependency-based suggestion invalidation, and per-goal daily scheduling are repaired with regressions. M4 remains an extractive workflow; model-backed goal reasoning is unfinished product work and is not completed by configuring the brief provider. See BUILD_STATE.md and VERIFICATION_REVIEW_2026-09-28.md.
+

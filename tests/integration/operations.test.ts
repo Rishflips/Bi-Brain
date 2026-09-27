@@ -6,6 +6,129 @@ import { randomUUID } from "node:crypto";
 import { Storage } from "../../packages/storage/index.ts";
 import { Brain } from "../../packages/domain/service.ts";
 import { Worker } from "../../apps/worker/engine.ts";
+it("move then permanent purge removes evidence from former projects, goal history and exports", async () => {
+  const s = new Storage(":memory:");
+  try {
+    const b = new Brain(s),
+      owner = { kind: "owner" } as const;
+    const a = b.capture(owner, {
+      title: "Beta",
+      body: "Beta MOVE_PURGE_SENTINEL",
+      visibility: "private",
+    }) as any;
+    b.capture(owner, {
+      title: "Beta support",
+      body: "Beta supporting passage",
+    });
+    const g = b.goal(owner, {
+      project_id: "inbox",
+      title: "Beta",
+      success_criteria: "Beta test",
+    });
+    b.editGoal(owner, g.id, { expected_version: 1, preparation_enabled: true });
+    b.prepare(owner, g.id);
+    const w = new Worker(b);
+    while (await w.tick()) {}
+    const proposal = b.entities(owner, "proposal")[0];
+    b.review(owner, proposal.id, "accept", {
+      expected_version: proposal.version,
+    });
+    const project = b.createProject(owner, "Moved");
+    b.editSource(owner, a.source_id, {
+      expected_version: 1,
+      title: "Beta",
+      body: "Beta MOVE_PURGE_SENTINEL",
+      project_id: project.id,
+    });
+    while (await w.tick()) {}
+    b.removeSource(owner, a.source_id, 2, true);
+    while (await w.tick()) {}
+    expect(JSON.stringify(b.export(owner))).not.toContain(
+      "MOVE_PURGE_SENTINEL",
+    );
+    expect(
+      JSON.stringify(s.all("SELECT data FROM entity_versions")),
+    ).not.toContain("MOVE_PURGE_SENTINEL");
+    expect(b.entity(owner, g.id).data.plan).toBe("");
+  } finally {
+    s.close();
+  }
+});
+it("unrelated capture preserves actionable ready and snoozed goal suggestions", async () => {
+  const s = new Storage(":memory:");
+  try {
+    const b = new Brain(s),
+      owner = { kind: "owner" } as const;
+    b.capture(owner, { title: "Beta", body: "Beta onboarding first passage" });
+    b.capture(owner, { title: "Beta", body: "Beta onboarding second passage" });
+    const goal = b.goal(owner, {
+      project_id: "inbox",
+      title: "Beta onboarding",
+      success_criteria: "Test beta",
+    });
+    b.editGoal(owner, goal.id, {
+      expected_version: 1,
+      preparation_enabled: true,
+    });
+    b.prepare(owner, goal.id);
+    const w = new Worker(b);
+    while (await w.tick()) {}
+    let p = b.entities(owner, "proposal")[0];
+    b.capture(owner, { title: "Garden", body: "Water the roses tomorrow" });
+    while (await w.tick()) {}
+    b.prepare(owner, goal.id);
+    while (await w.tick()) {}
+    p = b.entity(owner, p.id);
+    expect(p.data.status).toBe("ready");
+    b.review(owner, p.id, "snooze", {
+      expected_version: p.version,
+      until: new Date(Date.now() + 86400000).toISOString(),
+    });
+    b.capture(owner, { title: "Garden", body: "Plant some tulips" });
+    while (await w.tick()) {}
+    expect(b.entity(owner, p.id).data.status).toBe("snoozed");
+  } finally {
+    s.close();
+  }
+});
+it("daily preparation admits every eligible goal within one project exactly once", async () => {
+  const s = new Storage(":memory:");
+  try {
+    const b = new Brain(s, () => new Date("2026-09-28T12:00:00Z")),
+      owner = { kind: "owner" } as const;
+    const goals = ["Beta", "Research"].map((title) =>
+      b.goal(owner, { project_id: "inbox", title, success_criteria: "Test" }),
+    );
+    for (const g of goals)
+      b.editGoal(owner, g.id, {
+        expected_version: 1,
+        preparation_enabled: true,
+      });
+    b.prefs(owner, {
+      ...b.prefs(owner),
+      enabled: true,
+      time_zone: "UTC",
+      digest_hour: 9,
+    });
+    const w = new Worker(b);
+    w.schedule();
+    w.schedule();
+    const jobs = s.all(
+      "SELECT payload FROM jobs WHERE kind='review_changed_assumption'",
+    );
+    expect(jobs.map((j) => JSON.parse(j.payload).goal_id).sort()).toEqual(
+      goals.map((g) => g.id).sort(),
+    );
+    while (await w.tick()) {}
+    expect(
+      s
+        .all("SELECT status FROM jobs WHERE kind='review_changed_assumption'")
+        .every((j) => j.status === "succeeded"),
+    ).toBe(true);
+  } finally {
+    s.close();
+  }
+});
 it("deleting accepted evidence purges copied plan text from current goal and goal history", async () => {
   const s = new Storage(":memory:");
   try {

@@ -381,7 +381,11 @@ export class Brain {
       project,
     )) {
       const data = JSON.parse(row.data);
-      if (data.plan_evidence?.length)
+      if (
+        data.plan_evidence?.some(
+          (e: Evidence) => !this.evidenceCurrent(project, e),
+        )
+      )
         this.store.run(
           "UPDATE entities SET data=? WHERE id=?",
           JSON.stringify({ ...data, plan_stale: true }),
@@ -396,7 +400,10 @@ export class Brain {
     )) {
       const data = JSON.parse(row.data);
       if (row.kind === "brief") data.status = "stale";
-      else if (["ready", "snoozed"].includes(data.status))
+      else if (
+        ["ready", "snoozed"].includes(data.status) &&
+        data.evidence?.some((e: Evidence) => !this.evidenceCurrent(project, e))
+      )
         data.status = "invalidated";
       this.store.run(
         "UPDATE entities SET data=? WHERE id=?",
@@ -404,6 +411,17 @@ export class Brain {
         row.id,
       );
     }
+  }
+  evidenceCurrent(project: string, evidence: Evidence) {
+    const source = this.store.get<Source>(
+      "SELECT * FROM sources WHERE id=?",
+      evidence.source_id,
+    );
+    return (
+      source?.state === "active" &&
+      source.project_id === project &&
+      source.version === evidence.source_version
+    );
   }
   editSource(p: Principal, id: string, input: unknown) {
     this.owner(p);
@@ -472,8 +490,7 @@ export class Brain {
       this.invalidate(s.project_id);
       if (purge) {
         for (const row of this.store.all<Entity & { data: any }>(
-          "SELECT * FROM entities WHERE project_id=? AND kind='goal'",
-          s.project_id,
+          "SELECT * FROM entities WHERE kind='goal'",
         )) {
           const data = JSON.parse(row.data);
           const depended = this.store
@@ -508,13 +525,26 @@ export class Brain {
           }
         }
         this.store.run("DELETE FROM source_versions WHERE source_id=?", id);
-        this.store.run(
-          "DELETE FROM entities WHERE project_id=? AND kind IN (?,?,?)",
-          s.project_id,
-          "brief",
-          "proposal",
-          "receipt",
-        );
+        for (const row of this.store.all<Entity & { data: any }>(
+          "SELECT * FROM entities WHERE kind IN ('brief','proposal','receipt')",
+        )) {
+          const versions = this.store.all<{ data: string }>(
+            "SELECT data FROM entity_versions WHERE entity_id=?",
+            row.id,
+          );
+          // Purge dependencies in current data and retained revisions, including former projects.
+          const depends = (value: unknown): boolean => {
+            if (!value || typeof value !== "object") return false;
+            if ((value as { source_id?: string }).source_id === id) return true;
+            return Object.values(value).some(depends);
+          };
+          if (
+            row.project_id === s.project_id ||
+            depends(JSON.parse(row.data)) ||
+            versions.some((v) => depends(JSON.parse(v.data)))
+          )
+            this.store.run("DELETE FROM entities WHERE id=?", row.id);
+        }
         this.store.run("DELETE FROM idempotency");
         this.store.run("DELETE FROM imports");
       }

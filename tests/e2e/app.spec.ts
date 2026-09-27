@@ -84,7 +84,9 @@ test("real capture, evidence, editable understanding, download, correction, dele
   await page
     .getByRole("button", { name: "Permanently delete", exact: true })
     .click();
+  await expect(page.getByRole("dialog")).not.toBeVisible();
   await page.getByLabel("Search saved material").fill(phrase);
+  await expect(page.getByLabel("Search saved material")).toHaveValue(phrase);
   await expect(
     page.getByRole("heading", { name: "No matching notes." }),
   ).toBeVisible();

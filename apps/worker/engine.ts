@@ -157,8 +157,9 @@ export class Worker {
           (g) => g.data.status === "active" && g.data.preparation_enabled,
         )) {
         const pending = b.store.get(
-          "SELECT id FROM jobs WHERE project_id=? AND kind='review_changed_assumption' AND status IN ('queued','running','retry_wait')",
+          "SELECT id FROM jobs WHERE project_id=? AND kind='review_changed_assumption' AND json_extract(payload,'$.goal_id')=? AND status IN ('queued','running','retry_wait')",
           goal.project_id,
+          goal.id,
         );
         if (!pending)
           b.enqueue(goal.project_id, "review_changed_assumption", {

@@ -58,3 +58,16 @@ Owner authorized pushing to the official repository. git push -u origin main fai
 
 Pushed main successfully to https://github.com/Rishflips/Bi-Brain using the existing Rishflips Git Credential Manager account. The default GitHub CLI helper had selected saasagelabs; command-local helper and username overrides resolved this without changing global account configuration. Implementation 30dd7d6 and prior failure record 3695247 are on origin/main. This publishes repository code, not a hosted application or pricing page.
 
+
+## Verification review repairs — 2026-09-28
+
+Read docs/VERIFICATION_REVIEW_2026-09-28.md and repaired its three confirmed defects:
+
+- Permanent purge follows evidence references across all projects and retained derived revisions. Goal history is inspected across projects. Move → accept → purge → export regression verifies the deleted marker is absent from export and retained entity versions.
+- Invalidation checks cited source state, project and version. Unrelated capture retains actionable ready and snoozed proposals; correction, move and withdrawal still invalidate affected evidence.
+- Daily admission deduplicates pending jobs by goal ID rather than project, allowing both eligible goals in one project to complete without duplicate daily admission. Existing per-job budget reservation remains in force.
+
+Commands: npm run typecheck, npm run lint, npm test (29 tests, five files), npm run build passed. npm run test:e2e: four browser journeys passed after adding an explicit wait for the asynchronous deletion dialog to close. The first run failed only at the search-entry timing assertion; no application result was replaced with simulated success. Three new behavioral regressions cover the exact reported failure sequences.
+
+Scope clarification: provider credentials enable model-backed briefs only. Goal preparation is still the labeled extractive hypothesis template; genuine model-backed goal review is unfinished implementation, not merely a missing live credential. The review's product scope gap remains open, in addition to live-provider, native-client, clean-install, disk-full and human-pilot gates. No trusted public-release claim is made.
+
