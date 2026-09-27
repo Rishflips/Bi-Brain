@@ -1,0 +1,381 @@
+{
+  "format_version": 1,
+  "synthetic": true,
+  "description": "Behavioral scenarios; not executed application test results.",
+  "scenarios": [
+    {
+      "id": "E01",
+      "name": "capture_without_provider",
+      "category": "functional",
+      "source_ids": [
+        "source_interview_a"
+      ],
+      "given": "Provider is disabled.",
+      "when": "Capture arbitrary input and restart the server.",
+      "then": "Original survives; extractive preview is labeled; no invented synthesis.",
+      "requirements": [
+        "P01",
+        "P02"
+      ]
+    },
+    {
+      "id": "E02",
+      "name": "supported_preparation",
+      "category": "quality",
+      "source_ids": [
+        "source_original_plan",
+        "source_interview_a",
+        "source_interview_b"
+      ],
+      "given": "Goal enabled and budget admitted.",
+      "when": "Run changed-assumption review.",
+      "then": "Reviewable proposal cites both interviews; earlier decision remains unchanged.",
+      "requirements": [
+        "P03",
+        "P07"
+      ]
+    },
+    {
+      "id": "E03",
+      "name": "unrelated_material",
+      "category": "quality",
+      "source_ids": [
+        "source_other_project"
+      ],
+      "given": "Only beta project is granted.",
+      "when": "Retrieve beta context.",
+      "then": "No learning-project content, existence, or titles appear.",
+      "requirements": [
+        "P05",
+        "P09"
+      ]
+    },
+    {
+      "id": "E04",
+      "name": "private_derivative",
+      "category": "security",
+      "source_ids": [
+        "source_private_note"
+      ],
+      "given": "Agent can read beta project.",
+      "when": "Request source, search, brief, and change feed.",
+      "then": "Private text and derivatives remain unavailable.",
+      "requirements": [
+        "P09"
+      ]
+    },
+    {
+      "id": "E05",
+      "name": "prompt_injection",
+      "category": "security",
+      "source_ids": [
+        "source_untrusted_text"
+      ],
+      "given": "Imported text contains operational instructions.",
+      "when": "Ingest and prepare context.",
+      "then": "No elevated permissions, spending changes, external actions, or automatic acceptance.",
+      "requirements": [
+        "P09"
+      ]
+    },
+    {
+      "id": "E06",
+      "name": "temporal_change",
+      "category": "quality",
+      "source_ids": [
+        "source_temporal_policy"
+      ],
+      "given": "Source records a dated policy change.",
+      "when": "Analyze contradictions.",
+      "then": "Explain timeline; do not report simultaneous contradiction without evidence.",
+      "requirements": [
+        "P03"
+      ]
+    },
+    {
+      "id": "E07",
+      "name": "duplicate_delivery",
+      "category": "reliability",
+      "source_ids": [
+        "source_interview_a"
+      ],
+      "given": "Same event/job delivered twice.",
+      "when": "Process both deliveries.",
+      "then": "One committed derivation/proposal; receipts account for attempts.",
+      "requirements": [
+        "P02",
+        "P11"
+      ]
+    },
+    {
+      "id": "E08",
+      "name": "worker_crash",
+      "category": "reliability",
+      "source_ids": [
+        "source_interview_a"
+      ],
+      "given": "Worker crashes after provider response.",
+      "when": "Expire lease and retry.",
+      "then": "Fenced result commit; no duplicate proposal; uncertain provider spend retained.",
+      "requirements": [
+        "P11"
+      ]
+    },
+    {
+      "id": "E09",
+      "name": "version_conflict",
+      "category": "functional",
+      "source_ids": [
+        "source_original_plan"
+      ],
+      "given": "Page edited after proposal was prepared.",
+      "when": "Accept with stale base version.",
+      "then": "409 conflict with review path; no overwrite.",
+      "requirements": [
+        "P04",
+        "P08"
+      ]
+    },
+    {
+      "id": "E10",
+      "name": "undo_after_edit",
+      "category": "functional",
+      "source_ids": [
+        "source_original_plan"
+      ],
+      "given": "Proposal accepted, then user edited the resulting page.",
+      "when": "Undo old receipt.",
+      "then": "Comparison/conflict instead of overwriting newer edit.",
+      "requirements": [
+        "P08"
+      ]
+    },
+    {
+      "id": "E11",
+      "name": "delete_during_job",
+      "category": "security",
+      "source_ids": [
+        "source_interview_a"
+      ],
+      "given": "Preparation is running on source.",
+      "when": "Delete source before completion.",
+      "then": "Result rejected or invalidated; no content resurrection.",
+      "requirements": [
+        "P09"
+      ]
+    },
+    {
+      "id": "E12",
+      "name": "budget_race",
+      "category": "reliability",
+      "source_ids": [
+        "source_interview_b"
+      ],
+      "given": "Two jobs share a cap that can cover only one.",
+      "when": "Reserve simultaneously.",
+      "then": "At most one admitted; capture remains available.",
+      "requirements": [
+        "P11"
+      ]
+    },
+    {
+      "id": "E13",
+      "name": "grant_revoked",
+      "category": "security",
+      "source_ids": [
+        "source_interview_a"
+      ],
+      "given": "A context response has been cached.",
+      "when": "Revoke grant and repeat request.",
+      "then": "Cached and fresh access denied without content disclosure.",
+      "requirements": [
+        "P05",
+        "P09"
+      ]
+    },
+    {
+      "id": "E14",
+      "name": "missing_update",
+      "category": "quality",
+      "source_ids": [
+        "source_original_plan"
+      ],
+      "given": "A commitment has no observed completion update.",
+      "when": "Prepare a status note.",
+      "then": "Say status unknown; do not assert failure or noncompletion.",
+      "requirements": [
+        "P03",
+        "P10"
+      ]
+    },
+    {
+      "id": "E15",
+      "name": "invalid_citation",
+      "category": "quality",
+      "source_ids": [
+        "source_interview_b"
+      ],
+      "given": "Provider returns a made-up source ID or quote.",
+      "when": "Validate output.",
+      "then": "Reject output; bounded repair or abstention receipt.",
+      "requirements": [
+        "P03"
+      ]
+    },
+    {
+      "id": "E16",
+      "name": "snooze_and_dedupe",
+      "category": "functional",
+      "source_ids": [
+        "source_interview_a"
+      ],
+      "given": "Suggestion snoozed/dismissed; no new evidence.",
+      "when": "Run next schedule.",
+      "then": "No premature or repeated nuisance item.",
+      "requirements": [
+        "P10"
+      ]
+    },
+    {
+      "id": "E17",
+      "name": "sleep_catchup",
+      "category": "reliability",
+      "source_ids": [
+        "source_interview_a"
+      ],
+      "given": "Host missed several scheduled days.",
+      "when": "Restart worker.",
+      "then": "One bounded catch-up; no backlog notification storm.",
+      "requirements": [
+        "P11"
+      ]
+    },
+    {
+      "id": "E18",
+      "name": "unicode_offsets",
+      "category": "functional",
+      "source_ids": [
+        "source_unicode"
+      ],
+      "given": "Text includes emoji and Tamil.",
+      "when": "Create and resolve evidence spans; export/import.",
+      "then": "Exact code-point offsets and original text round trip.",
+      "requirements": [
+        "P02",
+        "P03"
+      ]
+    },
+    {
+      "id": "E19",
+      "name": "export_no_secrets",
+      "category": "security",
+      "source_ids": [
+        "source_interview_a"
+      ],
+      "given": "Installation has owner and agent credentials.",
+      "when": "Export selected project.",
+      "then": "Sources/state included; credentials excluded; other-project data excluded.",
+      "requirements": [
+        "P09"
+      ]
+    },
+    {
+      "id": "E20",
+      "name": "provider_outage",
+      "category": "reliability",
+      "source_ids": [
+        "source_interview_a"
+      ],
+      "given": "Provider returns timeout/rate limit.",
+      "when": "Save and prepare.",
+      "then": "Source retained; bounded retry; readable failure and actual state.",
+      "requirements": [
+        "P02",
+        "P10"
+      ]
+    },
+    {
+      "id": "E21",
+      "name": "first_use_keyboard",
+      "category": "usability",
+      "source_ids": [],
+      "given": "Clean installation at 360px; keyboard only.",
+      "when": "Save, find original, edit brief, continue.",
+      "then": "Complete flow with visible focus and no tutorial.",
+      "requirements": [
+        "P01",
+        "P12"
+      ]
+    },
+    {
+      "id": "E22",
+      "name": "false_connection",
+      "category": "functional",
+      "source_ids": [],
+      "given": "Agent token configured but client cannot connect.",
+      "when": "Inspect Connections.",
+      "then": "Needs attention or Checking; never Connected without verified round trip.",
+      "requirements": [
+        "P05",
+        "P10"
+      ]
+    },
+    {
+      "id": "E23",
+      "name": "visibility_downgrade",
+      "category": "security",
+      "source_ids": [
+        "source_private_note",
+        "source_interview_a"
+      ],
+      "given": "Derived brief mixes private and project evidence.",
+      "when": "Request brief as project-only agent.",
+      "then": "No private-derived summary; safe subset regenerated or request denied.",
+      "requirements": [
+        "P09"
+      ]
+    },
+    {
+      "id": "E24",
+      "name": "manual_capture_triage",
+      "category": "functional",
+      "source_ids": [
+        "source_interview_a"
+      ],
+      "given": "Classifier labels explicit capture as noise.",
+      "when": "Save explicitly through owner UI.",
+      "then": "Source retained; classifier may defer reasoning but cannot silently discard.",
+      "requirements": [
+        "P02"
+      ]
+    },
+    {
+      "id": "E25",
+      "name": "unknown_pricing",
+      "category": "reliability",
+      "source_ids": [
+        "source_interview_a"
+      ],
+      "given": "No verified provider price or conservative bound.",
+      "when": "Attempt automatic paid preparation.",
+      "then": "Admission denied with explanation; no guessed cost.",
+      "requirements": [
+        "P11"
+      ]
+    },
+    {
+      "id": "E26",
+      "name": "no_goal_no_initiative",
+      "category": "functional",
+      "source_ids": [
+        "source_interview_a"
+      ],
+      "given": "Source exists but no active opted-in goal.",
+      "when": "Run scheduler.",
+      "then": "Maintenance only if allowed; no invented initiative.",
+      "requirements": [
+        "P06"
+      ]
+    }
+  ]
+}

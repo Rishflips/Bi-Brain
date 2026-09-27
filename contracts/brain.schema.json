@@ -1,0 +1,458 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:bibrain:portable-brain:v1",
+  "title": "Bi Brain portable core objects, version 1",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "format_version": {
+      "const": 1
+    },
+    "synthetic": {
+      "type": "boolean"
+    },
+    "projects": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/project"
+      }
+    },
+    "sources": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/source"
+      }
+    },
+    "goals": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/goal"
+      }
+    },
+    "briefs": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/brief"
+      }
+    },
+    "proposals": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/proposal"
+      }
+    },
+    "receipts": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/receipt"
+      }
+    }
+  },
+  "required": [
+    "format_version",
+    "synthetic",
+    "projects",
+    "sources",
+    "goals",
+    "briefs",
+    "proposals",
+    "receipts"
+  ],
+  "$defs": {
+    "evidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "source_id": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_-]*$"
+        },
+        "source_version": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "start": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "end": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "quote": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "source_id",
+        "source_version",
+        "start",
+        "end",
+        "quote"
+      ]
+    },
+    "item": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "text": {
+          "type": "string",
+          "minLength": 1
+        },
+        "epistemic_status": {
+          "enum": [
+            "supported",
+            "user_assertion",
+            "hypothesis",
+            "disputed"
+          ]
+        },
+        "evidence": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/evidence"
+          }
+        }
+      },
+      "required": [
+        "text",
+        "epistemic_status",
+        "evidence"
+      ]
+    },
+    "project": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_-]*$"
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1
+        },
+        "created_at": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "id",
+        "title",
+        "created_at"
+      ]
+    },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_-]*$"
+        },
+        "project_id": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_-]*$"
+        },
+        "version": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1
+        },
+        "body": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 100000
+        },
+        "observed_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "captured_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "visibility": {
+          "enum": [
+            "private",
+            "project"
+          ]
+        },
+        "state": {
+          "enum": [
+            "active",
+            "withdrawn"
+          ]
+        },
+        "origin": {
+          "enum": [
+            "manual",
+            "import",
+            "agent",
+            "connector"
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "project_id",
+        "version",
+        "title",
+        "body",
+        "observed_at",
+        "captured_at",
+        "visibility",
+        "state",
+        "origin"
+      ]
+    },
+    "goal": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_-]*$"
+        },
+        "project_id": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_-]*$"
+        },
+        "version": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1
+        },
+        "success_criteria": {
+          "type": "string",
+          "minLength": 1
+        },
+        "status": {
+          "enum": [
+            "active",
+            "paused",
+            "completed"
+          ]
+        },
+        "preparation_enabled": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "id",
+        "project_id",
+        "version",
+        "title",
+        "success_criteria",
+        "status",
+        "preparation_enabled"
+      ]
+    },
+    "brief": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_-]*$"
+        },
+        "project_id": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_-]*$"
+        },
+        "version": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1
+        },
+        "status": {
+          "enum": [
+            "current",
+            "stale",
+            "withdrawn"
+          ]
+        },
+        "items": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/item"
+          }
+        },
+        "unknowns": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "created_at": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "id",
+        "project_id",
+        "version",
+        "title",
+        "status",
+        "items",
+        "unknowns",
+        "created_at"
+      ]
+    },
+    "proposal": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_-]*$"
+        },
+        "project_id": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_-]*$"
+        },
+        "goal_id": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_-]*$"
+        },
+        "version": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "base_brief_id": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_-]*$"
+        },
+        "base_version": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1
+        },
+        "reason": {
+          "type": "string",
+          "minLength": 1
+        },
+        "evidence": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/evidence"
+          }
+        },
+        "suggested_steps": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "status": {
+          "enum": [
+            "ready",
+            "accepted",
+            "dismissed",
+            "snoozed",
+            "invalidated",
+            "reverted"
+          ]
+        },
+        "created_at": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "id",
+        "project_id",
+        "goal_id",
+        "version",
+        "base_brief_id",
+        "base_version",
+        "title",
+        "reason",
+        "evidence",
+        "suggested_steps",
+        "status",
+        "created_at"
+      ]
+    },
+    "receipt": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_-]*$"
+        },
+        "project_id": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_-]*$"
+        },
+        "job_id": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_-]*$"
+        },
+        "outcome": {
+          "enum": [
+            "changed",
+            "no_change",
+            "abstained",
+            "failed",
+            "cancelled"
+          ]
+        },
+        "changed_ids": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_-]*$"
+          }
+        },
+        "evidence": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/evidence"
+          }
+        },
+        "reason": {
+          "type": "string",
+          "minLength": 1
+        },
+        "cost_micro_usd": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "created_at": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "id",
+        "project_id",
+        "job_id",
+        "outcome",
+        "changed_ids",
+        "evidence",
+        "reason",
+        "cost_micro_usd",
+        "created_at"
+      ]
+    }
+  }
+}
