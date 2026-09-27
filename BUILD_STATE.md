@@ -30,7 +30,7 @@ Actual commands run:
 - `npm test`: 26 tests passed in five files. Includes real database/HTTP, supervisor restart, official SDK stdio, source deletion during provider work, authorization, concurrent budget admission, exact Unicode evidence, prompt-injection boundaries, schedule behavior, imported reviewed knowledge, and actual backup/restore CLI.
 - `npm run test:e2e`: four Chromium browser journeys passed: persistence/evidence/correction/purge/download; chosen-goal preparation/acceptance/later-edit-safe undo comparison; keyboard/Escape/focus/dark mode and widths 320/360/768/1280; input error retention/text-file capture/clipboard/full-text search.
 - `npm run db:migrate`: migration versions 1–3 recorded, integrity check `ok`.
-- `git ls-remote https://github.com/Rishflips/Bi-Brain.git`: successful with no refs returned. Local `main` initialized and origin set. Local implementation commit created; no push/publication.
+- `git ls-remote https://github.com/Rishflips/Bi-Brain.git`: successful with no refs returned. Local `main` initialized and origin set. Local implementation commit created and pushed to official origin/main on 2026-09-28; no hosted deployment.
 
 Test fixtures and browser screenshots contain synthetic test content, clearly described in docs/screenshots/README.md. They are not historical owner data or live-model evidence. Tests use isolated databases under ignored data/ directories. Production owner data lives in data/brain.sqlite; pairing code lives in data/owner-secret and is never included here.
 
@@ -52,4 +52,9 @@ Run `npm start` and open http://127.0.0.1:4317. Pair with the local data/owner-s
 ## Push attempt — 2026-09-28
 
 Owner authorized pushing to the official repository. git push -u origin main failed with HTTP 403: GitHub authenticated as saasagelabs, which lacks write permission to Rishflips/Bi-Brain. Implementation remains committed locally at 30dd7d6. Authenticate an account with repository write access, then retry; no remote content was changed.
+
+
+## Push completed — 2026-09-28
+
+Pushed main successfully to https://github.com/Rishflips/Bi-Brain using the existing Rishflips Git Credential Manager account. The default GitHub CLI helper had selected saasagelabs; command-local helper and username overrides resolved this without changing global account configuration. Implementation 30dd7d6 and prior failure record 3695247 are on origin/main. This publishes repository code, not a hosted application or pricing page.
 
