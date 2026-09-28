@@ -47,6 +47,8 @@ The API and worker run on the same host for local V1. SQLite WAL requires shared
 
 ## Canonical state
 
+**Superseded by the owner-directed harness build:** see [HARNESS_AUTHORITY_ADR.md](HARNESS_AUTHORITY_ADR.md) and [bi-brain-vault.md](bi-brain-vault.md). The SQLite-only paragraph below describes the original design, not the new portable authority target. Current implementation is a transitional dual-write projection with an outbox; read-path migration is not yet complete.
+
 SQLite is the authoritative store for source versions, derived revisions, project state, jobs, grants, and receipts. Original content is preserved in source versions. Large attachments can later use a content-addressed blob directory.
 
 Markdown and JSON exports are portable representations. They do not create a second editable authority. An imported edited export becomes a new source version with provenance.

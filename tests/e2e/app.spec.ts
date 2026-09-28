@@ -9,6 +9,54 @@ test.beforeEach(async ({ page }) => {
       .or(page.getByRole("heading", { name: "Welcome back." })),
   ).toBeVisible();
 });
+test("chat JSON import is previewed and saved through Connections", async ({
+  page,
+}) => {
+  const marker = `Imported chat ${Date.now()}`;
+  await page.getByRole("button", { name: "Connections", exact: true }).click();
+  await page.getByLabel("Choose a chat JSON export").setInputFiles({
+    name: "conversations.json",
+    mimeType: "application/json",
+    buffer: Buffer.from(
+      JSON.stringify([
+        {
+          title: marker,
+          messages: [
+            { role: "user", content: "What should I remember?" },
+            { role: "assistant", content: `${marker} is saved as evidence.` },
+          ],
+        },
+      ]),
+    ),
+  });
+  await expect(
+    page.getByRole("dialog", { name: "Review import" }),
+  ).toContainText(marker);
+  await page.getByRole("button", { name: "Save selected items" }).click();
+  await expect(page.getByRole("status")).toContainText("1 saved");
+  await page.getByRole("button", { name: "Your brain", exact: true }).click();
+  await page.getByPlaceholder("Find a note or conversation…").fill(marker);
+  await expect(page.getByText(marker, { exact: true })).toBeVisible();
+  await page.goBack();
+  await expect(
+    page.getByRole("heading", { name: "Connections" }),
+  ).toBeVisible();
+  const dropped = `Dropped note ${Date.now()}`;
+  await page.locator(".dropzone").evaluate((element, text) => {
+    const transfer = new DataTransfer();
+    transfer.items.add(
+      new File([text], "dropped.md", { type: "text/markdown" }),
+    );
+    element.dispatchEvent(
+      new DragEvent("drop", { bubbles: true, dataTransfer: transfer }),
+    );
+  }, dropped);
+  await expect(
+    page.getByRole("dialog", { name: "Review import" }),
+  ).toContainText("dropped.md");
+  await page.getByRole("button", { name: "Save selected items" }).click();
+  await expect(page.getByRole("status")).toContainText("1 saved");
+});
 test("real capture, evidence, editable understanding, download, correction, delete and reload", async ({
   page,
 }) => {
@@ -249,4 +297,3 @@ test("invalid input remains editable, Markdown files persist, and search matches
     .fill("LATE_SEARCH_QUIET_SENTINEL");
   await expect(page.getByRole("button", { name: /Long note/ })).toBeVisible();
 });
-

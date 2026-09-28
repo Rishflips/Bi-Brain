@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { detectSecrets } from "../../packages/storage/secrets.ts";
 import type { Brain } from "../../packages/domain/service.ts";
 import {
   outputSchema,
@@ -148,13 +149,17 @@ export class Worker {
       }
     const schedule = localSchedule(b.clock(), prefs);
     if (!prefs.enabled || !schedule.eligible) return;
+    if (this.ownerActive()) return;
     const last = b.store.setting<string>("last_digest_day", "");
     if (last === schedule.day) return;
     b.store.transaction(() => {
       for (const goal of b
         .entities(owner, "goal")
         .filter(
-          (g) => g.data.status === "active" && g.data.preparation_enabled,
+          (g) =>
+            g.data.status === "active" &&
+            g.data.preparation_enabled &&
+            (!g.data.review_at || g.data.review_at <= b.now()),
         )) {
         const pending = b.store.get(
           "SELECT id FROM jobs WHERE project_id=? AND kind='review_changed_assumption' AND json_extract(payload,'$.goal_id')=? AND status IN ('queued','running','retry_wait')",
@@ -170,6 +175,15 @@ export class Worker {
       }
       b.store.set("last_digest_day", schedule.day);
     });
+  }
+  ownerActive() {
+    const last = this.brain.store.setting<string | null>(
+      "owner_activity",
+      null,
+    );
+    return (
+      !!last && this.brain.clock().getTime() - Date.parse(last) < 5 * 60_000
+    );
   }
   async tick() {
     this.schedule();
@@ -216,6 +230,16 @@ export class Worker {
           "Background help is paused.",
           409,
         );
+      if (
+        j.kind === "review_changed_assumption" &&
+        !j.payload.manual &&
+        this.ownerActive()
+      )
+        throw new BrainError(
+          "JOB_CANCELLED",
+          "Owner is active; background preparation was cancelled.",
+          409,
+        );
       const allSources = b.sources(owner, j.project_id);
       const sources = allSources.slice(0, 20);
       const signature = b.evidenceSignature(sources);
@@ -225,26 +249,74 @@ export class Worker {
           prompt_version: "extract-v1",
         },
         cost = 0;
+      let goalPrepared:
+        | Awaited<ReturnType<NonNullable<ReasoningProvider["prepareGoal"]>>>
+        | undefined;
       if (
-        j.kind === "derive_brief" &&
         prefs.provider_enabled &&
-        sources.some((s) => s.visibility === "project")
+        sources.some((s) => s.visibility === "project") &&
+        (j.kind === "derive_brief" ||
+          (j.kind === "review_changed_assumption" &&
+            !!this.provider.prepareGoal))
       ) {
         const selected = sources.filter((s) => s.visibility === "project");
-        const upper = this.provider.upperBound(selected);
-        this.reserve(j, upper);
-        const prepared = await this.provider.prepare(
-          selected,
-          controller.signal,
-        );
-        output = outputSchema.parse({
-          items: prepared.items,
-          unknowns: prepared.unknowns,
-        });
-        output.items = [
-          ...output.items,
-          ...extract(sources.filter((s) => s.visibility === "private")).items,
-        ].slice(0, 30);
+        if (
+          j.kind === "review_changed_assumption" &&
+          !j.payload.manual &&
+          this.ownerActive()
+        )
+          throw new BrainError(
+            "JOB_CANCELLED",
+            "Owner is active; background preparation was cancelled.",
+            409,
+          );
+        let prepared;
+        if (j.kind === "derive_brief") {
+          const upper = this.provider.upperBound(selected);
+          this.reserve(j, upper);
+          prepared = await this.provider.prepare(selected, controller.signal);
+          output = outputSchema.parse({
+            items: prepared.items,
+            unknowns: prepared.unknowns,
+          });
+          output.items = [
+            ...output.items,
+            ...extract(sources.filter((s) => s.visibility === "private")).items,
+          ].slice(0, 30);
+        } else {
+          const goal = b.entity(owner, j.payload.goal_id);
+          if (
+            goal.project_id !== j.project_id ||
+            goal.kind !== "goal" ||
+            goal.data.status !== "active"
+          )
+            throw new BrainError("SOURCE_STALE", "Selected goal changed.", 409);
+          if (
+            detectSecrets(
+              `${goal.data.title}\n${goal.data.success_criteria}\n${goal.data.plan ?? ""}`,
+            ).length
+          )
+            throw new BrainError(
+              "INVALID_INPUT",
+              "Goal contains suspected secrets; connected preparation was not sent.",
+            );
+          const goalInput = {
+            title: goal.data.title,
+            success_criteria: goal.data.success_criteria,
+            plan: goal.data.plan_private ? "" : (goal.data.plan ?? ""),
+          };
+          const upper = this.provider.upperBound(
+            selected,
+            JSON.stringify(goalInput).length,
+          );
+          this.reserve(j, upper);
+          prepared = await this.provider.prepareGoal!(
+            goalInput,
+            selected,
+            controller.signal,
+          );
+          goalPrepared = prepared;
+        }
         metadata = { ...prepared.metadata, usage: prepared.usage };
         cost = prepared.cost_micro_usd;
         if (!Number.isSafeInteger(cost) || cost < 0)
@@ -279,6 +351,16 @@ export class Worker {
       }
       b.store.transaction(() => {
         this.fenced(j);
+        if (
+          j.kind === "review_changed_assumption" &&
+          !j.payload.manual &&
+          this.ownerActive()
+        )
+          throw new BrainError(
+            "JOB_CANCELLED",
+            "Owner became active; provider output was discarded.",
+            409,
+          );
         b.access(
           principal,
           j.project_id,
@@ -373,16 +455,24 @@ export class Worker {
           );
           const goalSignature = b.evidenceSignature(relevant);
           if (!(goal.data.signatures ?? []).includes(goalSignature)) {
-            if (relevant.length >= 2) {
-              const evidence = relevant.map(excerpt);
+            if (
+              goalPrepared?.outcome === "proposal" ||
+              (!goalPrepared && relevant.length >= 2)
+            ) {
+              const evidence = goalPrepared
+                ? goalPrepared.evidence
+                : relevant.map(excerpt);
               b.checkEvidence(owner, j.project_id, evidence);
-              const artifact = `Hypothesis: review the current plan for “${goal.data.title}” against these saved passages.\n\n${evidence.map((e) => `“${e.quote}”`).join("\n\n")}\n\nProposed experiment: compare the earlier plan with the new evidence, choose one small test, and record the result. The passages do not by themselves prove a contradiction.`;
+              const artifact =
+                goalPrepared?.artifact ??
+                `Hypothesis: review the current plan for “${goal.data.title}” against these saved passages.\n\n${evidence.map((e) => `“${e.quote}”`).join("\n\n")}\n\nProposed experiment: compare the earlier plan with the new evidence, choose one small test, and record the result. The passages do not by themselves prove a contradiction.`;
               const proposal = b.createEntity(j.project_id, "proposal", {
                 goal_id: goal.id,
                 base_version: goal.data.plan_version,
                 title: `Review new evidence for ${goal.data.title}`,
-                reason:
-                  "New saved material may affect this chosen goal. This is an extractive review prompt; no inferred contradiction or adopted decision.",
+                reason: goalPrepared
+                  ? "A connected model proposed a source-linked next step for owner review. No decision was adopted."
+                  : "New saved material may affect this chosen goal. This is an extractive review prompt; no inferred contradiction or adopted decision.",
                 artifact,
                 evidence,
                 status: "ready",
@@ -391,26 +481,51 @@ export class Worker {
               });
               resultId = proposal.id;
               outcome = "changed";
-              reason =
-                "Prepared a source-linked review prompt, not a model inference.";
+              reason = goalPrepared
+                ? "Prepared a model-backed next step for owner review."
+                : "Prepared a source-linked review prompt, not a model inference.";
             } else {
               outcome = "abstained";
-              reason =
-                "Not enough relevant source passages to prepare a useful review.";
+              reason = goalPrepared
+                ? "The connected model abstained."
+                : "Not enough relevant source passages to prepare a useful review.";
+            }
+            const local = localSchedule(b.clock(), prefs);
+            const notify =
+              !j.payload.manual &&
+              outcome === "changed" &&
+              local.eligible &&
+              b.store.setting<string>("last_ping_day", "") !== local.day;
+            if (notify) {
+              b.createEntity(j.project_id, "ping", {
+                title: "One prepared step to review",
+                goal_id: goal.id,
+                proposal_id: resultId,
+                local_day: local.day,
+                status: "ready",
+              });
+              b.store.set("last_ping_day", local.day);
             }
             b.revise(goal, {
               ...goal.data,
               signatures: [...(goal.data.signatures ?? []), goalSignature],
+              last_notified_date: notify
+                ? local.day
+                : goal.data.last_notified_date,
             });
           }
         } else throw new BrainError("INVALID_INPUT", "Unsupported job kind.");
         b.createEntity(j.project_id, "receipt", {
           job_id: j.id,
+          input_hash: signature,
+          policy_version: "dream-gate-v1",
           outcome,
           reason,
           result_id: resultId,
           evidence: output.items.flatMap((i) => i.evidence),
+          goal_evidence: goalPrepared?.evidence ?? [],
           cost_micro_usd: cost,
+          usage_status: metadata.usage ? "settled" : "no_provider_call",
           ...metadata,
         });
         b.store.run(

@@ -7,7 +7,7 @@ import type {
   Evidence,
 } from "../../packages/contracts/index.ts";
 import sample from "../../fixtures/beta-launch.json" with { type: "json" };
-import { EvidenceList, ProposalCard } from "./components.tsx";
+import { EvidenceList, ProposalCard, CurrentKnowledge } from "./components.tsx";
 import "./style.css";
 let csrf = "";
 class ApiError extends Error {
@@ -56,11 +56,13 @@ function Modal({
   close,
   children,
   error,
+  variant,
 }: {
   title: string;
   close: () => void;
   children: React.ReactNode;
   error?: string;
+  variant?: "inspector";
 }) {
   const ref = useRef<HTMLDialogElement>(null);
   useEffect(() => {
@@ -70,6 +72,7 @@ function Modal({
   }, []);
   return (
     <dialog
+      className={variant === "inspector" ? "inspector" : undefined}
       ref={ref}
       onCancel={(e) => {
         e.preventDefault();
@@ -93,10 +96,19 @@ function Modal({
   );
 }
 function App() {
+  const navFromHash = () =>
+    (
+      ({
+        "#today": "Today",
+        "#brain": "Your brain",
+        "#connections": "Connections",
+        "#settings": "Settings",
+      }) as Record<string, string>
+    )[location.hash] ?? "Today";
   const [paired, setPaired] = useState(false),
     [loading, setLoading] = useState(true),
     [code, setCode] = useState(""),
-    [nav, setNav] = useState("Today"),
+    [nav, setNav] = useState(navFromHash),
     [notice, setNotice] = useState(""),
     [error, setError] = useState(""),
     [busy, setBusy] = useState(false),
@@ -108,16 +120,20 @@ function App() {
       goals: [],
       proposals: [],
       receipts: [],
+      pings: [],
       status: { jobs: [] },
     }),
     [prefs, setPrefs] = useState<Preferences | null>(null),
     [grants, setGrants] = useState<any[]>([]),
-    [scope, setScope] = useState(""),
+    [scope, setScope] = useState(
+      () => localStorage.getItem("brain-project") ?? "",
+    ),
     [search, setSearch] = useState(""),
     [dialog, setDialog] = useState<string | null>(null),
     [source, setSource] = useState<Source | null>(null),
     [proposal, setProposal] = useState<Entity | null>(null),
     [brief, setBrief] = useState<Entity | null>(null),
+    [handoff, setHandoff] = useState<Entity | null>(null),
     [newTitle, setNewTitle] = useState(""),
     [body, setBody] = useState(""),
     [captureScope, setCaptureScope] = useState("inbox"),
@@ -126,6 +142,8 @@ function App() {
     [projectTitle, setProjectTitle] = useState(""),
     [goalTitle, setGoalTitle] = useState(""),
     [criteria, setCriteria] = useState(""),
+    [goalDue, setGoalDue] = useState(""),
+    [goalReview, setGoalReview] = useState(""),
     [artifact, setArtifact] = useState(""),
     [briefText, setBriefText] = useState(""),
     [token, setToken] = useState(""),
@@ -141,7 +159,44 @@ function App() {
     goal: Entity;
   } | null>(null);
   const [searchResults, setSearchResults] = useState<Source[]>([]);
+  const [knowledgePages, setKnowledgePages] = useState<any[]>([]);
+  const [gateQueue, setGateQueue] = useState<Entity[]>([]);
   const [queryPage, setQueryPage] = useState(0);
+  const [adapterSelection, setAdapterSelection] = useState<any>(null);
+  const [adapterPreview, setAdapterPreview] = useState<any>(null);
+  const [forgetProof, setForgetProof] = useState<any>(null);
+  const [forgetNeedsRetry, setForgetNeedsRetry] = useState<string | null>(null);
+  const [identityDisclosure, setIdentityDisclosure] = useState<any>(null);
+  const [dark, setDark] = useState(
+    () => localStorage.getItem("brain-theme") === "dark",
+  );
+  useEffect(() => {
+    const update = () => setNav(navFromHash());
+    window.addEventListener("popstate", update);
+    window.addEventListener("hashchange", update);
+    return () => {
+      window.removeEventListener("popstate", update);
+      window.removeEventListener("hashchange", update);
+    };
+  }, []);
+  useEffect(() => {
+    const hash = (
+      {
+        Today: "#today",
+        "Your brain": "#brain",
+        Connections: "#connections",
+        Settings: "#settings",
+      } as Record<string, string>
+    )[nav];
+    if (hash && location.hash !== hash) history.pushState(null, "", hash);
+  }, [nav]);
+  useEffect(() => {
+    localStorage.setItem("brain-project", scope);
+  }, [scope]);
+  useEffect(() => {
+    document.documentElement.dataset.theme = dark ? "dark" : "light";
+    localStorage.setItem("brain-theme", dark ? "dark" : "light");
+  }, [dark]);
   const refresh = useCallback(async () => {
     const [p, n, t, settings, g] = await Promise.all([
       api("/projects"),
@@ -196,6 +251,37 @@ function App() {
     };
   }, [paired, demo, search, scope, queryPage, today]);
   useEffect(() => {
+    if (!paired || demo) return;
+    const project = scope || "inbox";
+    Promise.all([
+      api<any[]>(
+        `/pages?project_id=${encodeURIComponent(project)}&include_retired=true`,
+      ),
+      api<Entity[]>(`/gates?project_id=${encodeURIComponent(project)}`),
+    ])
+      .then(([pages, gates]) => {
+        setKnowledgePages(pages);
+        setGateQueue(gates);
+      })
+      .catch(() => {});
+  }, [paired, demo, scope, today]);
+  useEffect(() => {
+    if (!paired || demo) return;
+    let active = true;
+    api(
+      `/identity-disclosure?project_id=${encodeURIComponent(scope || "inbox")}`,
+    )
+      .then((value) => {
+        if (active) setIdentityDisclosure(value);
+      })
+      .catch(() => {
+        if (active) setIdentityDisclosure(null);
+      });
+    return () => {
+      active = false;
+    };
+  }, [paired, demo, scope, today]);
+  useEffect(() => {
     if (source && dialog === "source" && paired && !demo) {
       api<Source>(`/sources/${source.id}`)
         .then(setSource)
@@ -217,6 +303,81 @@ function App() {
     setDialog(null);
     setConfirmation("");
     setPreview(null);
+    setAdapterSelection(null);
+    setAdapterPreview(null);
+  }
+  async function previewAdapter(
+    kind: "folder" | "chat",
+    list?: FileList | null,
+    dropped?: { file: File; path: string }[],
+  ) {
+    const picked =
+      dropped ??
+      Array.from(list ?? []).map((file) => ({
+        file,
+        path:
+          kind === "folder" ? file.webkitRelativePath || file.name : file.name,
+      }));
+    if (!picked.length) return;
+    if (picked.length > 50)
+      throw new Error("Choose at most 50 files per batch.");
+    if (
+      picked.some(({ file }) => file.size > 1048576) ||
+      picked.reduce((sum, { file }) => sum + file.size, 0) > 4 * 1048576
+    )
+      throw new Error(
+        "Each file must be at most 1 MiB and the batch at most 4 MiB.",
+      );
+    const selection = {
+      kind,
+      project_id: scope || "inbox",
+      entries: await Promise.all(
+        picked.map(async ({ file, path }) => ({
+          path,
+          content: await file.text(),
+        })),
+      ),
+    };
+    setAdapterSelection(selection);
+    setAdapterPreview(await api("/import-adapters/preview", selection));
+    setDialog("adapter-import");
+  }
+  async function droppedFolder(data: DataTransfer) {
+    const picked: { file: File; path: string }[] = [];
+    async function visit(
+      entry: any,
+      path: string,
+      depth: number,
+    ): Promise<void> {
+      if (depth > 12 || picked.length > 50)
+        throw new Error(
+          "Folder nesting or file count exceeds the import limit.",
+        );
+      if (entry.isFile) {
+        const file = await new Promise<File>((resolve, reject) =>
+          entry.file(resolve, reject),
+        );
+        picked.push({ file, path: `${path}${entry.name}` });
+      } else if (entry.isDirectory) {
+        const reader = entry.createReader();
+        while (true) {
+          const batch = await new Promise<any[]>((resolve, reject) =>
+            reader.readEntries(resolve, reject),
+          );
+          if (!batch.length) break;
+          for (const child of batch)
+            await visit(child, `${path}${entry.name}/`, depth + 1);
+        }
+      }
+    }
+    const roots = Array.from(data.items)
+      .map((item: any) => item.webkitGetAsEntry?.())
+      .filter(Boolean);
+    if (roots.length) for (const entry of roots) await visit(entry, "", 0);
+    else
+      for (const file of Array.from(data.files))
+        picked.push({ file, path: file.name });
+    await previewAdapter("folder", undefined, picked);
   }
   function saveDialog() {
     setDialog("save");
@@ -445,6 +606,14 @@ function App() {
                 </article>
               ) : ready.length ? (
                 <>
+                  {today.pings?.some(
+                    (ping: Entity) => ping.data.proposal_id === ready[0].id,
+                  ) ? (
+                    <p className="status">
+                      One prepared step from a chosen intention is ready to
+                      review.
+                    </p>
+                  ) : null}
                   <ProposalCard
                     item={ready[0]}
                     project={projectName(ready[0].project_id)}
@@ -617,7 +786,8 @@ function App() {
                       : "Preparation is offline. Start the worker to prepare saved work."}
                   </p>
                   <small>
-                    Chosen goals only · one daily check · no external sending
+                    Chosen goals only · at most one in-app prompt per local day
+                    · no external sending
                   </small>
                 </div>
                 <button
@@ -679,6 +849,25 @@ function App() {
                   New project
                 </button>
               </div>
+              <CurrentKnowledge
+                pages={knowledgePages}
+                gates={gateQueue}
+                openSource={(id) => void openSource(id)}
+                review={(id, version, action) =>
+                  void act(async () => {
+                    await api(`/proposals/gate/${id}/review`, {
+                      expected_version: version,
+                      action,
+                    });
+                    await refresh();
+                    setNotice(
+                      action === "accept"
+                        ? "Reviewed understanding saved."
+                        : "Original kept without promoting a claim.",
+                    );
+                  })
+                }
+              />
               <div className="section-heading">
                 <h2>
                   Saved material{" "}
@@ -870,13 +1059,98 @@ function App() {
               <article>
                 <h2>Continue in another agent</h2>
                 <p>
-                  Copy or download a brief from Your brain. Native access uses a
-                  project grant and stays unverified until a successful request.
+                  Build a project-scoped handoff from your accepted
+                  understanding and open intentions. Review exactly what the
+                  next agent receives.
                 </p>
+                {field(
+                  "Handoff project",
+                  <select
+                    value={scope || "inbox"}
+                    onChange={(e) => setScope(e.target.value)}
+                  >
+                    {projects.map((p) => (
+                      <option key={p.id} value={p.id}>
+                        {p.title}
+                      </option>
+                    ))}
+                  </select>,
+                )}
+                <button
+                  onClick={() =>
+                    void act(async () => {
+                      setHandoff(
+                        await api("/handoffs", {
+                          project_id: scope || "inbox",
+                        }),
+                      );
+                      setDialog("handoff");
+                    })
+                  }
+                >
+                  Preview handoff
+                </button>
                 <button onClick={() => setNav("Your brain")}>
                   Choose a brief
                 </button>
               </article>
+              <details>
+                <summary>Choose identity details an agent may receive</summary>
+                <p>
+                  Identity stays private unless you select a current field here.
+                  Changing this setting invalidates earlier context packs and
+                  handoffs.
+                </p>
+                {identityDisclosure?.claims.length ? (
+                  identityDisclosure.claims.map((claim: any) => (
+                    <label key={claim.id} className="field">
+                      <span>
+                        <input
+                          type="checkbox"
+                          checked={identityDisclosure.selected.includes(
+                            claim.id,
+                          )}
+                          onChange={(e) =>
+                            setIdentityDisclosure({
+                              ...identityDisclosure,
+                              selected: e.target.checked
+                                ? [...identityDisclosure.selected, claim.id]
+                                : identityDisclosure.selected.filter(
+                                    (id: string) => id !== claim.id,
+                                  ),
+                            })
+                          }
+                        />{" "}
+                        {claim.aspect}: {String(claim.value)}
+                      </span>
+                    </label>
+                  ))
+                ) : (
+                  <p>No accepted identity fields in this project.</p>
+                )}
+                <button
+                  disabled={busy || !identityDisclosure}
+                  onClick={() =>
+                    void act(async () => {
+                      setIdentityDisclosure(
+                        await api(
+                          "/identity-disclosure",
+                          {
+                            project_id: scope || "inbox",
+                            selected: identityDisclosure.selected,
+                          },
+                          "PATCH",
+                        ),
+                      );
+                      setNotice(
+                        "Identity sharing saved. Preview a new handoff before switching agents.",
+                      );
+                    })
+                  }
+                >
+                  Save identity sharing
+                </button>
+              </details>
               <div className="section-heading">
                 <h2>Agents</h2>
                 <button
@@ -933,12 +1207,59 @@ function App() {
               )}
               <h2>Knowledge sources</h2>
               <article>
-                <h3>Text and Markdown</h3>
+                <h3>Bring in files or conversations</h3>
                 <p>
-                  Import selected files through Save something. Account syncing
-                  is unavailable in local V1.
+                  Choose a local folder of text or Markdown, or a JSON chat
+                  export. Review the detected items before saving. Attachments
+                  and unsupported formats are skipped.
                 </p>
+                {field(
+                  "Import into project",
+                  <select
+                    value={scope || "inbox"}
+                    onChange={(e) => setScope(e.target.value)}
+                  >
+                    {projects.map((p) => (
+                      <option key={p.id} value={p.id}>
+                        {p.title}
+                      </option>
+                    ))}
+                  </select>,
+                )}
                 <button onClick={saveDialog}>Import a file</button>
+                <div
+                  className="dropzone"
+                  onDragOver={(e) => e.preventDefault()}
+                  onDrop={(e) => {
+                    e.preventDefault();
+                    void act(() => droppedFolder(e.dataTransfer));
+                  }}
+                >
+                  Drop a folder of text or Markdown files here
+                </div>
+                {field(
+                  "Choose a folder",
+                  <input
+                    type="file"
+                    multiple
+                    accept=".txt,.md"
+                    {...({ webkitdirectory: "" } as any)}
+                    onChange={(e) =>
+                      void act(() => previewAdapter("folder", e.target.files))
+                    }
+                  />,
+                )}
+                {field(
+                  "Choose a chat JSON export",
+                  <input
+                    type="file"
+                    multiple
+                    accept=".json,application/json"
+                    onChange={(e) =>
+                      void act(() => previewAdapter("chat", e.target.files))
+                    }
+                  />,
+                )}
               </article>
             </section>
           ) : (
@@ -950,15 +1271,30 @@ function App() {
                 <label>
                   <input
                     type="checkbox"
-                    onChange={(e) =>
-                      (document.documentElement.dataset.theme = e.target.checked
-                        ? "dark"
-                        : "light")
-                    }
+                    checked={dark}
+                    onChange={(e) => setDark(e.target.checked)}
                   />{" "}
                   Dark appearance
                 </label>
               </article>
+              {forgetProof ? (
+                <article>
+                  <h2>Last deletion check</h2>
+                  <p>
+                    {forgetProof.file_gone &&
+                    forgetProof.index_gone &&
+                    forgetProof.embedding_gone &&
+                    forgetProof.graph_edge_gone
+                      ? "Managed local copies passed read-after-delete checks."
+                      : "One or more managed deletion checks is incomplete."}{" "}
+                    Previously delivered copies and backups outside this app
+                    still need separate handling.
+                  </p>
+                  <button onClick={() => setDialog("forget-proof")}>
+                    View checks
+                  </button>
+                </article>
+              ) : null}
               {prefs ? (
                 <article>
                   <h2>Background help & spending</h2>
@@ -1086,10 +1422,10 @@ function App() {
                     </div>
                     <p>
                       OpenAI receives selected shareable source text when you
-                      enable paid briefs. Private sources stay local. Backend
-                      key, model, and verified prices must be configured by the
-                      operator. Your Codex subscription does not cover these
-                      calls.
+                      enable paid preparation. Private sources stay local.
+                      Backend key, model, and verified prices must be configured
+                      by the operator. Your Codex subscription does not cover
+                      these calls.
                     </p>
                     <label>
                       <input
@@ -1235,9 +1571,11 @@ function App() {
                 await refresh();
                 setDialog("source");
                 setNotice(
-                  saved.duplicate
-                    ? "This exact text is already saved. Opened the original."
-                    : "Saved to your brain. Preparation follows separately.",
+                  saved.quarantined
+                    ? saved.warning
+                    : saved.duplicate
+                      ? "This exact text is already saved. Opened the original."
+                      : "Saved to your brain. Preparation follows separately.",
                 );
               });
             }}
@@ -1328,7 +1666,12 @@ function App() {
         </Modal>
       ) : null}
       {dialog === "source" && source ? (
-        <Modal error={error} title={source.title} close={close}>
+        <Modal
+          error={error}
+          title={source.title}
+          close={close}
+          variant="inspector"
+        >
           <p className="muted">
             {projectName(source.project_id)} · Original version {source.version}{" "}
             · {source.visibility} · {source.state}
@@ -1466,6 +1809,7 @@ function App() {
           error={error}
           title={`Earlier source · v${source.version}`}
           close={close}
+          variant="inspector"
         >
           <p>Historical provenance. Active context uses the latest version.</p>
           <pre>{source.body}</pre>
@@ -1661,22 +2005,61 @@ function App() {
             disabled={confirmation !== "DELETE" || busy}
             onClick={() =>
               void act(async () => {
-                await api(
+                const result = await api(
                   `/sources/${source.id}`,
                   { expected_version: source.version, confirmation },
                   "DELETE",
-                );
+                ).catch((failure) => {
+                  if (
+                    failure instanceof ApiError &&
+                    failure.code === "FORGET_INCOMPLETE"
+                  )
+                    setForgetNeedsRetry(source.id);
+                  throw failure;
+                });
+                setForgetNeedsRetry(null);
+                setForgetProof(result.proof ?? null);
                 setSource(null);
                 await refresh();
                 close();
                 setNotice(
-                  "Source history and affected understanding permanently deleted.",
+                  result.proof &&
+                    ![
+                      result.proof.file_gone,
+                      result.proof.index_gone,
+                      result.proof.embedding_gone,
+                      result.proof.graph_edge_gone,
+                    ].every(Boolean)
+                    ? "Source removed from active use, but a managed deletion check is incomplete. Open Settings for details."
+                    : "Source history and affected understanding deleted from managed local stores. Open Settings for verification details.",
                 );
               })
             }
           >
             Permanently delete
           </button>
+          {forgetNeedsRetry === source.id ? (
+            <button
+              onClick={() =>
+                void act(async () => {
+                  const proof = await api(
+                    `/sources/${source.id}/finalize-forget`,
+                    {},
+                  );
+                  setForgetProof(proof);
+                  setForgetNeedsRetry(null);
+                  setSource(null);
+                  await refresh();
+                  close();
+                  setNotice(
+                    "Managed deletion checks completed. Open Settings for details.",
+                  );
+                })
+              }
+            >
+              Retry managed erasure
+            </button>
+          ) : null}
         </Modal>
       ) : null}
       {dialog === "project" ? (
@@ -1718,11 +2101,19 @@ function App() {
                   project_id: captureScope,
                   title: goalTitle,
                   success_criteria: criteria,
+                  ...(goalDue
+                    ? { due_at: new Date(goalDue).toISOString() }
+                    : {}),
+                  ...(goalReview
+                    ? { review_at: new Date(goalReview).toISOString() }
+                    : {}),
                 });
                 await refresh();
                 close();
                 setGoalTitle("");
                 setCriteria("");
+                setGoalDue("");
+                setGoalReview("");
                 setNotice("Goal saved. Enable preparation when you’re ready.");
               });
             }}
@@ -1756,6 +2147,22 @@ function App() {
                 maxLength={2000}
                 value={criteria}
                 onChange={(e) => setCriteria(e.target.value)}
+              />,
+            )}
+            {field(
+              "Due (optional, this computer's time zone)",
+              <input
+                type="datetime-local"
+                value={goalDue}
+                onChange={(e) => setGoalDue(e.target.value)}
+              />,
+            )}
+            {field(
+              "Begin reviewing (optional, this computer's time zone)",
+              <input
+                type="datetime-local"
+                value={goalReview}
+                onChange={(e) => setGoalReview(e.target.value)}
               />,
             )}
             <button className="primary" disabled={busy}>
@@ -1896,6 +2303,113 @@ function App() {
               Edit current plan
             </button>
           </div>
+        </Modal>
+      ) : null}
+      {dialog === "handoff" && handoff ? (
+        <Modal error={error} title="Project handoff" close={close}>
+          <p>
+            Accepted evidence and open intentions from{" "}
+            {projectName(handoff.project_id)}. This preview does not open an
+            external agent.
+          </p>
+          <pre>{handoff.data.text}</pre>
+          <div className="actions">
+            <button
+              onClick={() =>
+                void act(async () => {
+                  await navigator.clipboard.writeText(handoff.data.text);
+                  setNotice("Handoff copied.");
+                })
+              }
+            >
+              Copy handoff
+            </button>
+            <button
+              onClick={() => download("bi-brain-handoff.md", handoff.data.text)}
+            >
+              Download Markdown
+            </button>
+          </div>
+        </Modal>
+      ) : null}
+      {dialog === "adapter-import" && adapterPreview && adapterSelection ? (
+        <Modal error={error} title="Review import" close={close}>
+          <p>
+            {adapterPreview.items.length} text items ready for{" "}
+            {projectName(adapterSelection.project_id)}. Imported conversation
+            messages are saved as evidence, not instructions.
+          </p>
+          <ul>
+            {adapterPreview.items.slice(0, 50).map((item: any) => (
+              <li key={item.path}>{item.title}</li>
+            ))}
+          </ul>
+          {adapterPreview.warnings.length ? (
+            <details>
+              <summary>
+                {adapterPreview.warnings.length} skipped or limited
+              </summary>
+              <ul>
+                {adapterPreview.warnings.map((warning: string) => (
+                  <li key={warning}>{warning}</li>
+                ))}
+              </ul>
+            </details>
+          ) : null}
+          <button
+            className="primary"
+            disabled={busy || !adapterPreview.items.length}
+            onClick={() =>
+              void act(async () => {
+                const result = await api("/import-adapters/apply", {
+                  selection: adapterSelection,
+                  checkpoint: adapterPreview.checkpoint,
+                });
+                await refresh();
+                close();
+                setNotice(
+                  `${result.imported} saved, ${result.duplicates} already present. Review current understanding when preparation finishes.`,
+                );
+              })
+            }
+          >
+            Save selected items
+          </button>
+        </Modal>
+      ) : null}
+      {dialog === "forget-proof" && forgetProof ? (
+        <Modal error={error} title="Managed deletion checks" close={close}>
+          <ul>
+            <li>
+              Vault files and managed history:{" "}
+              {forgetProof.file_gone ? "gone" : "incomplete"}
+            </li>
+            <li>
+              Search and retained records:{" "}
+              {forgetProof.index_gone ? "gone" : "incomplete"}
+            </li>
+            <li>
+              Embeddings:{" "}
+              {forgetProof.per_store.embeddings.configured
+                ? "configured; check incomplete"
+                : "not configured; no active store"}
+            </li>
+            <li>
+              Graph edges:{" "}
+              {forgetProof.per_store.graph.configured
+                ? "configured; check incomplete"
+                : "not configured; no active store"}
+            </li>
+          </ul>
+          <p>
+            Verified {new Date(forgetProof.verified_at).toLocaleString()}.
+            Unmanaged backups and copies already sent to a client or provider
+            cannot be verified here.
+          </p>
+          <details>
+            <summary>Proof details</summary>
+            <pre>{JSON.stringify(forgetProof, null, 2)}</pre>
+          </details>
         </Modal>
       ) : null}
       {dialog === "plan" && proposal ? (

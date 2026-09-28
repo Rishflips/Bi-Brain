@@ -1,0 +1,24 @@
+{
+  "version": 1,
+  "clock": "2026-09-28T06:00:00.000Z",
+  "project": "inbox",
+  "goal": {
+    "title": "Beta rollout",
+    "success_criteria": "Choose a safe beta test"
+  },
+  "passages": [
+    "Beta rollout needs a test with five users.",
+    "Beta rollout support can observe blockers during the test."
+  ],
+  "unrelated_goal": {
+    "title": "Garden irrigation",
+    "success_criteria": "Check soil moisture"
+  },
+  "claim": {
+    "entity": "beta",
+    "aspect": "status",
+    "initial": "active",
+    "conflict": "done"
+  },
+  "secret_fixture": "-----BEGIN PRIVATE KEY-----\nSYNTHETIC-EVAL-ONLY\n-----END PRIVATE KEY-----"
+}

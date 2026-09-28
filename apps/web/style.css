@@ -424,6 +424,13 @@ dialog {
   padding: 28px;
   overflow: auto;
 }
+dialog.inspector {
+  width: min(560px, 100%);
+  height: 100dvh;
+  max-height: 100dvh;
+  margin: 0 0 0 auto;
+  border-radius: 16px 0 0 16px;
+}
 dialog::backdrop {
   background: #17251eb3;
   backdrop-filter: blur(3px);
@@ -537,6 +544,10 @@ code {
   }
 }
 @media (max-width: 560px) {
+  dialog.inspector {
+    width: 100%;
+    border-radius: 0;
+  }
   .masthead {
     padding: 16px 14px;
     flex-wrap: wrap;
@@ -627,6 +638,18 @@ code {
   section {
     min-height: 50vh;
   }
+}
+.dropzone {
+  margin: 16px 0;
+  padding: 28px;
+  border: 2px dashed var(--line);
+  border-radius: 10px;
+  background: var(--subtle);
+  color: var(--muted);
+  text-align: center;
+}
+.dropzone:hover {
+  border-color: var(--green);
 }
 @media (prefers-reduced-motion: reduce) {
   * {

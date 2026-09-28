@@ -4,11 +4,11 @@
 
 Bi Brain is a personal workspace for saving knowledge, continuing work across agents, and reviewing useful preparation tied to goals the user has chosen.
 
-The user experience is **Save → Continue → Get ahead**. The internal loop is **Hold → Gate → Dream**.
+The user experience is **Save → Continue → Get ahead**. The intended harness contract is **Capture → Gate → Compile → Bind → Prepare → Review → Learn**; the later stages remain under construction.
 
 ## Current status
 
-This repository contains a working single-owner local application with SQLite capture, source revisions, source-linked extractive previews, reviewed preparation, export/import, and scoped stdio agent access. It is a local preview with remaining live-provider, native-client, container, and human usability gates. See [BUILD_STATE.md](BUILD_STATE.md) for verified results and limitations.
+This repository contains a working single-owner local application with SQLite capture, source revisions, source-linked extractive previews, reviewed preparation, export/import, and scoped stdio agent access. The owner-directed harness migration is underway: a local portable vault and bounded secret quarantine are implemented, and the typed claim gate has its first service path. The eight-tool adapter, full suite and dream reasoning are not yet delivered. See [BUILD_STATE.md](BUILD_STATE.md) for verified results and limitations.
 
 Run with Node 24.19+ in the 24 LTS line: `npm ci`, `npm run db:migrate`, `npm run build`, then `npm start`. Open http://127.0.0.1:4317 and pair using the installation code in `data/owner-secret`. No account or provider key is required. The API and separate worker run together; data lives in `data/brain.sqlite`. See [local operation instructions](docs/LOCAL_RUN.md) for development, optional provider setup, scoped agent configuration, and backup/restore.
 
@@ -53,3 +53,6 @@ The first release is a polished, single-owner local/self-hosted application. A p
 The coding model requested by the owner is GPT-6 Sol. That choice does not require Bi Brain's runtime to use the same model.
 
 Licensing is deliberately unresolved; no permissive license has been granted by this build pack. See the business decision document before public release.
+# Current harness build
+
+This checkout includes an in-progress local suite/harness build. See [BUILD_STATE.md](BUILD_STATE.md) for verified versus open gates. The portable vault is documented in [docs/bi-brain-vault.md](docs/bi-brain-vault.md). `npm run brain-eval` runs synthetic offline fixtures and writes a machine-readable report; live model and native-client gates are separate.

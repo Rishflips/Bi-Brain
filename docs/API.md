@@ -1,5 +1,7 @@
 # HTTP API contract
 
+**Harness transition:** Owner GUI source capture remains at `/api/v1/sources`; direct agent capture is denied. Agents use `/api/v1/agent/propose` through the shared gate. Scoped current-truth `/api/v1/agent/search` defaults to accepted pages; `mode=raw` or `mode=historical` is explicit. Capability-filtered MCP names and their HTTP backing routes are documented in [AGENT_INTEGRATION.md](AGENT_INTEGRATION.md). Earlier endpoint descriptions below are retained for the local preview and may describe pre-harness behavior; the new harness has not cleared S4 release verification.
+
 Prefix: /api/v1. JSON request and response bodies except exports/import uploads. Validate with runtime schemas. This is a build contract, not an implemented endpoint catalog.
 
 ## Common rules
@@ -91,3 +93,12 @@ The frontend may poll with bounded exponential backoff. Pause polling when hidde
 ## Caching
 
 Cache keys include principal/grant version, project, object versions, and provider configuration. Recheck access on each response. Revocation and deletion override TTL. Do not cache secrets or sensitive error content.
+# Harness transition endpoints
+
+The owner may call `POST /api/v1/import-adapters/preview` with `{kind:"folder"|"chat",project_id,entries:[{path,content}]}` and then `POST /api/v1/import-adapters/apply` with `{selection,checkpoint}`. The checkpoint is the preview SHA-256; a changed selection is rejected. The deletion response includes `proof` when a vault is configured; `GET /api/v1/forget-proofs/:id` retrieves the persisted owner-only result. Every false proof bit means managed deletion is incomplete. Embedding/graph `configured:false` means no such active store was found, not that an external service was inspected.
+
+`GET /api/v1/identity-disclosure?project_id=...` lists accepted identity fields and the owner's selected claim IDs. The owner can `PATCH /api/v1/identity-disclosure` with `{project_id,selected:[claim_id]}`. All identity fields start private. A policy change invalidates earlier packs and current handoffs; agents cannot read the underlying private original even when the selected field is shared.
+
+After an interrupted permanent deletion, the owner may call `POST /api/v1/sources/:id/finalize-forget`. It accepts only a tombstoned source, repeats managed history/backup sanitation, and returns a new proof. `FORGET_INCOMPLETE` means active retrieval was stopped but erasure has not been proven; clients must not display success.
+
+`POST /api/v1/receipts/:id/git-revert` is an owner-only conservative vault revert for the most recent accepted plan commit. It checks the goal version, exact Git HEAD and current deletion tombstones, runs `git revert` with conflict abort, rebuilds the projection and writes an audit receipt. Later edits cause a version conflict and stay untouched; the normal review UI offers a compensating undo with a comparison instead. This endpoint does not yet support automatically resolving non-head historical changes.

@@ -135,6 +135,7 @@ export async function createApp(
       const session = brain.ownerSession(req.cookies.brain_session ?? "");
       req.principal = { kind: "owner" };
       req.csrf = session.csrf;
+      brain.store.set("owner_activity", brain.now());
       if (
         !["GET", "HEAD"].includes(req.method) &&
         req.headers["x-brain-csrf"] !== session.csrf
@@ -202,9 +203,24 @@ export async function createApp(
     ),
   );
   app.post("/api/v1/sources", (req, reply) => {
+    brain.owner(req.principal);
     const result = brain.capture(req.principal, req.body, key(req));
     reply.code(201);
     return result;
+  });
+  app.post("/api/v1/import-adapters/preview", (req) =>
+    brain.previewLocalImport(req.principal, req.body),
+  );
+  app.post("/api/v1/import-adapters/apply", (req) => {
+    const input = z
+      .object({ checkpoint: z.string(), selection: z.unknown() })
+      .strict()
+      .parse(req.body);
+    return brain.applyLocalImport(
+      req.principal,
+      input.selection,
+      input.checkpoint,
+    );
   });
   app.get("/api/v1/sources/:id", (req) => {
     const query = z
@@ -234,6 +250,15 @@ export async function createApp(
       true,
     );
   });
+  app.get("/api/v1/forget-proofs/:id", (req) =>
+    brain.forgetProof(req.principal, params(req)),
+  );
+  app.post("/api/v1/sources/:id/finalize-forget", (req) =>
+    brain.finalizeForget(req.principal, params(req)),
+  );
+  app.post("/api/v1/receipts/:id/git-revert", (req) =>
+    brain.revertAcceptedVaultCommit(req.principal, params(req)),
+  );
   app.get("/api/v1/search", (req) => {
     const v = z
       .object({
@@ -280,6 +305,7 @@ export async function createApp(
       goals: brain.entities(req.principal, "goal"),
       proposals: brain.entities(req.principal, "proposal"),
       receipts: brain.entities(req.principal, "receipt").slice(0, 30),
+      pings: brain.entities(req.principal, "ping").slice(0, 30),
       status: brain.status(req.principal),
     };
   });
@@ -313,6 +339,95 @@ export async function createApp(
     brain.prefs(req.principal, req.body),
   );
   app.get("/api/v1/connections", (req) => brain.connections(req.principal));
+  app.post("/api/v1/proposals/gate", (req) =>
+    brain.propose(
+      req.principal,
+      req.body,
+      req.headers["idempotency-key"] as string | undefined,
+    ),
+  );
+  app.post("/api/v1/proposals/gate/:id/review", (req) =>
+    brain.reviewGate(req.principal, params(req), req.body),
+  );
+  app.get("/api/v1/claims", (req) => {
+    const v = z
+      .object({
+        project_id: z.string().max(100),
+        include_retired: z.enum(["true", "false"]).default("false"),
+      })
+      .strict()
+      .parse(req.query);
+    return brain.currentClaims(
+      req.principal,
+      v.project_id,
+      v.include_retired === "true",
+    );
+  });
+  app.get("/api/v1/pages", (req) => {
+    const v = z
+      .object({
+        project_id: z.string().max(100),
+        query: z.string().max(200).default(""),
+        include_retired: z.enum(["true", "false"]).default("false"),
+      })
+      .strict()
+      .parse(req.query);
+    return brain.pages(
+      req.principal,
+      v.project_id,
+      v.query,
+      v.include_retired === "true",
+    );
+  });
+  app.get("/api/v1/gates", (req) => {
+    brain.owner(req.principal);
+    const v = z
+      .object({ project_id: z.string().max(100) })
+      .strict()
+      .parse(req.query);
+    brain.access(req.principal, v.project_id);
+    return brain
+      .entities(req.principal, "gate")
+      .filter(
+        (g) => g.project_id === v.project_id && g.data.status === "queued",
+      );
+  });
+  app.post("/api/v1/handoffs", (req) =>
+    brain.handoff(
+      req.principal,
+      z
+        .object({ project_id: z.string().max(100) })
+        .strict()
+        .parse(req.body).project_id,
+    ),
+  );
+  app.get("/api/v1/identity-disclosure", (req) => {
+    const { project_id } = z
+      .object({ project_id: z.string().max(100) })
+      .strict()
+      .parse(req.query);
+    return brain.identityDisclosure(req.principal, project_id);
+  });
+  app.patch("/api/v1/identity-disclosure", (req) => {
+    const { project_id, selected } = z
+      .object({
+        project_id: z.string().max(100),
+        selected: z.array(z.string().max(100)).max(30),
+      })
+      .strict()
+      .parse(req.body);
+    return brain.identityDisclosure(req.principal, project_id, selected);
+  });
+  app.post("/api/v1/claims/:id/retire", (req) =>
+    brain.retireClaim(
+      req.principal,
+      params(req),
+      z
+        .object({ expected_version: z.number().int().positive() })
+        .strict()
+        .parse(req.body).expected_version,
+    ),
+  );
   app.post("/api/v1/agent-grants", (req) =>
     brain.createGrant(req.principal, req.body),
   );
@@ -320,6 +435,103 @@ export async function createApp(
     brain.revoke(req.principal, params(req)),
   );
   app.post("/api/v1/agent/verify", (req) => brain.verify(req.principal));
+  app.get("/api/v1/agent/capabilities", (req) =>
+    brain.agentCapabilities(req.principal),
+  );
+  app.get("/api/v1/agent/search", (req) => {
+    const v = z
+      .object({
+        project_id: z.string().max(100),
+        query: z.string().max(200),
+        mode: z.enum(["current", "historical", "raw"]).default("current"),
+        offset: z.coerce.number().int().min(0).default(0),
+        limit: z.coerce.number().int().min(1).max(50).default(20),
+      })
+      .strict()
+      .parse(req.query);
+    return brain.agentSearch(
+      req.principal,
+      v.project_id,
+      v.query,
+      v.mode,
+      v.offset,
+      v.limit,
+    );
+  });
+  app.get("/api/v1/agent/get", (req) => {
+    const v = z
+      .object({
+        project_id: z.string().max(100),
+        object_id: z.string().max(100),
+        version: z.coerce.number().int().positive().optional(),
+      })
+      .strict()
+      .parse(req.query);
+    return brain.agentGet(req.principal, v.project_id, v.object_id, v.version);
+  });
+  app.get("/api/v1/agent/ask", (req) => {
+    const v = z
+      .object({
+        project_id: z.string().max(100),
+        question: z.string().max(500),
+      })
+      .strict()
+      .parse(req.query);
+    return brain.agentAsk(req.principal, v.project_id, v.question);
+  });
+  app.get("/api/v1/agent/diff", (req) => {
+    const v = z
+      .object({
+        project_id: z.string().max(100),
+        object_id: z.string().max(100),
+        from_version: z.coerce.number().int().positive(),
+        to_version: z.coerce.number().int().positive(),
+      })
+      .strict()
+      .parse(req.query);
+    return brain.agentDiff(
+      req.principal,
+      v.project_id,
+      v.object_id,
+      v.from_version,
+      v.to_version,
+    );
+  });
+  app.post("/api/v1/agent/propose", (req) =>
+    brain.propose(req.principal, req.body, key(req)),
+  );
+  app.post("/api/v1/agent/link", (req) =>
+    brain.agentLink(req.principal, req.body),
+  );
+  app.post("/api/v1/agent/forget", (req) => {
+    const v = z
+      .object({
+        project_id: z.string().max(100),
+        object_id: z.string().max(100),
+        expected_version: z.number().int().positive(),
+      })
+      .strict()
+      .parse(req.body);
+    return brain.agentForget(
+      req.principal,
+      v.project_id,
+      v.object_id,
+      v.expected_version,
+    );
+  });
+  app.post("/api/v1/agent/intent", (req) => {
+    const v = z
+      .object({
+        project_id: z.string().max(100),
+        action: z.enum(["list", "get", "propose", "update", "close"]),
+        id: z.string().max(100).optional(),
+        text: z.string().max(20000).optional(),
+        expected_version: z.number().int().positive().optional(),
+      })
+      .strict()
+      .parse(req.body);
+    return brain.agentIntent(req.principal, v.project_id, v.action, v);
+  });
   app.get("/api/v1/context", (req) => {
     const v = z
       .object({

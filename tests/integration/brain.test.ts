@@ -147,17 +147,23 @@ describe("persistent knowledge and trust", () => {
     expect(() => b.source(agent, privateNote.source_id)).toThrow("unavailable");
     expect(() => b.context(agent, other.id)).toThrow("unavailable");
     expect(JSON.stringify(b.context(agent, "inbox"))).not.toMatch(/SECRET/);
-    const a = b.capture(agent, {
+    const a = b.propose(agent, {
       title: "Agent assertion",
-      body: "REMEMBER_UNIQUE",
+      text: "REMEMBER_UNIQUE",
       project_id: "inbox",
+      type: "unknown",
     }) as any;
-    expect(b.source(owner, a.source_id).origin).toContain("agent:");
+    expect(b.source(owner, a.raw_id).origin).toContain("agent:");
     b.revoke(owner, g.id);
     expect(() => b.context(agent, "inbox")).toThrow("revoked");
     expect(() => b.sources(agent)).toThrow("revoked");
     expect(() =>
-      b.capture(agent, { title: "x", body: "x", project_id: "inbox" }),
+      b.propose(agent, {
+        title: "x",
+        text: "x",
+        project_id: "inbox",
+        type: "unknown",
+      }),
     ).toThrow("revoked");
   });
   it("evidence uses Unicode code points and rejects cross-project and stale references", () => {
@@ -413,6 +419,50 @@ describe("durable preparation", () => {
     w.schedule();
     expect(s.all("SELECT * FROM jobs")).toHaveLength(1);
   });
+  it("two eligible intentions create at most one in-app prompt per local day", async () => {
+    const { b, advance } = setup();
+    note(b, "Beta pilot should test five users first.");
+    note(b, "Beta pilot support can track blockers.");
+    await drain(new Worker(b));
+    for (const title of ["Beta pilot", "Beta test"]) {
+      const goal = b.goal(owner, {
+        project_id: "inbox",
+        title,
+        success_criteria: "Review beta blockers",
+      });
+      b.editGoal(owner, goal.id, {
+        expected_version: 1,
+        preparation_enabled: true,
+      });
+    }
+    b.prefs(owner, { ...b.prefs(owner), enabled: true });
+    await drain(new Worker(b));
+    expect(b.entities(owner, "proposal")).toHaveLength(2);
+    expect(b.entities(owner, "ping")).toHaveLength(1);
+    advance(3600000);
+    await drain(new Worker(b));
+    expect(b.entities(owner, "ping")).toHaveLength(1);
+  });
+  it("an intention with a future review time waits for that time before background admission", () => {
+    const { b, advance, s } = setup();
+    const goal = b.goal(owner, {
+      project_id: "inbox",
+      title: "Beta",
+      success_criteria: "Review",
+      review_at: "2026-09-28T06:00:00.000Z",
+    });
+    b.editGoal(owner, goal.id, {
+      expected_version: 1,
+      preparation_enabled: true,
+    });
+    b.prefs(owner, { ...b.prefs(owner), enabled: true });
+    const worker = new Worker(b);
+    worker.schedule();
+    expect(s.all("SELECT * FROM jobs")).toHaveLength(0);
+    advance(86400001);
+    worker.schedule();
+    expect(s.all("SELECT * FROM jobs")).toHaveLength(1);
+  });
   it("malformed output and invented evidence do not publish or change budgets", async () => {
     const { b } = setup();
     note(b, "Valid beta note");
@@ -469,6 +519,152 @@ describe("durable preparation", () => {
     expect(b.status(owner).jobs[0].status).toBe("failed");
     expect(b.prefs(owner).daily_cap_micro_usd).toBe(1000);
     expect(b.store.all("SELECT * FROM reservations")[0].status).toBe("held");
+  });
+  it("model-backed goal proposal is reviewed, and active-owner output is discarded after dispatch", async () => {
+    const { b, s } = setup();
+    const first = note(b, "Beta rollout needs a test with five users.");
+    await drain(new Worker(b));
+    const goal = b.goal(owner, {
+      project_id: "inbox",
+      title: "Beta rollout",
+      success_criteria: "Choose a safe first test",
+    });
+    b.editGoal(owner, goal.id, {
+      expected_version: 1,
+      preparation_enabled: true,
+    });
+    b.prefs(owner, {
+      ...b.prefs(owner),
+      provider_enabled: true,
+      daily_cap_micro_usd: 1000,
+      per_job_cap_micro_usd: 1000,
+    });
+    const evidence = {
+      source_id: first.source_id,
+      source_version: 1,
+      start: 0,
+      end: 45,
+      quote: "Beta rollout needs a test with five users.",
+    };
+    evidence.end = Array.from(evidence.quote).length;
+    const fake: ReasoningProvider = {
+      upperBound: () => 100,
+      prepare: async (sources) => ({
+        ...extract(sources),
+        usage: { input_tokens: 1, output_tokens: 1 },
+        metadata: { provider: "fake", model: "test", prompt_version: "test" },
+        cost_micro_usd: 10,
+      }),
+      prepareGoal: async () => ({
+        outcome: "proposal",
+        artifact:
+          "Hypothesis: ask five users to try the beta and record blockers.",
+        evidence: [evidence],
+        usage: { input_tokens: 1, output_tokens: 1 },
+        metadata: {
+          provider: "fake",
+          model: "test",
+          prompt_version: "goal-test",
+        },
+        cost_micro_usd: 10,
+      }),
+    };
+    b.prepare(owner, goal.id);
+    await new Worker(b, fake).tick();
+    expect(b.entities(owner, "proposal")[0].data.artifact).toContain(
+      "ask five users",
+    );
+    expect(b.entity(owner, goal.id).data.plan).toBe("");
+    expect(
+      b.entities(owner, "receipt").some((r) => r.data.provider === "fake"),
+    ).toBe(true);
+
+    const secondGoal = b.goal(owner, {
+      project_id: "inbox",
+      title: "Beta follow-up",
+      success_criteria: "Review blockers",
+    });
+    b.editGoal(owner, secondGoal.id, {
+      expected_version: 1,
+      preparation_enabled: true,
+    });
+    b.prefs(owner, { ...b.prefs(owner), enabled: true });
+    const race: ReasoningProvider = {
+      ...fake,
+      prepareGoal: async () => {
+        s.set("owner_activity", b.now());
+        return fake.prepareGoal!(
+          { title: "", success_criteria: "", plan: "" },
+          [],
+          new AbortController().signal,
+        );
+      },
+    };
+    new Worker(b, race).schedule();
+    await drain(new Worker(b, race));
+    expect(
+      b
+        .entities(owner, "proposal")
+        .filter((p) => p.data.goal_id === secondGoal.id),
+    ).toEqual([]);
+    expect(
+      b.status(owner).jobs.some((j: any) => j.status === "cancelled"),
+    ).toBe(true);
+  });
+  it("structured goal provider rejects invented evidence before any proposal can publish", async () => {
+    const { b } = setup();
+    const saved = note(b, "Beta pilot starts with five users.");
+    const source = b.source(owner, saved.source_id);
+    let sent: any;
+    const provider = new OpenAIProvider(
+      {
+        key: "synthetic-test-only",
+        model: "synthetic",
+        input_price: 1,
+        output_price: 1,
+        price_version: "fixture",
+      },
+      async (_url, init) => {
+        sent = JSON.parse(String(init?.body));
+        return new Response(
+          JSON.stringify({
+            output: [
+              {
+                content: [
+                  {
+                    type: "output_text",
+                    text: JSON.stringify({
+                      outcome: "proposal",
+                      artifact: "Invented next step",
+                      evidence: [
+                        {
+                          source_id: "not-a-source",
+                          source_version: 1,
+                          start: 0,
+                          end: 1,
+                          quote: "x",
+                        },
+                      ],
+                    }),
+                  },
+                ],
+              },
+            ],
+            usage: { input_tokens: 20, output_tokens: 10 },
+          }),
+        );
+      },
+    );
+    await expect(
+      provider.prepareGoal(
+        { title: "Beta", success_criteria: "Test", plan: "" },
+        [source],
+        new AbortController().signal,
+      ),
+    ).rejects.toThrow("Evidence");
+    expect(sent.store).toBe(false);
+    expect(sent.text.format.name).toBe("goal_preparation");
+    expect(JSON.stringify(sent.input)).toContain(source.id);
   });
 });
 describe("HTTP boundary", () => {

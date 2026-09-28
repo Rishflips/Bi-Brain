@@ -5,7 +5,7 @@ import { Storage } from "../../packages/storage/index.ts";
 import { Brain } from "../../packages/domain/service.ts";
 import { createApp } from "../../apps/server/app.ts";
 import { Worker } from "../../apps/worker/engine.ts";
-it("official SDK stdio client remembers, fresh-session recalls, corrects, excludes private/unrelated, and denies revoked access", async () => {
+it("official SDK stdio client proposes through gate, fresh-session recalls raw explicitly, excludes private/unrelated, and denies revoked access", async () => {
   const storage = new Storage(":memory:");
   const brain = new Brain(storage);
   const owner = { kind: "owner" } as const;
@@ -21,7 +21,7 @@ it("official SDK stdio client remembers, fresh-session recalls, corrects, exclud
     expires_at: new Date(Date.now() + 86400000).toISOString(),
   });
   const clients: Client[] = [];
-  async function connect() {
+  async function connect(token = grant.token) {
     const client = new Client({
       name: "bi-brain-contract-test",
       version: "1.0.0",
@@ -38,7 +38,7 @@ it("official SDK stdio client remembers, fresh-session recalls, corrects, exclud
               (pair): pair is [string, string] => pair[1] !== undefined,
             ),
           ),
-          BRAIN_AGENT_TOKEN: grant.token,
+          BRAIN_AGENT_TOKEN: token,
           BRAIN_API_URL: `http://127.0.0.1:${port}`,
         },
         stderr: "pipe",
@@ -47,18 +47,64 @@ it("official SDK stdio client remembers, fresh-session recalls, corrects, exclud
     return client;
   }
   try {
+    const readGrant = brain.createGrant(owner, {
+      projects: ["inbox"],
+      operations: ["read"],
+      expires_at: new Date(Date.now() + 86400000).toISOString(),
+    });
+    const readOnly = await connect(readGrant.token);
+    expect(
+      (await readOnly.listTools()).tools.map((t) => t.name).sort(),
+    ).toEqual(["brain.search", "brain.get", "brain.ask", "brain.diff"].sort());
+    const forbidden = await fetch(
+      `http://127.0.0.1:${port}/api/v1/agent/propose`,
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${readGrant.token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          project_id: "inbox",
+          title: "No",
+          text: "No",
+          type: "unknown",
+        }),
+      },
+    );
+    expect(forbidden.status).toBe(404);
+    const fullGrant = brain.createGrant(owner, {
+      projects: ["inbox"],
+      operations: ["read", "propose_memory", "forget"],
+      expires_at: new Date(Date.now() + 86400000).toISOString(),
+    });
+    const full = await connect(fullGrant.token);
+    expect((await full.listTools()).tools.map((t) => t.name)).toHaveLength(8);
     const first = await connect();
-    expect((await first.listTools()).tools.map((t) => t.name)).toHaveLength(5);
+    expect((await first.listTools()).tools.map((t) => t.name).sort()).toEqual(
+      [
+        "brain.search",
+        "brain.get",
+        "brain.propose",
+        "brain.link",
+        "brain.ask",
+        "brain.intent",
+        "brain.diff",
+      ].sort(),
+    );
     const remembered = await first.callTool({
-      name: "brain_remember",
+      name: "brain.propose",
       arguments: {
         project_id: "inbox",
         text: "MCP_UNIQUE_LANTERN 🧠 launch Monday",
-        source_attribution: "Agent test assertion",
+        title: "Agent test assertion",
+        type: "unknown",
       },
     });
     expect(remembered.isError).not.toBe(true);
-    const sourceId = JSON.parse((remembered.content as any)[0].text).source_id;
+    const result = JSON.parse((remembered.content as any)[0].text);
+    expect(result.disposition).toBe("queue");
+    const sourceId = result.raw_id;
     await first.close();
     brain.capture(owner, {
       title: "Private",
@@ -75,22 +121,17 @@ it("official SDK stdio client remembers, fresh-session recalls, corrects, exclud
     while (await worker.tick()) {}
     const fresh = await connect();
     const context = await fresh.callTool({
-      name: "brain_context",
-      arguments: { project_id: "inbox", max_tokens: 1000 },
+      name: "brain.search",
+      arguments: { project_id: "inbox", query: "LANTERN", mode: "raw" },
     });
     expect(JSON.stringify(context)).toContain("MCP_UNIQUE_LANTERN");
     expect(JSON.stringify(context)).not.toContain("PRIVATE_MCP_SECRET");
     const denied = await fresh.callTool({
-      name: "brain_get",
+      name: "brain.get",
       arguments: { project_id: "inbox", object_id: secret.source_id },
     });
     expect(denied.isError).toBe(true);
     expect(JSON.stringify(denied)).not.toContain("OTHER_MCP_SECRET");
-    const changes = await fresh.callTool({
-      name: "brain_changes",
-      arguments: { project_id: "inbox" },
-    });
-    const cursor = JSON.parse((changes.content as any)[0].text).opaque_cursor;
     brain.editSource(owner, sourceId, {
       expected_version: 1,
       title: "Corrected",
@@ -98,22 +139,25 @@ it("official SDK stdio client remembers, fresh-session recalls, corrects, exclud
     });
     while (await worker.tick()) {}
     const corrected = await fresh.callTool({
-      name: "brain_context",
-      arguments: { project_id: "inbox" },
+      name: "brain.search",
+      arguments: { project_id: "inbox", query: "LANTERN", mode: "raw" },
     });
     expect(JSON.stringify(corrected)).toContain("Friday");
     expect(JSON.stringify(corrected)).not.toContain("Monday");
     const delta = await fresh.callTool({
-      name: "brain_changes",
-      arguments: { project_id: "inbox", opaque_cursor: cursor },
+      name: "brain.diff",
+      arguments: {
+        project_id: "inbox",
+        object_id: sourceId,
+        from_version: 1,
+        to_version: 2,
+      },
     });
-    expect(JSON.parse((delta.content as any)[0].text).changes[0].version).toBe(
-      2,
-    );
+    expect(JSON.parse((delta.content as any)[0].text).changed).toBe(true);
     expect(brain.connections(owner)[0].status).toBe("Connected");
     brain.revoke(owner, grant.id);
     const revoked = await fresh.callTool({
-      name: "brain_search",
+      name: "brain.search",
       arguments: { project_id: "inbox", query: "LANTERN" },
     });
     expect(revoked.isError).toBe(true);

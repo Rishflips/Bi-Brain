@@ -1,10 +1,22 @@
 import { DatabaseSync } from "node:sqlite";
 import { mkdirSync } from "node:fs";
-import { dirname, resolve } from "node:path";
+import { basename, extname, dirname, resolve } from "node:path";
+import {
+  existsSync,
+  writeFileSync,
+  readFileSync,
+  rmSync,
+  renameSync,
+} from "node:fs";
+import { Vault, type PortableState } from "./vault.ts";
+import { detectSecrets } from "./secrets.ts";
 export class Storage {
   readonly db: DatabaseSync;
+  vault?: Vault;
+  private inTransaction = false;
   constructor(
     readonly path = resolve(process.env.BRAIN_DB ?? "data/brain.sqlite"),
+    options: { vault?: string } = {},
   ) {
     if (path !== ":memory:") mkdirSync(dirname(path), { recursive: true });
     this.db = new DatabaseSync(path);
@@ -64,8 +76,164 @@ export class Storage {
       CREATE INDEX IF NOT EXISTS jobs_ready ON jobs(status,next_at,lease_until);
       INSERT OR IGNORE INTO migrations VALUES(3,strftime('%Y-%m-%dT%H:%M:%fZ','now'));`);
     });
+    const vaultRoot =
+      options.vault ??
+      (arguments.length === 0
+        ? resolve(dirname(path), `${basename(path, extname(path))}.vault`)
+        : undefined);
+    if (vaultRoot && path !== ":memory:") {
+      const vault = new Vault(vaultRoot);
+      this.vault = vault;
+      vault.withLock(() => {
+        // A pending journal is only publishable if its operational transaction committed.
+        const journalPath = resolve(vault.protectedRoot, "journal.json");
+        if (existsSync(journalPath)) {
+          const pending = JSON.parse(readFileSync(journalPath, "utf8"));
+          if (this.setting("vault_generation", "") === pending.generation)
+            vault.recover();
+          else rmSync(journalPath);
+        }
+        if (!existsSync(resolve(vault.root, "manifest.json"))) {
+          const backupPath = resolve(vault.protectedRoot, "pre-vault.sqlite");
+          if (!existsSync(backupPath))
+            this.db.prepare("VACUUM INTO ?").run(backupPath);
+          this.transaction(() => {
+            for (const v of this.all("SELECT * FROM source_versions")) {
+              const result = vault.capture(
+                v.source_id,
+                v.version,
+                v.body,
+                detectSecrets(v.title).length > 0,
+              );
+              if (result.quarantined)
+                this.run(
+                  "UPDATE source_versions SET body=?,title=? WHERE source_id=? AND version=?",
+                  "[Quarantined: suspected secret. Original retained outside the vault.]",
+                  "Quarantined source",
+                  v.source_id,
+                  v.version,
+                );
+            }
+            // Existing derived text containing suspected credentials is never migrated into Git.
+            for (const e of this.all("SELECT * FROM entities")) {
+              if (
+                detectSecrets(e.data).length ||
+                this.all(
+                  "SELECT data FROM entity_versions WHERE entity_id=?",
+                  e.id,
+                ).some((v) => detectSecrets(v.data).length)
+              )
+                this.run("DELETE FROM entities WHERE id=?", e.id);
+            }
+            this.run("DELETE FROM source_fts");
+            this.run(
+              "INSERT INTO source_fts SELECT s.id,v.title,v.body FROM sources s JOIN source_versions v ON s.id=v.source_id AND s.version=v.version WHERE s.state='active'",
+            );
+          });
+          writeFileSync(
+            resolve(vault.protectedRoot, "migration.json"),
+            JSON.stringify({
+              schema: 1,
+              backup: backupPath,
+              sources: this.all("SELECT id FROM sources").length,
+              stable_ids: true,
+            }),
+            { mode: 0o600 },
+          );
+        }
+        if (!existsSync(resolve(vault.root, "manifest.json")))
+          this.transaction(() => {});
+        const sanitation = resolve(vault.protectedRoot, "sanitize.pending");
+        if (existsSync(sanitation)) {
+          const pending = JSON.parse(readFileSync(sanitation, "utf8"));
+          if (pending.source_id) {
+            const source = this.get(
+              "SELECT state FROM sources WHERE id=?",
+              pending.source_id,
+            );
+            if (source?.state !== "deleted")
+              throw new Error(
+                "Pending vault erasure has no matching deletion tombstone.",
+              );
+            vault.forget(pending.source_id, this.portableState());
+          } else vault.sanitizeManagedHistory(this.portableState());
+        }
+        if (
+          JSON.stringify(this.portableState()) !== JSON.stringify(vault.read())
+        )
+          this.rebuild();
+      });
+    }
   }
-  run(sql: string, ...args: any[]) {
+  sanitizeMigrationBackup() {
+    if (!this.vault) return { configured: false, sanitized: false };
+    const backupPath = resolve(this.vault.protectedRoot, "pre-vault.sqlite");
+    if (!existsSync(backupPath)) return { configured: false, sanitized: true };
+    const next = backupPath + ".sanitized";
+    rmSync(next, { force: true });
+    this.db.prepare("VACUUM INTO ?").run(next);
+    rmSync(backupPath);
+    renameSync(next, backupPath);
+    return { configured: true, sanitized: true };
+  }
+  verifyMigrationBackup(id: string) {
+    if (!this.vault) return { configured: false, absent: true };
+    const backupPath = resolve(this.vault.protectedRoot, "pre-vault.sqlite");
+    if (!existsSync(backupPath)) return { configured: false, absent: true };
+    const backup = new DatabaseSync(backupPath, { readOnly: true });
+    try {
+      const originals = Number(
+        backup
+          .prepare(
+            "SELECT count(*) AS n FROM source_versions WHERE source_id=?",
+          )
+          .get(id)?.n ?? 0,
+      );
+      const search = Number(
+        backup
+          .prepare("SELECT count(*) AS n FROM source_fts WHERE source_id=?")
+          .get(id)?.n ?? 0,
+      );
+      const derived =
+        Number(
+          backup
+            .prepare("SELECT count(*) AS n FROM entities WHERE data LIKE ?")
+            .get(`%${id}%`)?.n ?? 0,
+        ) +
+        Number(
+          backup
+            .prepare(
+              "SELECT count(*) AS n FROM entity_versions WHERE data LIKE ?",
+            )
+            .get(`%${id}%`)?.n ?? 0,
+        );
+      return {
+        configured: true,
+        absent: originals === 0 && search === 0 && derived === 0,
+        originals,
+        search,
+        derived,
+      };
+    } finally {
+      backup.close();
+    }
+  }
+  run(
+    sql: string,
+    ...args: any[]
+  ): ReturnType<DatabaseSync["prepare"]>["run"] extends (
+    ...args: any[]
+  ) => infer R
+    ? R
+    : never {
+    if (
+      this.vault &&
+      !this.inTransaction &&
+      /^(INSERT INTO|UPDATE|DELETE FROM) (projects|sources|source_versions|entities|entity_versions)\b/i.test(
+        sql.trim(),
+      )
+    )
+      return this.transaction(() => this.run(sql, ...args));
     return this.db.prepare(sql).run(...args);
   }
   get<T = Record<string, any>>(sql: string, ...args: any[]): T | undefined {
@@ -75,15 +243,100 @@ export class Storage {
     return this.db.prepare(sql).all(...args) as T[];
   }
   transaction<T>(fn: () => T): T {
+    return this.vault
+      ? this.vault.withLock(() => this.transactionLocked(fn))
+      : this.transactionLocked(fn);
+  }
+  private transactionLocked<T>(fn: () => T): T {
+    if (this.vault) {
+      const pendingPath = resolve(this.vault.protectedRoot, "journal.json");
+      if (existsSync(pendingPath)) {
+        const pending = JSON.parse(readFileSync(pendingPath, "utf8"));
+        if (this.setting("vault_generation", "") === pending.generation)
+          this.vault.recover();
+        else rmSync(pendingPath);
+      }
+    }
     this.db.exec("BEGIN IMMEDIATE");
+    this.inTransaction = true;
+    let result: T;
+    let journal: ReturnType<Vault["stage"]> | undefined;
     try {
-      const result = fn();
+      result = fn();
+      if (this.vault) {
+        const state = this.portableState();
+        const manifestExists = existsSync(
+          resolve(this.vault.root, "manifest.json"),
+        );
+        if (
+          !manifestExists ||
+          JSON.stringify(state) !== JSON.stringify(this.vault.read())
+        ) {
+          journal = this.vault.stage(state);
+          this.set("vault_generation", journal.generation);
+        }
+      }
       this.db.exec("COMMIT");
-      return result;
     } catch (e) {
       this.db.exec("ROLLBACK");
       throw e;
+    } finally {
+      this.inTransaction = false;
     }
+    if (journal) this.vault!.publish(journal);
+    return result;
+  }
+  portableState(): PortableState {
+    return {
+      projects: this.all("SELECT * FROM projects ORDER BY id"),
+      sources: this.all("SELECT * FROM sources ORDER BY id"),
+      source_versions: this.all(
+        "SELECT * FROM source_versions ORDER BY source_id,version",
+      ),
+      entities: this.all("SELECT * FROM entities ORDER BY id"),
+      entity_versions: this.all(
+        "SELECT * FROM entity_versions ORDER BY entity_id,version",
+      ),
+    };
+  }
+  rebuild() {
+    if (!this.vault) throw new Error("No managed vault configured");
+    const state = this.vault.read();
+    this.transaction(() => {
+      for (const table of [
+        "entity_versions",
+        "entities",
+        "source_versions",
+        "sources",
+      ])
+        this.run(`DELETE FROM ${table}`);
+      for (const table of [
+        "projects",
+        "sources",
+        "source_versions",
+        "entities",
+        "entity_versions",
+      ] as const)
+        for (const row of state[table]) {
+          const keys = Object.keys(row);
+          if (table === "projects")
+            this.run(
+              "INSERT INTO projects(id,title,created_at) VALUES(?,?,?) ON CONFLICT(id) DO UPDATE SET title=excluded.title",
+              row.id,
+              row.title,
+              row.created_at,
+            );
+          else
+            this.run(
+              `INSERT INTO ${table} (${keys.join(",")}) VALUES (${keys.map(() => "?").join(",")})`,
+              ...keys.map((k) => row[k]),
+            );
+        }
+      this.run("DELETE FROM source_fts");
+      this.run(
+        "INSERT INTO source_fts SELECT s.id,v.title,v.body FROM sources s JOIN source_versions v ON s.id=v.source_id AND s.version=v.version WHERE s.state='active'",
+      );
+    });
   }
   setting<T>(key: string, fallback: T): T {
     const row = this.get("SELECT value FROM settings WHERE key=?", key);

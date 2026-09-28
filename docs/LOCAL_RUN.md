@@ -1,5 +1,7 @@
 # Run Bi Brain locally
 
+**Harness work in progress:** See [BUILD_STATE.md](../BUILD_STATE.md) and [bi-brain-vault.md](bi-brain-vault.md) before upgrading existing data. The newer portable vault is transitional and has only focused validation. Do not assume its full migration/deletion release gates are complete. Vault CLI commands are `npm run vault:dry-run`, `npm run vault:migrate`, `npm run vault:rebuild`, and `npm run vault:rollback`. The existing five-tool client examples below must be updated to the eight-tool grant-filtered contract before native use.
+
 The implemented delivery is a single-owner local application. It does not publish a site, sell plans, or connect accounts. Official source repository: https://github.com/Rishflips/Bi-Brain.
 
 ## Requirements and installation
@@ -87,4 +89,14 @@ Tests use temporary databases, deterministic clocks and clearly synthetic materi
 Dockerfile and compose.yaml provide a pinned Node image and supervised API/worker with a persistent named volume. Run `docker compose up --build`, then retrieve the owner pairing file from the mounted volume without publishing it. Host port mapping is loopback only. The container bind is explicit via BRAIN_CONTAINER; default native execution binds loopback. This container path is supplied but not yet runtime-tested. Remote self-hosting and public hosting are not supported by this local security configuration.
 
 The local application does not create a public hosted release. License/commercial distribution remains unresolved. Billing, managed OAuth connectors, notifications outside Today, and automatic external actions are deferred.
+
+# Harness commands added in the SOL6 build
+
+With Node 24.19+ and npm 11+, run `npm ci`, then `npm start`. The local vault for the default database is `data/brain.vault/`, with quarantined originals and the migration backup in `data/brain.vault-protected/`. Stop API and worker processes before using `npm run vault:dry-run`, `npm run vault:migrate`, `npm run vault:rebuild`, or `npm run vault:rollback`. Rollback creates a separate database copy; inspect it before switching paths. `npm run brain-eval` writes a synthetic offline JSON report to `data/brain-eval-results.json`; it is not a live-model or native-client certification.
+
+In Connections, choose a project, then select a folder of `.txt`/`.md` files or JSON conversations. Preview the detected records and skipped files before saving. The browser selection is a one-time import, not a folder watcher or account sync. The JSON adapter accepts conversation arrays with text messages, including common `messages` and `mapping` shapes; unrecognized structures are rejected or warned. Previously delivered client/provider copies cannot be recalled by local deletion.
+
+For a local folder with an explicit symlink policy, stop the app and run `npm run import:folder -- <folder> <project-id>` to inspect the selection; repeat with `--apply` to save it. The CLI skips symbolic links, special files and attachments, and bounds depth, file count and bytes. It does not watch for changes. A later import of the same body is deduplicated; deleting an imported source removes it from active retrieval. Keep unmanaged original folder copies under your own retention policy.
+
+If a permanent deletion reports `FORGET_INCOMPLETE`, the source is already out of active use but managed erasure needs another pass. Retry in the open deletion dialog, or after stopping the app run `npm run vault:finalize-forget -- <deleted-source-id>`. The command returns a new read-after-delete proof and exits nonzero if any managed proof bit is false. Do not restore an older backup without applying current tombstones.
 

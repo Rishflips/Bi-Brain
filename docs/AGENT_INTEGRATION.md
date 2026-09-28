@@ -1,11 +1,13 @@
 # Agent integration
 
+**Harness transition (2026-09-28):** The original five-tool table below is historical. Default MCP now registers the owner-directed eight names `brain.search`, `brain.get`, `brain.propose`, `brain.forget`, `brain.link`, `brain.ask`, `brain.intent`, `brain.diff`, filtered by the grant's actual operations. `brain_remember` is removed; clients must send a typed `brain.propose` and handle `commit` or `queue` results. Read-only grants discover only search/get/ask/diff and direct HTTP mutation is denied. A dedicated `forget` grant is required for agent-owned captures. Client-specific enforced binding and native two-client validation remain unverified; the tested local wrapper is the only enforced path. See [HARNESS_MILESTONES.md](HARNESS_MILESTONES.md).
+
 ## Promise levels
 
 1. Portable brief: works through reviewed copy/download without native integration.
 2. Scoped knowledge access: supported agents retrieve and propose memories through MCP.
 3. Automatic capture: requires host-specific hooks and separate opt-in.
-4. Starting work in another agent: future capability, not implied by MCP connection.
+4. Starting work in another agent: current project handoff can be previewed, copied or downloaded; automatic native-session injection still requires a supported client adapter.
 
 Do not market levels 3 or 4 merely because level 2 works.
 
@@ -15,7 +17,7 @@ Implement a stdio MCP adapter using the official SDK. The adapter forwards reque
 
 Remote HTTP/OAuth is a later integration milestone. Verify current protocol and client support against official documentation at implementation time.
 
-## Minimal tool surface
+## Historical minimal tool surface (replaced by the eight-tool contract above)
 
 | Tool | Input | Output | Required operation |
 |---|---|---|---|

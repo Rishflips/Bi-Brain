@@ -3,6 +3,7 @@ import { mkdirSync, existsSync, writeFileSync } from "node:fs";
 import { resolve, relative, isAbsolute, join } from "node:path";
 import { Storage } from "../packages/storage/index.ts";
 import { Brain } from "../packages/domain/service.ts";
+import { purgeRetainedDeletedSource } from "../packages/storage/restore-policy.ts";
 const root = resolve("data/backups");
 const source = resolve(root, process.argv[2] ?? "");
 const rel = relative(root, source);
@@ -35,7 +36,14 @@ if (existsSync(currentPath) && currentPath !== source) {
         "SELECT version,state FROM sources WHERE id=?",
         tomb.id,
       );
-      if (retained && retained.state !== "deleted") {
+      if (
+        retained &&
+        tomb.state === "deleted" &&
+        retained.state === "deleted"
+      ) {
+        purgeRetainedDeletedSource(restored, String(tomb.id));
+        applied++;
+      } else if (retained && retained.state !== "deleted") {
         new Brain(restored).removeSource(
           { kind: "owner" },
           String(tomb.id),
