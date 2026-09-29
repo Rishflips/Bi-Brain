@@ -71,8 +71,8 @@ export function CurrentKnowledge({
         <article className="quiet">
           <h3>No accepted understanding yet.</h3>
           <p>
-            Saved originals appear below. Structured proposals create current
-            pages only after the evidence gate or your review.
+            Saved originals appear below. Recognized facts wait for your review
+            before they become current understanding.
           </p>
         </article>
       )}
@@ -80,17 +80,33 @@ export function CurrentKnowledge({
         <section>
           <h2>Needs your review</h2>
           {gates.map((g) => (
-            <article key={g.id}>
-              <h3>{g.data.entity ?? "New material"}</h3>
+            <article key={g.id} data-proposal-id={g.id}>
+              <h3>
+                {g.data.entity ??
+                  (g.data.type === "intent"
+                    ? "Proposed intention"
+                    : "New material")}
+              </h3>
               <p>
-                {g.data.field
-                  ? `${g.data.field.aspect}: ${String(g.data.field.value)}`
-                  : "No factual claim was inferred."}
+                {g.data.type === "intent"
+                  ? `${g.data.intent?.action ?? "Propose"} intention${g.data.intent?.target_id ? ` ${g.data.intent.target_id}` : ""}`
+                  : g.data.field
+                    ? `${g.data.field.aspect}: ${String(g.data.field.value)}`
+                    : "No factual claim was inferred."}
               </p>
               <p className="muted">{g.data.reasons.join(" · ")}</p>
               <EvidenceList items={g.data.evidence ?? []} onOpen={openSource} />
               <div className="actions">
-                {g.data.field && g.data.evidence?.length ? (
+                {g.data.raw_id ? (
+                  <button onClick={() => openSource(g.data.raw_id)}>
+                    Read original
+                  </button>
+                ) : null}
+                {g.data.type === "intent" && g.data.intent ? (
+                  <button onClick={() => review(g.id, g.version, "accept")}>
+                    Approve intention
+                  </button>
+                ) : g.data.field && g.data.evidence?.length ? (
                   <button onClick={() => review(g.id, g.version, "accept")}>
                     Accept reviewed claim
                   </button>

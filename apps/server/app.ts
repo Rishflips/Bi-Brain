@@ -29,7 +29,9 @@ export async function createApp(
     logger: false,
   });
   await app.register(cookie);
-  await app.register(rateLimit, { max: 300, timeWindow: 60000 });
+  // The active local UI polls several authenticated views; keep the global
+  // abuse guard above that normal traffic while pairing retains its tight cap.
+  await app.register(rateLimit, { max: 1000, timeWindow: 60000 });
   const secretFile = resolve(dirname(brain.store.path), "owner-secret");
   let pairSecret = options.pairSecret ?? process.env.BRAIN_OWNER_SECRET;
   if (!pairSecret) {
@@ -231,6 +233,9 @@ export async function createApp(
   });
   app.post("/api/v1/sources/:id/versions", (req) =>
     brain.editSource(req.principal, params(req), req.body),
+  );
+  app.post("/api/v1/sources/:id/claim-proposals", (req) =>
+    brain.proposeSourceClaim(req.principal, params(req), req.body),
   );
   app.post("/api/v1/sources/:id/withdraw", (req) =>
     brain.removeSource(req.principal, params(req), expected(req.body), false),
@@ -527,6 +532,9 @@ export async function createApp(
         id: z.string().max(100).optional(),
         text: z.string().max(20000).optional(),
         expected_version: z.number().int().positive().optional(),
+        success_criteria: z.string().max(2000).optional(),
+        due_at: z.iso.datetime().optional(),
+        review_at: z.iso.datetime().optional(),
       })
       .strict()
       .parse(req.body);

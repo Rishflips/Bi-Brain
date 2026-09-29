@@ -42,8 +42,37 @@ export const proposeSchema = z
     field: aspectValue.optional(),
     valid_from: z.iso.datetime().optional(),
     valid_to: z.iso.datetime().optional(),
+    intent: z
+      .object({
+        action: z.enum(["propose", "update", "close"]),
+        target_id: z.string().uuid().optional(),
+        expected_version: z.number().int().positive().optional(),
+        success_criteria: z.string().max(2000).optional(),
+        due_at: z.iso.datetime().optional(),
+        review_at: z.iso.datetime().optional(),
+      })
+      .strict()
+      .optional(),
   })
-  .strict();
+  .strict()
+  .refine(
+    (v) =>
+      !v.valid_to ||
+      !v.valid_from ||
+      Date.parse(v.valid_from) < Date.parse(v.valid_to),
+    { message: "Validity end must be after its start.", path: ["valid_to"] },
+  )
+  .refine((v) => v.type !== "intent" || !!v.intent, {
+    message: "Intent proposals need a typed action.",
+    path: ["intent"],
+  })
+  .refine(
+    (v) =>
+      !v.intent ||
+      v.intent.action === "propose" ||
+      (!!v.intent.target_id && !!v.intent.expected_version),
+    { message: "Intent changes need a target and version.", path: ["intent"] },
+  );
 export type GateResult = {
   proposal_id: string;
   raw_id: string;
@@ -55,18 +84,26 @@ export type GateResult = {
   classifier_version: string;
   claim_ids: string[];
 };
-export const policyVersion = "claim-gate-v1";
-export const classifierVersion = "offline-literal-v1";
+export const policyVersion = "claim-gate-v2";
+export const classifierVersion = "exact-assertion-v1";
 export function classify(v: z.infer<typeof proposeSchema>) {
-  // Confidence reflects deterministic syntax/literal support, not truth.
-  const value = v.field?.value;
-  const literal = value !== undefined && v.text.includes(String(value));
-  const complete = !!v.entity && !!v.field && literal;
+  // Only this complete, single-line grammar supports automatic admission. It
+  // asserts the named entity/aspect/value; arbitrary prose needs owner review.
+  const supported =
+    !!v.entity &&
+    /^[A-Za-z][A-Za-z0-9_]{0,79}$/.test(v.entity) &&
+    !/^(i|me|my|myself|owner|user|identity)$/i.test(v.entity) &&
+    !!v.field &&
+    ["status", "count", "deadline"].includes(v.field.aspect) &&
+    v.text.trim().toLocaleLowerCase() ===
+      `${v.entity} ${v.field.aspect} ${String(v.field.value)}`.toLocaleLowerCase();
   return {
-    confidence: complete ? 0.98 : 0.25,
-    reason: complete
-      ? "literal_value_in_raw"
-      : "insufficient_structured_evidence",
+    supported,
+    // No calibrated classifier is installed. The numeric API field is unrated.
+    confidence: 0,
+    reason: supported
+      ? "exact_structured_assertion"
+      : "owner_review_unverified_prose",
   };
 }
 export function overlaps(

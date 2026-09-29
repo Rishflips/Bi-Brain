@@ -7,10 +7,14 @@ export type BindingPack = {
   project_id: string;
   who_i_am: string[];
   identity_claim_ids: string[];
+  identity_claim_refs: { id: string; version: number }[];
   identity_policy_version: number;
   pages: any[];
   open_intents: any[];
   source_versions: { source_id: string; version: number }[];
+  claim_state_hash: string;
+  intent_state_hash: string;
+  deletion_generation: string;
   expires_at: string;
   hash: string;
   exclusions: string[];
@@ -75,11 +79,21 @@ export function buildPack(
         ]),
     ).values(),
   ];
+  const claimStateHash = stateHash(
+    brain.currentClaims(principal, project).map((c) => ({
+      id: c.id,
+      version: c.version,
+      status: c.data.status,
+      valid_from: c.data.valid_from,
+      valid_to: c.data.valid_to,
+    })),
+  );
   const pack = {
     id: randomUUID(),
     project_id: project,
     who_i_am: who.map((c) => `${c.data.aspect}: ${String(c.data.value)}`),
     identity_claim_ids: who.map((c) => c.id),
+    identity_claim_refs: who.map((c) => ({ id: c.id, version: c.version })),
     identity_policy_version: brain.store.setting<number>(
       `identity_policy_version:${project}`,
       0,
@@ -95,6 +109,9 @@ export function buildPack(
     })),
     open_intents: openIntents.slice(0, 10),
     source_versions: sourceVersions,
+    claim_state_hash: claimStateHash,
+    intent_state_hash: stateHash(openIntents),
+    deletion_generation: deletionGeneration(brain),
     expires_at: new Date(brain.clock().getTime() + 20 * 60000).toISOString(),
     exclusions: [
       "private or unallowlisted identity",
@@ -131,8 +148,15 @@ export function validatePack(
     );
   const currentIdentity = brain
     .currentClaims({ kind: "owner" }, pack.project_id)
-    .map((c) => c.id);
-  if (pack.identity_claim_ids.some((id) => !currentIdentity.includes(id)))
+    .map((c) => ({ id: c.id, version: c.version }));
+  if (
+    pack.identity_claim_refs.some(
+      (ref) =>
+        !currentIdentity.some(
+          (c) => c.id === ref.id && c.version === ref.version,
+        ),
+    )
+  )
     throw new BrainError(
       "BINDING_STALE",
       "Identity evidence changed. Refresh the pack.",
@@ -151,6 +175,26 @@ export function validatePack(
       "Context changed. Refresh before continuing.",
       409,
     );
+  if (
+    pack.claim_state_hash !==
+      stateHash(
+        brain.currentClaims(principal, pack.project_id).map((c) => ({
+          id: c.id,
+          version: c.version,
+          status: c.data.status,
+          valid_from: c.data.valid_from,
+          valid_to: c.data.valid_to,
+        })),
+      ) ||
+    pack.intent_state_hash !==
+      stateHash(brain.agentIntent(principal, pack.project_id, "list", {})) ||
+    pack.deletion_generation !== deletionGeneration(brain)
+  )
+    throw new BrainError(
+      "BINDING_STALE",
+      "Current understanding or intentions changed. Refresh the pack.",
+      409,
+    );
   for (const source of pack.source_versions) {
     if (brain.source(principal, source.source_id).version !== source.version)
       throw new BrainError(
@@ -160,6 +204,16 @@ export function validatePack(
       );
   }
   return true;
+}
+function stateHash(value: unknown) {
+  return createHash("sha256").update(canonical(value)).digest("hex");
+}
+function deletionGeneration(brain: Brain) {
+  return stateHash(
+    brain.store.all(
+      "SELECT id, version FROM sources WHERE state='deleted' ORDER BY id",
+    ),
+  );
 }
 export async function runBoundTask<T>(
   brain: Brain,

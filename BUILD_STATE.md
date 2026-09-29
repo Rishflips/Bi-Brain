@@ -1,6 +1,28 @@
 # Build state
 
-Updated: 2026-09-28
+Updated: 2026-09-30
+
+## Sites production handoff — 2026-09-30
+
+P0 is verified in the local edition. Approved agent intentions now retain source lineage; permanent forgetting sanitizes their copied text in current goals and collapsed goal revisions while preserving later owner edits. Evidence-backed plans still clear when their evidence is forgotten. The managed proof now checks retained derived text and Git-history text as well as source IDs. A regression covers propose → approve → update → owner edit → forget → export → rebuild → restart and retained vault history. This is a local managed-store proof; previously transmitted copies and unmanaged backups remain outside its scope.
+
+P0 checks actually run: `npm run typecheck` passed; `npm run lint` passed; `npm test` passed **61/61 in 11 files**; `npm run build` passed; `npm run brain-eval` passed **4/4 synthetic offline cases**; `npm run test:e2e -- --workers=1` passed **8/8 Chromium journeys**. The full test and browser runs needed the approved outside-sandbox execution because this Windows sandbox returned `ENOMEM` from Node `os.userInfo()` before `tsx` started; this was reproduced with a direct Node call. A final test-only assertion was added after those full runs and passed in the focused vault test.
+
+P1 feasibility review has begun: installed Sites 0.1.75 documents private ChatGPT identity headers, logical D1/R2 bindings, Worker-compatible server output and stateless HTTP MCP. The current callable Sites inventory includes private deployment and database inspection, but exposes no `create_schedule` tool. None of the required owner-identity, D1, R2, connected-client or unattended-writer round trips has yet run. No Site was registered or published, and P2–P6 remain open. The local Git-backed vault stays the reference for literal `git revert`; hosted revision semantics are undecided. The owner data and license memo are unchanged.
+
+## Build review F1–F5 repairs — 2026-09-29
+
+All five findings in `docs/BUILD_REVIEW_2026-09-29.md` are repaired in the local application. This supersedes the older 55-test/5-browser evidence below. No owner knowledge was migrated or deleted, and agent grant/project checks remain in the shared service.
+
+| Finding | Verified behavior | Remaining limit |
+| --- | --- | --- |
+| F1 unsupported auto-commit | Auto-admission now requires an entire exact structured `entity status/count/deadline value` assertion. Negation, quotations, wrong entity, substring matches and other prose queue with raw retained. Numeric confidence is `0` (unrated), not a fabricated calibrated score. | No evaluated semantic entailment or calibrated classifier. Owner review remains necessary for natural language. |
+| F2 stale issued packs | Pack hashes bind visible claim IDs/versions/validity, identity revisions, open-intent state, source versions and deleted-source state. Validation after retirement, conflicting acceptance, intent closure or validity change fails before continued use. | Native client pre-action enforcement remains unverified; the tested local wrapper enforces this contract. |
+| F3 validity | Default current pages, search, answers and packs use accepted claims only while `valid_from <= now < valid_to`. Invalid intervals are rejected, queued review preserves the proposed interval, and explicit historical search labels out-of-window claims as history. | Validity describes accepted source assertions, not independent real-world verification. |
+| F4 agent intents | Typed agent propose/update/close requests retain target and expected version. Owner approval creates a preparation-enabled goal or atomically updates/closes the targeted goal; stale versions fail. Private/quarantined proposals cannot become shared intentions. The GUI offers intention approval and a deterministic test checks scheduler admission. | A prepared next step still needs relevant evidence and, for live reasoning, configured provider credentials. |
+| F5 capture/import | Ordinary save and folder import queue source-linked candidates for exact status lines. An owner can select an exact passage from arbitrary prose and propose a status claim from the existing source. Review produces current pages, search/answer results and authorized agent packs. | Automatic candidate extraction is intentionally narrow; arbitrary prose needs the owner's passage selection. Other claim aspects do not yet have this direct GUI form. |
+
+Final checks actually run: `npm run typecheck` passed; `npm run lint` passed; `npm test` passed **60/60 in 11 files**; `npm run build` passed; `npm run brain-eval` passed **4/4 synthetic offline cases** and wrote `data/brain-eval-results.json`; `npm run test:e2e` passed **8/8 Chromium journeys** against the production build, including capture-to-current-truth, owner-selected prose promotion and intention approval. After a final private-intent guard, all 60 tests and build/eval passed again and the intention browser journey passed 1/1. The first expanded browser run hit the global local-UI polling limit; its guard was raised from 300 to 1000 requests/minute while the separate pairing limit remains 10/minute, then the full suite passed. A validity-pack test initially crossed the pack's 20-minute expiry and was corrected to test the boundary within that expiry; a Git vault test received a 20-second Windows allowance. These are local deterministic/browser results, not live-provider, native two-client, fresh-machine or human-pilot evidence. No deployment or new push is claimed for these repairs.
 
 ## Owner-directed harness build (SOL6_HARNESS_AND_SUITE_BUILD)
 

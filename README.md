@@ -8,7 +8,7 @@ The user experience is **Save → Continue → Get ahead**. The intended harness
 
 ## Current status
 
-This repository contains a working single-owner local application with SQLite capture, source revisions, source-linked extractive previews, reviewed preparation, export/import, and scoped stdio agent access. The owner-directed harness migration is underway: a local portable vault and bounded secret quarantine are implemented, and the typed claim gate has its first service path. The eight-tool adapter, full suite and dream reasoning are not yet delivered. See [BUILD_STATE.md](BUILD_STATE.md) for verified results and limitations.
+This repository contains a working single-owner local application with persistent capture, source revisions, source-linked previews, reviewed preparation, export/import, and scoped stdio agent access. The portable vault, bounded secret quarantine, eight-tool adapter, typed claim gate and suite workspaces have local implementations. Live model quality, native-client binding and human release gates remain open. See [BUILD_STATE.md](BUILD_STATE.md) for verified results and limitations.
 
 Run with Node 24.19+ in the 24 LTS line: `npm ci`, `npm run db:migrate`, `npm run build`, then `npm start`. Open http://127.0.0.1:4317 and pair using the installation code in `data/owner-secret`. No account or provider key is required. The API and separate worker run together; data lives in `data/brain.sqlite`. See [local operation instructions](docs/LOCAL_RUN.md) for development, optional provider setup, scoped agent configuration, and backup/restore.
 

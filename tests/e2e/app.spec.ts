@@ -9,6 +9,116 @@ test.beforeEach(async ({ page }) => {
       .or(page.getByRole("heading", { name: "Welcome back." })),
   ).toBeVisible();
 });
+
+test("ordinary capture becomes reviewed current truth and agent retrieval", async ({
+  page,
+}) => {
+  const entity = `browser${Date.now()}`;
+  await page
+    .getByRole("button", { name: "Save something", exact: false })
+    .first()
+    .click();
+  await page
+    .getByLabel("Title", { exact: true })
+    .fill("Current truth evidence");
+  await page
+    .getByLabel("Paste something you are working on")
+    .fill(`${entity} status active`);
+  await page
+    .getByRole("dialog")
+    .getByRole("button", { name: "Save to my brain", exact: true })
+    .click();
+  await expect(page.getByTestId("original")).toContainText(
+    `${entity} status active`,
+  );
+  await page.getByRole("button", { name: "Close dialog" }).click();
+  await page.getByRole("button", { name: "Your brain", exact: true }).click();
+  const candidate = page
+    .locator("article")
+    .filter({ has: page.getByRole("heading", { name: entity }) });
+  await expect(
+    candidate.getByRole("button", { name: "Accept reviewed claim" }),
+  ).toBeVisible();
+  await candidate
+    .getByRole("button", { name: "Accept reviewed claim" })
+    .click();
+  await expect(candidate.getByText("status: active")).toBeVisible();
+  const search = await page.request.get(
+    `/api/v1/agent/search?project_id=inbox&query=${entity}`,
+  );
+  expect(search.ok()).toBe(true);
+  expect(JSON.stringify(await search.json())).toContain('"value":"active"');
+  const ask = await page.request.get(
+    `/api/v1/agent/ask?project_id=inbox&question=${entity}%20status`,
+  );
+  expect((await ask.json()).abstained).toBe(false);
+});
+
+test("owner promotes an exact passage from ordinary prose through review", async ({
+  page,
+}) => {
+  const entity = `prose${Date.now()}`;
+  const passage = `According to my note, ${entity} is paused this week.`;
+  await page
+    .getByRole("button", { name: "Save something", exact: false })
+    .first()
+    .click();
+  await page.getByLabel("Title", { exact: true }).fill("Prose evidence");
+  await page.getByLabel("Paste something you are working on").fill(passage);
+  await page
+    .getByRole("dialog")
+    .getByRole("button", { name: "Save to my brain", exact: true })
+    .click();
+  await page.getByRole("button", { name: "Add a fact for review" }).click();
+  await page.getByLabel("Topic or entity").fill(entity);
+  await page.getByRole("combobox", { name: "Status" }).selectOption("paused");
+  await expect(page.getByLabel("Exact passage from original")).toHaveValue(
+    passage,
+  );
+  await page.getByRole("button", { name: "Send for review" }).click();
+  const candidate = page
+    .locator("article")
+    .filter({ has: page.getByRole("heading", { name: entity }) });
+  await expect(
+    candidate.getByRole("button", { name: "Accept reviewed claim" }),
+  ).toBeVisible();
+  await candidate
+    .getByRole("button", { name: "Accept reviewed claim" })
+    .click();
+  await expect(candidate.getByText("status: paused")).toBeVisible();
+});
+
+test("owner approves an agent intention into an actionable goal", async ({
+  page,
+}) => {
+  const session = await (await page.request.get("/api/v1/session")).json();
+  const title = `Review browser intent ${Date.now()}`;
+  const proposed = await page.request.post("/api/v1/agent/intent", {
+    headers: { "X-Brain-CSRF": session.csrf },
+    data: {
+      project_id: "inbox",
+      action: "propose",
+      text: title,
+      review_at: "2026-10-01T10:00:00Z",
+    },
+  });
+  expect(proposed.ok()).toBe(true);
+  const gate = await proposed.json();
+  await page.getByRole("button", { name: "Your brain", exact: true }).click();
+  await page.reload();
+  const candidate = page.locator(`[data-proposal-id="${gate.proposal_id}"]`);
+  await expect(
+    candidate.getByRole("button", { name: "Approve intention" }),
+  ).toBeVisible();
+  await candidate.getByRole("button", { name: "Approve intention" }).click();
+  await expect(candidate).not.toBeVisible();
+  const goals = await (await page.request.get("/api/v1/today")).json();
+  expect(
+    goals.goals.some(
+      (goal: any) => goal.data.title === title && goal.data.preparation_enabled,
+    ),
+  ).toBe(true);
+});
 test("chat JSON import is previewed and saved through Connections", async ({
   page,
 }) => {

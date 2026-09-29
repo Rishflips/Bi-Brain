@@ -443,6 +443,41 @@ export class Brain {
         const job = this.enqueue(v.project_id, "derive_brief", {
           principal: p,
         });
+        if (!fromGate && !quarantined && v.visibility === "project") {
+          let cursor = 0;
+          for (const line of v.body.split(/\r?\n/)) {
+            const position = v.body.indexOf(line, cursor);
+            cursor = position + line.length;
+            const match =
+              /^([A-Za-z][A-Za-z0-9_-]{0,79}) status (planned|active|paused|done|cancelled)$/i.exec(
+                line.trim(),
+              );
+            if (!match || line !== line.trim()) continue;
+            const start = Array.from(v.body.slice(0, position)).length;
+            this.createEntity(v.project_id, "gate", {
+              raw_id: id,
+              type: "fact",
+              entity: match[1].toLocaleLowerCase(),
+              field: { aspect: "status", value: match[2].toLocaleLowerCase() },
+              evidence: [
+                {
+                  source_id: id,
+                  source_version: 1,
+                  start,
+                  end: start + Array.from(line).length,
+                  quote: line,
+                },
+              ],
+              status: "queued",
+              reasons: ["captured_candidate_needs_review"],
+              actor: "owner",
+              policy_version: policyVersion,
+              classifier_version: classifierVersion,
+            });
+            // A bounded first candidate keeps ordinary capture quiet.
+            break;
+          }
+        }
         return {
           source_id: id,
           job,
@@ -607,26 +642,78 @@ export class Brain {
         this.store.run("DELETE FROM source_fts WHERE source_id=?", id);
         this.invalidate(s.project_id);
         if (purge) {
+          const copiedBodies = this.store
+            .all<{ body: string }>(
+              "SELECT body FROM source_versions WHERE source_id=?",
+              id,
+            )
+            .map((version) => version.body)
+            .filter(Boolean)
+            .sort((a, b) => b.length - a.length);
+          const intentGates = new Set(
+            this.store
+              .all<Entity & { data: string }>(
+                "SELECT * FROM entities WHERE kind='gate'",
+              )
+              .filter((gate) => JSON.parse(gate.data).raw_id === id)
+              .map((gate) => gate.id),
+          );
+          const scrub = (value: any): any => {
+            if (typeof value === "string")
+              return copiedBodies.reduce(
+                (clean, body) => clean.split(body).join("[Forgotten source]"),
+                value,
+              );
+            if (Array.isArray(value)) return value.map(scrub);
+            if (!value || typeof value !== "object") return value;
+            return Object.fromEntries(
+              Object.entries(value)
+                .filter(
+                  ([key, item]) =>
+                    !(
+                      ["intent_source_id", "last_intent_source_id"].includes(key) &&
+                      item === id
+                    ),
+                )
+                .map(([key, item]) => [key, scrub(item)]),
+            );
+          };
           for (const row of this.store.all<Entity & { data: any }>(
             "SELECT * FROM entities WHERE kind='goal'",
           )) {
             const data = JSON.parse(row.data);
-            const depended = this.store
+            const versions = this.store
               .all("SELECT data FROM entity_versions WHERE entity_id=?", row.id)
-              .some((v) =>
-                JSON.parse(v.data).plan_evidence?.some(
-                  (e: Evidence) => e.source_id === id,
+              .map((v) => JSON.parse(v.data));
+            const depended = versions.some(
+              (v) =>
+                v.plan_evidence?.some((e: Evidence) => e.source_id === id) ||
+                v.intent_source_id === id ||
+                v.last_intent_source_id === id ||
+                intentGates.has(v.proposal_id) ||
+                intentGates.has(v.last_intent_proposal_id),
+            );
+            if (depended) {
+              const cleanedData = scrub(data);
+              const planDepended = versions.some((version) =>
+                version.plan_evidence?.some(
+                  (ref: Evidence) => ref.source_id === id,
                 ),
               );
-            if (depended) {
+              const evidence = (cleanedData.plan_evidence ?? []).filter(
+                (ref: Evidence) => ref.source_id !== id,
+              );
               const cleaned = this.revise(
                 { ...row, data },
                 {
-                  ...data,
-                  plan: "",
-                  plan_evidence: [],
-                  plan_stale: false,
+                  ...cleanedData,
+                  plan: planDepended ? "" : cleanedData.plan,
+                  plan_evidence: evidence,
+                  plan_stale: evidence.length > 0,
                   plan_version: data.plan_version + 1,
+                  ...(intentGates.has(data.proposal_id)
+                    ? { preparation_enabled: false }
+                    : {}),
                 },
               );
               this.store.run(
@@ -720,6 +807,7 @@ export class Brain {
         409,
       );
     return this.store.vault.withLock(() => {
+      const sourceBodies = this.store.vault!.retainedSourceBodies(id).filter(Boolean);
       this.store.vault!.forget(id, this.store.portableState());
       this.store.sanitizeMigrationBackup();
       const files = this.store.vault!.verifyForget(id);
@@ -749,8 +837,26 @@ export class Brain {
             `%${id}%`,
           )?.n ?? 0,
         );
+      const retainedDerived = [
+        ...this.store.all<{ data: string }>("SELECT data FROM entities"),
+        ...this.store.all<{ data: string }>("SELECT data FROM entity_versions"),
+      ];
+      const derivedText = sourceBodies.length
+        ? retainedDerived.filter((row) =>
+            sourceBodies.some((body) => row.data.includes(body)),
+          ).length
+        : "unverified";
+      const vaultHistoryText = sourceBodies.length
+        ? sourceBodies.some((body) =>
+            this.store.vault!.git("log", "-p", "--all").includes(body),
+          )
+        : "unverified";
       const indexGone =
-        originals === 0 && search === 0 && derived === 0 && backup.absent;
+        originals === 0 &&
+        search === 0 &&
+        derived === 0 &&
+        derivedText === 0 &&
+        backup.absent;
       const embeddingStores = this.store.all(
         "SELECT name FROM sqlite_master WHERE type='table' AND name LIKE '%embedding%'",
       );
@@ -761,7 +867,7 @@ export class Brain {
         operation_id: randomUUID(),
         verified_at: this.now(),
         deletion_generation: this.store.vault!.generation(),
-        file_gone: files.file_gone,
+        file_gone: files.file_gone && vaultHistoryText === false,
         index_gone: indexGone,
         embedding_gone: embeddingStores.length === 0,
         graph_edge_gone: edgeStores.length === 0 && derived === 0,
@@ -770,6 +876,8 @@ export class Brain {
           sqlite_original_versions: originals,
           sqlite_search_rows: search,
           sqlite_derived_references: derived,
+          sqlite_derived_text_matches: derivedText,
+          managed_history_text_match: vaultHistoryText,
           migration_backup: backup,
           embeddings: {
             configured: embeddingStores.length > 0,
@@ -1197,10 +1305,18 @@ export class Brain {
   }
   propose(p: Principal, input: unknown, key?: string): GateResult {
     const v = proposeSchema.parse(input);
+    if (
+      v.valid_to &&
+      Date.parse(v.valid_to) <= Date.parse(v.valid_from ?? this.now())
+    )
+      throw new BrainError(
+        "INVALID_INPUT",
+        "Validity end must be after its start.",
+      );
     const identityLike =
       v.type === "identity" ||
       ["name", "preference"].includes(v.field?.aspect ?? "") ||
-      /^(me|myself|owner|user|identity)$/i.test(v.entity ?? "") ||
+      /^(i|me|my|myself|owner|user|identity)$/i.test(v.entity ?? "") ||
       /\b(my name|i am|i prefer|my preference)\b/i.test(v.text);
     this.access(
       p,
@@ -1281,7 +1397,7 @@ export class Brain {
       );
       const canCommit =
         v.type === "fact" &&
-        classification.confidence >= 0.95 &&
+        classification.supported &&
         evidence.length > 0 &&
         !sensitive &&
         conflicts.length === 0 &&
@@ -1300,6 +1416,9 @@ export class Brain {
         type: v.type,
         entity: v.entity,
         field: v.field,
+        valid_from: v.valid_from,
+        valid_to: v.valid_to,
+        intent: v.intent,
         evidence,
         status: canCommit ? "committed" : "queued",
         reasons,
@@ -1352,6 +1471,61 @@ export class Brain {
       );
     return result;
   }
+  proposeSourceClaim(p: Principal, sourceId: string, input: unknown) {
+    this.owner(p);
+    const v = z
+      .object({
+        expected_version: z.number().int().positive(),
+        entity: z.string().trim().min(1).max(200),
+        field: z
+          .object({
+            aspect: z.literal("status"),
+            value: z.enum(["planned", "active", "paused", "done", "cancelled"]),
+          })
+          .strict(),
+        quote: z.string().min(1).max(10000),
+      })
+      .strict()
+      .parse(input);
+    return this.store.transaction(() => {
+      const source = this.source(p, sourceId);
+      if (source.state !== "active" || source.version !== v.expected_version)
+        throw new BrainError(
+          "SOURCE_STALE",
+          "Original changed. Select a current passage.",
+          409,
+        );
+      const position = source.body.indexOf(v.quote);
+      if (position < 0)
+        throw new BrainError(
+          "INVALID_INPUT",
+          "Choose an exact passage from this original.",
+        );
+      const start = Array.from(source.body.slice(0, position)).length;
+      const evidence = [
+        {
+          source_id: source.id,
+          source_version: source.version,
+          start,
+          end: start + Array.from(v.quote).length,
+          quote: v.quote,
+        },
+      ];
+      this.checkEvidence(p, source.project_id, evidence);
+      return this.createEntity(source.project_id, "gate", {
+        raw_id: source.id,
+        type: "fact",
+        entity: v.entity,
+        field: v.field,
+        evidence,
+        status: "queued",
+        reasons: ["owner_selected_passage_review"],
+        actor: "owner",
+        policy_version: policyVersion,
+        classifier_version: classifierVersion,
+      });
+    });
+  }
   reviewGate(p: Principal, id: string, input: unknown) {
     this.owner(p);
     const v = z
@@ -1376,6 +1550,7 @@ export class Brain {
           409,
         );
       const claims: string[] = [];
+      let intentId: string | undefined;
       if (v.action === "accept" && gate.data.field && gate.data.entity) {
         this.checkEvidence(p, gate.project_id, gate.data.evidence);
         const field = gate.data.field;
@@ -1387,7 +1562,8 @@ export class Brain {
           source_version: source.version,
           agent: gate.data.actor,
           ts: source.captured_at,
-          valid_from: this.now(),
+          valid_from: gate.data.valid_from ?? this.now(),
+          valid_to: gate.data.valid_to,
           recorded_at: this.now(),
           status: "current",
           authority: "owner_reviewed",
@@ -1398,13 +1574,76 @@ export class Brain {
         });
         claims.push(claim.id);
       }
+      if (v.action === "accept" && gate.data.type === "intent") {
+        if (source.visibility !== "project")
+          throw new BrainError(
+            "FORBIDDEN",
+            "Private or quarantined evidence cannot become a shared intention.",
+            403,
+          );
+        const intent = gate.data.intent;
+        if (!intent)
+          throw new BrainError("INVALID_INPUT", "Intent action is missing.");
+        if (intent.action === "propose") {
+          const goal = this.createEntity(gate.project_id, "goal", {
+            title: source.body,
+            owner: "owner",
+            goal: source.body,
+            success_criteria:
+              intent.success_criteria ?? "Choose and review a next step.",
+            due_at: intent.due_at,
+            review_at: intent.review_at,
+            status: "active",
+            preparation_enabled: true,
+            plan: "",
+            plan_version: 0,
+            signatures: [],
+            proposal_id: gate.id,
+            intent_source_id: source.id,
+          });
+          intentId = goal.id;
+        } else {
+          const target = this.entity(
+            p,
+            z.string().uuid().parse(intent.target_id),
+          );
+          if (target.kind !== "goal" || target.project_id !== gate.project_id)
+            throw new BrainError("NOT_FOUND", "Intent unavailable.", 404);
+          requireVersion(
+            target.version,
+            z.number().int().positive().parse(intent.expected_version),
+          );
+          if (target.data.status !== "active")
+            throw new BrainError(
+              "VERSION_CONFLICT",
+              "Intent is no longer open.",
+              409,
+            );
+          this.revise(target, {
+            ...target.data,
+            ...(intent.action === "close"
+              ? { status: "done" as const }
+              : {
+                  plan: source.body,
+                  plan_version: (target.data.plan_version ?? 0) + 1,
+                  plan_private: target.data.plan_private,
+                  due_at: intent.due_at ?? target.data.due_at,
+                  review_at: intent.review_at ?? target.data.review_at,
+                }),
+            last_intent_proposal_id: gate.id,
+            last_intent_source_id: source.id,
+          });
+          intentId = target.id;
+        }
+      }
       this.revise(gate, {
         ...gate.data,
         status: v.action === "accept" ? "accepted" : "rejected",
         reviewed_at: this.now(),
         claim_ids: claims,
+        intent_id: intentId,
       });
-      return { reviewed: true, claim_ids: claims };
+      return { reviewed: true, claim_ids: claims, intent_id: intentId };
     });
   }
   retireClaim(p: Principal, id: string, expected: number) {
@@ -1425,10 +1664,14 @@ export class Brain {
   }
   currentClaims(p: Principal, project: string, includeRetired = false) {
     this.access(p, project);
+    const at = this.clock().getTime();
     return this.entities({ kind: "owner" }, "claim").filter(
       (c) =>
         c.project_id === project &&
-        (includeRetired || c.data.status === "current") &&
+        (includeRetired ||
+          (c.data.status === "current" &&
+            Date.parse(c.data.valid_from) <= at &&
+            (!c.data.valid_to || at < Date.parse(c.data.valid_to)))) &&
         (!c.data.evidence?.length ||
           (() => {
             try {
@@ -1459,6 +1702,11 @@ export class Brain {
     this.access(p, project);
     query = z.string().max(200).parse(query).toLocaleLowerCase();
     const claims = this.currentClaims(p, project, includeRetired);
+    const at = this.clock().getTime();
+    const active = (c: Entity) =>
+      c.data.status === "current" &&
+      Date.parse(c.data.valid_from) <= at &&
+      (!c.data.valid_to || at < Date.parse(c.data.valid_to));
     const groups = new Map<string, Entity[]>();
     for (const c of claims) {
       if (
@@ -1498,10 +1746,8 @@ export class Brain {
       return {
         entity,
         project_id: project,
-        current: entries.filter((c) => c.data.status === "current"),
-        history: includeRetired
-          ? entries.filter((c) => c.data.status !== "current")
-          : [],
+        current: entries.filter(active),
+        history: includeRetired ? entries.filter((c) => !active(c)) : [],
         conflicts,
         uncertain: queued.filter((g) => g.data.entity === entity),
         open_intents: this.entities({ kind: "owner" }, "goal")
@@ -1938,20 +2184,36 @@ export class Brain {
         }));
     if (action === "get")
       return this.agentGet(p, project, z.string().max(100).parse(input.id));
-    if (p.kind === "agent")
+    if (p.kind === "agent" || action === "propose") {
+      const target =
+        action === "update" || action === "close"
+          ? this.agentGet(p, project, z.string().uuid().parse(input.id))
+          : undefined;
+      if (target && target.kind !== "intent")
+        throw new BrainError("NOT_FOUND", "Intent unavailable.", 404);
+      const expectedVersion = target
+        ? z.number().int().positive().parse(input.expected_version)
+        : undefined;
+      if (target) requireVersion(target.item.version, expectedVersion!);
+      const text =
+        action === "close"
+          ? `Close intention ${input.id}`
+          : z.string().trim().min(1).max(2000).parse(input.text);
       return this.propose(p, {
         project_id: project,
         title: "Proposed intention",
-        text: z.string().min(1).max(2000).parse(input.text),
+        text,
         type: "intent",
+        intent: {
+          action,
+          target_id: target?.item.id,
+          expected_version: expectedVersion,
+          success_criteria: input.success_criteria,
+          due_at: input.due_at,
+          review_at: input.review_at,
+        },
       });
-    if (action === "propose")
-      return this.propose(p, {
-        project_id: project,
-        title: "Proposed intention",
-        text: z.string().min(1).max(2000).parse(input.text),
-        type: "intent",
-      });
+    }
     const goal = this.entity(p, z.string().max(100).parse(input.id));
     if (goal.kind !== "goal" || goal.project_id !== project)
       throw new BrainError("NOT_FOUND", "Intent unavailable.", 404);

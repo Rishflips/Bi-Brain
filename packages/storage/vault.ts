@@ -333,6 +333,17 @@ export class Vault {
       { mode: 0o600 },
     );
   }
+  retainedSourceBodies(id: string) {
+    fileId(id);
+    return [
+      join(this.protectedRoot, "raw"),
+      join(this.protectedRoot, "raw", "quarantine"),
+    ].flatMap((dir) =>
+      readdirSync(dir)
+        .filter((name) => name.startsWith(`${id}-v`))
+        .map((name) => readFileSync(join(dir, name), "utf8")),
+    );
+  }
   sanitizeManagedHistory(state: PortableState) {
     // Erase retired derived disclosures or permanently forgotten evidence from local managed history.
     const pending = join(this.protectedRoot, "sanitize.pending");

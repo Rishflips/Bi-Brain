@@ -167,6 +167,9 @@ function App() {
   const [forgetProof, setForgetProof] = useState<any>(null);
   const [forgetNeedsRetry, setForgetNeedsRetry] = useState<string | null>(null);
   const [identityDisclosure, setIdentityDisclosure] = useState<any>(null);
+  const [claimEntity, setClaimEntity] = useState("");
+  const [claimStatus, setClaimStatus] = useState("active");
+  const [claimQuote, setClaimQuote] = useState("");
   const [dark, setDark] = useState(
     () => localStorage.getItem("brain-theme") === "dark",
   );
@@ -862,7 +865,7 @@ function App() {
                     await refresh();
                     setNotice(
                       action === "accept"
-                        ? "Reviewed understanding saved."
+                        ? "Reviewed change saved."
                         : "Original kept without promoting a claim.",
                     );
                   })
@@ -1694,6 +1697,16 @@ function App() {
             </button>
             <button
               onClick={() => {
+                setClaimEntity("");
+                setClaimStatus("active");
+                setClaimQuote(source.body.slice(0, 300));
+                setDialog("propose-claim");
+              }}
+            >
+              Add a fact for review
+            </button>
+            <button
+              onClick={() => {
                 setConfirmation("");
                 setDialog("delete");
               }}
@@ -1802,6 +1815,75 @@ function App() {
           >
             Rebuild preview
           </button>
+        </Modal>
+      ) : null}
+      {dialog === "propose-claim" && source ? (
+        <Modal
+          error={error}
+          title="Add a fact from this original"
+          close={close}
+        >
+          <p>
+            Select an exact passage, then review the proposed fact in Your
+            brain. The original stays intact.
+          </p>
+          <form
+            onSubmit={(event) => {
+              event.preventDefault();
+              void act(async () => {
+                await api(`/sources/${source.id}/claim-proposals`, {
+                  expected_version: source.version,
+                  entity: claimEntity,
+                  field: { aspect: "status", value: claimStatus },
+                  quote: claimQuote,
+                });
+                setScope(source.project_id);
+                setNav("Your brain");
+                close();
+                await refresh();
+                setNotice(
+                  "Fact proposed. Review it before it becomes current understanding.",
+                );
+              });
+            }}
+          >
+            <label className="field">
+              Topic or entity
+              <input
+                required
+                maxLength={200}
+                value={claimEntity}
+                onChange={(event) => setClaimEntity(event.target.value)}
+              />
+            </label>
+            <label className="field">
+              Status
+              <select
+                value={claimStatus}
+                onChange={(event) => setClaimStatus(event.target.value)}
+              >
+                {(
+                  ["planned", "active", "paused", "done", "cancelled"] as const
+                ).map((value) => (
+                  <option key={value} value={value}>
+                    {value}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="field">
+              Exact passage from original
+              <textarea
+                required
+                maxLength={10000}
+                value={claimQuote}
+                onChange={(event) => setClaimQuote(event.target.value)}
+              />
+            </label>
+            <button className="primary" type="submit">
+              Send for review
+            </button>
+          </form>
         </Modal>
       ) : null}
       {dialog === "history" && source ? (

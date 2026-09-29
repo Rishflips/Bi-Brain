@@ -15,6 +15,68 @@ import { Brain } from "../../packages/domain/service.ts";
 import { Vault } from "../../packages/storage/vault.ts";
 import { Worker } from "../../apps/worker/engine.ts";
 import { purgeRetainedDeletedSource } from "../../packages/storage/restore-policy.ts";
+it("forgotten reviewed intents disappear from goals, export and retained vault history while owner edits survive", () => {
+  const dir = mkdtempSync(join(tmpdir(), "brain-intent-forget-"));
+  const path = join(dir, "brain.sqlite");
+  const root = join(dir, "brain.vault");
+  const owner = { kind: "owner" } as const;
+  const marker = "INTENT_FORGET_SENTINEL review the launch";
+  let store: Storage | undefined;
+  try {
+    store = new Storage(path, { vault: root });
+    let brain = new Brain(store);
+    const grant = brain.createGrant(owner, {
+      projects: ["inbox"],
+      operations: ["read", "propose_memory"],
+      expires_at: new Date(Date.now() + 86400000).toISOString(),
+    });
+    const agent = brain.authenticateAgent(grant.token);
+    const proposal = brain.agentIntent(agent, "inbox", "propose", {
+      text: marker,
+    }) as any;
+    const accepted = brain.reviewGate(owner, proposal.proposal_id, {
+      action: "accept",
+      expected_version: 1,
+    });
+    const goal = brain.entity(owner, accepted.intent_id!);
+    const update = brain.agentIntent(agent, "inbox", "update", {
+      id: goal.id,
+      expected_version: goal.version,
+      text: marker,
+    }) as any;
+    brain.reviewGate(owner, update.proposal_id, {
+      action: "accept",
+      expected_version: 1,
+    });
+    const edited = brain.entity(owner, goal.id);
+    brain.editGoal(owner, goal.id, {
+      expected_version: edited.version,
+      status: "paused",
+      review_at: "2026-10-15T10:00:00Z",
+    });
+    const result = brain.removeSource(owner, proposal.raw_id, 1, true) as any;
+    expect(result.proof).toMatchObject({ file_gone: true, index_gone: true });
+    expect(result.proof.per_store.sqlite_derived_text_matches).toBe(0);
+    expect(result.proof.per_store.managed_history_text_match).toBe(false);
+    expect(brain.entity(owner, goal.id).data).toMatchObject({
+      status: "paused",
+      review_at: "2026-10-15T10:00:00Z",
+    });
+    expect(JSON.stringify(brain.export(owner))).not.toContain(marker);
+    expect(JSON.stringify(store.portableState())).not.toContain(marker);
+    expect(store.vault!.git("log", "-p", "--all")).not.toContain(marker);
+    store.rebuild();
+    expect(JSON.stringify(brain.export(owner))).not.toContain(marker);
+    store.close();
+    store = new Storage(path, { vault: root });
+    brain = new Brain(store);
+    expect(JSON.stringify(brain.export(owner))).not.toContain(marker);
+    expect(brain.entity(owner, goal.id).data.status).toBe("paused");
+  } finally {
+    store?.close();
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
 it("vault capture, rebuild, crash recovery, quarantine and managed-history forget", async () => {
   const dir = mkdtempSync(join(tmpdir(), "brain-vault-"));
   const path = join(dir, "brain.sqlite"),
@@ -146,7 +208,7 @@ it("vault capture, rebuild, crash recovery, quarantine and managed-history forge
       retryDelay: 100,
     });
   }
-});
+}, 20000);
 it("restore barrier sanitizes a backup whose tombstone still retains raw versions", () => {
   const store = new Storage(":memory:");
   try {
