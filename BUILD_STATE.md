@@ -8,7 +8,19 @@ P0 is verified in the local edition. Approved agent intentions now retain source
 
 P0 checks actually run: `npm run typecheck` passed; `npm run lint` passed; `npm test` passed **61/61 in 11 files**; `npm run build` passed; `npm run brain-eval` passed **4/4 synthetic offline cases**; `npm run test:e2e -- --workers=1` passed **8/8 Chromium journeys**. The full test and browser runs needed the approved outside-sandbox execution because this Windows sandbox returned `ENOMEM` from Node `os.userInfo()` before `tsx` started; this was reproduced with a direct Node call. A final test-only assertion was added after those full runs and passed in the focused vault test.
 
-P1 feasibility review has begun: installed Sites 0.1.75 documents private ChatGPT identity headers, logical D1/R2 bindings, Worker-compatible server output and stateless HTTP MCP. The current callable Sites inventory includes private deployment and database inspection, but exposes no `create_schedule` tool. None of the required owner-identity, D1, R2, connected-client or unattended-writer round trips has yet run. No Site was registered or published, and P2–P6 remain open. The local Git-backed vault stays the reference for literal `git revert`; hosted revision semantics are undecided. The owner data and license memo are unchanged.
+P0 checkpoint `d8ca193` was pushed to the official `origin/main` after selecting the existing Rishflips Git Credential Manager account for that command. The local license memo and owner data remain untouched.
+
+P1 has a separate portable Sites checkout at `sites-port/` and a registered owner-private Site, `appgprj_6abc0b1d098c8191a74d673cec5862bc`. Its isolated source commit `bc0f33a51fed95c5c7db028c6bef8da3d1c12855` was pushed to the Site source repository and private probe deployment `appgdep_6abccfa0ce1881918765254fdf54fce2` succeeded at `https://bi-brain-private-gowrishankar.saasage-in.chatgpt.site`. This publication is explicitly a **runtime compatibility probe**, not a migrated Bi Brain suite or a V1 production release. It has a synthetic-only D1/R2 round-trip UI and one read-only HTTP MCP probe tool; no owner knowledge was uploaded.
+
+| P1 capability | Actual evidence | Gate |
+| --- | --- | --- |
+| Owner-private audience | `get_site` reports custom allowlist with only account `saasage.in@gmail.com`; signed-in `gowrishkar@gmail.com` received the platform 403 page. | Different-account denial verified; owner request identity and app-level allowlist still need an owner-account session. |
+| D1 | Production `read_database_overview` lists binding `DB` and migrated table `capability_probe`; table read returned zero rows. | Schema provisioning verified; no hosted write/readback yet. |
+| R2 | Logical `BUCKET` binding packaged and deployment succeeded. | Actual private object put/get not yet verified. |
+| HTTP MCP | Private deployment reports `has_mcp: true` and `get_site` returns the Site-provisioned MCP connection. A Bi Brain plugin installation/connection was suggested. | Connected-client discovery/call remains unverified. The published tool is only a scoped probe, not the suite's eight tools. |
+| Unattended work | Sites 0.1.75 instructions describe linked schedules, but the callable inventory has no `create_schedule` action; `get_site` did not provide a linked automations list. | Cloud scheduler and fresh unattended writer unproven. Do not claim background operation. |
+
+The Sites login in the available in-app browser offered only `gowrishkar@gmail.com`, which was denied by the Site policy. The actual owner account is `saasage.in@gmail.com`; its sign-in is needed to complete identity and D1/R2 readback. Keep the Site owner-private. P2–P6 remain open. The local Git-backed vault remains the reference for literal `git revert`; hosted revision semantics are undecided. Do not import owner data into the probe or widen access to work around this gate.
 
 ## Build review F1–F5 repairs — 2026-09-29
 
