@@ -14,6 +14,8 @@ Run with Node 24.19+ in the 24 LTS line: `npm ci`, `npm run db:migrate`, `npm ru
 
 The original build specification starts with [START_HERE.md](START_HERE.md). The implementation handoff is [prompts/BUILD_WITH_SOL.md](prompts/BUILD_WITH_SOL.md). Official repository: [Rishflips/Bi-Brain](https://github.com/Rishflips/Bi-Brain).
 
+For your own always-on server, use [SELF_HOSTING.md](docs/SELF_HOSTING.md), [the deployment-agent handoff](prompts/DEPLOY_OWN_SERVER.md), and `deploy/compose.yaml`. This runs the complete API, worker, SQLite and Git vault behind HTTPS with persistent volumes. ChatGPT Sites is no longer a deployment target. Check the [ship audit](docs/SHIP_AUDIT_2026-10-07.md) and BUILD_STATE for actual verification; live-server, native-client and live-provider gates remain separate.
+
 ## Product contract
 
 - A new user can paste one conversation and receive a useful, editable project brief before connecting accounts.

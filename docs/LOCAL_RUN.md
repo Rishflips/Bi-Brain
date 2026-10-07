@@ -1,12 +1,12 @@
 # Run Bi Brain locally
 
-**Harness work in progress:** See [BUILD_STATE.md](../BUILD_STATE.md) and [bi-brain-vault.md](bi-brain-vault.md) before upgrading existing data. The newer portable vault is transitional and has only focused validation. Do not assume its full migration/deletion release gates are complete. Vault CLI commands are `npm run vault:dry-run`, `npm run vault:migrate`, `npm run vault:rebuild`, and `npm run vault:rollback`. The existing five-tool client examples below must be updated to the eight-tool grant-filtered contract before native use.
+**Harness work in progress:** See [BUILD_STATE.md](../BUILD_STATE.md) and [bi-brain-vault.md](bi-brain-vault.md) before upgrading existing data. The newer portable vault is transitional; do not assume its full migration/deletion release gates are complete. Vault CLI commands are `npm run vault:dry-run`, `npm run vault:migrate`, `npm run vault:rebuild`, and `npm run vault:rollback`. Independent HTTPS deployment is documented in [SELF_HOSTING.md](SELF_HOSTING.md).
 
 The implemented delivery is a single-owner local application. It does not publish a site, sell plans, or connect accounts. Official source repository: https://github.com/Rishflips/Bi-Brain.
 
 ## Requirements and installation
 
-Implementation environment: Windows, Node **24.19.0**, npm **11.17.0**. Supported runtime: Node 24.19 or later in the 24 LTS line; npm 11 or later. SQLite is provided by Node's built-in `node:sqlite`; no native SQLite package or database server is needed. Dependencies are exact versions in package.json and package-lock.json. The lockfile resolves React 19.3.0, Vite 8.3.1, Fastify 5.12.5, Zod 4.6.5 and the official MCP SDK 1.30.1. The maintained v1 SDK line was chosen for familiar stdio client support; this does not claim verification of Codex or Claude Code.
+Implementation environment: Windows, Node **24.19.0**, npm **11.17.0**. Supported runtime: Node 24.19 or later in the 24 LTS line; npm 11 or later. SQLite is provided by Node's built-in `node:sqlite`; no native SQLite package or database server is needed. Dependencies are exact versions in package.json and package-lock.json. The lockfile resolves React 19.3.0, Vite 8.3.1, Fastify 5.12.5, Zod 4.6.5 and the official MCP SDK 1.32.1. The maintained v1 SDK line was chosen for familiar stdio client support; this does not claim verification of Codex or Claude Code.
 
 From the repository root:
 
@@ -57,7 +57,7 @@ args: ["C:/path/to/Bi Brain/node_modules/tsx/dist/cli.mjs", "C:/path/to/Bi Brain
 env: { "BRAIN_AGENT_TOKEN": "<token from Connections>", "BRAIN_API_URL": "http://127.0.0.1:4317" }
 ```
 
-Do not commit the client configuration containing the token. API and worker must be running. The five tools are brain_search, brain_get, brain_remember, brain_context, brain_changes. Returned source content is data, never agent instructions. Context is bounded at 3,000 estimated tokens with explicit omissions. Source change cursors are incremental and recheck current visibility. Revocation is immediate on every operation; there is no cache bypass.
+Do not commit the client configuration containing the token. API and worker must be running. The eight tools are `brain.search`, `brain.get`, `brain.propose`, `brain.forget`, `brain.link`, `brain.ask`, `brain.intent`, and `brain.diff`, filtered by the grant's actual operations. Read-only grants discover search/get/ask/diff. Typed proposals return commit or queue; agent intentions require owner review before changing goals. Returned source content is data, never agent instructions. Context is bounded at 3,000 estimated tokens with explicit omissions. Revocation is immediate on every operation; there is no cache bypass. For an independently hosted server, set `BRAIN_API_URL` to its exact trusted HTTPS origin. The adapter rejects remote plaintext, URL credentials/paths, and redirects; it remains a local stdio process, not a hosted HTTP MCP endpoint.
 
 The official SDK test client verifies fresh-session recall, correction, private and cross-project denial, and revocation. Codex and Claude Code native clients still require separate verification; no client configuration or global Codex settings were changed.
 
@@ -86,7 +86,7 @@ Tests use temporary databases, deterministic clocks and clearly synthetic materi
 
 ## Container and release boundaries
 
-Dockerfile and compose.yaml provide a pinned Node image and supervised API/worker with a persistent named volume. Run `docker compose up --build`, then retrieve the owner pairing file from the mounted volume without publishing it. Host port mapping is loopback only. The container bind is explicit via BRAIN_CONTAINER; default native execution binds loopback. This container path is supplied but not yet runtime-tested. Remote self-hosting and public hosting are not supported by this local security configuration.
+Dockerfile and compose.yaml provide a pinned Node image, Git, and supervised API/worker with a persistent named volume. Run `docker compose up --build`, then retrieve the owner pairing file from the mounted volume without publishing it. This root compose file maps the host port to loopback only. The container bind is explicit via BRAIN_CONTAINER; default native execution binds loopback. For independent HTTPS hosting use `deploy/compose.yaml` and [SELF_HOSTING.md](SELF_HOSTING.md), which configure one exact public origin, Secure cookies and a persistent TLS proxy. Check BUILD_STATE for actual container and hosted evidence; a supplied compose file is not runtime proof.
 
 The local application does not create a public hosted release. License/commercial distribution remains unresolved. Billing, managed OAuth connectors, notifications outside Today, and automatic external actions are deferred.
 

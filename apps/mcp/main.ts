@@ -1,9 +1,8 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
-const base = process.env.BRAIN_API_URL ?? "http://127.0.0.1:4317";
-if (!/^http:\/\/(127\.0\.0\.1|localhost):\d{1,5}$/.test(base))
-  throw new Error("Only the local Bi Brain API is supported.");
+import { agentApiUrl } from "./api-url.ts";
+const base = agentApiUrl(process.env.BRAIN_API_URL ?? "http://127.0.0.1:4317");
 if (!process.env.BRAIN_AGENT_TOKEN)
   throw new Error("Set BRAIN_AGENT_TOKEN from an owner-issued grant.");
 async function call(path: string, body?: unknown, idempotencyKey?: string) {
@@ -18,6 +17,7 @@ async function call(path: string, body?: unknown, idempotencyKey?: string) {
     },
     ...(body === undefined ? {} : { body: JSON.stringify(body) }),
     signal: AbortSignal.timeout(10000),
+    redirect: "error",
   });
   const value = await res.json();
   if (!res.ok) throw new Error(value.error?.message ?? "Access unavailable.");

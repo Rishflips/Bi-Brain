@@ -35,7 +35,7 @@ it("actual API and separate worker restart preserves browser session, arbitrary 
   }
   async function stop() {
     if (!child) return;
-    child.send("stop");
+    if (child.connected) child.send("stop");
     await new Promise<void>((resolve) => {
       if (child!.exitCode !== null) return resolve();
       child!.once("exit", () => resolve());

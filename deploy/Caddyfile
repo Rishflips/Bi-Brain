@@ -1,0 +1,3 @@
+{$BRAIN_DOMAIN} {
+    reverse_proxy brain:4317
+}

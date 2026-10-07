@@ -1,5 +1,20 @@
 # Release and operations
 
+## Independent deployment checkpoint — 2026-10-07
+
+ChatGPT Sites is canceled as a deployment path. Use [SELF_HOSTING.md](SELF_HOSTING.md) and [SHIP_AUDIT_2026-10-07.md](SHIP_AUDIT_2026-10-07.md) for the current one-owner HTTPS package. The checklist below records specification/history; it is not proof of a completed harness V1.
+
+- [x] Preserve real capture, shared authorization, durable queue and Git vault.
+- [x] Add explicit HTTPS origin/host security and Secure cookies with regression evidence.
+- [x] Include required Git, nonroot persistence, bounded shutdown and private build context.
+- [x] Provide independent Compose/TLS and a deployment-agent handoff; no deploy action in CI.
+- [x] Pass local 65-test suite, 8 browser journeys, 4 offline evals, typecheck/lint/build and dependency audit.
+- [ ] Record Linux/Docker CI evidence after workflow installation with an authorized credential.
+- [ ] Prove chosen host DNS/TLS, reboot, disk/monitoring and encrypted full-volume recovery/deletion barriers.
+- [ ] Complete live-model, two-native-client, broader failure drills and human pilot gates.
+
+No owner host has been deployed. The existing private Sites probe remains active because no reversible suspension control is available; permanent deletion is a separate action.
+
 ## Release levels
 
 1. Build pack: documentation and contracts.

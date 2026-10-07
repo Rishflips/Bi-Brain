@@ -7,6 +7,7 @@ export default tseslint.config(
       "data/**",
       "test-results/**",
       "playwright-report/**",
+      "sites-port/**",
     ],
   },
   ...tseslint.configs.recommended,

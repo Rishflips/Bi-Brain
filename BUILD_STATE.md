@@ -1,6 +1,23 @@
 # Build state
 
-Updated: 2026-09-30
+Updated: 2026-10-07
+
+## Independent deployment and ship audit — 2026-10-07
+
+The owner canceled ChatGPT Sites hosting. This supersedes the Sites migration plan below: no more Site publications, D1/R2 port or hybrid hosting work. The separate `sites-port/` probe checkout is preserved and ignored by parent Git/lint/Docker. The existing owner-private synthetic probe is **still active**: the connector has no suspend/unpublish action, and the owner settings UI exposes only permanent deletion. No deletion was authorized as a substitute for suspension; no new Site deployment occurred. `get_site` reports no linked automations. Historical Sites evidence below is not the current deployment plan.
+
+The full app now has a single-owner HTTPS deployment profile: one validated public origin, exact Host/Origin checks, Secure owner cookies, HSTS, unchanged shared grant authorization, and a local stdio adapter that can call trusted HTTPS without following redirects. Docker includes required Git/CA certificates, a private allowlisted build context, nonroot execution and liveness. The supervisor awaits child shutdown; persistent-volume HTTPS Compose/Caddy and a pinned-action Linux CI template are added. SDK/source-map advisory fixes are locked; final npm audit reports zero vulnerabilities. Owner data, permissions, licensing and monetization are unchanged.
+
+| Ship gate | Status | Evidence / remaining limit |
+| --- | --- | --- |
+| HTTPS configuration/auth/grants | Verified locally | Four new deployment regressions: capture/auth/sign-out, Host/Origin/CSRF denial, private filtering/revocation, invalid setup and adapter URLs. This is transport-contract injection, not a deployed TLS server. |
+| Existing suite/truth/deletion | Verified locally | 65/65 tests in 12 files, typecheck/lint/build, 4/4 offline evals, 8/8 real API/worker Chromium journeys. Paid calls: zero. Temporary Git permissions required approved outside-sandbox tests/eval/browser execution. |
+| Container/fresh Linux packaging | CI template delivered; installation pending | The supplied workflow template builds the image, requires Git history, owner auth, worker output, capture/session persistence after restart and SQLite backup, validates Compose/Caddy. Docker is absent locally. |
+| Operator handoff | Delivered | [SELF_HOSTING](docs/SELF_HOSTING.md), [ship audit](docs/SHIP_AUDIT_2026-10-07.md), [deployment-agent prompt](prompts/DEPLOY_OWN_SERVER.md). Database-only backup is distinguished from full Git/quarantine recovery. |
+| Live self-hosted release | Open | Owner supplies one always-on persistent host/domain. Prove trusted TLS, reboot persistence, private ports, restore/deletion barriers and actual native clients before owner data. Nothing deployed by this checkpoint. |
+| Full harness/local V1 | Open | Prior S1–S7 live model, native two-client, semantic/calibration, crash/disk-full and human gates remain open. Passing packaging does not close them. |
+
+Checks actually run: `npm run typecheck`, `npm run lint`, `npm test` (65/65), `npm run build`, `npm run brain-eval` (4/4 synthetic offline), `npm run test:e2e -- --workers=1` (8/8), `npm audit --audit-level=high` (zero vulnerabilities), `git diff --check`. Browser-generated screenshots were restored; no product UI change is included. Initial sandbox Git-write/DNS failures and the caught empty pairing-code fallback are documented in the audit. GitHub rejected Actions workflow creation because the saved credential lacks workflow scope. The pipeline is preserved as deploy/github-verify.yml for the operator to install; no CI run or Docker result is claimed. The application checkpoint is pushed separately from workflow installation.
 
 ## Sites production handoff — 2026-09-30
 

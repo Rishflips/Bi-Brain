@@ -15,7 +15,7 @@ Do not market levels 3 or 4 merely because level 2 works.
 
 Implement a stdio MCP adapter using the official SDK. The adapter forwards requests to the local API with a scoped token. Keep business logic and policy in the server. Stdout is reserved for protocol messages; logs go to stderr with sensitive values redacted.
 
-Remote HTTP/OAuth is a later integration milestone. Verify current protocol and client support against official documentation at implementation time.
+The local stdio adapter can call an independently hosted HTTPS API using an explicit `BRAIN_API_URL`, keeping the same scoped grant checks. Remote plaintext and redirects are rejected. A hosted HTTP MCP/OAuth transport remains a later integration milestone; see [SELF_HOSTING.md](SELF_HOSTING.md). Native-client compatibility remains separately unverified.
 
 ## Historical minimal tool surface (replaced by the eight-tool contract above)
 

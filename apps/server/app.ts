@@ -10,6 +10,7 @@ import { Brain } from "../../packages/domain/service.ts";
 import { BrainError } from "../../packages/domain/logic.ts";
 import { Storage } from "../../packages/storage/index.ts";
 import type { Principal } from "../../packages/contracts/index.ts";
+import { deploymentPolicy } from "./deployment.ts";
 declare module "fastify" {
   interface FastifyRequest {
     principal: Principal;
@@ -22,8 +23,13 @@ export async function createApp(
     pairSecret?: string;
     static?: boolean;
     metadataLogs?: boolean;
+    publicOrigin?: string;
   } = {},
 ) {
+  const deployment = deploymentPolicy(
+    options.publicOrigin ?? process.env.BRAIN_PUBLIC_ORIGIN,
+    Number(process.env.BRAIN_PORT ?? 4317),
+  );
   const app = Fastify({
     bodyLimit: 4 * 1048576,
     logger: false,
@@ -34,7 +40,7 @@ export async function createApp(
   await app.register(rateLimit, { max: 1000, timeWindow: 60000 });
   const secretFile = resolve(dirname(brain.store.path), "owner-secret");
   let pairSecret = options.pairSecret ?? process.env.BRAIN_OWNER_SECRET;
-  if (!pairSecret) {
+  if (pairSecret === undefined) {
     mkdirSync(dirname(secretFile), { recursive: true });
     if (!existsSync(secretFile))
       writeFileSync(secretFile, randomBytes(32).toString("hex"), {
@@ -42,6 +48,14 @@ export async function createApp(
       });
     pairSecret = readFileSync(secretFile, "utf8").trim();
   }
+  if (
+    !pairSecret ||
+    pairSecret.length > 200 ||
+    (deployment.secure && pairSecret.length < 32)
+  )
+    throw new Error(
+      "Owner pairing code must be nonempty, at most 200 characters, and at least 32 characters for HTTPS hosting.",
+    );
   app.decorateRequest("principal");
   app.decorateRequest("csrf", "");
   app.setErrorHandler((error, request, reply) => {
@@ -106,22 +120,21 @@ export async function createApp(
     });
   app.addHook("onRequest", async (req, reply) => {
     const host = req.headers.host ?? "";
-    if (!/^(127\.0\.0\.1|localhost)(:\d+)?$/.test(host))
-      throw new BrainError("FORBIDDEN", "Local host required.", 403);
+    if (!deployment.allowsHost(host, req.url))
+      throw new BrainError("FORBIDDEN", "Host not allowed.", 403);
     const origin = req.headers.origin;
-    if (
-      origin &&
-      !/^http:\/\/(127\.0\.0\.1|localhost):(4317|5173)$/.test(origin)
-    )
+    if (!deployment.allowsOrigin(origin))
       throw new BrainError("FORBIDDEN", "Origin not allowed.", 403);
     reply
       .header("X-Content-Type-Options", "nosniff")
       .header("Referrer-Policy", "no-referrer")
       .header("Cache-Control", "no-store");
+    if (deployment.secure)
+      reply.header("Strict-Transport-Security", "max-age=31536000");
     if (process.env.NODE_ENV === "production")
       reply.header(
         "Content-Security-Policy",
-        "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'",
+        "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; object-src 'none'; form-action 'self'",
       );
     if (
       !req.url.startsWith("/api/v1/") ||
@@ -173,6 +186,7 @@ export async function createApp(
       const { token, csrf } = brain.issueSession();
       reply.setCookie("brain_session", token, {
         httpOnly: true,
+        secure: deployment.secure,
         sameSite: "strict",
         path: "/",
         maxAge: 7 * 86400,
@@ -187,7 +201,12 @@ export async function createApp(
   app.delete("/api/v1/session", (req, reply) => {
     brain.owner(req.principal);
     brain.revokeSession(req.principal, req.cookies.brain_session ?? "");
-    reply.clearCookie("brain_session", { path: "/" });
+    reply.clearCookie("brain_session", {
+      path: "/",
+      secure: deployment.secure,
+      httpOnly: true,
+      sameSite: "strict",
+    });
     return { signed_out: true };
   });
   const params = (req: FastifyRequest) =>

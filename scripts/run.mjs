@@ -13,13 +13,41 @@ const children = [
   }),
 );
 let stopping = false;
+let exitCode = 0;
+let deadline;
+function finish() {
+  if (
+    stopping &&
+    children.every(
+      (child) => child.exitCode !== null || child.signalCode !== null,
+    )
+  ) {
+    clearTimeout(deadline);
+    process.exit(exitCode);
+  }
+}
 function stop(code = 0) {
   if (stopping) return;
   stopping = true;
-  for (const child of children) child.kill();
-  setTimeout(() => process.exit(code), 300);
+  exitCode = code;
+  for (const child of children)
+    if (child.exitCode === null && child.signalCode === null)
+      child.kill("SIGTERM");
+  deadline = setTimeout(() => {
+    for (const child of children)
+      if (child.exitCode === null && child.signalCode === null)
+        child.kill("SIGKILL");
+    process.exit(exitCode);
+  }, 15000);
+  finish();
 }
-for (const child of children) child.on("exit", (code) => stop(code ?? 1));
+for (const child of children) {
+  child.on("error", () => stop(1));
+  child.on("exit", (code) => {
+    if (!stopping) stop(code || 1);
+    finish();
+  });
+}
 process.on("SIGINT", () => stop());
 process.on("SIGTERM", () => stop());
 process.on("message", (message) => {
