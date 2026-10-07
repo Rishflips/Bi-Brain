@@ -39,7 +39,7 @@ The retained F1–F5 and accepted-intent forgetting regressions cover unsupporte
 
 ## Open release gates
 
-GitHub rejected the first push because the saved PAT cannot create Actions workflows without `workflow` scope. The unpushed commit was revised to retain the workflow as `deploy/github-verify.yml`; privileged workflow installation was not attempted again. The application/handoff can be pushed with existing repository authority. Container and fresh-Linux execution remain explicit operator gates until that template runs.
+GitHub rejected the first push because the saved PAT cannot create Actions workflows without `workflow` scope. The unpushed commit was revised to retain the workflow as `deploy/github-verify.yml`; privileged workflow installation was not attempted again. Application/handoff checkpoint **`ad35584`** was successfully pushed to official `origin/main` with existing repository authority. Container and fresh-Linux execution remain explicit operator gates until that template runs.
 
 1. **Owner production server:** no server/domain has been supplied or provisioned. DNS/TLS, durable disks, host reboot, firewall, encrypted full-volume recovery, monitoring and operational deletion barriers must be proved on the chosen host. Run SELF_HOSTING's acceptance sequence before owner data.
 2. **Harness completion:** filesystem authority remains transitional; broader crash/disk-full/credential-pattern adversarial coverage, non-head revert conflict handling and semantic quality remain open as recorded in BUILD_STATE.
