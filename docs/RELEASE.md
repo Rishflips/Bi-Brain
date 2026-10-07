@@ -13,7 +13,7 @@ ChatGPT Sites is canceled as a deployment path. Use [SELF_HOSTING.md](SELF_HOSTI
 - [ ] Prove chosen host DNS/TLS, reboot, disk/monitoring and encrypted full-volume recovery/deletion barriers.
 - [ ] Complete live-model, two-native-client, broader failure drills and human pilot gates.
 
-No owner host has been deployed. The existing private Sites probe remains active because no reversible suspension control is available; permanent deletion is a separate action.
+No owner host has been deployed. The previous private Sites probe was permanently deleted following the owner's explicit request and final confirmation on 2026-10-07. The owner list, connector project lookup and former URL verify removal/offline status. GitHub and local application data remain intact.
 
 ## Release levels
 
