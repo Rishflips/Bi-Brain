@@ -413,7 +413,11 @@ export async function createApp(
     return brain
       .entities(req.principal, "gate")
       .filter(
-        (g) => g.project_id === v.project_id && g.data.status === "queued",
+        (g) =>
+          g.project_id === v.project_id &&
+          (g.data.status === "queued" ||
+            (g.data.correction &&
+              ["accepted", "rejected", "reverted"].includes(g.data.status))),
       );
   });
   app.post("/api/v1/handoffs", (req) =>

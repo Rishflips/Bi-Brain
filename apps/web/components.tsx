@@ -8,7 +8,11 @@ export function CurrentKnowledge({
   pages: any[];
   gates: Entity[];
   openSource: (id: string) => void;
-  review: (id: string, version: number, action: "accept" | "reject") => void;
+  review: (
+    id: string,
+    version: number,
+    action: "accept" | "reject" | "undo",
+  ) => void;
 }) {
   return (
     <div className="knowledge-workspace">
@@ -78,45 +82,116 @@ export function CurrentKnowledge({
       )}
       {gates.length ? (
         <section>
-          <h2>Needs your review</h2>
-          {gates.map((g) => (
-            <article key={g.id} data-proposal-id={g.id}>
-              <h3>
-                {g.data.entity ??
-                  (g.data.type === "intent"
-                    ? "Proposed intention"
-                    : "New material")}
-              </h3>
-              <p>
-                {g.data.type === "intent"
-                  ? `${g.data.intent?.action ?? "Propose"} intention${g.data.intent?.target_id ? ` ${g.data.intent.target_id}` : ""}`
-                  : g.data.field
-                    ? `${g.data.field.aspect}: ${String(g.data.field.value)}`
-                    : "No factual claim was inferred."}
-              </p>
-              <p className="muted">{g.data.reasons.join(" · ")}</p>
-              <EvidenceList items={g.data.evidence ?? []} onOpen={openSource} />
-              <div className="actions">
-                {g.data.raw_id ? (
-                  <button onClick={() => openSource(g.data.raw_id)}>
-                    Read original
+          <h2>Decision review and history</h2>
+          <p className="muted">
+            Offline extraction recognizes one explicit “Entity aspect: value”
+            line per note. It does not understand arbitrary prose. Proposed
+            changes are not applied until you approve them.
+          </p>
+          {gates
+            .filter((g) => g.data.status === "queued")
+            .map((g) => (
+              <article key={g.id} data-proposal-id={g.id}>
+                <h3>
+                  {g.data.entity ??
+                    (g.data.type === "intent"
+                      ? "Proposed intention"
+                      : "New material")}
+                </h3>
+                <p>
+                  {g.data.type === "intent"
+                    ? `${g.data.intent?.action ?? "Propose"} intention${g.data.intent?.target_id ? ` ${g.data.intent.target_id}` : ""}`
+                    : g.data.field
+                      ? `${g.data.field.aspect}: ${String(g.data.field.value)}`
+                      : "No factual claim was inferred."}
+                </p>
+                {g.data.correction ? (
+                  <>
+                    <h4>Earlier accepted understanding</h4>
+                    {g.data.conflicts.length ? (
+                      g.data.conflicts.map((c: any) => (
+                        <div key={c.id}>
+                          <p>
+                            {g.data.entity}: {String(c.value)}
+                          </p>
+                          <EvidenceList
+                            items={c.evidence}
+                            onOpen={openSource}
+                          />
+                        </div>
+                      ))
+                    ) : (
+                      <p>No earlier accepted decision.</p>
+                    )}
+                    <h4>Suggested exact correction — not applied</h4>
+                    <p>
+                      {g.data.entity}: {String(g.data.field.value)}
+                    </p>
+                  </>
+                ) : (
+                  <p className="muted">{g.data.reasons.join(" · ")}</p>
+                )}
+                <EvidenceList
+                  items={g.data.evidence ?? []}
+                  onOpen={openSource}
+                />
+                <div className="actions">
+                  {g.data.raw_id ? (
+                    <button onClick={() => openSource(g.data.raw_id)}>
+                      Read original
+                    </button>
+                  ) : null}
+                  {g.data.type === "intent" && g.data.intent ? (
+                    <button onClick={() => review(g.id, g.version, "accept")}>
+                      Approve intention
+                    </button>
+                  ) : g.data.field && g.data.evidence?.length ? (
+                    <button onClick={() => review(g.id, g.version, "accept")}>
+                      {g.data.correction
+                        ? "Approve exact correction"
+                        : "Accept reviewed claim"}
+                    </button>
+                  ) : null}
+                  <button onClick={() => review(g.id, g.version, "reject")}>
+                    {g.data.correction
+                      ? "Keep earlier decision"
+                      : "Keep raw only"}
                   </button>
-                ) : null}
-                {g.data.type === "intent" && g.data.intent ? (
-                  <button onClick={() => review(g.id, g.version, "accept")}>
-                    Approve intention
-                  </button>
-                ) : g.data.field && g.data.evidence?.length ? (
-                  <button onClick={() => review(g.id, g.version, "accept")}>
-                    Accept reviewed claim
-                  </button>
-                ) : null}
-                <button onClick={() => review(g.id, g.version, "reject")}>
-                  Keep raw only
-                </button>
-              </div>
-            </article>
-          ))}
+                </div>
+              </article>
+            ))}
+          <details>
+            <summary>Reviewed decision history</summary>
+            {gates
+              .filter((g) => g.data.correction && g.data.status !== "queued")
+              .map((g) => (
+                <article key={g.id}>
+                  <h3>
+                    {g.data.entity}: {String(g.data.field.value)}
+                  </h3>
+                  <p>
+                    {g.data.status === "accepted"
+                      ? "Approved by you"
+                      : g.data.status === "reverted"
+                        ? "Undone by you"
+                        : "Earlier decision kept"}
+                  </p>
+                  <EvidenceList
+                    items={g.data.evidence ?? []}
+                    onOpen={openSource}
+                  />
+                  {g.data.status === "accepted" ? (
+                    <button onClick={() => review(g.id, g.version, "undo")}>
+                      Undo correction
+                    </button>
+                  ) : null}
+                  <p className="muted">
+                    Undo is refused if later edits or evidence changes make it
+                    unsafe.
+                  </p>
+                </article>
+              ))}
+          </details>
         </section>
       ) : null}
     </div>
@@ -135,7 +210,9 @@ export function EvidenceList({
         <blockquote key={`${e.source_id}-${i}`}>
           <p>{e.quote}</p>
           <button className="link" onClick={() => onOpen(e.source_id)}>
-            See original · version {e.source_version}
+            See original · version {e.source_version} · characters {e.start}–
+            {e.end}
+            <span className="muted"> · source {e.source_id}</span>
           </button>
         </blockquote>
       ))}

@@ -864,9 +864,11 @@ function App() {
                     });
                     await refresh();
                     setNotice(
-                      action === "accept"
-                        ? "Reviewed change saved."
-                        : "Original kept without promoting a claim.",
+                      action === "undo"
+                        ? "Correction undone without erasing history."
+                        : action === "accept"
+                          ? "Reviewed change saved."
+                          : "Earlier understanding kept. Original retained without promoting a claim.",
                     );
                   })
                 }

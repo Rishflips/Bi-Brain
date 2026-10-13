@@ -58,3 +58,7 @@ Licensing is deliberately unresolved; no permissive license has been granted by 
 # Current harness build
 
 This checkout includes an in-progress local suite/harness build. See [BUILD_STATE.md](BUILD_STATE.md) for verified versus open gates. The portable vault is documented in [docs/bi-brain-vault.md](docs/bi-brain-vault.md). `npm run brain-eval` runs synthetic offline fixtures and writes a machine-readable report; live model and native-client gates are separate.
+
+## Current explicit-decision review slice
+
+Newly saved explicit decisions such as `Beta pricing: free` can be reviewed into current understanding. A later `Beta pricing: paid` note proposes a source-cited exact correction, never silently applies it, and supports owner rejection or guarded approval/undo. Fresh project handoffs include agent instructions and approved context. See [the correction workflow and limitations](docs/CONTEXT_CONFLICTS.md) and the appended current checkpoint in BUILD_STATE.md. This is narrow offline extraction, not general semantic contradiction detection or verified native-client integration.
