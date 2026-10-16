@@ -8,8 +8,29 @@ import type {
 } from "../../packages/contracts/index.ts";
 import sample from "../../fixtures/beta-launch.json" with { type: "json" };
 import { EvidenceList, ProposalCard, CurrentKnowledge } from "./components.tsx";
+import {
+  SignIn,
+  ConnectionUnavailable,
+  type RuntimeMode,
+} from "./sign-in.tsx";
 import "./style.css";
 let csrf = "";
+/**
+ * Exact dollar display from integer micro-USD. A nonzero amount below the
+ * display floor is shown as "<$0.0001", never as a free "$0.0000".
+ */
+function formatUsd(microUsd: number): string {
+  if (!Number.isFinite(microUsd) || microUsd <= 0) return "$0.0000";
+  const usd = microUsd / 1_000_000;
+  return usd < 0.0001 ? "<$0.0001" : `$${usd.toFixed(6)}`;
+}
+/**
+ * Monotonic auth generation. It advances whenever the browser session is
+ * established, lost, or found to belong to a different account. Every
+ * account-scoped request captures it and refuses to resolve once it has moved,
+ * so a late response from a previous account can never repopulate the view.
+ */
+let authGeneration = 0;
 class ApiError extends Error {
   constructor(
     message: string,
@@ -23,6 +44,7 @@ async function api<T = any>(
   body?: unknown,
   method?: string,
 ): Promise<T> {
+  const generation = authGeneration;
   const response = await fetch("/api/v1" + path, {
     method: method ?? (body ? "POST" : "GET"),
     headers: {
@@ -32,14 +54,40 @@ async function api<T = any>(
     },
     ...(body ? { body: JSON.stringify(body) } : {}),
   });
-  const value = await response.json();
+  let value: any = null;
+  try {
+    value = await response.json();
+  } catch {
+    value = null;
+  }
+  // A superseded session's response is discarded, never applied.
+  if (generation !== authGeneration)
+    throw new ApiError(
+      "Your session changed. Sign in again to continue.",
+      "UNAUTHORIZED",
+    );
   if (!response.ok)
     throw new ApiError(
-      value.error?.message ?? "Your local brain is unavailable.",
-      value.error?.code ?? "UNAVAILABLE",
+      value?.error?.message ?? "Your brain is unavailable.",
+      value?.error?.code ?? "UNAVAILABLE",
     );
+  if (value === null)
+    throw new ApiError("Your brain sent an unexpected response.", "UNAVAILABLE");
   return value;
 }
+type RuntimeMeta = {
+  mode: RuntimeMode;
+  sign_in_url: string | null;
+  sign_in_available: boolean;
+  pairing_available: boolean;
+};
+type SessionInfo = { csrf: string; account_id: string | null };
+const isRuntimeMeta = (value: any): value is RuntimeMeta =>
+  !!value &&
+  typeof value === "object" &&
+  (value.mode === "local" || value.mode === "managed");
+const isSessionInfo = (value: any): value is SessionInfo =>
+  !!value && typeof value === "object" && typeof value.csrf === "string";
 function download(name: string, value: string, type = "text/markdown") {
   const url = URL.createObjectURL(new Blob([value], { type }));
   const a = document.createElement("a");
@@ -105,9 +153,16 @@ function App() {
         "#settings": "Settings",
       }) as Record<string, string>
     )[location.hash] ?? "Today";
-  const [paired, setPaired] = useState(false),
-    [loading, setLoading] = useState(true),
-    [code, setCode] = useState(""),
+  // Bootstrap is a three-state gate. The authenticated workspace is only ever
+  // reachable once a real `/api/v1/runtime` response has been validated; a
+  // failed runtime fetch never falls back to local pairing.
+  const [phase, setPhase] = useState<"loading" | "unknown" | "ready">(
+    "loading",
+  ),
+    [retryNonce, setRetryNonce] = useState(0),
+    [paired, setPaired] = useState(false),
+    [runtime, setRuntime] = useState<RuntimeMeta | null>(null),
+    [accountId, setAccountId] = useState<string | null>(null),
     [nav, setNav] = useState(navFromHash),
     [notice, setNotice] = useState(""),
     [error, setError] = useState(""),
@@ -194,13 +249,31 @@ function App() {
     if (hash && location.hash !== hash) history.pushState(null, "", hash);
   }, [nav]);
   useEffect(() => {
+    // Managed accounts must never share a selected scope through global browser
+    // storage; the selection lives only for this signed-in session.
+    if (runtime?.mode === "managed") return;
     localStorage.setItem("brain-project", scope);
-  }, [scope]);
+  }, [scope, runtime?.mode]);
+  useEffect(() => {
+    if (runtime?.mode !== "managed") return;
+    // Do not let a stale local scope or search from another visitor bleed into
+    // a managed session.
+    setScope("");
+    setSearch("");
+    setSearchResults([]);
+    setQueryPage(0);
+    try {
+      localStorage.removeItem("brain-project");
+    } catch {
+      /* storage may be unavailable */
+    }
+  }, [runtime?.mode]);
   useEffect(() => {
     document.documentElement.dataset.theme = dark ? "dark" : "light";
     localStorage.setItem("brain-theme", dark ? "dark" : "light");
   }, [dark]);
   const refresh = useCallback(async () => {
+    const generation = authGeneration;
     const [p, n, t, settings, g] = await Promise.all([
       api("/projects"),
       api("/search"),
@@ -208,34 +281,193 @@ function App() {
       api("/preferences/background"),
       api("/connections"),
     ]);
+    // A response that arrives after sign-out or an account change must not
+    // restore the previous account's data.
+    if (generation !== authGeneration) return;
     setProjects(p);
     setNotes(n);
     setToday(t);
     if (!preferencesDirty.current) setPrefs(settings);
     setGrants(g);
   }, []);
+  /**
+   * Clears every piece of per-account UI state: fetched data, chosen scope,
+   * search results, open dialogs, in-progress forms and one-time secrets.
+   */
+  const resetPersonalState = useCallback(() => {
+    setProjects([]);
+    setNotes([]);
+    setToday({
+      briefs: [],
+      goals: [],
+      proposals: [],
+      receipts: [],
+      pings: [],
+      status: { jobs: [] },
+    });
+    setPrefs(null);
+    setGrants([]);
+    setScope("");
+    setSearch("");
+    setSearchResults([]);
+    setQueryPage(0);
+    setKnowledgePages([]);
+    setGateQueue([]);
+    setIdentityDisclosure(null);
+    setDialog(null);
+    setConfirmation("");
+    setPreview(null);
+    setAdapterSelection(null);
+    setAdapterPreview(null);
+    setSource(null);
+    setProposal(null);
+    setBrief(null);
+    setHandoff(null);
+    setComparison(null);
+    setForgetProof(null);
+    setForgetNeedsRetry(null);
+    setNotice("");
+    setNewTitle("");
+    setBody("");
+    setCaptureScope("inbox");
+    setVisibility("project");
+    setSeparate(false);
+    setProjectTitle("");
+    setGoalTitle("");
+    setCriteria("");
+    setGoalDue("");
+    setGoalReview("");
+    setArtifact("");
+    setBriefText("");
+    setToken("");
+    setGrantProjects([]);
+    setCanWrite(false);
+    setExpiration("");
+    setSnooze("");
+    setClaimEntity("");
+    setClaimStatus("active");
+    setClaimQuote("");
+    setBusy(false);
+    preferencesDirty.current = false;
+  }, []);
+  /**
+   * Central invalidation: advance the generation (fencing every in-flight
+   * request), wipe all personal state, close dialogs and re-validate the real
+   * runtime and session. A browser that now holds a different account enters
+   * that account's workspace fresh.
+   */
+  const invalidateSession = useCallback(
+    (options: { message?: string } = {}) => {
+      authGeneration += 1;
+      csrf = "";
+      resetPersonalState();
+      // Leave the authenticated UI immediately: no dialog or workspace view
+      // may survive into the re-validation.
+      setPaired(false);
+      setAccountId(null);
+      if (options.message) setError(options.message);
+      else setError("");
+      setRetryNonce((value) => value + 1);
+    },
+    [resetPersonalState],
+  );
+  const bootstrap = useCallback(async () => {
+    const generation = (authGeneration += 1);
+    setPhase("loading");
+    setPaired(false);
+    // A re-validation must never re-render a previous account's data, even
+    // briefly, if the browser's credential changed while the runtime was down.
+    resetPersonalState();
+    let meta: RuntimeMeta | null = null;
+    try {
+      const value = await api("/runtime");
+      if (isRuntimeMeta(value)) meta = value;
+    } catch {
+      meta = null;
+    }
+    if (generation !== authGeneration) return;
+    if (!meta) {
+      // No authenticated UI is shown until a real runtime response validates.
+      setRuntime(null);
+      setAccountId(null);
+      setPaired(false);
+      setPhase("unknown");
+      return;
+    }
+    setRuntime(meta);
+    let session: SessionInfo | null = null;
+    try {
+      const value = await api("/session");
+      if (isSessionInfo(value)) session = value;
+    } catch (failure) {
+      if (generation !== authGeneration) return;
+      if (!(failure instanceof ApiError && failure.code === "UNAUTHORIZED")) {
+        setAccountId(null);
+        setPaired(false);
+        setPhase("unknown");
+        return;
+      }
+      session = null;
+    }
+    if (generation !== authGeneration) return;
+    if (session) {
+      csrf = session.csrf;
+      setAccountId(session.account_id ?? null);
+      setPaired(true);
+      setPhase("ready");
+      await refresh();
+    } else {
+      csrf = "";
+      setAccountId(null);
+      setPaired(false);
+      setPhase("ready");
+    }
+  }, [refresh, resetPersonalState]);
   useEffect(() => {
-    api("/session")
-      .then((s) => {
-        csrf = s.csrf;
-        setPaired(true);
-        return refresh();
-      })
-      .catch(() => {})
-      .finally(() => setLoading(false));
-  }, [refresh]);
+    // Validate the runtime and the session against the real endpoints on first
+    // paint and on every retry. The authenticated workspace stays unreachable
+    // until a runtime response validates.
+    void bootstrap();
+  }, [bootstrap, retryNonce]);
   useEffect(() => {
     if (!paired || demo) return;
     const timer = setInterval(() => {
-      if (!document.hidden)
-        refresh().catch(() =>
-          setError(
-            "Your local brain is offline. Saved work remains on this computer.",
-          ),
-        );
+      if (document.hidden) return;
+      const generation = authGeneration;
+      api<SessionInfo>("/session")
+        .then(async (session) => {
+          if (generation !== authGeneration) return;
+          // Compared independently of runtime mode, so a discovery gap cannot
+          // hide an account switch.
+          if ((session.account_id ?? null) !== accountId) {
+            invalidateSession({
+              message:
+                "You signed in as a different account. Reload this page to see that account’s work.",
+            });
+            return;
+          }
+          await refresh();
+        })
+        .catch((failure) => {
+          if (generation !== authGeneration) return;
+          if (failure instanceof ApiError && failure.code === "UNAUTHORIZED") {
+            invalidateSession({
+              message:
+                runtime?.mode === "managed"
+                  ? "Your session ended. Sign in again to continue."
+                  : "Your browser is no longer paired. Re-enter the installation code.",
+            });
+          } else {
+            setError(
+              runtime?.mode === "managed"
+                ? "We could not reach your brain. Your work is safe; this page keeps trying."
+                : "Your local brain is offline. Saved work remains on this computer.",
+            );
+          }
+        });
     }, 2500);
     return () => clearInterval(timer);
-  }, [paired, demo, refresh]);
+  }, [paired, demo, refresh, runtime?.mode, accountId, invalidateSession]);
   useEffect(() => {
     if (!paired || demo) return;
     let current = true;
@@ -292,14 +524,18 @@ function App() {
     }
   }, [today, dialog]);
   async function act(fn: () => Promise<void>) {
+    // Capture the generation so a callback that resumes after an account
+    // switch or sign-out cannot write a stale error or clear a new busy state.
+    const generation = authGeneration;
     setBusy(true);
     setError("");
     try {
       await fn();
     } catch (e) {
-      setError(e instanceof Error ? e.message : "The operation failed.");
+      if (generation === authGeneration)
+        setError(e instanceof Error ? e.message : "The operation failed.");
     } finally {
-      setBusy(false);
+      if (generation === authGeneration) setBusy(false);
     }
   }
   function close() {
@@ -331,6 +567,7 @@ function App() {
       throw new Error(
         "Each file must be at most 1 MiB and the batch at most 4 MiB.",
       );
+    const generation = authGeneration;
     const selection = {
       kind,
       project_id: scope || "inbox",
@@ -341,17 +578,28 @@ function App() {
         })),
       ),
     };
+    // Reading files is not an authenticated call: fence it explicitly so a
+    // session change during a large read cannot open a stale dialog.
+    if (generation !== authGeneration) return;
     setAdapterSelection(selection);
     setAdapterPreview(await api("/import-adapters/preview", selection));
+    if (generation !== authGeneration) return;
     setDialog("adapter-import");
   }
   async function droppedFolder(data: DataTransfer) {
+    // Folder traversal awaits FileSystem callbacks and can be suspended for a
+    // long time. Capture the session generation now so a traversal that resumes
+    // after an account switch is abandoned instead of previewing the previous
+    // account's files under the new session.
+    const generation = authGeneration;
+    const stale = () => generation !== authGeneration;
     const picked: { file: File; path: string }[] = [];
     async function visit(
       entry: any,
       path: string,
       depth: number,
     ): Promise<void> {
+      if (stale()) return;
       if (depth > 12 || picked.length > 50)
         throw new Error(
           "Folder nesting or file count exceeds the import limit.",
@@ -360,6 +608,7 @@ function App() {
         const file = await new Promise<File>((resolve, reject) =>
           entry.file(resolve, reject),
         );
+        if (stale()) return;
         picked.push({ file, path: `${path}${entry.name}` });
       } else if (entry.isDirectory) {
         const reader = entry.createReader();
@@ -367,19 +616,28 @@ function App() {
           const batch = await new Promise<any[]>((resolve, reject) =>
             reader.readEntries(resolve, reject),
           );
+          if (stale()) return;
           if (!batch.length) break;
-          for (const child of batch)
+          for (const child of batch) {
+            if (stale()) return;
             await visit(child, `${path}${entry.name}/`, depth + 1);
+          }
         }
       }
     }
     const roots = Array.from(data.items)
       .map((item: any) => item.webkitGetAsEntry?.())
       .filter(Boolean);
-    if (roots.length) for (const entry of roots) await visit(entry, "", 0);
+    if (roots.length)
+      for (const entry of roots) {
+        if (stale()) return;
+        await visit(entry, "", 0);
+      }
     else
       for (const file of Array.from(data.files))
         picked.push({ file, path: file.name });
+    // Never hand a superseded traversal to the preview request.
+    if (stale()) return;
     await previewAdapter("folder", undefined, picked);
   }
   function saveDialog() {
@@ -430,7 +688,11 @@ function App() {
     if (!file) return;
     if (file.size > 4 * 1048576)
       throw new Error("Import exceeds the 4 MiB limit.");
-    const result = await api("/imports/preview", JSON.parse(await file.text()));
+    const generation = authGeneration;
+    const text = await file.text();
+    if (generation !== authGeneration) return;
+    const result = await api("/imports/preview", JSON.parse(text));
+    if (generation !== authGeneration) return;
     setPreview(result);
   }
   return (
@@ -480,7 +742,13 @@ function App() {
           >
             Settings & privacy
           </button>
-          <small>Stored on this computer</small>
+          <small>
+            {phase !== "ready"
+              ? ""
+              : runtime?.mode === "managed"
+                ? "Stored in your account"
+                : "Stored on this computer"}
+          </small>
         </aside>
         <main>
           {demo ? (
@@ -502,54 +770,32 @@ function App() {
               {notice}
             </p>
           ) : null}
-          {loading ? (
+          {phase === "loading" ? (
             <p>Opening your brain…</p>
+          ) : phase === "unknown" ? (
+            <ConnectionUnavailable
+              busy={busy}
+              onRetry={() => setRetryNonce((value) => value + 1)}
+            />
           ) : !paired && !demo ? (
-            <section className="welcome">
-              <p className="eyebrow">YOUR PRIVATE SPACE</p>
-              <h1>A place for what’s worth keeping.</h1>
-              <p>
-                Save a conversation, a note, or a half-finished idea. Pick it up
-                later with the context intact.
-              </p>
-              <article>
-                <h2>Open your local brain</h2>
-                <p>
-                  Enter the installation code from{" "}
-                  <code>data/owner-secret</code> on this computer. This pairs
-                  your browser; no account is needed.
-                </p>
-                <form
-                  onSubmit={(e) => {
-                    e.preventDefault();
-                    void act(async () => {
-                      const s = await api("/session/pair", { secret: code });
-                      csrf = s.csrf;
-                      setCode("");
-                      setPaired(true);
-                      await refresh();
-                    });
-                  }}
-                >
-                  {field(
-                    "Installation code",
-                    <input
-                      type="password"
-                      required
-                      value={code}
-                      onChange={(e) => setCode(e.target.value)}
-                      autoComplete="off"
-                    />,
-                  )}
-                  <button className="primary" disabled={busy}>
-                    Open my brain
-                  </button>
-                  <button type="button" onClick={() => setDemo(true)}>
-                    Try an example
-                  </button>
-                </form>
-              </article>
-            </section>
+            <SignIn
+              mode={runtime?.mode ?? "local"}
+              signInUrl={runtime?.sign_in_url ?? null}
+              signInAvailable={runtime?.sign_in_available ?? false}
+              busy={busy}
+              onPair={(value) => {
+                // A fresh credential fences any request that preceded pairing.
+                authGeneration += 1;
+                void act(async () => {
+                  const s = await api("/session/pair", { secret: value });
+                  csrf = s.csrf;
+                  setAccountId(null);
+                  setPaired(true);
+                  await refresh();
+                });
+              }}
+              onDemo={() => setDemo(true)}
+            />
           ) : demo ? (
             <section>
               <p className="eyebrow">DEMO · SYNTHETIC MATERIAL</p>
@@ -1390,11 +1636,14 @@ function App() {
                       )}
                       {field(
                         "Daily cap (USD)",
+                        // Caps are integer micro-USD; 6-decimal USD precision
+                        // keeps a valid sub-cent cap from tripping the browser
+                        // stepMismatch and blocking Save preferences.
                         <input
                           type="number"
                           min="0"
                           max="100"
-                          step="0.01"
+                          step="0.000001"
                           value={prefs.daily_cap_micro_usd / 1000000}
                           onChange={(e) =>
                             setPrefs({
@@ -1408,11 +1657,14 @@ function App() {
                       )}
                       {field(
                         "Per preparation cap (USD)",
+                        // Caps are integer micro-USD; 6-decimal USD precision
+                        // keeps a valid sub-cent cap from tripping the browser
+                        // stepMismatch and blocking Save preferences.
                         <input
                           type="number"
                           min="0"
                           max="10"
-                          step="0.01"
+                          step="0.000001"
                           value={prefs.per_job_cap_micro_usd / 1000000}
                           onChange={(e) =>
                             setPrefs({
@@ -1436,6 +1688,10 @@ function App() {
                       <input
                         type="checkbox"
                         checked={prefs.provider_enabled}
+                        disabled={
+                          runtime?.mode === "managed" ||
+                          today.status.spend?.blocked
+                        }
                         onChange={(e) =>
                           setPrefs({
                             ...prefs,
@@ -1446,6 +1702,13 @@ function App() {
                       I authorize selected text to be processed by OpenAI within
                       these caps
                     </label>
+                    {runtime?.mode === "managed" ? (
+                      <p className="muted" role="status">
+                        Connected model processing is not available on managed
+                        hosting yet. Your saved work stays extractive and inside
+                        your account.
+                      </p>
+                    ) : null}
                     <div className="actions">
                       <button className="primary" disabled={busy}>
                         Save preferences
@@ -1457,11 +1720,32 @@ function App() {
                     {today.status.provider_configured
                       ? "configured"
                       : "not configured"}{" "}
-                    · actual $
-                    {((today.status.spend?.actual ?? 0) / 1000000).toFixed(4)} ·
-                    reserved $
-                    {((today.status.spend?.reserved ?? 0) / 1000000).toFixed(4)}
+                    · settled {formatUsd(today.status.spend?.settled_micro_usd ?? 0)}{" "}
+                    · unresolved (usage unknown){" "}
+                    {formatUsd(today.status.spend?.unresolved_micro_usd ?? 0)}
+                    {today.status.spend?.time_zone
+                      ? ` · ${today.status.spend.budget_day} ${today.status.spend.time_zone}`
+                      : ""}
                   </p>
+                  {runtime?.mode === "managed" ? (
+                    <p className="muted" role="status">
+                      {today.status.spend?.available
+                        ? "Managed paid processing is available within your operator allowance."
+                        : today.status.spend?.configured
+                          ? "Your managed allowance is configured, but paid processing is not enabled yet. Saved work stays available."
+                          : "Managed paid processing is not enabled. Saved work stays available."}
+                      {today.status.spend?.allowance
+                        ? ` Allowance left ${formatUsd(
+                            today.status.spend.allowance.remaining_micro_usd,
+                          )}.`
+                        : ""}
+                    </p>
+                  ) : null}
+                  {today.status.spend?.blocked ? (
+                    <p className="muted" role="status">
+                      {today.status.spend.blocked_message}
+                    </p>
+                  ) : null}
                 </article>
               ) : null}
               <article>
@@ -1492,13 +1776,16 @@ function App() {
                   <button
                     onClick={() =>
                       void act(async () => {
-                        await api("/session", {}, "DELETE");
-                        setPaired(false);
-                        csrf = "";
+                        // Best-effort server sign-out; the local session and all
+                        // personal state are cleared regardless of the result.
+                        await api("/session", {}, "DELETE").catch(() => {});
+                        invalidateSession();
                       })
                     }
                   >
-                    Unpair this browser
+                    {runtime?.mode === "managed"
+                      ? "Sign out"
+                      : "Unpair this browser"}
                   </button>
                 </div>
               </article>
@@ -1546,13 +1833,20 @@ function App() {
           <footer>
             One brain for the agents you use.
             <span>
-              Local preview ·{" "}
-              {demo ? "sample data" : "your data stays under your control"}
+              {phase !== "ready"
+                ? "Not connected"
+                : demo
+                  ? "Synthetic sample · nothing is saved"
+                  : runtime?.mode === "managed"
+                    ? "Your account · your choice of agent"
+                    : "Local preview · your data stays under your control"}
             </span>
           </footer>
         </main>
       </div>
-      {dialog === "save" ? (
+      {paired && !demo ? (
+        <>
+          {dialog === "save" ? (
         <Modal error={error} title="Save something" close={close}>
           <p>
             Text or Markdown · up to 100,000 characters and 1 MiB. Your original
@@ -1618,7 +1912,10 @@ function App() {
                       throw new Error(
                         "Choose a .txt or .md file no larger than 1 MiB.",
                       );
-                    setBody(await file.text());
+                    const generation = authGeneration;
+                    const text = await file.text();
+                    if (generation !== authGeneration) return;
+                    setBody(text);
                     setNewTitle(file.name.replace(/\.(txt|md)$/i, ""));
                   })
                 }
@@ -2679,6 +2976,8 @@ function App() {
             </>
           ) : null}
         </Modal>
+      ) : null}
+        </>
       ) : null}
     </>
   );

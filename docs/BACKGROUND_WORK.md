@@ -9,7 +9,7 @@ A schedule is a trigger, not a reason to reread the whole corpus. Process change
 ## Triage
 
 Rules handle exact duplicates, unsupported input, scope, explicit time conditions, and budget.
-Optional classifier handles narrowly defined questions: candidate type, likely relevance to an existing goal, or need for deeper review.
+The permanent System 1 capability handles narrowly defined questions where a model is justified: candidate type, likely relevance to an existing goal, or need for deeper review. Its provider is replaceable; its judgments remain constrained and separately evaluated. Provider-disabled operation is an explicitly degraded mode, not a claim that deterministic rules ran a decision model.
 Uncertain classifications remain queued or abstain. Explicitly saved material is never silently dropped.
 
 Classifier output is not proof of contradiction. System 2 reviews the actual sources and temporal context. Provider confidence is not an authorization decision.
@@ -55,6 +55,8 @@ If pricing or usage is unknown, prevent automatic paid execution rather than gue
 Concurrent jobs must not each spend the same remaining budget.
 
 User-visible spend distinguishes estimated, reserved, and actual amounts. A Codex subscription is not assumed to pay for Bi Brain's independent runtime calls.
+
+Current local implementation uses one immutable, one-shot reasoning dispatch per job, not a decision/repair chain. It commits the dispatch marker before I/O, settles known cost even if output is rejected or cancelled, and never resends a marked/settled slot on retry or restart. Unknown holds survive day changes and are counted alongside legacy reservations. There is no automatic hold expiry or invented reconciliation. Goal/source versions, consent, authorization and lease fences are rechecked before dispatch/publication; a later human plan cannot inherit an older model proposal. Durable overrun and recovery blocks cannot be cleared through ordinary preferences, while labeled extractive work stays available. Managed account/service allowances remain a separate, unimplemented gate.
 
 ## Schedule and notifications
 

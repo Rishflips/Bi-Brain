@@ -1,12 +1,12 @@
 # Provider interfaces
 
-The product runtime is model-agnostic. The owner requested GPT-6 Sol as the coding model, not as a mandatory paid backend for Bi Brain.
+The product runtime is model-agnostic. The owner's development orchestration choices (parent review, Astra Medium advice only, Ollama DeepSeek execution) do not select Bi Brain's runtime providers.
 
 ## Adapter boundaries
 
-TriageProvider.classify(event, candidates, limits) → typed labels, uncertainty, usage.
-ReasoningProvider.prepare(task, evidence, output_schema, limits, abort_signal) → typed result, usage, provider metadata.
-ConnectorAdapter.pull(cursor, granted_scope, limits) → bounded events and next cursor.
+Current reasoning: `PreparedProvider.prepareCall(input)` synchronously freezes request/configuration and returns identity, a reservation bound and one-shot `execute(signal)`. Execution returns accounting separately from validated output. `packages/providers/prepared.ts` contains the Responses adapter; the legacy `openai.ts` path is removed.
+
+Current decision transport: `DecisionProvider.upperBound(input)` and `decide(input, signal)` in `system-one.ts`. Decision policy and worker routing are not yet integrated. General triage/connector interfaces remain design targets, not proof of installed integrations.
 
 Provider calls are server/worker only. No API keys in browser code, context packages, or agent prompts.
 
@@ -28,10 +28,17 @@ Implement one real reasoning adapter after storage and queue foundations. Select
 Make model ID configurable. Confirm structured output support and usage accounting against the chosen API.
 Record provider/model/prompt versions with results.
 
-### Optional System 1 backend
+The local worker reserves one stable reasoning dispatch per job, marks it before network I/O and settles validated known usage before checking whether output may publish. Invalid output or later cancellation cannot erase a known charge. Missing/unaccepted usage or returned-model pricing leaves an unresolved hold; explicit retry and restart never resend that dispatch. Unknown is not zero. Legacy reservations remain counted alongside new dispatches, including unresolved holds from older days. A durable overrun/recovery block prevents ordinary preferences from re-enabling paid work while keeping labeled extractive processing useful. Managed paid processing remains denied until central account/service accounting is verified.
 
-Rules are first. A Jev-shaped adapter is optional after an evaluation corpus exists. Do not hardcode unverified pricing, speed, probability calibration, or model capabilities from brainstorming notes.
-Benchmark suppression errors as well as accepted classifications.
+Versioned prices must match operator-accepted concrete returned models; the default accepts only the requested model identifier. Unexpected aliases retain observed tokens but leave money unknown. The byte-based reservation covers the complete serialized Responses request plus a 4096-byte framing allowance and the configured output limit; it is an explicit adapter assumption, not a guarantee for arbitrary models/providers or verified invoice pricing. Requests are bounded to 1 MiB; output defaults to 2000 tokens (operator range 1–8000). No live-provider quality or pricing result is implied by fixture tests.
+
+### Permanent System 1 capability
+
+The 2026-10-16 owner direction makes the bounded decision layer a core release requirement, not a later optional feature. Rules are first; use a decision provider only at justified judgment points, and deeper reasoning for open-ended synthesis. A replaceable Jev/Clef-shaped transport is not an evaluated policy or proof of live integration. Self-hosted operation retains an honest degraded path when the provider is not configured.
+
+Do not hardcode unverified pricing, speed, probability calibration, or model capabilities from brainstorming notes. Benchmark suppression errors as well as accepted classifications; initially keep uncalibrated judgments advisory rather than silently suppressing useful work. Confidence is not authorization, semantic proof, or permission to accept claims.
+
+Reserve each provider dispatch and enforce aggregate job/tenant/service limits before integrating decision calls with deeper reasoning. Existing job-keyed reservations are not sufficient to account for multiple paid stages. Preserve uncertain usage after ambiguous failures. No external provider fallback without explicit consent, no model calls in storage transactions, and no classifier-driven loss of saved originals.
 
 ## Output contract
 

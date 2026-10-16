@@ -1,6 +1,189 @@
 # Build state
 
-Updated: 2026-10-07
+Updated: 2026-10-16
+
+## Managed suite execution — 2026-10-16 (in progress)
+
+The owner authorized active implementation with parent-agent orchestration/review/verification, GPT-6 Astra consultation and Ollama DeepSeek V4.1 Flash execution. The release target is now a browser-first managed personal suite with login and subscriptions plus a useful self-hosted open-source line. System 1 is a permanent capability with replaceable providers and rules-first policy, not an optional future feature or an obligatory inference on every action. This supersedes earlier local-only/deferred-managed/optional-System1 product direction; historical verification below remains historical.
+
+Latest model-use steering: make DeepSeek the primary executor and use **GPT-6 Astra Medium only for advice**; do not continue broad/high-effort Astra review loops. Parent verification remains independent. Earlier Astra invocations below are historical, not the current effort setting.
+
+Approved scope and trust requirements are recorded in [the release design](docs/superpowers/specs/2026-10-16-managed-suite-design.md). [The foundation plan](docs/superpowers/plans/2026-10-16-managed-foundation.md) uses Astra's recommended isolated SQLite + explicit vault/protected directory per personal account, trusted control-plane routing and tenant-bound service authorization. OIDC follows isolation; per-dispatch budget accounting precedes multi-stage paid processing. No existing local data is automatically adopted into managed accounts.
+
+### Reproduced baseline at `5598741`
+
+This session synced both local checkouts to the official `origin/main` checkpoint `5598741`, then created isolated implementation branch `feat/managed-suite-foundation` in the OpenCode worktree. The Desktop repository's unrelated untracked licensing memo and ignored `sites-port/` are untouched. This worktree initially had no `.env`, `data/` or `node_modules/`; no real owner data or provider key was loaded.
+
+Commands actually run on Windows with Node **v24.19.0**, npm **11.17.0**:
+
+- `npm ci`: 292 packages installed; audit reported zero vulnerabilities. npm warned the esbuild lifecycle script was not approved; typecheck/tests/build nevertheless worked without changing global script settings.
+- `npm run typecheck`, `npm run lint`, `npm run build`: passed.
+- `npm test`: **76/76**, **13 files** passed in 33.07 seconds.
+- `npm run brain-eval`: **4/4 synthetic offline cases** passed.
+- `npm run test:e2e -- --workers=1`: **9/9 Chromium journeys** passed in 36.3 seconds against actual API/worker/build and disposable test data. This includes the explicit-decision browser journey missing from the last checkpoint's narrow verification record. These are not live-model/native-client/human results.
+- Browser-generated changes to the two tracked reference screenshots were restored; no new UI is claimed by the baseline.
+- `npm view openid-client version engines dependencies --json` confirmed **6.8.8**; `npm install --save-exact openid-client@6.8.8` pins the maintained OIDC client and its resolved dependencies. Installation audit reported zero vulnerabilities. Dependency installation alone is not login verification.
+
+### Current gates
+
+Baseline G0, the local G1/G2 managed foundation, local prepared-call accounting/recovery, and the central managed spending authority slice are verified; see the latest checkpoint for **396 tests, 17 Chromium journeys and 4 offline evaluations**. Central account/service limits, account-bound worker accounting, own-account money views, operator policy tooling and cold managed recovery are implemented locally. Production managed paid processing remains unconditionally off pending reconciliation/control-storage/restart activation gates. System One transport is locally verified but not routed into processing. Semantic quality, native integrations, billing, live hosting and human release gates remain open. Only disposable synthetic identities were provisioned; no real external account was created, no runtime model was called, no public service was deployed and no source was pushed by this checkpoint. Open-source licensing remains an owner release decision.
+
+### Foundation review loop and restart checkpoint
+
+Implementation continued after a harness/server restart without discarding the saved branch. A newly attached ChatGPT account was tested by an actual **GPT-6 Astra** read-only review; the invocation worked, but the selected account is not observable and this does not prove product-runtime API credentials.
+
+Completed local building blocks remain distinct from an operational managed release:
+
+- Real per-account SQLite/vault/protected stores, trusted cookie/token routing, service-bound principals, suspension checks, marker/path containment and bounded pinned handles. Parent-created tests first demonstrated suspension bypass on acquired handles, vault junction substitution and redirected root ancestors, then passed after repair.
+- Real Jev/Clef-shaped typed transport with no hidden retries/fallback, bounded streams/deadlines, closed option validation, model-bound versioned prices and retained known or unknown accounting. Parent regressions demonstrated stalled-body hangs, unbounded stream consumption, special-key loss and pre-dispatch cancellation races before repair. Astra additionally identified lost usage on invalid decisions, unrelated-model pricing and unread failed response bodies; the repaired focused suites were independently rerun.
+- Maintained OIDC client with real signed synthetic-issuer protocol tests, PKCE/state/nonce/issuer/audience/signature checks, bounded transport and cancellation before headers and during bodies. Parent cancellation regressions failed before repair; **22/22 tests in two files** passed on independent rerun after restart.
+- Durable single-use login coordinator in the control database. Astra found that capacity admission evicted valid attempts and was not atomic; DeepSeek changed it to reject new admission rather than evict live records under an immediate transaction. Parent verification is pending for that latest repair.
+- Migration 4 and per-dispatch accounting primitives preserve legacy reservations and count cumulative job spend plus unresolved holds. **These primitives do not yet replace worker accounting**. Parent review found an already-reserved call could dispatch after a separate overrun block; the new regression is pending repair.
+- Tenant-bound Worker and fair single-concurrency managed scheduler preserve original agent scopes and pin runtime handles across asynchronous work. Main-process configuration/shutdown and browser login wiring are still being implemented, not claimed operational.
+
+Independent command after restart: `npm test -- tests/integration/system-one.test.ts tests/integration/system-one-review.test.ts tests/integration/managed.test.ts tests/integration/managed-review.test.ts tests/integration/spend.test.ts tests/integration/managed-worker.test.ts` passed **108/108 tests across six files**. This precedes the added spend review regression and is not a final combined green claim. The next checkpoint must run the complete settled tree, browser journeys, typecheck/lint/build and whitespace checks, preserving reference screenshots.
+
+Known external gates remain: no live OIDC/provider/decision-model/payment verification or hosted deployment, no native client round-trip proof, no human pilot, no license grant. Login and extractive per-account behavior can be completed independently of these gates; production billing/intelligence must not be silently simulated.
+
+Additional independent checks during integration: managed login coordinator plus managed/local binding suites passed **13/13 tests in three files** after the non-evicting admission repair and bound context-pack fix. Astra then found stale lease time sampled before SQLite's write-lock wait; a parent regression using a separate real Node/SQLite lock-holding process reproduced dispatch after expiry. Clock sampling and authoritative expiry checks moved inside the acquired transaction; the spend suites passed **17/17 tests in two files** on independent rerun. `npm audit --audit-level=high` reported zero vulnerabilities. Installed native clients were queried only for version/help: Claude Code **2.1.283**, Codex CLI **0.156.1**; this does not establish authentication, model access or a native BiBrain round trip. No global native-client configuration was changed.
+
+### Managed browser integration review (in progress)
+
+Real sign-in/callback/logout routes, secure cookies, public mode metadata, explicit shared local/managed startup configuration and managed worker startup/shutdown wiring have been implemented. Managed HTTP and worker entry points explicitly prohibit paid model dispatch until central accounting exists. The managed first-use screen uses the real sign-in link, not local pairing. Operator instructions are in `docs/MANAGED_RUN.md`.
+
+Parent independently ran `npm test` (**239/239, 26 files**), `npm run typecheck`, `npm run lint`, `npm run build`, and `npm run brain-eval` (**4/4 offline synthetic cases**) successfully. A first combined browser run collided with another browser run's artifacts/server lifecycle and failed; it is not counted green. After making the parent the sole browser runner, all **9 existing local Chromium journeys passed**. The new managed two-account sign-in/capture/logout/relogin journey separately passed **1/1** using the real HTTP app and signed disposable synthetic issuer. Its synthetic HTTPS interception replaces redirect chains with documented hop pages: it is not a real TLS or native browser redirect-chain proof; HTTP integration tests assert the real 302/303 responses.
+
+Astra's integration review found two real UI defects: account changes left private inspectors visible, including late responses reopening them; failed runtime discovery could enter the workspace without known mode or fall back to local pairing. Parent browser regressions reproduced the already-open inspector leak, delayed-response leak and authenticated-unknown-mode failure before repair. Comprehensive account-state invalidation and explicit runtime-unavailable/retry behavior are now being repaired; do not mark the sign-in/UI gate complete until those tests and a settled combined suite pass. An additional parent regression reproduced malformed issuer URLs accepted by shared startup configuration (the worker does not instantiate the stricter OIDC adapter); the configuration repair awaits parent rerun.
+
+### Resumed verification and executor-first handoff
+
+Parent verified the issuer repair with `npm test -- tests/integration/runtime-config.test.ts tests/integration/runtime-config-review.test.ts`: **11/11, two files**. Ledger, real two-process contention and configuration regressions passed together: **20/20, four files**. The executor added real server/worker entry-point tests for capture → separate-worker extractive brief → forced restart persistence, isolated managed storage and invalid-config startup refusal; these use loopback HTTP with a synthetic Host, not TLS or live identity. Windows forced termination does not prove graceful signal handling.
+
+After the account-state repairs, parent ran `npm run typecheck`, `npm run lint`, `npm run build` and the full browser command `npm run test:e2e -- --workers=1 --output=test-results/settled-parent`: **14/14 Chromium journeys passed**, including four independent UI regressions and the two-account signed synthetic-issuer journey. Generated reference screenshots were restored; `git diff --check` passed (line-ending warnings only).
+
+A concurrent full-test/typecheck/lint/build run exceeded 180 seconds with test failures and is **not** counted green. DeepSeek subsequently reproduced **30/30** tests in the flagged files and **245/245 across 29 files** with `npx vitest run --maxWorkers=2` under settled conditions. No failure was reproduced and no production/test-timeout change was made; external CPU contention is consistent with the evidence, not conclusively established as the sole cause. Parent's final full-suite rerun must be serial with other heavy verification. A narrow deferred-folder/account-switch edge is being checked independently before the final browser checkpoint. The next paid-call worker integration is being planned by DeepSeek; it is not implemented or enabled by this checkpoint.
+
+### Foundation checkpoint — independently verified
+
+Parent reran plain `npm test` **serially**: **245/245 tests passed across 29 files in 71.37 seconds**. This includes the actual managed server/worker entry-point and restart tests, configuration repair, lease-lock regression and true process-contention tests; no timeout or test-runner configuration was changed.
+
+DeepSeek proved one additional account-switch bug RED→GREEN: folder enumeration suspended under account A could resume under B's credentials before the nested preview function captured its generation. The traversal now captures its generation before awaiting directory/file callbacks and checks it before preview. A new browser regression verifies that A's file body is never posted into B's preview. Parent's first combined run then exposed a test teardown race (polling against an already-closed injected server); closing the test browser context before its server fixed the fixture lifecycle. Parent reran `npm run test:e2e -- --workers=1 --output=test-results/final-foundation-parent`: **15/15 Chromium journeys passed**. The 245-test full suite precedes this test-only teardown adjustment. These results establish the foundation checkpoint, not subsequent prepared-call task revisions.
+
+Foundation status: isolated accounts, bound shared-service access, synthetic-issuer OIDC login/logout, account-safe browser first use, extractive managed worker processing and forced-restart persistence are verified locally. The worker/provider implementation gate is now the [prepared-call dispatch plan](docs/superpowers/plans/2026-10-16-worker-dispatch-integration.md). Parent reviewed and corrected the plan before handing **Task 1 only** to DeepSeek; the existing worker/provider remains active until a separately verified contract switch. Managed paid processing remains explicitly denied. No commit, push, deployment, live identity/model/payment request or license decision occurred.
+
+### Prepared-call Task 1 — independent review in progress
+
+DeepSeek added `packages/providers/prepared.ts` and its 17-test suite without switching the worker. It snapshots requests/configuration, returns separate accounting/output results and prevents duplicate execution. Executor-reported focused tests/typecheck/lint are not final parent approval. Parent independently added `tests/integration/prepared-provider-review.test.ts` and reproduced lost legacy evidence checks: supported claims without evidence, empty or unevidenced goal proposals and invalid references on abstentions were accepted while their known accounting correctly remained intact. Four regressions failed before repair. An additional generated `user_assertion` without evidence also failed independently after the first four were repaired; only explicitly labeled hypotheses may lack evidence. DeepSeek is finishing this narrow repair plus a truly ignored-signal late-response test. Task 2 has **not** been handed off; no prepared adapter is used by production jobs yet.
+
+### Prepared-call Task 1 accepted; worker switch in progress
+
+Parent reran `npm test -- tests/integration/prepared-provider.test.ts tests/integration/prepared-provider-review.test.ts`: **23/23 tests passed, two files** after the evidence repairs. The independent suite also verifies immutable credential/price/model/evidence snapshots across caller mutation. DeepSeek corrected the shared test-fixture mutation and added genuinely ignored-abort late-response disposal coverage. Task 1 is accepted as a locally tested adapter, not a live-provider result.
+
+Parent handed **Task 2 only** to DeepSeek: switch worker dispatch/settlement/receipts and adapt existing fake providers atomically, keeping managed paid dispatch denied. Parent's new `tests/integration/worker-dispatch-review.test.ts` first failed **2/2** against the unswitched worker: known cost must survive cancellation without stale job/receipt publication, and unexpected post-dispatch failure must retain its hold and original accounting across retry. These are expected integration REDs pending implementation, not a completed green tree. Shared status/UI and restore barriers remain later Tasks 3/4; the worker switch must pass independent verification before either is claimed complete.
+
+Task 2 executor switched the worker and staged deletion of the legacy provider after adapting its imports/fakes. Parent independently reran worker/dispatch/managed-worker tests: **20/20 passed**. Further actual-diff review exposed five material behavior failures, reproduced in the expanded seven-case independent worker suite: unknown-cost/ok-output published a zero-cost brief; a goal plan changed during preparation or execution still received a stale proposal stamped with its newer plan version; and legacy held/settled reservations were mislabeled as no-attempt receipts. The original cancellation/unknown-retry regressions remain green. DeepSeek is repairing these five REDs plus pre-dispatch cancellation checks before the next independent gate. The executor's earlier 281-test full run is historical and does not supersede these added failures. Tasks 3/4 are still not handed off.
+
+### Worker switch accepted; authoritative status in progress
+
+DeepSeek repaired all five worker review failures, added abort-before-admission/mark checks, and reported 288/288 tests in a serial full run. Parent independently ran `npm test -- tests/integration/worker-dispatch.test.ts tests/integration/worker-dispatch-review.test.ts tests/integration/brain.test.ts tests/integration/safety.test.ts tests/integration/managed-worker.test.ts`: **52/52 passed in five files**. Unknown accounting now cannot publish, goal versions are checked before dispatch and publication, known charges survive discarded results, and legacy receipts retain their real accounting state. This accepts Task 2 locally; no live provider verification is implied.
+
+Task 3 only is now assigned to DeepSeek: use the authoritative ledger for shared status/UI, prevent preference-based re-enable of a durable block, and preserve useful explicitly labeled extractive work. Parent added two independent status regressions and observed RED before implementation: combined legacy/new costs in a frozen accounting zone were missing, and an old enabled preference ignored the durable block. Task 4 restore barrier is not yet assigned. Managed paid processing remains unavailable pending central account/service accounting.
+
+### Shared spending accepted; recovery gate in progress
+
+Parent independently reran status/worker and their review suites: **27/27 passed, four files**. Status now counts legacy/new settled costs and every unresolved hold, honors the frozen accounting zone, reports content-free overrun/recovery reasons, and refuses preference-based re-enablement. Effective paid consent is false under a durable block; labeled extractive work remains available. Parent reran all current browser journeys: **15/15 passed** after the worker/status switch. DeepSeek additionally wrote one spending-controls browser regression (small unknown hold, disabled consent, correct overrun explanation and actual HTTP re-enable refusal); it is not yet run by the parent and is not counted green.
+
+Task 4 is assigned: protect SQLite restore, migration rollback copies, and reconstruction of a new operational database from an existing vault. Normal rebuild with intact accounting and ordinary fresh first use must retain their existing behavior. Recovery must persist the paid block before later replay can fail; lost accounting never implies a new free allowance. These operational entry points are still under implementation/review, not claimed safe from a successful in-memory test alone.
+
+One narrow **GPT-6 Astra Medium** advisory invocation recommended a single authoritative control-plane ledger for all managed money, retaining tenant records as conservative dispatch journals/projections. DeepSeek is drafting that next design for human review only; there is no managed allowance implementation, activation or billing claim. The current local ledger remains authoritative for self-hosted operation.
+
+### Final local dispatch/recovery checkpoint — 2026-10-16
+
+Completed and independently verified locally: immutable one-shot prepared reasoning calls; per-dispatch reservation/mark/settlement with no resend of ambiguous calls; known charges retained through invalid output, cancellation and stale goals; legacy/new authoritative spend; durable blocked re-enable; and paid-recovery barriers for SQLite restore, migration rollback copies and reconstruction from an existing vault. Normal fresh first use and existing-database rebuild remain covered. Restored accounting rows are retained; empty older accounting does not grant a fresh allowance. Operator reconciliation is not implemented and there is no unsafe resume button.
+
+Final parent commands (serial on Windows/Node 24.19.0):
+
+| Command | Actual result |
+| --- | --- |
+| `npm test` | **303/303 passed, 36 files**, 149.42 seconds |
+| `npm run typecheck` | passed |
+| `npm run lint` | passed |
+| `npm run build` | passed, 18 modules |
+| `npm run brain-eval` | **4/4 synthetic offline cases** |
+| `npm run test:e2e -- --workers=1 --output=test-results/final-dispatch-parent` | **16/16 Chromium journeys** |
+| `npm audit --audit-level=high` | zero vulnerabilities |
+| `git diff --check`, `git diff --cached --check` | passed; unstaged check reports line-ending warnings only |
+
+Two final failures were not hidden: the spending browser regression exposed that valid $0.001 caps hit native `stepMismatch` and could not save unrelated preferences; both USD inputs now support integer-micro-USD precision. A subsequent **serial** full run timed out one real-Git deletion test at 5103 ms against its inherited 5000 ms deadline. Only that test received the same bounded 20-second allowance as neighboring Git-heavy tests; all assertions and production code were unchanged. The executor repeated it three times (~4.9 seconds each), all 13 vault tests passed, and the parent's complete final 303-test run passed. No global timeout increase was made.
+
+The 16 browser journeys cover the nine original local journeys, signed synthetic-issuer managed login/isolation/logout/relogin, account-switch/open/late/folder privacy regressions, runtime-unavailable retry, and real blocked-spending display/save/HTTP refusal. Synthetic-origin interception is not native redirect-chain, hosted TLS, live identity or model evidence. Process tests prove real server/worker forced-restart persistence, not Windows graceful signal handling. Reference screenshots are restored; no commit/push/deployment occurred. The old provider deletion is staged, with the rest of the implementation still uncommitted on `feat/managed-suite-foundation`.
+
+Next architectural gate: review the draft [managed spending authority design](docs/superpowers/specs/2026-10-16-managed-spending-design.md). It recommends central money authority with default-zero account/service allowances, conservative tenant journals and explicit crash/rollover/revocation tests. It is **not approved or implemented**. Billing, System One policy/quality, ordinary-prose quality, two native-client proofs, hosted operations and human/license/privacy release gates remain separate.
+
+### Managed money authority — approved, implementation started
+
+The owner approved the next design explicitly: **"approved, go ahead ship it!"**. This supersedes the pending-review status in the preceding checkpoint, not its verification results or release limits. The [managed spending plan](docs/superpowers/plans/2026-10-16-managed-spending.md) is being executed by DeepSeek, with parent review and no new Astra invocation required.
+
+Parent review corrected material plan hazards before execution: pre-existing dispatch markers must never grant resend permission after a crash; all providers/stages share one service cap; identity and admission constraints remain immutable; status must never claim availability while the production worker denies it; and control-plane restore must not resurrect revoked session/token access. Task 1 only is assigned: pure central monetary types, control-database policy/reservation primitives and real multi-account/process contention tests. Existing worker/runtime/tenant-ledger behavior is not switched in this task. Default-zero allowances, no live calls, no push/deployment and no managed-paid activation remain explicit constraints.
+
+Managed-money Task 1 executor delivered the pure domain types, `ManagedSpendingStore` and tests in four new files. Parent independently ran the initial store and true-contention suites: **19/19 passed, two files**. Parent then added `tests/integration/managed-spending-review.test.ts` and reproduced **five failures in six cases**: zero service policy did not deny a zero-bound reservation/mark, and date-only, zone-less or locale allowance timestamps were accepted. The global overrun block correctly denied a previously reserved call from a different account. DeepSeek is repairing the default-deny and explicit-ISO-zone checks before Task 2 is assigned; no worker or runtime has switched to central accounting yet.
+
+After repair, parent independently reran the central store, review and real-contention suites: **29/29 passed, three files**. Admission and mark now explicitly require all four policy dimensions positive, including zero-cost estimates; allowance instants require explicit ISO time zones and canonical UTC storage. Task 1 is accepted locally. **Task 2 only** is now assigned to DeepSeek: account-bound coordination, worker accounting injection, central-authoritative receipts (including projection failure) and crash/no-resend/history-eligibility tests. Status/activation, operator CLI and control-plane recovery remain later tasks. Production paid activation remains off.
+
+Managed-money Task 2 executor delivered the internal accounting seam, account-bound coordinator, managed worker injection and central receipt lookup. Parent independently reran coordinator/worker-review/managed-worker tests: **28/28 passed**. Parent then reproduced **3/3 failures** in `managed-accounting-review.test.ts`: eligibility inspected only the current job, allowing older unknown legacy/new tenant history on another job to be ignored; and a failed central settlement with successful tenant actual-cost persistence did not stop further service admission. DeepSeek is repairing account-wide eligibility plus durable service-wide settlement-failure reconciliation blocking, with a read-only central lookup extension already accepted and a narrowly authorized failure-marker extension. No Task 3/4 or activation handoff has occurred.
+
+Parent independently verified the initial Task 2 repairs with **34/34 tests in four files**. A fourth fault-injection regression then reproduced a remaining failure when both central settlement and its global safety-marker write fail: after writes recover, a new store on the same control handle could admit more spend. A narrow **Astra Medium advice-only** consultation recommended a non-clearing shared-control-handle process latch and fail-stop managed scheduling, not a new transaction framework. DeepSeek is implementing that containment and propagating the fatal condition past ordinary job-error handling; capture must remain usable. This process-local protection must not be described as durable or multi-process recovery. Production paid activation remains unconditionally off pending enforceable restart reconciliation/control-storage failure gates. Task 3 is still not assigned.
+
+Parent reran coordinator, independent review and managed-worker suites after fail-stop containment: **31/31 passed, three files**. Task 2 is accepted locally with its explicit process-local/restart limitation; the executor additionally reported a serial 356-test full run. Task 3 is now assigned: central-authoritative account money views, runtime/status injection, a trusted operator policy CLI and honest default-off activation metadata. An independent test-only executor owns `managed-money-view-review.test.ts` to exercise real two-account services/HTTP, stale-projection immunity, suspension, and omission of global service financial details. Parent owns its eventual verification. Task 4 control backup/restore is not assigned. No managed paid processing is enabled.
+
+Task 3 parent initially verified **14/14 tests**, including four independent real two-account HTTP/service cases. Extended review caught one display error: positive configured service policy was reported as available capacity even when its cap was exhausted; that repair was executor-verified but not yet parent-rerun. User-lowered cap/remaining values already passed independent coverage. Parent also reproduced **2/2 failures** in `managed-policy-review.test.ts`: CLI accepted an unrelated existing directory and initialized a control plane, and silently accepted extra arguments while changing policy. DeepSeek is repairing trusted-root preflight and exact argument counts before Task 3 acceptance. A new independent browser journey is being written without running it; parent remains the only browser runner. Task 4 is not started.
+
+Parent reran the complete Task 3 focused set after both repairs: **18/18 tests in four files passed**. Task 3 is accepted locally: account-specific central financial status, lower user caps, capacity-versus-configuration distinction, financial privacy, strict operator CLI targeting/arity and real-process default-off restart checks. Task 4 is assigned for a scoped **offline** managed snapshot/recovery path: matching control/tenant/vault inventory, financial barriers and restored-credential invalidation before later replay, current deletion replay and incomplete-root refusal. Existing local backup/restore stays separate. The parent has not yet run a managed-spending browser journey or final combined verification; the 372-test executor run predates the last CLI repairs.
+
+Parent ran the new managed-spending Chromium journey: **1/1 passed**, proving central $0.005 actual versus stale tenant $0.010 and another account's $0.020 hold, truthful disabled processing, real fractional-cap persistence, a reconciliation explanation and capture during pause. These use synthetic-origin interception/opaque synthetic-account sessions, not hosted TLS or live identity/model calls. `npm audit --audit-level=high` reported zero vulnerabilities.
+
+A narrow independent DeepSeek read-only review identified a material missing post-mark guard; parent separately reproduced consent disabled during marker acquisition still causing provider execution. The repaired final pre-I/O consent/source/goal/abort/cap check passed the parent's worker/worker-review/accounting-review run: **29/29**. Marked holds are deliberately retained on refusal; no retry/resend or refund is inferred. A review suggestion to add account policy to public runtime metadata was rejected: per-account `spend.configured` plus public default-off reason is the corrected privacy-safe contract.
+
+Task 4 initially passed parent **9/9** barrier/recovery tests, but actual code review plus `managed-recovery-review.test.ts` reproduced **5/5 failures**: missing current tenant storage silently skipped deletion reconciliation, destination-ancestor and tenant-directory junctions were followed, ordinary quarantine files ending `-wal` were dropped, and manifest inventory could omit accounts still present in its hashed control DB. DeepSeek is repairing these boundaries and adding actual CLI, failed-replay/incomplete-root and retained-history evidence. These five regressions are not yet green; recovery is not accepted and no final combined green claim is made.
+
+### Central managed money checkpoint — independently verified
+
+The approved [managed spending plan](docs/superpowers/plans/2026-10-16-managed-spending.md) is implemented locally. DeepSeek executed the slice; parent review reproduced and verified the repairs above. A narrow Astra Medium consultation was advice-only. No background implementer remains active.
+
+Delivered:
+
+- One control-database monetary authority with default-zero account/service policy, immutable UTC allowance windows, one shared service UTC-day cap, cumulative-job/user-day limits and carried unresolved holds. Real two-account/process admission and expiry-under-lock are covered.
+- Account-bound worker coordination, fresh-mark-only dispatch, account-wide legacy/history eligibility, central-first known settlement, authoritative receipts despite stale/failed tenant projections, durable reconciliation blocks and a process-local fatal-write fuse. A final post-mark check prevents dispatch after consent/source/goal/abort/cap changes observed while markers were acquired.
+- Own-account central money views with lower user caps and no shared-service financial totals, truthful hard-off processing metadata and strict trusted operator policy tooling.
+- Cold/offline managed backup and new-root restore, matching control/tenant/vault/quarantine inventory and hashes, current deletion replay, credential invalidation, preserved financial obligations and refusal to open incomplete restores. All five recovery review regressions are green. Parent additionally verified deletion absence from export, decoded `git log --all -p`, retained source files and reachable/unreachable Git history via `verifyForget`.
+
+Final parent commands, run serially on Windows/Node 24.19.0 against the settled implementation:
+
+| Command | Actual result |
+| --- | --- |
+| `npm test -- --maxWorkers=1` | **396/396 passed, 49 files**, 136.20 seconds |
+| `npm run typecheck` | passed |
+| `npm run lint` | passed |
+| `npm run build` | passed, 18 modules |
+| `npm run brain-eval` | **4/4 synthetic offline cases** |
+| `npm run test:e2e -- --workers=1 --output=test-results/final-managed-money-parent` | **17/17 Chromium journeys**, 59.8 seconds |
+| `npm audit --audit-level=high` | zero vulnerabilities |
+| `git diff --check`, `git diff --cached --check` | passed; unstaged check reports line-ending warnings only |
+
+The parent restored only the two reference screenshots regenerated by its browser run; their pre-run state matched HEAD, and `git diff --quiet -- docs/screenshots/first-use.png docs/screenshots/source-preview.png` confirms they match again. Documentation-only checkpoint updates follow the test/build commands; staged/unstaged whitespace checks passed afterward.
+
+Limits remain explicit: managed paid dispatch is **off even with positive policies and `BRAIN_MANAGED_ALLOW_PAID=1`**. The shared-control-handle fuse is in-memory, not durable or cross-process; activation requires enforceable reconciliation/restart/control-storage failure checks. Offline backup assumes the operator stopped writers, hashes provide integrity rather than authentication, and deletion replay covers only the supplied current root. No automatic reconciliation/resume is supplied. Synthetic identity/browser interception is not live OIDC, native redirect-chain, DNS or TLS evidence. Billing, System One policy/quality, semantic quality, native clients, target-host graceful shutdown, hosted operations, human usability and licensing remain separate gates. Changes remain uncommitted/unpushed on `feat/managed-suite-foundation`; no paid call, public deployment or license change occurred.
+
+### Next slice authorized — activation design and repository checkpoint
+
+The owner said **"go ahead"** to the proposed next sequence: commit the verified
+checkpoint, then close durable reconciliation, cross-process and restart/storage
+failure safeguards before managed paid activation. This authorizes a local Git
+checkpoint, not a push, deployment or paid provider call. DeepSeek is drafting
+`docs/superpowers/specs/2026-10-16-managed-activation-design.md`; the new
+architecture must receive human review before implementation. Current processing
+remains off. The design draft is separate from the verified implementation
+checkpoint and is not being included in that checkpoint commit.
 
 ## Independent deployment and ship audit — 2026-10-07
 

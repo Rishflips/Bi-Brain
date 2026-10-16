@@ -3,7 +3,7 @@ import { mkdirSync, existsSync, writeFileSync } from "node:fs";
 import { resolve, relative, isAbsolute, join } from "node:path";
 import { Storage } from "../packages/storage/index.ts";
 import { Brain } from "../packages/domain/service.ts";
-import { purgeRetainedDeletedSource } from "../packages/storage/restore-policy.ts";
+import { purgeRetainedDeletedSource, applyRestoreSafetyBarrier } from "../packages/storage/restore-policy.ts";
 const root = resolve("data/backups");
 const source = resolve(root, process.argv[2] ?? "");
 const rel = relative(root, source);
@@ -22,6 +22,9 @@ if (
 await backup(db, join(dir, "brain.sqlite"));
 db.close();
 const restored = new Storage(join(dir, "brain.sqlite"));
+// Applied before tombstone replay (and before any later step can fail) so a
+// restored database can never re-enable paid processing.
+applyRestoreSafetyBarrier(restored);
 const currentPath = resolve(process.env.BRAIN_DB ?? "data/brain.sqlite");
 let applied = 0;
 if (existsSync(currentPath) && currentPath !== source) {
@@ -62,7 +65,7 @@ restored.run("UPDATE grants SET revoked_at=?", new Date().toISOString());
 restored.close();
 writeFileSync(
   join(dir, "RESTORE_NOTICE.txt"),
-  `Sensitive operational restore. Applied ${applied} currently available local deletion/withdrawal tombstones. All browser sessions and agent grants were revoked. Review later deletions from any other copies before use. Start with BRAIN_DB pointing to this brain.sqlite; do not replace a running database. A new pairing code will be created in this folder.`,
+  `Sensitive operational restore. Applied ${applied} currently available local deletion/withdrawal tombstones. All browser sessions and agent grants were revoked. Connected paid processing was disabled and blocked until an operator reconciles accounted spend. Review later deletions from any other copies before use. Start with BRAIN_DB pointing to this brain.sqlite; do not replace a running database. A new pairing code will be created in this folder.`,
 );
 console.log(
   "Restored to a new directory under data. Review retained content and deletions before use.",

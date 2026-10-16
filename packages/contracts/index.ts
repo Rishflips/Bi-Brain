@@ -81,4 +81,10 @@ export type Entity = {
   data: Record<string, any>;
   created_at: string;
 };
-export type Principal = { kind: "owner" } | { kind: "agent"; grant_id: string };
+// A principal is either the local owner, a local agent grant, or the same
+// shapes bound to a managed tenant. `tenantId` is optional so the local
+// single-owner deployment keeps working unchanged; a bound principal is only
+// accepted by the brain that serves that exact tenant.
+export type Principal =
+  | { kind: "owner"; tenantId?: string }
+  | { kind: "agent"; grant_id: string; tenantId?: string };

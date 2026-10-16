@@ -1,12 +1,64 @@
-import { createApp } from "./app.ts";
 import { dirname, resolve } from "node:path";
-const app = await createApp(undefined, { metadataLogs: true });
-await app.listen({
-  host: process.env.BRAIN_CONTAINER === "1" ? "0.0.0.0" : "127.0.0.1",
-  port: Number(process.env.BRAIN_PORT ?? 4317),
-});
-console.log(
-  `Bi Brain: ${process.env.BRAIN_PUBLIC_ORIGIN ?? `http://127.0.0.1:${process.env.BRAIN_PORT ?? 4317}`} — ${process.env.BRAIN_OWNER_SECRET !== undefined ? "installation code supplied by the operator" : `installation code is in ${resolve(dirname(process.env.BRAIN_DB ?? "data/brain.sqlite"), "owner-secret")}`}`,
-);
-process.on("SIGINT", () => void app.close());
-process.on("SIGTERM", () => void app.close());
+import { createApp } from "./app.ts";
+import { loadConfig } from "./config.ts";
+import { ManagedRuntime } from "../../packages/runtime/managed.ts";
+import { OidcClient } from "../../packages/identity/oidc.ts";
+import { ManagedLogin } from "../../packages/identity/managed-login.ts";
+
+// Fail closed before any storage or adapter is constructed: an unknown mode or
+// a missing managed field throws here rather than silently serving local data.
+const config = loadConfig();
+
+const host = process.env.BRAIN_CONTAINER === "1" ? "0.0.0.0" : "127.0.0.1";
+const port = Number(process.env.BRAIN_PORT ?? 4317);
+
+if (config.mode === "managed") {
+  // The adapter is pure configuration; it is created before the runtime so a
+  // bad issuer cannot leave a half-open managed root behind.
+  const oidc = new OidcClient({
+    issuer: config.oidc.issuer,
+    clientId: config.oidc.clientId,
+    clientSecret: config.oidc.clientSecret,
+    publicOrigin: config.publicOrigin,
+    callbackPath: config.oidc.callbackPath,
+  });
+  const runtime = new ManagedRuntime(config.managedRoot);
+  const login = new ManagedLogin(runtime, oidc);
+  const app = await createApp(undefined, {
+    managed: runtime,
+    login,
+    oidcCallbackPath: config.oidc.callbackPath,
+    publicOrigin: config.publicOrigin,
+    metadataLogs: true,
+  });
+  await app.listen({ host, port });
+  // No secret is ever printed; the operator learns the mode and origin only.
+  console.log(
+    `Bi Brain: managed sign-in for ${config.publicOrigin} on ${config.oidc.issuer}.`,
+  );
+  let shuttingDown = false;
+  const stop = async () => {
+    if (shuttingDown) return;
+    shuttingDown = true;
+    try {
+      await app.close();
+    } catch {
+      /* already closing */
+    }
+    try {
+      runtime.close();
+    } catch {
+      /* release happens per request; a pinned handle must not crash shutdown */
+    }
+  };
+  process.on("SIGINT", () => void stop());
+  process.on("SIGTERM", () => void stop());
+} else {
+  const app = await createApp(undefined, { metadataLogs: true });
+  await app.listen({ host, port });
+  console.log(
+    `Bi Brain: ${process.env.BRAIN_PUBLIC_ORIGIN ?? `http://127.0.0.1:${process.env.BRAIN_PORT ?? 4317}`} — ${process.env.BRAIN_OWNER_SECRET !== undefined ? "installation code supplied by the operator" : `installation code is in ${resolve(dirname(process.env.BRAIN_DB ?? "data/brain.sqlite"), "owner-secret")}`}`,
+  );
+  process.on("SIGINT", () => void app.close());
+  process.on("SIGTERM", () => void app.close());
+}

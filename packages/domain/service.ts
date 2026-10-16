@@ -29,8 +29,13 @@ import {
   requireVersion,
   validateEvidence,
   excerpt,
-  localSchedule,
 } from "./logic.ts";
+import {
+  DispatchLedger,
+  paidProcessingBlockedSetting,
+} from "../storage/spend.ts";
+import { safeAdd } from "./spend.ts";
+import type { ManagedSpendView } from "./managed-spend.ts";
 export const defaults: Preferences = {
   enabled: false,
   time_zone: "Asia/Calcutta",
@@ -41,11 +46,69 @@ export const defaults: Preferences = {
   per_job_cap_micro_usd: 0,
   provider_enabled: false,
 };
+
+/** Content-free, plain-language reason for a managed paid block. */
+function managedBlockedMessage(
+  central: ManagedSpendView,
+  tenantBlock: { reason?: string; over_micro_usd?: number } | null,
+): string | null {
+  if (central.blocked_reason === "reconciliation_required")
+    return "Managed paid processing is paused because a safety record could not be saved. Your saved work and extractive preparation still work; an operator must reconcile before paid processing resumes.";
+  if (central.blocked_reason === "overrun")
+    return "Managed paid processing stopped because a recorded charge exceeded its reserved bound. An operator must reconcile it before paid processing resumes.";
+  if (
+    central.blocked_reason === "restored_backup" ||
+    tenantBlock?.reason === "restored_backup"
+  )
+    return "Managed paid processing is disabled after a restore until an operator reconciles the account.";
+  if (tenantBlock)
+    return "Managed paid processing is blocked until the recorded accounting is reconciled.";
+  if (!central.configured)
+    return "Managed paid processing is not enabled; saved work stays available.";
+  return null;
+}
 export class Brain {
   constructor(
     readonly store: Storage,
     readonly clock: () => Date = () => new Date(),
+    readonly tenantId?: string,
+    // Runtime-supplied trusted liveness for a managed tenant. When present it
+    // is re-evaluated on every authorization boundary, so a suspended account
+    // loses access even through a handle that was already acquired.
+    private readonly active?: () => boolean,
+    // Runtime-supplied, account-bound central money view for a managed tenant.
+    // It is a pure read over the control store and never calls back into Brain,
+    // so prefs/status compose it without a domain→runtime cycle.
+    private readonly spending?: () => ManagedSpendView,
   ) {}
+  /**
+   * The owner principal for this brain. An unbound local brain yields an
+   * unbound owner; a managed brain yields an owner bound to its own tenant.
+   */
+  ownerPrincipal(): Principal {
+    return this.tenantId === undefined
+      ? { kind: "owner" }
+      : { kind: "owner", tenantId: this.tenantId };
+  }
+  /**
+   * Every authorization entry point re-checks that the principal is bound to
+   * this exact brain. A local principal never authorizes a managed brain, a
+   * managed principal never authorizes another tenant or the local brain.
+   */
+  private boundTo(p: Principal) {
+    if (p.tenantId !== this.tenantId)
+      throw new BrainError(
+        "FORBIDDEN",
+        "This principal cannot access that brain.",
+        403,
+      );
+    if (this.active && !this.active())
+      throw new BrainError(
+        "UNAUTHORIZED",
+        "This account is unavailable.",
+        401,
+      );
+  }
   now() {
     return this.clock().toISOString();
   }
@@ -98,6 +161,7 @@ export class Brain {
     };
   }
   owner(p: Principal) {
+    this.boundTo(p);
     if (p.kind !== "owner")
       throw new BrainError("FORBIDDEN", "Owner access required.", 403);
   }
@@ -132,6 +196,7 @@ export class Brain {
     return { signed_out: true };
   }
   grant(p: Principal) {
+    this.boundTo(p);
     if (p.kind === "owner") return;
     const g = this.store.get(
       "SELECT * FROM grants WHERE id=? AND revoked_at IS NULL AND expires_at>?",
@@ -1333,9 +1398,35 @@ export class Brain {
   }
   prefs(p: Principal, input?: unknown) {
     this.owner(p);
-    if (input !== undefined)
-      this.store.set("preferences", preferencesSchema.parse(input));
-    return this.store.setting("preferences", defaults);
+    // Central money state decides whether paid processing is currently usable.
+    // A central block/pause or an unconfigured operator policy lowers the
+    // effective preference to false; it never grants authority and never
+    // rewrites the stored preference.
+    const central = this.spending?.();
+    const centrallyUnusable =
+      !!central && (!central.configured || central.blocked || central.paused);
+    if (input !== undefined) {
+      const next = preferencesSchema.parse(input);
+      // A durable accounting block (tenant or central) forbids re-enabling paid
+      // processing. Unrelated preferences may still change and paid processing
+      // may be turned off.
+      if (
+        next.provider_enabled &&
+        (this.store.setting(paidProcessingBlockedSetting, null) !== null ||
+          centrallyUnusable)
+      )
+        throw new BrainError(
+          "BUDGET_BLOCKED",
+          "Paid processing is blocked until the recorded reason is reconciled.",
+          409,
+        );
+      this.store.set("preferences", next);
+    }
+    const stored = this.store.setting("preferences", defaults);
+    return this.store.setting(paidProcessingBlockedSetting, null) !== null ||
+      centrallyUnusable
+      ? { ...stored, provider_enabled: false }
+      : stored;
   }
   connections(p: Principal) {
     this.owner(p);
@@ -1397,7 +1488,10 @@ export class Brain {
       hash(token),
     );
     if (!row) throw new BrainError("UNAUTHORIZED", "Access unavailable.", 401);
-    const p: Principal = { kind: "agent", grant_id: row.id };
+    const p: Principal =
+      this.tenantId === undefined
+        ? { kind: "agent", grant_id: row.id }
+        : { kind: "agent", grant_id: row.id, tenantId: this.tenantId };
     this.grant(p);
     return p;
   }
@@ -1452,7 +1546,7 @@ export class Brain {
       key ? `propose:${key}` : undefined,
       true,
     ) as { source_id: string; quarantined?: boolean };
-    const source = this.source({ kind: "owner" }, capture.source_id);
+    const source = this.source(this.ownerPrincipal(), capture.source_id);
     const result = this.store.transaction(() => {
       const start = v.field
         ? Array.from(source.body).join("").indexOf(String(v.field.value))
@@ -1473,12 +1567,12 @@ export class Brain {
           : [];
       if (evidence.length)
         this.checkEvidence(
-          identityLike ? { kind: "owner" } : p,
+          identityLike ? this.ownerPrincipal() : p,
           v.project_id,
           evidence,
         );
       const sensitive = capture.quarantined || identityLike;
-      const conflicts = this.entities({ kind: "owner" }, "claim").filter(
+      const conflicts = this.entities(this.ownerPrincipal(), "claim").filter(
         (c) =>
           c.project_id === v.project_id &&
           c.data.status === "current" &&
@@ -1906,7 +2000,7 @@ export class Brain {
   currentClaims(p: Principal, project: string, includeRetired = false) {
     this.access(p, project);
     const at = this.clock().getTime();
-    return this.entities({ kind: "owner" }, "claim").filter(
+    return this.entities(this.ownerPrincipal(), "claim").filter(
       (c) =>
         c.project_id === project &&
         (includeRetired ||
@@ -1991,7 +2085,7 @@ export class Brain {
         history: includeRetired ? entries.filter((c) => !active(c)) : [],
         conflicts,
         uncertain: queued.filter((g) => g.data.entity === entity),
-        open_intents: this.entities({ kind: "owner" }, "goal")
+        open_intents: this.entities(this.ownerPrincipal(), "goal")
           .filter(
             (g) =>
               g.project_id === project &&
@@ -2362,7 +2456,7 @@ export class Brain {
         "This grant may delete only its own captures.",
         403,
       );
-    return this.removeSource({ kind: "owner" }, id, expected, true);
+    return this.removeSource(this.ownerPrincipal(), id, expected, true);
   }
   agentLink(p: Principal, input: unknown) {
     const v = z
@@ -2415,7 +2509,7 @@ export class Brain {
           : "read",
     );
     if (action === "list")
-      return this.entities({ kind: "owner" }, "goal")
+      return this.entities(this.ownerPrincipal(), "goal")
         .filter(
           (g) =>
             g.project_id === project &&
@@ -2491,7 +2585,7 @@ export class Brain {
           : "supported",
       }));
     let remaining = maxTokens * 3;
-    const goals = this.entities({ kind: "owner" }, "goal")
+    const goals = this.entities(this.ownerPrincipal(), "goal")
       .filter((g) => g.project_id === project && g.data.status === "active")
       .flatMap((g) => {
         if (p.kind === "agent" && g.data.plan_private) return [];
@@ -2901,11 +2995,92 @@ export class Brain {
     this.owner(p);
     const beat = this.store.setting<string | null>("worker_heartbeat", null);
     const prefs = this.prefs(p);
-    const day = localSchedule(this.clock(), prefs).day;
-    const spend = this.store.get(
-      "SELECT coalesce(sum(CASE WHEN status='held' THEN reserved ELSE 0 END),0) AS reserved,coalesce(sum(actual),0) AS actual FROM reservations WHERE day=?",
-      day,
-    );
+    const block = this.store.setting<{
+      reason?: string;
+      over_micro_usd?: number;
+    } | null>(paidProcessingBlockedSetting, null);
+    const central = this.spending?.();
+    if (central) {
+      // Authenticated managed owner sees only their own central money: known
+      // actual even when the tenant projection is stale or failed, and every
+      // unresolved hold across days. No global service total or other account.
+      const committed = safeAdd(
+        central.settled_micro_usd,
+        central.unresolved_micro_usd,
+      );
+      const dailyLimit = Math.min(
+        prefs.daily_cap_micro_usd,
+        central.daily_limit_micro_usd,
+      );
+      const perJobLimit = Math.min(
+        prefs.per_job_cap_micro_usd,
+        central.per_job_limit_micro_usd,
+      );
+      const blocked = central.blocked || block !== null;
+      const blockedReason = central.blocked_reason
+        ? central.blocked_reason
+        : block
+          ? block.reason === "restored_backup"
+            ? "restored_backup"
+            : block.over_micro_usd !== undefined
+              ? "overrun"
+              : "blocked"
+          : null;
+      return {
+        worker_online:
+          !!beat && this.clock().getTime() - Date.parse(beat) < 15000,
+        worker_last_seen: beat,
+        provider_configured: !!process.env.OPENAI_API_KEY,
+        mode: prefs.provider_enabled
+          ? "Connected model requested"
+          : "Extractive preview",
+        spend: {
+          // Preserved aliases: known settled actual and every unresolved hold.
+          actual: central.settled_micro_usd,
+          reserved: central.unresolved_micro_usd,
+          settled_micro_usd: central.settled_micro_usd,
+          unresolved_micro_usd: central.unresolved_micro_usd,
+          committed_micro_usd: committed,
+          remaining_micro_usd: Math.max(
+            0,
+            dailyLimit - Math.min(dailyLimit, committed),
+          ),
+          per_job_limit_micro_usd: perJobLimit,
+          daily_limit_micro_usd: dailyLimit,
+          budget_day: central.budget_day,
+          time_zone: central.time_zone,
+          blocked,
+          blocked_reason: blockedReason,
+          blocked_message: managedBlockedMessage(central, block),
+          configured: central.configured,
+          service_available: central.service_available,
+          available: false,
+          allowance: central.allowance,
+        },
+        jobs: this.store.all(
+          "SELECT id,kind,status,error,project_id FROM jobs ORDER BY created_at DESC LIMIT 20",
+        ),
+      };
+    }
+    const summary = new DispatchLedger(this.store, this.clock).summary({
+      per_job_micro_usd: prefs.per_job_cap_micro_usd,
+      daily_micro_usd: prefs.daily_cap_micro_usd,
+      time_zone: prefs.time_zone,
+    });
+    const blockedReason = !block
+      ? null
+      : block.reason === "restored_backup"
+        ? "recovery"
+        : block.over_micro_usd !== undefined
+          ? "overrun"
+          : "blocked";
+    const blockedMessage = !block
+      ? null
+      : blockedReason === "recovery"
+        ? "Paid preparation is disabled after a database restore until an operator reconciles the restored account."
+        : blockedReason === "overrun"
+          ? "Paid preparation stopped because the last provider charge exceeded its reserved bound. An operator must reconcile it before paid processing can resume."
+          : "Paid preparation is blocked until the recorded accounting is reconciled.";
     return {
       worker_online:
         !!beat && this.clock().getTime() - Date.parse(beat) < 15000,
@@ -2914,7 +3089,26 @@ export class Brain {
       mode: prefs.provider_enabled
         ? "Connected model requested"
         : "Extractive preview",
-      spend,
+      spend: {
+        // Preserved aliases: settled actual and unresolved holds.
+        actual: summary.settled_micro_usd,
+        reserved: summary.unresolved_micro_usd,
+        settled_micro_usd: summary.settled_micro_usd,
+        unresolved_micro_usd: summary.unresolved_micro_usd,
+        committed_micro_usd: summary.committed_micro_usd,
+        remaining_micro_usd: summary.remaining_micro_usd,
+        per_job_limit_micro_usd: summary.per_job_limit_micro_usd,
+        daily_limit_micro_usd: summary.daily_limit_micro_usd,
+        budget_day: summary.budget_day,
+        time_zone: summary.time_zone,
+        blocked: summary.blocked,
+        blocked_reason: blockedReason,
+        blocked_message: blockedMessage,
+        configured: false,
+        service_available: false,
+        available: false,
+        allowance: null,
+      },
       jobs: this.store.all(
         "SELECT id,kind,status,error,project_id FROM jobs ORDER BY created_at DESC LIMIT 20",
       ),

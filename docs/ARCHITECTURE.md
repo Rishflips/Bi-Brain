@@ -79,10 +79,38 @@ Remote self-hosting requires HTTPS and authentication; do not expose a loopback-
 
 ## Production shape
 
+**Managed expansion approved 2026-10-16:** begin with one isolated SQLite database, explicit portable vault and protected sibling per personal account on bounded single-host storage. A separate control database owns trusted identity/session/token routing. Request-bound runtime handles and tenant-bound shared-service principals enforce account isolation; no client-supplied tenant path or identifier grants authority. Standards-based OIDC follows isolation. Local pairing and owner data remain separate; no automatic adoption of a local brain into an account. This is the reviewed architecture target, not proof that managed operation is delivered. See [the release design](superpowers/specs/2026-10-16-managed-suite-design.md) and [foundation plan](superpowers/plans/2026-10-16-managed-foundation.md).
+
 Build UI assets, serve through the API, run worker as a supervised process, mount persistent local storage, and document backup/restore.
 No serverless filesystem or short-lived request worker for scheduled reasoning.
 
 The hosted expansion may replace storage and identity adapters, but is not an invisible deployment toggle. Tenant isolation, quotas, operations, and billing have separate release gates.
+
+### Managed money authority (locally verified, paid activation off)
+
+The control database now contains the authoritative managed monetary ledger. One
+short immediate transaction admits a call against four integer-micro-USD limits:
+its account's explicit UTC allowance window, one shared service UTC day, cumulative
+job spend and the user's frozen accounting day. Operator policies default to zero;
+user caps can lower, never grant, authority. Every unresolved hold carries across
+periods. Pricing/request identities and admitted periods are immutable.
+
+`ManagedWorker` injects an account-bound accounting coordinator. Central reserve
+precedes the tenant's conservative journal; fresh central and lease-fenced tenant
+marks must both succeed for that invocation before provider I/O. Existing markers
+never authorize a resend. Known settlement commits centrally first, independently
+attempts the tenant projection, and retains charges even when publication fails.
+Unknown or unmapped tenant history requires reconciliation rather than a new
+allowance. Managed status reads central own-account figures and strips all shared
+service financial totals before returning them to a user.
+
+A failed central settlement writes a service-wide reconciliation block. If that
+safety write also fails, a shared-control-handle process fuse pauses managed
+admission and fail-stops its scheduler, without disabling capture. This fuse is
+**not durable or cross-process**. Production managed paid processing remains
+unconditionally unavailable across restart; operator reconciliation and
+control-storage failure/restart drills are separate activation gates. See the
+[approved managed spending design](superpowers/specs/2026-10-16-managed-spending-design.md).
 
 ## Observability
 
