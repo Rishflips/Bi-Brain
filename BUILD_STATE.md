@@ -53,6 +53,45 @@ next slice on a dependent branch. The next accounting/worker architecture is
 being inspected read-only before its design review; no new runtime permission
 or wider provider consent is inferred from the existing reasoning profile.
 
+### Adapter published; next design isolated
+
+Parent reran the pre-commit serial suite: **645 passed, 2 existing POSIX-only
+skips, 72 files**, 230.49 s; fresh typecheck/lint/build and staged whitespace/
+credential-pattern checks passed. Committed as
+`3e9d91877cd70a576942b854dad2132a6ef66f9b`, pushed
+`feat/system-one-shadow-policy`, and opened
+[PR #3](https://github.com/Rishflips/Bi-Brain/pull/3) against `main`.
+GitHub read-back confirmed the exact head and **OPEN** state. PR CI
+**38955764822** and push CI **38955746452** were pending at delivery; no success
+was inferred. Both subsequently **passed** at the exact published head. Parent
+read back completed status and PR logs: **647/647 Ubuntu tests, 19 Chromium
+journeys, 4 offline evaluations**, install/typecheck/lint/build/audit, Docker
+build/non-root container auth/worker/restart/origin/backup smoke, Compose and
+Caddy validation. The adapter branch was clean after publication and was not
+merged. This remains synthetic CI/packaging evidence, not live provider quality.
+
+Parent created `feat/system-one-stage-accounting` from that exact commit in the
+same worktree, preserving the PR branch. DeepSeek is drafting only the next
+stage-specific activation/accounting/consent design. Parent rejected a proposed
+coordinator stage flag: the real guard lives in `ManagedSpendingStore`, and the
+current provider/endpoint/hash vocabulary permits OpenAI reasoning only. The
+next written design must explicitly bind a decision provider and separate
+consent rather than reuse reasoning authority. No implementation of that next
+design is accepted or underway; written design review precedes code.
+
+The draft is now in
+`docs/superpowers/specs/2026-10-17-system-one-stage-accounting-design.md`.
+Parent corrected endpoint-digest-only storage (the protected canonical official
+endpoint is needed to derive the exact prepared hash), separated decision and
+reasoning readiness files, removed a redundant schema marker, and made audit
+staleness truthful without rewriting stored enabled/consent values. The proposal
+retains a global paid stop, adds separate default-false decision consent and
+stage-bound financial guards, and uses no production decision dispatcher in S1.
+Its **schema 3→4 migration makes existing reasoning audits stale until an operator
+re-audits**; that operational change and the new consent/profile semantics await
+written human approval. No next-stage implementation plan or code exists, no
+background implementer remains active, and no new branch push or merge occurred.
+
 ## Phase 2 merged — repository checkpoint
 
 The owner reported PR #2 merged; parent verified GitHub state **MERGED** at
