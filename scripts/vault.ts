@@ -2,6 +2,7 @@ import { existsSync, copyFileSync, readFileSync } from "node:fs";
 import { resolve, dirname, join, basename, extname } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { Storage } from "../packages/storage/index.ts";
+import { applyRestoreSafetyBarrier } from "../packages/storage/restore-policy.ts";
 const mode = process.argv[2];
 const dbPath = resolve(process.env.BRAIN_DB ?? "data/brain.sqlite");
 const root = resolve(
@@ -67,11 +68,20 @@ if (mode === "dry-run") {
   } finally {
     check.close();
   }
+  // The verified copy is a real restored database: disable paid processing on
+  // it behind the durable recovery block. The source backup and the current
+  // database are left untouched, and no automatic overwrite is performed.
+  const copy = new Storage(target);
+  try {
+    applyRestoreSafetyBarrier(copy);
+  } finally {
+    copy.close();
+  }
   console.log(
     JSON.stringify({
       rollback_copy: target,
       action:
-        "Verified copy only; stop the app and select this database deliberately. Current files were not overwritten.",
+        "Verified copy only; stop the app and select this database deliberately. Current files were not overwritten. Connected paid processing was disabled and blocked until an operator reconciles accounted spend.",
     }),
   );
 } else

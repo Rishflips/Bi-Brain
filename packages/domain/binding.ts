@@ -61,7 +61,7 @@ export function buildPack(
             (c) => c.data.aspect === "name" || c.data.aspect === "preference",
           )
       : brain
-          .currentClaims({ kind: "owner" }, project)
+          .currentClaims(brain.ownerPrincipal(), project)
           .filter(
             (c) =>
               allowlist.includes(c.id) &&
@@ -147,7 +147,7 @@ export function validatePack(
       409,
     );
   const currentIdentity = brain
-    .currentClaims({ kind: "owner" }, pack.project_id)
+    .currentClaims(brain.ownerPrincipal(), pack.project_id)
     .map((c) => ({ id: c.id, version: c.version }));
   if (
     pack.identity_claim_refs.some(

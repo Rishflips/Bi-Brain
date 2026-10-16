@@ -10,6 +10,7 @@ import {
 } from "node:fs";
 import { Vault, type PortableState } from "./vault.ts";
 import { detectSecrets } from "./secrets.ts";
+import { applyRestoreSafetyBarrier } from "./restore-policy.ts";
 export class Storage {
   readonly db: DatabaseSync;
   vault?: Vault;
@@ -30,13 +31,17 @@ export class Storage {
       Number(
         this.db.prepare("SELECT max(version) AS version FROM migrations").get()
           ?.version,
-      ) > 3
+      ) > 4
     ) {
       this.db.close();
       throw new Error(
         "Database is from a newer Bi Brain version. Use a matching application or restore a backup.",
       );
     }
+    // Whether an operational database already existed before this constructor
+    // initialized the schema. A fresh database combined with an existing vault
+    // means knowledge survived but financial history did not.
+    const existingOperationalDatabase = !!hasMigrations;
     this.db.exec(
       "PRAGMA foreign_keys=ON; PRAGMA journal_mode=WAL; PRAGMA busy_timeout=5000; PRAGMA secure_delete=ON;",
     );
@@ -76,6 +81,32 @@ export class Storage {
       CREATE INDEX IF NOT EXISTS jobs_ready ON jobs(status,next_at,lease_until);
       INSERT OR IGNORE INTO migrations VALUES(3,strftime('%Y-%m-%dT%H:%M:%fZ','now'));`);
     });
+    this.transaction(() => {
+      this.db
+        .exec(`CREATE TABLE IF NOT EXISTS provider_dispatches(
+      call_id TEXT PRIMARY KEY,
+      job_id TEXT NOT NULL REFERENCES jobs(id),
+      dispatch_key TEXT NOT NULL,
+      stage TEXT NOT NULL CHECK(stage IN ('decision','reasoning','repair')),
+      state TEXT NOT NULL CHECK(state IN ('reserved','dispatched','settled','released')),
+      reserved_micro_usd INTEGER NOT NULL CHECK(reserved_micro_usd>=0),
+      actual_micro_usd INTEGER CHECK(actual_micro_usd IS NULL OR actual_micro_usd>=0),
+      provider TEXT NOT NULL,
+      model TEXT NOT NULL,
+      price_version TEXT NOT NULL,
+      request_hash TEXT NOT NULL,
+      config_hash TEXT NOT NULL,
+      identity_hash TEXT NOT NULL,
+      budget_day TEXT NOT NULL,
+      time_zone TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      dispatched_at TEXT,
+      settled_at TEXT,
+      UNIQUE(job_id,dispatch_key));
+    CREATE INDEX IF NOT EXISTS provider_dispatches_job ON provider_dispatches(job_id,state);
+    CREATE INDEX IF NOT EXISTS provider_dispatches_day ON provider_dispatches(budget_day,state);
+    INSERT OR IGNORE INTO migrations VALUES(4,strftime('%Y-%m-%dT%H:%M:%fZ','now'));`);
+    });
     const vaultRoot =
       options.vault ??
       (arguments.length === 0
@@ -83,6 +114,17 @@ export class Storage {
         : undefined);
     if (vaultRoot && path !== ":memory:") {
       const vault = new Vault(vaultRoot);
+      // Recovery case: the operational database is missing (no migrations yet)
+      // but a vault manifest already exists, so the schema is about to be
+      // rebuilt from the vault while any prior financial history is gone.
+      // Block paid processing before the rebuild (and before any failure), so
+      // restored knowledge can never silently re-enable paid work. A normal
+      // first use (new vault) and a normal rebuild on an existing operational
+      // database both keep paid processing unchanged.
+      const recoveringFromExistingVault =
+        !existingOperationalDatabase &&
+        existsSync(resolve(vault.root, "manifest.json"));
+      if (recoveringFromExistingVault) applyRestoreSafetyBarrier(this);
       this.vault = vault;
       vault.withLock(() => {
         // A pending journal is only publishable if its operational transaction committed.

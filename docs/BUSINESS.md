@@ -4,6 +4,8 @@ The owner wants an open-source career project with a subscription model and poss
 
 ## Proposed split
 
+**Owner direction accepted 2026-10-16:** browser-first managed personal accounts and monetization are the primary delivery target, alongside a useful self-hosted open-source edition sharing the core. Managed login, billing and included allowances are not yet delivered merely because this split is approved. Pricing, a payment-provider account, legal terms and the software license require their actual release gates. See [the current release design](superpowers/specs/2026-10-16-managed-suite-design.md).
+
 Open specification, useful local application, contracts, and official adapters support adoption.
 Managed hosting, always-on preparation, maintained connectors, synchronization, and operations support can justify a subscription.
 Keep basic export and cross-agent portability available without a paid plan.
@@ -34,3 +36,4 @@ No price is asserted. Grok's competitor prices and costs are not adopted as veri
 Measure return behavior, useful prepared artifacts, interruption burden, cost per useful outcome, and support load.
 Publish architecture, revision semantics, reproducible failure tests, supported client evidence, and honest tradeoffs.
 Payment implementation follows willingness-to-pay evidence and reliable metering.
+Subscription enforcement may restrict new expensive managed processing, but must not strand already saved knowledge, correction, export or deletion. Server-verified, replay-safe payment events and reconciliation determine entitlements; a checkout return URL never proves payment. A payment provider's test mode is distinct from live billing.

@@ -15,6 +15,8 @@ import { Brain } from "../../packages/domain/service.ts";
 import { Vault } from "../../packages/storage/vault.ts";
 import { Worker } from "../../apps/worker/engine.ts";
 import { purgeRetainedDeletedSource } from "../../packages/storage/restore-policy.ts";
+// Real Git subprocess and Windows filesystem I/O; a bounded 20s integration
+// deadline (matching the neighboring real-Git cases), not a unit test.
 it("forgotten reviewed intents disappear from goals, export and retained vault history while owner edits survive", () => {
   const dir = mkdtempSync(join(tmpdir(), "brain-intent-forget-"));
   const path = join(dir, "brain.sqlite");
@@ -76,7 +78,7 @@ it("forgotten reviewed intents disappear from goals, export and retained vault h
     store?.close();
     rmSync(dir, { recursive: true, force: true });
   }
-});
+}, 20000);
 it("vault capture, rebuild, crash recovery, quarantine and managed-history forget", async () => {
   const dir = mkdtempSync(join(tmpdir(), "brain-vault-"));
   const path = join(dir, "brain.sqlite"),

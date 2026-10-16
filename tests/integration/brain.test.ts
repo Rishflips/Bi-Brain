@@ -11,11 +11,12 @@ import {
   extract,
   validateEvidence,
   localSchedule,
+  hash,
 } from "../../packages/domain/logic.ts";
-import {
-  OpenAIProvider,
-  type ReasoningProvider,
-} from "../../packages/providers/openai.ts";
+import { PreparedReasoningProvider } from "../../packages/providers/prepared.ts";
+import { fakePreparedProvider } from "../helpers/prepared-provider.ts";
+import { DispatchLedger } from "../../packages/storage/spend.ts";
+import type { DispatchSpec, JobLease } from "../../packages/domain/spend.ts";
 import type { Principal } from "../../packages/contracts/index.ts";
 const owner: Principal = { kind: "owner" };
 let cleanup: (() => void)[] = [];
@@ -282,18 +283,11 @@ describe("durable preparation", () => {
       daily_cap_micro_usd: 10000,
       per_job_cap_micro_usd: 1000,
     });
-    const fake: ReasoningProvider = {
-      upperBound: () => 100,
-      prepare: async (sources) => {
+    const fake = fakePreparedProvider({
+      onExecute: () => {
         b.removeSource(owner, n.source_id, 1, true);
-        return {
-          ...extract(sources),
-          usage: { input_tokens: 1, output_tokens: 1 },
-          metadata: { provider: "fake", model: "test", prompt_version: "test" },
-          cost_micro_usd: 10,
-        };
       },
-    };
+    });
     await new Worker(b, fake).tick();
     expect(b.entities(owner, "brief")).toEqual([]);
     expect(JSON.stringify(b.entities(owner))).not.toContain(
@@ -314,8 +308,36 @@ describe("durable preparation", () => {
       w2 = new Worker(b);
     const j1 = w1.lease()!,
       j2 = w2.lease()!;
-    w1.reserve(j1, 80);
-    expect(() => w2.reserve(j2, 80)).toThrow("cap");
+    const ledger = new DispatchLedger(b.store, b.clock);
+    const leaseOf = (w: Worker, j: any): JobLease => ({
+      job_id: j.id,
+      owner: w.id,
+      fence: j.fence,
+      expires_at: b.store.get<{ lease_until: string }>(
+        "SELECT lease_until FROM jobs WHERE id=?",
+        j.id,
+      )!.lease_until,
+    });
+    const specFor = (id: string): DispatchSpec => ({
+      job_id: id,
+      dispatch_key: "reasoning",
+      stage: "reasoning",
+      reserved_micro_usd: 80,
+      provider: "test",
+      model: "test",
+      price_version: "test",
+      request_hash: hash("req:" + id),
+      config_hash: hash("cfg:" + id),
+    });
+    const limits = {
+      per_job_micro_usd: 100,
+      daily_micro_usd: 100,
+      time_zone: b.prefs(owner).time_zone,
+    };
+    ledger.reserve(specFor(j1.id), leaseOf(w1, j1), limits);
+    expect(() =>
+      ledger.reserve(specFor(j2.id), leaseOf(w2, j2), limits),
+    ).toThrow("cap");
     expect(b.source(owner, a.source_id).body).toContain("Arbitrary");
     expect(b.source(owner, c.source_id).body).toContain("second");
   });
@@ -472,17 +494,21 @@ describe("durable preparation", () => {
       daily_cap_micro_usd: 1000,
       per_job_cap_micro_usd: 1000,
     });
-    const provider = new OpenAIProvider(
+    const provider = new PreparedReasoningProvider(
       {
         key: "test-not-real",
         model: "test",
-        input_price: 1,
-        output_price: 1,
-        price_version: "test",
+        accepted_response_models: ["test"],
+        price: {
+          version: "test",
+          input_micro_usd_per_million: 1,
+          output_micro_usd_per_million: 1,
+        },
       },
       async () =>
         new Response(
           JSON.stringify({
+            model: "test",
             output: [
               {
                 content: [
@@ -518,7 +544,10 @@ describe("durable preparation", () => {
     expect(b.entities(owner, "brief")).toEqual([]);
     expect(b.status(owner).jobs[0].status).toBe("failed");
     expect(b.prefs(owner).daily_cap_micro_usd).toBe(1000);
-    expect(b.store.all("SELECT * FROM reservations")[0].status).toBe("held");
+    // A real known charge is retained even though the output was rejected.
+    expect(b.store.all("SELECT state FROM provider_dispatches")).toEqual([
+      { state: "settled" },
+    ]);
   });
   it("model-backed goal proposal is reviewed, and active-owner output is discarded after dispatch", async () => {
     const { b, s } = setup();
@@ -547,28 +576,35 @@ describe("durable preparation", () => {
       quote: "Beta rollout needs a test with five users.",
     };
     evidence.end = Array.from(evidence.quote).length;
-    const fake: ReasoningProvider = {
-      upperBound: () => 100,
-      prepare: async (sources) => ({
-        ...extract(sources),
-        usage: { input_tokens: 1, output_tokens: 1 },
-        metadata: { provider: "fake", model: "test", prompt_version: "test" },
-        cost_micro_usd: 10,
-      }),
-      prepareGoal: async () => ({
-        outcome: "proposal",
-        artifact:
-          "Hypothesis: ask five users to try the beta and record blockers.",
-        evidence: [evidence],
-        usage: { input_tokens: 1, output_tokens: 1 },
-        metadata: {
-          provider: "fake",
-          model: "test",
-          prompt_version: "goal-test",
-        },
-        cost_micro_usd: 10,
-      }),
-    };
+    const fake = fakePreparedProvider({
+      result: (request) =>
+        request.kind === "brief"
+          ? {
+              accounting: {
+                state: "known",
+                cost_micro_usd: 10,
+                usage: { input_tokens: 1, output_tokens: 1 },
+                model: "test-model",
+              },
+              output: { ok: true, kind: "brief", ...extract(request.sources) },
+            }
+          : {
+              accounting: {
+                state: "known",
+                cost_micro_usd: 10,
+                usage: { input_tokens: 1, output_tokens: 1 },
+                model: "test-model",
+              },
+              output: {
+                ok: true,
+                kind: "goal",
+                outcome: "proposal",
+                artifact:
+                  "Hypothesis: ask five users to try the beta and record blockers.",
+                evidence: [evidence],
+              },
+            },
+    });
     b.prepare(owner, goal.id);
     await new Worker(b, fake).tick();
     expect(b.entities(owner, "proposal")[0].data.artifact).toContain(
@@ -589,17 +625,37 @@ describe("durable preparation", () => {
       preparation_enabled: true,
     });
     b.prefs(owner, { ...b.prefs(owner), enabled: true });
-    const race: ReasoningProvider = {
-      ...fake,
-      prepareGoal: async () => {
+    const race = fakePreparedProvider({
+      onExecute: () => {
         s.set("owner_activity", b.now());
-        return fake.prepareGoal!(
-          { title: "", success_criteria: "", plan: "" },
-          [],
-          new AbortController().signal,
-        );
       },
-    };
+      result: (request) =>
+        request.kind === "brief"
+          ? {
+              accounting: {
+                state: "known",
+                cost_micro_usd: 10,
+                usage: { input_tokens: 1, output_tokens: 1 },
+                model: "test-model",
+              },
+              output: { ok: true, kind: "brief", ...extract(request.sources) },
+            }
+          : {
+              accounting: {
+                state: "known",
+                cost_micro_usd: 10,
+                usage: { input_tokens: 1, output_tokens: 1 },
+                model: "test-model",
+              },
+              output: {
+                ok: true,
+                kind: "goal",
+                outcome: "proposal",
+                artifact: "Hypothesis: race artifact.",
+                evidence: [evidence],
+              },
+            },
+    });
     new Worker(b, race).schedule();
     await drain(new Worker(b, race));
     expect(
@@ -616,18 +672,22 @@ describe("durable preparation", () => {
     const saved = note(b, "Beta pilot starts with five users.");
     const source = b.source(owner, saved.source_id);
     let sent: any;
-    const provider = new OpenAIProvider(
+    const provider = new PreparedReasoningProvider(
       {
         key: "synthetic-test-only",
         model: "synthetic",
-        input_price: 1,
-        output_price: 1,
-        price_version: "fixture",
+        accepted_response_models: ["synthetic"],
+        price: {
+          version: "fixture",
+          input_micro_usd_per_million: 1_000_000,
+          output_micro_usd_per_million: 1_000_000,
+        },
       },
       async (_url, init) => {
         sent = JSON.parse(String(init?.body));
         return new Response(
           JSON.stringify({
+            model: "synthetic",
             output: [
               {
                 content: [
@@ -655,13 +715,15 @@ describe("durable preparation", () => {
         );
       },
     );
-    await expect(
-      provider.prepareGoal(
-        { title: "Beta", success_criteria: "Test", plan: "" },
-        [source],
-        new AbortController().signal,
-      ),
-    ).rejects.toThrow("Evidence");
+    const envelope = await provider
+      .prepareCall({
+        kind: "goal",
+        goal: { title: "Beta", success_criteria: "Test", plan: "" },
+        sources: [source],
+      })
+      .execute(new AbortController().signal);
+    expect(envelope.output.ok).toBe(false);
+    expect(envelope.accounting.state).toBe("known");
     expect(sent.store).toBe(false);
     expect(sent.text.format.name).toBe("goal_preparation");
     expect(JSON.stringify(sent.input)).toContain(source.id);

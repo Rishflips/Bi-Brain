@@ -83,9 +83,27 @@ Gate: same authorized project knowledge is available in two clients; unrelated/p
 
 Gate: complete local end-to-end flow passes; release checklist in docs/RELEASE.md has evidence. A public launch still needs a license decision.
 
-## H1 — Managed private beta, later
+## H1 — Managed personal suite
 
-Identity, tenant isolation, managed connector OAuth, hosted scheduler, metering, billing, support, deletion/retention operations, monitoring, and restore drills. Select hosting and identity providers after local workflow validation.
+The 2026-10-16 owner direction brings managed personal delivery into the primary product target. Historical local milestones above are not completion of managed requirements. Follow [the approved release design](superpowers/specs/2026-10-16-managed-suite-design.md) and [foundation plan](superpowers/plans/2026-10-16-managed-foundation.md).
+
+- [x] G0: Reproduce the current local deterministic, offline and browser baseline. (2026-10-16: 76 tests, 9 Chromium journeys, 4 offline evals, typecheck/lint/build; see BUILD_STATE.)
+- [x] G1: Trusted account isolation, bound principals and request-scoped capture/retrieval with restart proof. (Locally verified 2026-10-16: real storage/HTTP/process tests and account-switch browser regressions; not hosted release.)
+- [x] G2: Standards-based login/logout/recovery configuration and approachable managed first-use UI. (Locally verified against a signed disposable synthetic issuer; real identity-provider recovery/login and hosted TLS remain external release gates. See BUILD_STATE.)
+- [ ] G3: Fair per-account workers and per-dispatch/job/account/service monetary reservations.
+  - [x] Locally verified central default-zero monetary authority, four-dimensional admission and real cross-account/process contention.
+  - [x] Account-bound worker accounting, fresh-mark-only execution, retained unknown holds and central-first known settlement with independently tested failure containment.
+  - [x] Central own-account status, lower user limits, private service totals and strict trusted operator policy tooling. (Parent Task 3 focused run: 18/18.)
+  - [x] Managed cold snapshot/restore and final combined browser/recovery verification. (2026-10-16 parent: 396 tests, 17 Chromium journeys, 4 offline evaluations; typecheck/lint/build/audit passed. See BUILD_STATE for offline/recovery limits.)
+  - [x] Durable one-inflight barrier, guarded operator reconciliation, bounded all-account history audits and restore epoch invalidation. (Phase 1 parent checkpoint: 478 passed, 1 POSIX-only skip; 17 Chromium journeys and 4 offline evaluations. See BUILD_STATE for test/trust limits.)
+  - [ ] Separately approved shared production activation path, live provider/quality and target-host storage/restart drills. Production managed paid dispatch remains off.
+- [ ] G4: Real System 1 adapter, tested policy integration, consent, failure fallback and held-out quality/cost evidence.
+- [ ] G5: Ordinary-prose understanding/recall/correction and goal-linked preparation with live evidence.
+- [ ] G6: Two named native integrations with fresh-session correction/privacy/revocation evidence.
+- [ ] G7: Subscription/webhook reconciliation, allowances, cancellation and payment-independent export/deletion.
+- [ ] G8: Supported packaging, hosted TLS/operations/recovery and human usability/license/privacy/security release gates.
+
+Keep each checkbox synchronized with actual evidence in BUILD_STATE.md. Finish independent implementation when a live credential or external service blocks its narrow gate; never substitute synthetic evidence for a live result.
 
 No request to create accounts, spend money, or publish is implied by this build pack.
 

@@ -66,7 +66,11 @@ No team collaboration, public social feed, marketplace, email sending, financial
 
 ## Release boundary
 
-Local V1 is single-owner and runs while its host runs. Always-on hosted service is a later delivery mode. A sleeping laptop cannot perform nightly work; missed work resumes under the scheduler's catch-up policy.
+The 2026-10-16 owner direction supersedes the earlier local-only release sequence: deliver a browser-first managed personal suite with user sign-in and monetization plus a useful open-source self-hosted edition sharing the core. Managed accounts require verified identity, complete data isolation, bounded included processing, billing/cancellation and production operations; the existing local preview does not establish these capabilities. See [the current release design](superpowers/specs/2026-10-16-managed-suite-design.md).
+
+System 1 is a permanent architecture capability: fast typed decision models support bounded judgments where useful, rules enforce deterministic constraints, and deeper reasoning handles synthesis/ambiguity. Provider choice is replaceable and must be evaluated on actual decisions. Predictions cannot discard explicit captures, grant authority or silently become accepted truth.
+
+The self-hosted edition remains single-owner and runs while its host runs. A sleeping laptop cannot perform nightly work; missed work resumes under the scheduler's catch-up policy. The managed edition must supply an always-on persistent host, not imply that signing in alone creates background execution.
 
 ## Product principles
 

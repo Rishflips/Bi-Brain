@@ -14,16 +14,63 @@ import {
   validateEvidence,
 } from "../../packages/domain/logic.ts";
 import {
-  OpenAIProvider,
-  type ReasoningProvider,
-} from "../../packages/providers/openai.ts";
-const owner: Principal = { kind: "owner" };
+  PreparedReasoningProvider,
+  type PreparedEvidence,
+  type PreparedProvider,
+  type PreparedUsage,
+} from "../../packages/providers/prepared.ts";
+import { dispatchPrepared, type PreparedAttempt } from "./dispatch.ts";
+import { AccountingPersistenceError } from "../../packages/storage/managed-spending.ts";
+import {
+  LocalDispatchAccounting,
+  TenantOnlyAccounting,
+  type DispatchAccounting,
+} from "./accounting.ts";
+
+type GoalPrepared = {
+  outcome: "proposal" | "abstain";
+  artifact: string;
+  evidence: PreparedEvidence;
+  usage?: PreparedUsage;
+  metadata: { provider: string; model: string; prompt_version: string };
+  cost_micro_usd: number;
+};
+
 export class Worker {
   readonly id = randomUUID();
+  private readonly accounting: DispatchAccounting;
   constructor(
     readonly brain: Brain,
-    readonly provider: ReasoningProvider = new OpenAIProvider(),
-  ) {}
+    readonly provider: PreparedProvider = new PreparedReasoningProvider(),
+    accounting?: DispatchAccounting,
+  ) {
+    if (brain.tenantId !== undefined) {
+      // A tenant-bound brain must never fall back to local money. Without an
+      // injected account-bound central coordinator it can still run extractive,
+      // unpaid work but any paid admission fails closed.
+      if (accounting && accounting.accountId !== brain.tenantId)
+        throw new BrainError(
+          "UNAUTHORIZED",
+          "Managed paid work requires its account-bound central accounting.",
+          401,
+        );
+      this.accounting =
+        accounting ?? new TenantOnlyAccounting(brain.store, brain.clock, brain.tenantId);
+    } else {
+      this.accounting =
+        accounting ?? new LocalDispatchAccounting(brain.store, brain.clock);
+    }
+  }
+  /**
+   * The owner principal for this worker's brain, derived per call rather than
+   * from a module-global literal. A managed brain yields an owner bound to its
+   * own tenant; a local brain yields the unbound local owner. Job payloads keep
+   * their own persisted principal, so agent-originated scopes are never
+   * upgraded to owner.
+   */
+  private get owner(): Principal {
+    return this.brain.ownerPrincipal();
+  }
   lease(): Record<string, any> | undefined {
     const b = this.brain;
     return b.store.transaction(() => {
@@ -66,62 +113,9 @@ export class Worker {
         409,
       );
   }
-  reserve(j: any, upper: number) {
-    if (!Number.isSafeInteger(upper) || upper <= 0)
-      throw new BrainError(
-        "PROVIDER_UNAVAILABLE",
-        "Provider estimate is invalid.",
-        503,
-      );
-    const b = this.brain;
-    return b.store.transaction(() => {
-      this.fenced(j);
-      const prior = b.store.get(
-        "SELECT * FROM reservations WHERE job_id=?",
-        j.id,
-      );
-      if (prior) {
-        if (prior.status === "held")
-          throw new BrainError(
-            "BUDGET_EXHAUSTED",
-            "An earlier call has unresolved usage; inspect before retrying.",
-            409,
-          );
-        throw new BrainError(
-          "BUDGET_EXHAUSTED",
-          "This paid attempt already has an accounting record.",
-          409,
-        );
-      }
-      const prefs = b.prefs(owner);
-      const day = localSchedule(b.clock(), prefs).day;
-      const used = b.store.get(
-        "SELECT coalesce(sum(CASE WHEN status=? THEN reserved ELSE actual END),0) AS amount FROM reservations WHERE day=?",
-        "held",
-        day,
-      )!.amount;
-      if (
-        upper > prefs.per_job_cap_micro_usd ||
-        used + upper > prefs.daily_cap_micro_usd
-      )
-        throw new BrainError(
-          "BUDGET_EXHAUSTED",
-          "Spending cap reached. Your note is saved.",
-          409,
-        );
-      b.store.run(
-        "INSERT INTO reservations VALUES(?,?,?,?,?)",
-        j.id,
-        day,
-        upper,
-        0,
-        "held",
-      );
-    });
-  }
   schedule() {
     const b = this.brain,
-      prefs = b.prefs(owner);
+      prefs = b.prefs(this.owner);
     b.store.set("worker_heartbeat", b.now());
     b.store.run(
       "UPDATE jobs SET status='failed',fence=fence+1,error='Preparation deadline exceeded. Your original is saved.' WHERE status IN ('running','retry_wait') AND deadline_at<=?",
@@ -131,13 +125,17 @@ export class Worker {
       "UPDATE jobs SET status='failed',error='Worker attempts exhausted after interruption.' WHERE status='running' AND lease_until<=? AND attempts>=max_attempts",
       b.now(),
     );
-    for (const proposal of b.entities(owner, "proposal"))
+    for (const proposal of b.entities(this.owner, "proposal"))
       if (
         proposal.data.status === "snoozed" &&
         proposal.data.until <= b.now()
       ) {
         try {
-          b.checkEvidence(owner, proposal.project_id, proposal.data.evidence);
+          b.checkEvidence(
+            this.owner,
+            proposal.project_id,
+            proposal.data.evidence,
+          );
           b.store.transaction(() =>
             b.revise(proposal, { ...proposal.data, status: "ready" }),
           );
@@ -154,7 +152,7 @@ export class Worker {
     if (last === schedule.day) return;
     b.store.transaction(() => {
       for (const goal of b
-        .entities(owner, "goal")
+        .entities(this.owner, "goal")
         .filter(
           (g) =>
             g.data.status === "active" &&
@@ -169,7 +167,7 @@ export class Worker {
         if (!pending)
           b.enqueue(goal.project_id, "review_changed_assumption", {
             goal_id: goal.id,
-            principal: owner,
+            principal: this.owner,
             manual: false,
           });
       }
@@ -219,7 +217,7 @@ export class Worker {
         j.project_id,
         principal.kind === "agent" ? "propose_memory" : "read",
       );
-      const prefs = b.prefs(owner);
+      const prefs = b.prefs(this.owner);
       if (
         j.kind === "review_changed_assumption" &&
         !j.payload.manual &&
@@ -240,7 +238,7 @@ export class Worker {
           "Owner is active; background preparation was cancelled.",
           409,
         );
-      const allSources = b.sources(owner, j.project_id);
+      const allSources = b.sources(this.owner, j.project_id);
       const sources = allSources.slice(0, 20);
       const signature = b.evidenceSignature(sources);
       let output = extract(sources),
@@ -249,42 +247,97 @@ export class Worker {
           prompt_version: "extract-v1",
         },
         cost = 0;
-      let goalPrepared:
-        | Awaited<ReturnType<NonNullable<ReasoningProvider["prepareGoal"]>>>
-        | undefined;
+      let goalPrepared: GoalPrepared | undefined;
+      let attempt: PreparedAttempt | undefined;
+      let goalGuardVersion: number | undefined;
       if (
         prefs.provider_enabled &&
         sources.some((s) => s.visibility === "project") &&
         (j.kind === "derive_brief" ||
-          (j.kind === "review_changed_assumption" &&
-            !!this.provider.prepareGoal))
+          j.kind === "review_changed_assumption")
       ) {
         const selected = sources.filter((s) => s.visibility === "project");
-        if (
-          j.kind === "review_changed_assumption" &&
-          !j.payload.manual &&
-          this.ownerActive()
-        )
-          throw new BrainError(
-            "JOB_CANCELLED",
-            "Owner is active; background preparation was cancelled.",
-            409,
+        const guard = () => {
+          // Re-reads authoritative state before reserve and again before mark.
+          b.access(
+            principal,
+            j.project_id,
+            principal.kind === "agent" ? "propose_memory" : "read",
           );
-        let prepared;
+          if (!b.prefs(this.owner).provider_enabled)
+            throw new BrainError(
+              "JOB_CANCELLED",
+              "Paid processing was turned off before dispatch.",
+              409,
+            );
+          if (
+            j.kind === "review_changed_assumption" &&
+            !j.payload.manual &&
+            this.ownerActive()
+          )
+            throw new BrainError(
+              "JOB_CANCELLED",
+              "Owner is active; background preparation was cancelled.",
+              409,
+            );
+          if (
+            signature !==
+            b.evidenceSignature(b.sources(this.owner, j.project_id).slice(0, 20))
+          )
+            throw new BrainError(
+              "SOURCE_STALE",
+              "Sources changed before dispatch.",
+              409,
+            );
+          if (j.kind === "review_changed_assumption") {
+            const current = b.entity(this.owner, j.payload.goal_id);
+            if (
+              current.project_id !== j.project_id ||
+              current.kind !== "goal" ||
+              current.data.status !== "active" ||
+              !current.data.preparation_enabled ||
+              current.version !== goalGuardVersion
+            )
+              throw new BrainError(
+                "SOURCE_STALE",
+                "Selected goal changed before dispatch.",
+                409,
+              );
+          }
+        };
         if (j.kind === "derive_brief") {
-          const upper = this.provider.upperBound(selected);
-          this.reserve(j, upper);
-          prepared = await this.provider.prepare(selected, controller.signal);
+          const paid = await dispatchPrepared(
+            {
+              brain: b,
+              ledger: this.accounting,
+              provider: this.provider,
+              owner: this.owner,
+            },
+            { kind: "brief", sources: selected },
+            j as { id: string; fence: number },
+            this.id,
+            guard,
+            controller.signal,
+          );
+          attempt = paid;
+          if (!paid.output.ok)
+            throw new BrainError(paid.output.code, paid.output.reason, 503);
+          if (paid.output.kind !== "brief")
+            throw new BrainError(
+              "PROVIDER_UNAVAILABLE",
+              "The provider returned an unusable brief.",
+              503,
+            );
           output = outputSchema.parse({
-            items: prepared.items,
-            unknowns: prepared.unknowns,
+            items: paid.output.items,
+            unknowns: paid.output.unknowns,
           });
           output.items = [
             ...output.items,
             ...extract(sources.filter((s) => s.visibility === "private")).items,
           ].slice(0, 30);
         } else {
-          const goal = b.entity(owner, j.payload.goal_id);
+          const goal = b.entity(this.owner, j.payload.goal_id);
           if (
             goal.project_id !== j.project_id ||
             goal.kind !== "goal" ||
@@ -300,54 +353,55 @@ export class Worker {
               "INVALID_INPUT",
               "Goal contains suspected secrets; connected preparation was not sent.",
             );
+          goalGuardVersion = goal.version;
           const goalInput = {
             title: goal.data.title,
             success_criteria: goal.data.success_criteria,
             plan: goal.data.plan_private ? "" : (goal.data.plan ?? ""),
           };
-          const upper = this.provider.upperBound(
-            selected,
-            JSON.stringify(goalInput).length,
-          );
-          this.reserve(j, upper);
-          prepared = await this.provider.prepareGoal!(
-            goalInput,
-            selected,
+          const paid = await dispatchPrepared(
+            {
+              brain: b,
+              ledger: this.accounting,
+              provider: this.provider,
+              owner: this.owner,
+            },
+            { kind: "goal", goal: goalInput, sources: selected },
+            j as { id: string; fence: number },
+            this.id,
+            guard,
             controller.signal,
           );
-          goalPrepared = prepared;
+          attempt = paid;
+          if (!paid.output.ok || paid.output.kind !== "goal")
+            throw new BrainError(
+              paid.output.ok ? "PROVIDER_UNAVAILABLE" : paid.output.code,
+              paid.output.ok
+                ? "The provider returned an unusable preparation."
+                : paid.output.reason,
+              503,
+            );
+          goalPrepared = {
+            outcome: paid.output.outcome,
+            artifact: paid.output.artifact,
+            evidence: paid.output.evidence,
+            usage: paid.accounting.usage,
+            metadata: {
+              provider: paid.identity.provider,
+              model: paid.identity.model,
+              prompt_version: paid.identity.prompt_version,
+            },
+            cost_micro_usd: paid.accounting.cost_micro_usd,
+          };
         }
-        metadata = { ...prepared.metadata, usage: prepared.usage };
-        cost = prepared.cost_micro_usd;
-        if (!Number.isSafeInteger(cost) || cost < 0)
-          throw new BrainError(
-            "PROVIDER_UNAVAILABLE",
-            "Provider cost is invalid; reservation remains held.",
-            503,
-          );
-        const exceeded = b.store.transaction(() => {
-          const r = b.store.get(
-            "SELECT reserved FROM reservations WHERE job_id=?",
-            j.id,
-          )!;
-          b.store.run(
-            "UPDATE reservations SET actual=?,status=? WHERE job_id=?",
-            cost,
-            "settled",
-            j.id,
-          );
-          if (cost > r.reserved) {
-            b.store.set("preferences", { ...prefs, provider_enabled: false });
-            return true;
-          }
-          return false;
-        });
-        if (exceeded)
-          throw new BrainError(
-            "BUDGET_EXHAUSTED",
-            "Provider usage exceeded its estimate. Paid processing was disabled.",
-            409,
-          );
+        metadata = {
+          provider: attempt.identity.provider,
+          model: attempt.identity.model,
+          prompt_version: attempt.identity.prompt_version,
+          price_version: attempt.identity.price_version,
+          usage: attempt.accounting.usage,
+        };
+        cost = attempt.accounting.cost_micro_usd;
       }
       b.store.transaction(() => {
         this.fenced(j);
@@ -368,7 +422,7 @@ export class Worker {
         );
         if (
           signature !==
-          b.evidenceSignature(b.sources(owner, j.project_id).slice(0, 20))
+          b.evidenceSignature(b.sources(this.owner, j.project_id).slice(0, 20))
         )
           throw new BrainError(
             "SOURCE_STALE",
@@ -382,7 +436,7 @@ export class Worker {
           for (const item of output.items)
             validateEvidence(item.evidence, sources, j.project_id);
           const old = b
-            .entities(owner, "brief")
+            .entities(this.owner, "brief")
             .find((e) => e.project_id === j.project_id);
           const corrections = (old?.data.items ?? []).filter((item: any) => {
             if (item.epistemic_status !== "user_assertion") return false;
@@ -424,7 +478,7 @@ export class Worker {
           outcome = "changed";
           reason = "Prepared from retained source passages.";
           for (const goal of b
-            .entities(owner, "goal")
+            .entities(this.owner, "goal")
             .filter(
               (g) =>
                 g.project_id === j.project_id &&
@@ -434,11 +488,11 @@ export class Worker {
             if (prefs.enabled)
               b.enqueue(j.project_id, "review_changed_assumption", {
                 goal_id: goal.id,
-                principal: owner,
+                principal: this.owner,
                 manual: false,
               });
         } else if (j.kind === "review_changed_assumption") {
-          const goal = b.entity(owner, j.payload.goal_id);
+          const goal = b.entity(this.owner, j.payload.goal_id);
           if (
             goal.project_id !== j.project_id ||
             goal.data.status !== "active" ||
@@ -448,6 +502,12 @@ export class Worker {
               "FORBIDDEN",
               "Goal preparation is disabled.",
               403,
+            );
+          if (goalGuardVersion !== undefined && goal.version !== goalGuardVersion)
+            throw new BrainError(
+              "SOURCE_STALE",
+              "The selected goal changed before the provider result could be published.",
+              409,
             );
           const relevant = this.relevant(
             sources,
@@ -462,7 +522,7 @@ export class Worker {
               const evidence = goalPrepared
                 ? goalPrepared.evidence
                 : relevant.map(excerpt);
-              b.checkEvidence(owner, j.project_id, evidence);
+              b.checkEvidence(this.owner, j.project_id, evidence);
               const artifact =
                 goalPrepared?.artifact ??
                 `Hypothesis: review the current plan for “${goal.data.title}” against these saved passages.\n\n${evidence.map((e) => `“${e.quote}”`).join("\n\n")}\n\nProposed experiment: compare the earlier plan with the new evidence, choose one small test, and record the result. The passages do not by themselves prove a contradiction.`;
@@ -515,6 +575,7 @@ export class Worker {
             });
           }
         } else throw new BrainError("INVALID_INPUT", "Unsupported job kind.");
+        const persisted = this.accounting.receiptForJob(j.id);
         b.createEntity(j.project_id, "receipt", {
           job_id: j.id,
           input_hash: signature,
@@ -524,8 +585,16 @@ export class Worker {
           result_id: resultId,
           evidence: output.items.flatMap((i) => i.evidence),
           goal_evidence: goalPrepared?.evidence ?? [],
-          cost_micro_usd: cost,
-          usage_status: metadata.usage ? "settled" : "no_provider_call",
+          call_id: persisted?.call_id ?? null,
+          cost_micro_usd:
+            persisted?.state === "settled" ? persisted.actual_micro_usd : cost,
+          usage_status: !persisted
+            ? "no_provider_call"
+            : persisted.state === "settled"
+              ? "settled"
+              : persisted.state === "released"
+                ? "no_attempt"
+                : "unknown",
           ...metadata,
         });
         b.store.run(
@@ -536,6 +605,9 @@ export class Worker {
         );
       });
     } catch (e) {
+      // A failed safety-marker write is a fatal managed condition: it must stop
+      // managed worker scheduling, never be downgraded to an ordinary job error.
+      if (e instanceof AccountingPersistenceError) throw e;
       const code = e instanceof BrainError ? e.code : "PROVIDER_UNAVAILABLE";
       const safe =
         e instanceof BrainError
@@ -544,13 +616,16 @@ export class Worker {
       try {
         b.store.transaction(() => {
           this.fenced(j);
+          const accounted = this.accounting.hasUnresolved(j.id);
+          const legacy = !!b.store.get(
+            "SELECT 1 FROM reservations WHERE job_id=?",
+            j.id,
+          );
           const retry =
             code === "PROVIDER_UNAVAILABLE" &&
             j.attempts < 3 &&
-            !b.store.get(
-              "SELECT job_id FROM reservations WHERE job_id=?",
-              j.id,
-            );
+            !accounted &&
+            !legacy;
           const status = retry
             ? "retry_wait"
             : code === "JOB_CANCELLED"
@@ -566,12 +641,41 @@ export class Worker {
             j.id,
             j.fence,
           );
+          const persisted = this.accounting.receiptForJob(j.id);
+          // A blocked legacy reservation has no dispatch row but still owns real
+          // accounting: report it authoritatively instead of claiming no attempt.
+          const legacyRow = persisted
+            ? undefined
+            : b.store.get<{ status: string; reserved: number; actual: number }>(
+                "SELECT status,reserved,actual FROM reservations WHERE job_id=?",
+                j.id,
+              );
           b.createEntity(j.project_id, "receipt", {
             job_id: j.id,
             outcome: "failed",
             reason: safe,
             code,
-            cost_micro_usd: 0,
+            call_id: persisted?.call_id ?? null,
+            accounting_source: persisted ? "dispatch" : legacyRow ? "legacy" : null,
+            legacy_job_id: legacyRow ? j.id : null,
+            usage_status: persisted
+              ? persisted.state === "settled"
+                ? "settled"
+                : persisted.state === "released"
+                  ? "no_attempt"
+                  : "unknown"
+              : legacyRow
+                ? legacyRow.status === "settled"
+                  ? "settled"
+                  : "unknown"
+                : "no_attempt",
+            cost_micro_usd: persisted
+              ? persisted.state === "settled"
+                ? persisted.actual_micro_usd
+                : null
+              : legacyRow?.status === "settled"
+                ? Number(legacyRow.actual)
+                : null,
             evidence: [],
           });
         });

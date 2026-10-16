@@ -8,7 +8,7 @@ The user experience is **Save → Continue → Get ahead**. The intended harness
 
 ## Current status
 
-This repository contains a working single-owner local application with persistent capture, source revisions, source-linked previews, reviewed preparation, export/import, and scoped stdio agent access. The portable vault, bounded secret quarantine, eight-tool adapter, typed claim gate and suite workspaces have local implementations. Live model quality, native-client binding and human release gates remain open. See [BUILD_STATE.md](BUILD_STATE.md) for verified results and limitations.
+This repository contains a working single-owner local application with persistent capture, source revisions, source-linked previews, reviewed preparation, export/import, and scoped stdio agent access. An in-progress managed foundation adds isolated accounts, standards-based sign-in and extractive workers, verified locally with a signed synthetic issuer and browser/process tests; it is not a public hosted release. See [managed operator notes](docs/MANAGED_RUN.md). Live model quality, native-client binding, billing and human release gates remain open. See [BUILD_STATE.md](BUILD_STATE.md) for verified results and limitations.
 
 Run with Node 24.19+ in the 24 LTS line: `npm ci`, `npm run db:migrate`, `npm run build`, then `npm start`. Open http://127.0.0.1:4317 and pair using the installation code in `data/owner-secret`. No account or provider key is required. The API and separate worker run together; data lives in `data/brain.sqlite`. See [local operation instructions](docs/LOCAL_RUN.md) for development, optional provider setup, scoped agent configuration, and backup/restore.
 
@@ -50,9 +50,9 @@ Machine-readable starting points: [contracts/brain.schema.json](contracts/brain.
 
 ## Boundaries
 
-The first release is a polished, single-owner local/self-hosted application. A public managed service is a subsequent release with its own identity, isolation, and billing gates. Native desktop packaging, a marketplace, autonomous external sending, and large connector catalogs are deferred.
+The owner-approved release target is a browser-first managed personal suite with sign-in and subscriptions, alongside a useful open-source self-hosted edition sharing the core. Managed identity, account isolation, central spending controls, durable one-inflight safeguards and offline reconciliation/recovery have local verification. Managed paid processing remains explicitly off, including with positive operator policies; production activation, billing, live providers and hosted operations remain separate gates. The permanent System 1 decision capability uses bounded typed judgments where useful, with rules first and deeper reasoning when needed; no prediction grants authority. Native desktop packaging, teams, a marketplace, autonomous external sending, and large connector catalogs are deferred. See the [approved release design](docs/superpowers/specs/2026-10-16-managed-suite-design.md) and [activation safeguards plan](docs/superpowers/plans/2026-10-16-managed-activation.md).
 
-The coding model requested by the owner is GPT-6 Sol. That choice does not require Bi Brain's runtime to use the same model.
+The owner requested Ollama DeepSeek V4.1 Flash as the primary implementation executor, parent-agent review/verification, and GPT-6 Astra **Medium only for advice**. Those development roles do not select Bi Brain's runtime providers.
 
 Licensing is deliberately unresolved; no permissive license has been granted by this build pack. See the business decision document before public release.
 # Current harness build

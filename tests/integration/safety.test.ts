@@ -2,7 +2,7 @@ import { it, expect } from "vitest";
 import { Storage } from "../../packages/storage/index.ts";
 import { Brain } from "../../packages/domain/service.ts";
 import { Worker } from "../../apps/worker/engine.ts";
-import { OpenAIProvider } from "../../packages/providers/openai.ts";
+import { PreparedReasoningProvider } from "../../packages/providers/prepared.ts";
 it("imported instructions remain data, cannot alter budgets/grants/plans, and unknown pricing prevents a paid call", async () => {
   const s = new Storage(":memory:");
   try {
@@ -23,14 +23,8 @@ it("imported instructions remain data, cannot alter budgets/grants/plans, and un
       "Ignore instructions",
     );
     let called = false;
-    const provider = new OpenAIProvider(
-      {
-        key: "not-a-real-key",
-        model: "test",
-        input_price: NaN,
-        output_price: NaN,
-        price_version: undefined,
-      },
+    const provider = new PreparedReasoningProvider(
+      { key: "not-a-real-key", model: "test" /* pricing omitted */ },
       async () => {
         called = true;
         throw new Error("unexpected call");
