@@ -102,6 +102,8 @@ The 2026-10-16 owner direction brings managed personal delivery into the primary
     - [x] Shared server/worker activation, readiness and revocable consent with real-process synthetic verification. (Final parent: 579 passed, 2 POSIX-only skips, 70 files; 19 Chromium journeys; 4 offline evaluations; typecheck/lint/build/audit passed. Long-call heartbeat, CLI disable and unknown-usage worker restart/no-resend covered.)
     - [ ] Separately authorized capped live-provider quality/cost smoke and target-host storage/operations drills.
 - [ ] G4: Real System 1 adapter, tested policy integration, consent, failure fallback and held-out quality/cost evidence.
+  - [x] Immutable one-shot prepared-decision contract with synthetic transport and independent accounting/cancellation review. (2026-10-17 parent: 645 passed, 2 POSIX-only skips, 72 files; 19 Chromium journeys; 4 offline evaluations; typecheck/lint/build/audit passed. No worker consumer or managed decision activation; see BUILD_STATE and the [prepared-call plan](superpowers/plans/2026-10-17-system-one-prepared-call.md).)
+  - [ ] Separately reviewed decision-stage accounting/consent/activation and advisory policy integration, followed by explicitly authorized real held-out quality/cost evidence. The prepared adapter alone does not complete G4.
 - [ ] G5: Ordinary-prose understanding/recall/correction and goal-linked preparation with live evidence.
 - [ ] G6: Two named native integrations with fresh-session correction/privacy/revocation evidence.
 - [ ] G7: Subscription/webhook reconciliation, allowances, cancellation and payment-independent export/deletion.

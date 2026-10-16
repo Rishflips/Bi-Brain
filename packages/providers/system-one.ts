@@ -159,13 +159,16 @@ export class SystemOneError extends BrainError {
     readonly dispatched: boolean,
     readonly usage?: DecisionUsage,
     readonly actual_cost_micro_usd?: number,
+    /** Exact accepted returned-model id, set ONLY after accepted-model validation
+     * on a known-cost path. Never the requested model substituted for an alias. */
+    readonly reported_model?: string,
   ) {
     super(code, message, status);
     this.name = "SystemOneError";
   }
 }
 
-type ResolvedConfig = {
+export type ResolvedSystemOneConfig = {
   provider: SystemOneProviderKind;
   endpoint: string;
   url: URL;
@@ -179,7 +182,7 @@ type ResolvedConfig = {
   max_response_bytes: number;
 };
 
-type Prepared = {
+export type PreparedSystemOneRequest = {
   input: DecisionInput;
   json: string;
   bytes: number;
@@ -210,7 +213,7 @@ export function parseDecisionInput(value: unknown): DecisionInput {
   return parsed.data;
 }
 
-function resolveConfig(config: SystemOneConfig): ResolvedConfig {
+export function resolveSystemOneConfig(config: SystemOneConfig): ResolvedSystemOneConfig {
   const unavailable: (message: string) => never = (message) => {
     throw new SystemOneError("PROVIDER_UNAVAILABLE", message, 503, false);
   };
@@ -373,11 +376,11 @@ function resolveConfig(config: SystemOneConfig): ResolvedConfig {
 
 /** Real HTTP transport for an explicit operator-configured decision endpoint. */
 export class SystemOneProvider implements DecisionProvider {
-  private readonly settings: ResolvedConfig;
+  private readonly settings: ResolvedSystemOneConfig;
   private readonly fetcher: typeof fetch;
 
   constructor(config: SystemOneConfig, fetcher: typeof fetch = fetch) {
-    this.settings = resolveConfig(config);
+    this.settings = resolveSystemOneConfig(config);
     this.fetcher = fetcher;
   }
 
@@ -397,84 +400,20 @@ export class SystemOneProvider implements DecisionProvider {
    * input, pricing or the safe-integer range is violated.
    */
   upperBound(input: DecisionInput): number {
-    return this.costBound(this.prepare(input));
+    return systemOneCostBound(
+      prepareSystemOneRequest(input, this.settings),
+      this.settings,
+    );
   }
 
   async decide(
     input: DecisionInput,
     signal: AbortSignal,
   ): Promise<DecisionResult> {
-    const prepared = this.prepare(input);
+    const prepared = prepareSystemOneRequest(input, this.settings);
     // The dispatch path must never bypass the safe-integer reservation check.
-    const bound = this.costBound(prepared);
+    const bound = systemOneCostBound(prepared, this.settings);
     return this.run(prepared, bound, signal);
-  }
-
-  private costBound(prepared: Prepared): number {
-    const price = this.settings.price;
-    const inputUpperTokens = prepared.bytes + REQUEST_OVERHEAD_BYTES;
-    const outputUpperTokens = this.settings.max_response_bytes;
-    const micro =
-      inputUpperTokens * price.input_micro_usd_per_million +
-      outputUpperTokens * price.output_micro_usd_per_million;
-    if (!Number.isSafeInteger(micro))
-      throw new SystemOneError(
-        "PROVIDER_UNAVAILABLE",
-        "The cost bound exceeds the safe integer range.",
-        503,
-        false,
-      );
-    const bound = Math.ceil(micro / 1_000_000);
-    if (!Number.isSafeInteger(bound) || bound < 0)
-      throw new SystemOneError(
-        "PROVIDER_UNAVAILABLE",
-        "The cost bound exceeds the safe integer range.",
-        503,
-        false,
-      );
-    return bound;
-  }
-
-  private prepare(input: DecisionInput): Prepared {
-    const parsed = parseDecisionInput(input);
-    // Bounded best-effort secret scan over the whole accepted input (state,
-    // instruction and options). It is not a guarantee of arbitrary protection,
-    // but it does cover the full bounded payload rather than a prefix.
-    const checked = [
-      parsed.state,
-      parsed.instruction,
-      ...parsed.options.map((option) => `${option.id}: ${option.description}`),
-    ].join("\n");
-    if (detectSecrets(checked).length > 0)
-      throw new SystemOneError(
-        "INVALID_INPUT",
-        "This content looks like it may contain a secret, so it was not sent to the provider.",
-        400,
-        false,
-      );
-    const criteria = Object.fromEntries(
-      parsed.options.map((option) => [option.id, option.description]),
-    );
-    const json = JSON.stringify({
-      model: this.settings.model,
-      state: parsed.state,
-      questions: {
-        [DECISION_QUESTION_ID]: {
-          type: "choice",
-          instructions: parsed.instruction,
-          criteria,
-        },
-      },
-    });
-    const bytes = Buffer.byteLength(json, "utf8");
-    if (bytes > this.settings.max_request_bytes)
-      throw new SystemOneError(
-        "INVALID_INPUT",
-        "The decision request is larger than the configured limit.",
-        400,
-        false,
-      );
-    return { input: parsed, json, bytes };
   }
 
   private headers(): Record<string, string> {
@@ -492,7 +431,7 @@ export class SystemOneProvider implements DecisionProvider {
    * signal still cannot outlive the deadline.
    */
   private async run(
-    prepared: Prepared,
+    prepared: PreparedSystemOneRequest,
     bound: number,
     signal: AbortSignal,
   ): Promise<DecisionResult> {
@@ -561,7 +500,7 @@ export class SystemOneProvider implements DecisionProvider {
   }
 
   private async perform(
-    prepared: Prepared,
+    prepared: PreparedSystemOneRequest,
     bound: number,
     signal: AbortSignal,
   ): Promise<DecisionResult> {
@@ -675,7 +614,7 @@ export class SystemOneProvider implements DecisionProvider {
     input: DecisionInput,
     bound: number,
   ): DecisionResult {
-    const known: { usage?: DecisionUsage; cost?: number } = {};
+    const known: { usage?: DecisionUsage; cost?: number; model?: string } = {};
     const invalid: (message: string) => never = (message) => {
       throw new SystemOneError(
         "PROVIDER_INVALID",
@@ -684,6 +623,7 @@ export class SystemOneProvider implements DecisionProvider {
         true,
         known.usage,
         known.cost,
+        known.model,
       );
     };
     const unavailable: (message: string) => never = (message) => {
@@ -694,6 +634,7 @@ export class SystemOneProvider implements DecisionProvider {
         true,
         known.usage,
         known.cost,
+        known.model,
       );
     };
 
@@ -740,6 +681,9 @@ export class SystemOneProvider implements DecisionProvider {
       invalid("The provider decision did not identify a usable model.");
     if (!this.settings.accepted_response_models.includes(node.model))
       invalid("The provider decision returned an unaccepted model identifier.");
+    // The exact accepted returned-model id is now known; carry it on any later
+    // known-cost error so a caller never substitutes the requested model.
+    known.model = node.model;
 
     const price = this.settings.price;
     const micro =
@@ -831,4 +775,79 @@ export class SystemOneProvider implements DecisionProvider {
       cost_micro_usd: cost,
     };
   }
+}
+
+/**
+ * Shared, provider-internal pure helpers (reused by the prepared-decision adapter).
+ * They never export or serialize the key VALUE; the key stays in the resolved
+ * in-memory snapshot only.
+ */
+export function prepareSystemOneRequest(
+  input: DecisionInput,
+  resolved: ResolvedSystemOneConfig,
+): PreparedSystemOneRequest {
+  const parsed = parseDecisionInput(input);
+  const checked = [
+    parsed.state,
+    parsed.instruction,
+    ...parsed.options.map((option) => `${option.id}: ${option.description}`),
+  ].join("\n");
+  if (detectSecrets(checked).length > 0)
+    throw new SystemOneError(
+      "INVALID_INPUT",
+      "This content looks like it may contain a secret, so it was not sent to the provider.",
+      400,
+      false,
+    );
+  const criteria = Object.fromEntries(
+    parsed.options.map((option) => [option.id, option.description]),
+  );
+  const json = JSON.stringify({
+    model: resolved.model,
+    state: parsed.state,
+    questions: {
+      [DECISION_QUESTION_ID]: {
+        type: "choice",
+        instructions: parsed.instruction,
+        criteria,
+      },
+    },
+  });
+  const bytes = Buffer.byteLength(json, "utf8");
+  if (bytes > resolved.max_request_bytes)
+    throw new SystemOneError(
+      "INVALID_INPUT",
+      "The decision request is larger than the configured limit.",
+      400,
+      false,
+    );
+  return { input: parsed, json, bytes };
+}
+
+/** Conservative integer micro-USD reservation bound for one prepared request. */
+export function systemOneCostBound(
+  prepared: PreparedSystemOneRequest,
+  resolved: ResolvedSystemOneConfig,
+): number {
+  const price = resolved.price;
+  const micro =
+    (prepared.bytes + REQUEST_OVERHEAD_BYTES) *
+      price.input_micro_usd_per_million +
+    resolved.max_response_bytes * price.output_micro_usd_per_million;
+  if (!Number.isSafeInteger(micro))
+    throw new SystemOneError(
+      "PROVIDER_UNAVAILABLE",
+      "The cost bound exceeds the safe integer range.",
+      503,
+      false,
+    );
+  const bound = Math.ceil(micro / 1_000_000);
+  if (!Number.isSafeInteger(bound) || bound < 0)
+    throw new SystemOneError(
+      "PROVIDER_UNAVAILABLE",
+      "The cost bound exceeds the safe integer range.",
+      503,
+      false,
+    );
+  return bound;
 }

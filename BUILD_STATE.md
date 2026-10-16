@@ -1,6 +1,151 @@
 # Build state
 
-Updated: 2026-10-16
+Updated: 2026-10-17
+
+## Current checkpoint — prepared System 1 adapter accepted locally
+
+DeepSeek implemented the approved immutable one-shot decision contract in
+`packages/providers/prepared-decision.ts`. Parent reviewed the source/diff,
+added independent adversarial checks, reproduced and verified the cancellation
+wording repair, and completed the settled verification on Windows / Node 24.19.0:
+
+| Command | Actual result |
+| --- | --- |
+| `npm test -- --maxWorkers=1` | **645 passed, 2 POSIX-only skips, 72 files**, 232.28 s |
+| `npm test -- tests/integration/prepared-decision.test.ts tests/integration/prepared-decision-review.test.ts tests/integration/system-one.test.ts tests/integration/system-one-review.test.ts tests/integration/prepared-provider.test.ts tests/integration/prepared-provider-review.test.ts --maxWorkers=1` | **164 passed**, 6 files |
+| `npm run typecheck` | passed |
+| `npm run lint` | passed |
+| `npm run build` | passed |
+| `npm run test:e2e -- --workers=1 --output=test-results/prepared-decision-parent` | **19/19 Chromium journeys**, 60.0 s |
+| `npm run brain-eval` | **4/4 synthetic offline evaluations** |
+| `npm audit --audit-level=high` | zero vulnerabilities |
+
+The two skips are the existing Windows-inapplicable POSIX filesystem checks.
+Both tracked browser reference screenshots were restored from pre-run copies
+and their SHA-256 hashes match. Dependencies/lockfile, runtime consumers,
+workers, activation/profile, monetary storage, schemas and UI are unchanged.
+The scoped provider/test credential-pattern scan found no high-confidence
+secrets. Independent read-only review found no blocking defects.
+
+**This is a verified adapter dependency, not completed G4 or an end-user model
+feature.** It freezes request/config/pricing, bounds one attempt, retains known
+charges independently of bad output and refuses forged accounting/no-send
+errors. Durable no-resend still requires a future coordinator. Minor diagnostic
+classification and duplicated response-parser maintenance limits are recorded
+below and in the implementation plan. Model quality, live endpoint/pricing,
+managed decision accounting/consent/activation and held-out evidence remain open.
+
+At local acceptance, work was **uncommitted/unpushed** on `feat/system-one-shadow-policy`;
+the superseded observation design and prior feature branch are preserved. No
+background implementer remains active. No real key, runtime provider call,
+account activation, new commit/push/PR, deployment or license change occurred.
+The merged-main CI below verifies the earlier Phase 2 base, not this new tree.
+
+### Repository delivery and next-slice authorization
+
+The owner then requested **"go ahead do it in safe order make it fast"** after
+the recommendation to commit/open a PR, add decision-stage accounting/consent,
+and integrate advisory shadow judgments. This authorizes repository delivery of
+the accepted adapter and synthetic-first continuation; it does **not** authorize
+merging the PR, spending on a live runtime provider, enabling an owner account or
+deployment. Parent will publish the verified checkpoint first and isolate the
+next slice on a dependent branch. The next accounting/worker architecture is
+being inspected read-only before its design review; no new runtime permission
+or wider provider consent is inferred from the existing reasoning profile.
+
+## Phase 2 merged — repository checkpoint
+
+The owner reported PR #2 merged; parent verified GitHub state **MERGED** at
+`4a77894381339a1c2eb68d144b873ef483bc7a55` (2026-10-16T18:07:31Z).
+Implementation commit: `f2d9f64022067115cf5d999da27a2f034cd31649`.
+PR: https://github.com/Rishflips/Bi-Brain/pull/2
+
+The PR workflow **38941959387 passed** on Ubuntu: **581/581 tests, 70 files,
+19 Chromium journeys, 4 offline evaluations**, install/typecheck/lint/build/audit,
+Docker build, non-root container auth/worker/restart-persistence/origin/backup
+smoke, Compose and Caddy configuration validation. This is synthetic CI and
+packaging evidence, not live-provider quality or a deployed host.
+
+The earlier branch-push workflow **38941933259 failed** at
+`tests/e2e/app.spec.ts:212`: the existing "Your understanding:" assertion did not
+become visible within its 5-second deadline (18/19 browser journeys passed).
+The separate PR workflow passed without a source change. A timing-sensitive
+failure is consistent with that evidence; its root cause is not established and
+no timeout was increased or failure silently reclassified as success.
+
+Merged-main workflow **38944921896 subsequently passed** at the exact merge
+commit: **581/581 tests, 19 Chromium journeys, 4 offline evaluations**, fresh
+install/typecheck/lint/build/audit, Docker build, non-root container
+auth/worker/restart-persistence/origin/backup smoke, Compose and Caddy validation.
+Parent read back its completed jobs and logs rather than inferring the result
+from the PR run. No live provider or target-host deployment is implied.
+
+### Next milestone — G4 System 1 shadow-policy design
+
+The owner said **"PR merged, continue"**. Parent fetched the merged base and
+verified its tree matches the accepted feature commit, then created
+`feat/system-one-shadow-policy` from `origin/main` at `4a77894` in the same
+isolated worktree. The prior feature branch and the local merge record are
+preserved; no stash, reset, deletion or automatic main merge was used.
+
+DeepSeek is drafting only the next architectural design, starting with the
+approved advisory/shadow System 1 requirement and the actual current provider,
+policy, accounting and evidence/deletion contracts. The current activation
+profile admits only OpenAI reasoning, not a new Typesafe/Cloudflare decision
+stage. The draft must not silently widen provider consent or monetary authority,
+pretend offline judgments are live inference, or let a classification control
+capture/dispatch. A new implementation plan/code awaits review and approval of
+this next design. No real key, paid call, owner activation, new push, billing,
+license change or deployment is authorized by continuing.
+
+### Prepared System 1 adapter — approved narrow continuation (2026-10-17)
+
+Parent declined the proposed rules-only durable observation subsystem: it would
+add lifecycle/telemetry work before a real model path exists, and synthetic
+fixture comparisons cannot establish model value. The shadow-policy draft is
+preserved but superseded. A narrow Astra Medium advisory request failed at the
+account sharing usage limit; no advice was returned, credentials were not
+changed and no other advisory model was substituted.
+
+The owner then said **"continue"** after the prepared-decision implementation
+approval request. Work is limited to a frozen one-shot adapter around the
+existing System One transport and synthetic verification. Parent review
+clarified the legacy interface mismatch, synchronous missing-price refusal,
+actual fetch-boundary disposition and exact accepted-model identity on known
+error paths. Parent reviewed the concrete two-task plan; DeepSeek implemented the
+adapter and focused synthetic tests. Parent independently wrote the review suite
+first and observed a missing-module RED (one failed suite, zero test bodies
+executed), not a claimed set of behavioral failures. The executor's own 12 tests
+were authored after implementation, so they have no separately observed RED;
+this process deviation is recorded rather than described as full behavioral TDD.
+
+Parent read the new adapter and legacy diff, independently reran **125 focused
+tests**, then reproduced a cancellation wording defect (**1 failed, 15 passed**):
+post-fetch abort retained unknown/attempted accounting but incorrectly said the
+request had not been sent. DeepSeek replaced that with neutral cancellation
+wording and reused the existing probability-sum tolerance constant. The expanded
+parent review suite passed **54/54** across both provider response shapes,
+malformed answers/usage, retained known charges, exact model aliases, oversized
+response cancellation, ignored-abort deadlines and immutable identities.
+
+The executor reported the repaired focused set at **164 passed**; parent later
+independently reran the same six files at **164 passed**. Parent separately
+ran `npm run typecheck`, `npm run lint` and `npm run build`; all passed. An
+independent read-only reviewer found **no blocking defects**, ran 66 new and 75
+legacy decision tests, and checked exact-byte/hash binding, alias accounting,
+forged errors and special option IDs. Its non-blocking diagnostic finding is
+retained: a response-byte overflow returns `PROVIDER_UNAVAILABLE` in the new
+adapter rather than legacy `PROVIDER_INVALID`; both retain unknown/attempted
+accounting. Response interpretation/bounded-read duplication remains a
+maintenance risk; it is not presented as shared transport execution.
+
+Parent's final serial full suite, browser journeys and offline evaluations
+subsequently passed; see the current checkpoint above. The narrow adapter slice
+is accepted locally, without granting any new production decision authority.
+No worker, activation/profile, monetary ledger, schema, UI, policies, durable
+observations or new runtime consumer is authorized in this slice. No live key,
+provider request, push, commit or deployment is authorized. Full G4 quality,
+accounting/activation and live-shadow gates remain open.
 
 ## Phase 2 accepted — final local synthetic checkpoint
 
