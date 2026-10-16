@@ -241,6 +241,42 @@ function sha256(text: string): string {
   return createHash("sha256").update(text).digest("hex");
 }
 
+/**
+ * Pure provider-configuration hash used as the immutable identity of one prepared
+ * call. It binds the endpoint, model, price version and rates, the ACCEPTED MODEL
+ * ARRAY IN ITS ORIGINAL ORDER, the prompt version and the output/bound constants.
+ * It never includes the key. This is the single source of `config_hash`, so an
+ * activation profile can derive the exact expected value without duplicating it.
+ */
+export function preparedConfigHash(input: {
+  model: string;
+  price: {
+    version: string;
+    input_micro_usd_per_million: number;
+    output_micro_usd_per_million: number;
+  };
+  accepted: string[];
+  max_output_tokens: number;
+  endpoint: string;
+  prompt_version: string;
+}): string {
+  return sha256(
+    JSON.stringify({
+      provider: "openai",
+      endpoint: input.endpoint,
+      model: input.model,
+      price_version: input.price.version,
+      input_micro_usd_per_million: input.price.input_micro_usd_per_million,
+      output_micro_usd_per_million: input.price.output_micro_usd_per_million,
+      accepted_response_models: input.accepted,
+      prompt_version: input.prompt_version,
+      max_output_tokens: input.max_output_tokens,
+      bound_policy_version: REASONING_BOUND_POLICY_VERSION,
+      framing: REASONING_REQUEST_FRAMING_BYTES,
+    }),
+  );
+}
+
 function asRecord(value: unknown): Record<string, unknown> | null {
   return value !== null && typeof value === "object" && !Array.isArray(value)
     ? (value as Record<string, unknown>)
@@ -323,21 +359,14 @@ export class PreparedReasoningProvider implements PreparedProvider {
         400,
       );
     const requestHash = sha256(json);
-    const configHash = sha256(
-      JSON.stringify({
-        provider: "openai",
-        endpoint: resolved.endpoint,
-        model: resolved.model,
-        price_version: resolved.price.version,
-        input_micro_usd_per_million: resolved.price.input_micro_usd_per_million,
-        output_micro_usd_per_million: resolved.price.output_micro_usd_per_million,
-        accepted_response_models: resolved.accepted,
-        prompt_version: snapshot.prompt_version,
-        max_output_tokens: resolved.maxOutputTokens,
-        bound_policy_version: REASONING_BOUND_POLICY_VERSION,
-        framing: REASONING_REQUEST_FRAMING_BYTES,
-      }),
-    );
+    const configHash = preparedConfigHash({
+      model: resolved.model,
+      price: resolved.price,
+      accepted: resolved.accepted,
+      max_output_tokens: resolved.maxOutputTokens,
+      endpoint: resolved.endpoint,
+      prompt_version: snapshot.prompt_version,
+    });
     const bound = boundMicroUsd(bytes, resolved.maxOutputTokens, resolved.price);
     const identity: PreparedIdentity = Object.freeze({
       provider: "openai",

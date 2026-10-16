@@ -167,6 +167,9 @@ export async function dispatchPrepared(
       "Your spending caps were lowered while this attempt was being marked; it was not sent.",
       409,
     );
+  // Final frozen-policy permission check, directly before the single network call
+  // and OUTSIDE the release catch: a failure here leaves the marked hold in place.
+  ledger.assertCanExecute?.(record.call_id, lease);
   const envelope = await call.execute(signal);
   // Fail closed when the cost cannot be accounted: never publish a zero-cost
   // result. The hold left by markDispatched remains for reconciliation.

@@ -65,7 +65,8 @@ it("a changed money schema invalidates an existing audit rather than inheriting 
     expect(audit(f.root).status).toBe(0);
     const id = latest(f.root);
     const db = new DatabaseSync(join(f.root, "control.sqlite"));
-    try { db.prepare("INSERT INTO managed_money_schema(version,applied_at) VALUES(3,?)").run(clock().toISOString()); } finally { db.close(); }
+    // Activation migrates to schema 3; this fixture must remain genuinely newer.
+    try { db.prepare("INSERT INTO managed_money_schema(version,applied_at) VALUES(4,?)").run(clock().toISOString()); } finally { db.close(); }
     expect(command(f.root, ["validate-audit", id]).status).not.toBe(0);
   } finally { f.close(); }
 });

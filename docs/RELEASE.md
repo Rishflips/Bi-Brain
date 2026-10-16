@@ -32,6 +32,21 @@ was deployed. Historical verification records below retain their original scope.
 
 Never use one level's evidence to claim another.
 
+### Managed provider activation — local verification, not a release
+
+The default-off activation implementation has a local Windows verification
+checkpoint of 579 passed / 2 POSIX-only skips, 19 Chromium journeys and 4 offline
+evaluations; typecheck, lint, build and dependency audit passed. The full suite
+passed again after restart-proof assertions were strengthened; see BUILD_STATE.
+Real server and
+worker processes use an explicitly injected synthetic provider transport in
+these tests. No real model credential, paid runtime call, owner activation or
+public deployment is implied. Current-branch Linux/container CI, capped live
+provider quality/cost, target-host operations, native clients, billing, human
+usability and licensing remain separate gates. An integration decision is also
+required before merging. The owner has requested committing, pushing and opening
+a PR for the verified branch; that is repository delivery, not live activation.
+
 ## Local packaging
 
 Document exact Node/package-manager versions, clean installation, migrations, development, production build, API start, worker start, data directory, and stop/restart.

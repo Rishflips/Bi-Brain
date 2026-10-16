@@ -1,9 +1,9 @@
 # Managed provider activation design — one shared, default-off runtime policy
 
-**Status: DRAFT — awaiting human approval (parent review first). Implementation-only scope:
-no default-on policy, no activation of any owner account, no real provider key loaded, no
-paid call, no push or billing.** This designs the slice *after* Phase 1 and must be approved
-before any implementation plan (`writing-plans`) is written.
+**Status: APPROVED for implementation — owner approval on 2026-10-16 ("Approved").**
+Scope remains default-off implementation and synthetic verification: no activation of any
+owner account, real provider key loading, paid call, push, deployment or billing. A live
+provider smoke test still requires separate explicit authorization.
 
 ## Goal
 One **shared explicit policy** turns a real prepared provider on only when **all** hold: a

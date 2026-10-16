@@ -121,10 +121,14 @@ cost commit together. They are operator-attested, not cryptographic provider
 verification, and require all old workers terminated as an offline precondition.
 No dispatched row is refunded or released by this workflow.
 
-Production managed paid processing remains unconditionally unavailable, including
-across restart. History audit/restore verification and a separately approved
-activation path remain gates; no local test implies a live provider or hosted
-release. See the [approved managed activation design](superpowers/specs/2026-10-16-managed-activation-design.md).
+Managed paid processing is default-off. The approved follow-on path requires an
+audited SQL/mirror activation profile, deployment opt-in, locally configured
+worker provider, fresh matching readiness, account consent and exact send-time
+financial guards. Ordinary restart can preserve an explicitly enabled profile;
+supported restore disables it and rotates the epoch. The integration is locally
+verified with synthetic transport; no local test implies live-provider quality
+or a hosted release. See the [safeguards design](superpowers/specs/2026-10-16-managed-activation-design.md)
+and [provider activation design](superpowers/specs/2026-10-16-managed-provider-activation-design.md).
 
 ## Observability
 

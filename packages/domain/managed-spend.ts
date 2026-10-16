@@ -22,6 +22,13 @@ import {
 export const MANAGED_SERVICE_ID = "managed-processing" as const;
 export type ManagedServiceId = typeof MANAGED_SERVICE_ID;
 
+/**
+ * Current managed money schema version. It lives in the pure domain layer so
+ * storage, runtime and the activation state helper can share it without an import
+ * cycle through `storage/managed-spending.ts`.
+ */
+export const managedMoneySchemaVersion = 3;
+
 export { maxMicroUsd };
 
 /** Current trusted user constraints. A caller may only ever lower them. */

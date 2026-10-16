@@ -7,10 +7,7 @@ import { join } from "node:path";
 import { request as httpRequest } from "node:http";
 import { ManagedRuntime } from "../../packages/runtime/managed.ts";
 import { ManagedSpendingStore } from "../../packages/storage/managed-spending.ts";
-import {
-  managedActivationGate,
-  managedPaidAvailable,
-} from "../../apps/server/startup-gates.ts";
+import { managedActivationGate } from "../../apps/server/startup-gates.ts";
 
 /**
  * Managed paid activation stays off in this batch. The pure gate may report a
@@ -46,7 +43,6 @@ it("the pure gate can be policy-ready while availability is hard-false", () => {
     blocked: false,
   });
   expect(ready).toEqual({ policy_ready: true, reason: "policy_ready" });
-  expect(managedPaidAvailable).toBe(false);
   expect(
     managedActivationGate({
       allowPaid: false,

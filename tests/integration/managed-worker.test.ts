@@ -9,7 +9,11 @@ import {
 } from "../../packages/storage/managed-spending.ts";
 import { ManagedWorker } from "../../apps/worker/managed.ts";
 import { Worker } from "../../apps/worker/engine.ts";
-import { fakePreparedProvider } from "../helpers/prepared-provider.ts";
+import {
+  enablePaidAccount,
+  enrolSyntheticActivation,
+  syntheticActivationProvider,
+} from "../helpers/managed-activation.ts";
 
 const ISSUER = "https://issuer.example.test";
 let current = "2026-10-16T09:00:00Z";
@@ -48,38 +52,7 @@ function seed(runtime: ManagedRuntime, id: string, body: string) {
     h.release();
   }
 }
-function enableProvider(runtime: ManagedRuntime, id: string) {
-  // A fake paid path needs a positive trusted central policy; the default-zero
-  // operator policy denies managed paid work and makes preferences unusable.
-  const spending = new ManagedSpendingStore(runtime.control, clock);
-  spending.configureAccountPeriod({
-    account_id: id,
-    starts_at: "2026-10-16T00:00:00Z",
-    ends_at: "2026-10-17T00:00:00Z",
-    allowance_micro_usd: 100000,
-  });
-  spending.setServicePolicy({ daily_micro_usd: 100000 });
-  spending.setAccountPolicy({
-    account_id: id,
-    per_job_micro_usd: 10000,
-    user_daily_micro_usd: 100000,
-  });
-  const h = runtime.acquire(id);
-  try {
-    const owner = h.brain.ownerPrincipal();
-    h.brain.prefs(owner, {
-      ...h.brain.prefs(owner),
-      time_zone: "UTC",
-      provider_enabled: true,
-      daily_cap_micro_usd: 10000,
-      per_job_cap_micro_usd: 1000,
-    });
-  } finally {
-    h.release();
-  }
-}
-const activeIds = (runtime: ManagedRuntime) =>
-  (
+const activeIds = (runtime: ManagedRuntime) =>  (
     runtime.control.db
       .prepare(
         "SELECT id FROM managed_accounts WHERE state='active' ORDER BY id",
@@ -257,12 +230,12 @@ it("denies revoked or out-of-scope agent-originated jobs without publishing", as
 it("publishes nothing when the account is suspended during a provider call", async () => {
   const { runtime } = managed();
   const a = await runtime.provision(ISSUER, "suspend-during-call");
-  enableProvider(runtime, a.id);
+  const profile = enrolSyntheticActivation(runtime, a.id, clock);
   seed(runtime, a.id, "SYNTHETIC_SUSPEND");
   const h = runtime.acquire(a.id);
   try {
     let called = false;
-    const fake = fakePreparedProvider({
+    const fake = syntheticActivationProvider(profile, {
       onExecute: () => {
         called = true;
         runtime.control.setAccountState(a.id, "suspended");
@@ -287,8 +260,9 @@ it("holds the runtime pin across an awaited tick and refuses overlapping work", 
   const { runtime } = managed({ maxOpen: 1 });
   const a = await runtime.provision(ISSUER, "pin-a");
   const b = await runtime.provision(ISSUER, "pin-b");
-  enableProvider(runtime, a.id);
-  enableProvider(runtime, b.id);
+  enablePaidAccount(runtime, a.id, clock);
+  enablePaidAccount(runtime, b.id, clock);
+  const profile = enrolSyntheticActivation(runtime, a.id, clock);
   seed(runtime, a.id, "SYNTHETIC_PIN_A");
   seed(runtime, b.id, "SYNTHETIC_PIN_B");
   const order = activeIds(runtime);
@@ -298,7 +272,7 @@ it("holds the runtime pin across an awaited tick and refuses overlapping work", 
   const entered = new Promise<void>((r) => (enteredResolve = r));
   let releaseResolve!: () => void;
   const released = new Promise<void>((r) => (releaseResolve = r));
-  const fake = fakePreparedProvider({
+  const fake = syntheticActivationProvider(profile, {
     onExecute: async () => {
       enteredResolve();
       await released;
@@ -327,14 +301,14 @@ it("holds the runtime pin across an awaited tick and refuses overlapping work", 
 it("stop prevents new work and awaits the in-flight job", async () => {
   const { runtime } = managed();
   const a = await runtime.provision(ISSUER, "stop-waits");
-  enableProvider(runtime, a.id);
+  const profile = enrolSyntheticActivation(runtime, a.id, clock);
   seed(runtime, a.id, "SYNTHETIC_STOP");
 
   let enteredResolve!: () => void;
   const entered = new Promise<void>((r) => (enteredResolve = r));
   let releaseResolve!: () => void;
   const released = new Promise<void>((r) => (releaseResolve = r));
-  const fake = fakePreparedProvider({
+  const fake = syntheticActivationProvider(profile, {
     onExecute: async () => {
       enteredResolve();
       await released;
@@ -362,14 +336,14 @@ it("stop prevents new work and awaits the in-flight job", async () => {
 it("a failed central settlement with a persisted marker blocks globally without fail-stopping the worker", async () => {
   const { runtime } = managed();
   const a = await runtime.provision(ISSUER, "marker-ok");
-  enableProvider(runtime, a.id);
+  const profile = enrolSyntheticActivation(runtime, a.id, clock);
   seed(runtime, a.id, "SYNTHETIC_MARKER_OK");
   runtime.control.db.exec(
     "CREATE TRIGGER settle_fail BEFORE UPDATE OF state ON managed_reservations WHEN NEW.state='settled' BEGIN SELECT RAISE(ABORT,'forced settlement fault'); END",
   );
 
   const worker = new ManagedWorker(runtime, {
-    providerFactory: () => fakePreparedProvider(),
+    providerFactory: () => syntheticActivationProvider(profile),
   });
   // The job fails on the central settlement, but the marker write succeeded, so
   // the worker keeps running rather than fail-stopping.
@@ -411,7 +385,7 @@ it("a failed central settlement with a persisted marker blocks globally without 
 it("a failed safety-marker write fail-stops managed scheduling but keeps capture available", async () => {
   const { runtime } = managed();
   const a = await runtime.provision(ISSUER, "marker-fail");
-  enableProvider(runtime, a.id);
+  const profile = enrolSyntheticActivation(runtime, a.id, clock);
   seed(runtime, a.id, "SYNTHETIC_MARKER_FAIL");
   runtime.control.db.exec(
     "CREATE TRIGGER settle_fail BEFORE UPDATE OF state ON managed_reservations WHEN NEW.state='settled' BEGIN SELECT RAISE(ABORT,'forced settlement fault'); END",
@@ -421,7 +395,7 @@ it("a failed safety-marker write fail-stops managed scheduling but keeps capture
   );
 
   const worker = new ManagedWorker(runtime, {
-    providerFactory: () => fakePreparedProvider(),
+    providerFactory: () => syntheticActivationProvider(profile),
   });
   // The fatal condition propagates once and stops managed scheduling.
   await expect(worker.tick()).rejects.toThrow();

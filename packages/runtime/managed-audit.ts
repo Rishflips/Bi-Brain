@@ -8,8 +8,14 @@ import {
   rootEpochMatches,
   assertTrustedManagedRoot,
 } from "./managed-operator.ts";
-import { managedMoneySchemaVersion } from "../storage/managed-spending.ts";
+import {
+  centralSchemaDigest,
+  managedControlInventoryDigest,
+  managedControlSchemaVersion,
+  managedMoneySchemaVersion,
+} from "../storage/managed-activation-state.ts";
 import type { ControlEpoch } from "../domain/managed-reconciliation.ts";
+import type { DispatchStage } from "../domain/spend.ts";
 
 /**
  * Bounded, read-only all-account managed history audit.
@@ -103,6 +109,22 @@ export interface AuditValidationInput {
   maxAccounts?: number;
   maxRows?: number;
   clock?: () => Date;
+}
+
+/**
+ * The exact current trusted attempt slot a scan may tolerate as nonterminal. It
+ * carries BOTH central and tenant call ids; a null central id (before reserve) has
+ * no representation here, so it can never widen tolerance.
+ */
+export interface SendGuardPermit {
+  account_id: string;
+  job_id: string;
+  dispatch_key: string;
+  stage: DispatchStage;
+  central_call_id: string;
+  tenant_call_id: string;
+  /** The exact central state this slot may be nonterminal in. */
+  state: "reserved" | "dispatched";
 }
 
 interface AuditRowDigest {
@@ -239,12 +261,6 @@ function tableExists(db: DatabaseSync, name: string): boolean {
     .get(name);
 }
 
-function columnNames(db: DatabaseSync, table: string): string[] {
-  return (db.prepare(`PRAGMA table_info(${table})`).all() as { name: string }[]).map(
-    (column) => column.name,
-  );
-}
-
 function controlSchemaVersion(db: DatabaseSync): number {
   if (!tableExists(db, "managed_money_schema")) return 0;
   const row = db
@@ -252,6 +268,11 @@ function controlSchemaVersion(db: DatabaseSync): number {
     .get() as { version: number | null } | undefined;
   return Number(row?.version ?? 0);
 }
+
+/** Read-only schema-version probe (shared). */
+export { managedControlSchemaVersion };
+/** Read-only bounded central-inventory digest (shared). */
+export { managedControlInventoryDigest };
 
 function servicePolicy(db: DatabaseSync): { daily_micro_usd: number; version: number } | null {
   if (!tableExists(db, "managed_service_policy")) return null;
@@ -292,20 +313,9 @@ function blockSignature(db: DatabaseSync): unknown {
   return { money, service };
 }
 
-function schemaSignature(db: DatabaseSync): unknown {
-  return {
-    version: controlSchemaVersion(db),
-    managed_reservations: columnNames(db, "managed_reservations"),
-    managed_resolutions: columnNames(db, "managed_resolutions"),
-    managed_control_epoch: columnNames(db, "managed_control_epoch"),
-    managed_audits: columnNames(db, "managed_audits"),
-    managed_audit_accounts: columnNames(db, "managed_audit_accounts"),
-    managed_audit_rows: columnNames(db, "managed_audit_rows"),
-  };
-}
-
 function schemaDigest(db: DatabaseSync): string {
-  return sha256(canonical(schemaSignature(db)));
+  // Single implementation lives in the shared read-only state module.
+  return centralSchemaDigest(db);
 }
 
 interface AccountRow {
@@ -565,12 +575,36 @@ function accountConfigHash(db: DatabaseSync, account: AccountRow): string {
 
 // --------------------------------------------------------------------- scan
 
+/**
+ * True only when a nonterminal central+tenant pair is the exact permitted attempt
+ * slot. The permit is derived internally from the trusted lease/spec, never from a
+ * provider, browser, header or `ignoreCallIDs` input.
+ */
+function permitsAttempt(
+  permit: SendGuardPermit | null,
+  accountId: string,
+  central: any,
+  tenant: any,
+): boolean {
+  if (!permit) return false;
+  return (
+    permit.account_id === accountId &&
+    permit.job_id === String(central.job_id) &&
+    permit.dispatch_key === String(central.dispatch_key) &&
+    permit.stage === central.stage &&
+    permit.state === central.state &&
+    permit.central_call_id === String(central.call_id) &&
+    permit.tenant_call_id === String(tenant.call_id)
+  );
+}
+
 function scanOnce(
   control: AuditControl,
   root: string,
   epoch: ControlEpoch,
   maxAccounts: number,
   maxRows: number,
+  permit: SendGuardPermit | null = null,
 ): Scan {
   const db = control.db;
   const schema_version = controlSchemaVersion(db);
@@ -627,12 +661,16 @@ function scanOnce(
         centralByProjection.set(String(central.projection_call_id), central);
     const rows: AuditRowDigest[] = [];
     for (const central of centralRows) {
-      if (central.state !== "settled" && central.state !== "released")
-        throw new AuditDeny("nonterminal_call");
       const tenant = central.projection_call_id
         ? tenantByCall.get(String(central.projection_call_id))
         : undefined;
       if (!tenant) throw new AuditDeny("orphan_projection");
+      if (central.state !== "settled" && central.state !== "released") {
+        // Nonterminal tolerance is ONLY ever granted to the exact current trusted
+        // attempt slot, derived internally — never a caller-supplied allow-list.
+        if (!permitsAttempt(permit, account.id, central, tenant))
+          throw new AuditDeny("nonterminal_call");
+      }
       if (!sameRow(central, tenant)) throw new AuditDeny("row_mismatch");
       rows.push({
         call_id: String(central.call_id),
@@ -1077,6 +1115,145 @@ export function validateManagedAudit(
         return { valid: false, reason: "baseline_changed" };
     }
     return { valid: true, reason: null };
+  } catch (error) {
+    if (error instanceof AuditDeny) return { valid: false, reason: error.reason };
+    if (error instanceof BrainError) return { valid: false, reason: "denied" };
+    throw error;
+  }
+}
+
+/**
+ * Bounded, read-only enrollment-baseline snapshot for the shared activation
+ * loader. It proves the immutable known baseline still matches the CURRENT
+ * control configuration WITHOUT requiring current terminality and without opening
+ * any tenant database, so it is safe to call on a read path while a worker holds a
+ * marked call. New actual mapped terminal rows are permitted; a changed service
+ * policy, account cap/period, new unsurveyed account, changed epoch/schema or a
+ * changed/removed baseline row denies.
+ */
+export function readEnrollmentBaseline(
+  control: AuditControl,
+  root: string,
+  auditId: string,
+): { valid: boolean; reason: string | null } {
+  const db = control.db;
+  const stored = readManagedAudit(control, auditId);
+  if (!stored) return { valid: false, reason: "unknown_audit" };
+  try {
+    assertTrustedManagedRoot(root, control.path);
+    const epoch = requireEpoch(control, root);
+    if (epoch.epoch !== stored.epoch || epoch.nonce !== stored.root_nonce)
+      return { valid: false, reason: "epoch_mismatch" };
+    const schema_version = controlSchemaVersion(db);
+    if (
+      schema_version !== managedMoneySchemaVersion ||
+      schema_version !== stored.control_schema_version
+    )
+      return { valid: false, reason: "schema_changed" };
+    if (schemaDigest(db) !== stored.schema_digest)
+      return { valid: false, reason: "schema_changed" };
+    const accounts = accountRows(db, DEFAULT_MAX_ACCOUNTS + 1);
+    if (accounts.length > DEFAULT_MAX_ACCOUNTS)
+      return { valid: false, reason: "account_limit" };
+    for (const account of stored.accounts) {
+      const live = accounts.find((candidate) => candidate.id === account.account_id);
+      if (!live) return { valid: false, reason: "account_missing" };
+      if (accountConfigHash(db, live) !== account.config_digest)
+        return { valid: false, reason: "config_changed" };
+    }
+    for (const live of accounts)
+      if (!stored.accounts.some((account) => account.account_id === live.id))
+        return { valid: false, reason: "unsurveyed_account" };
+    const globalHashes = accounts
+      .map((account) => ({
+        account_id: account.id,
+        config_hash: accountConfigHash(db, account),
+      }))
+      .sort((a, b) => a.account_id.localeCompare(b.account_id));
+    const config_digest = sha256(
+      canonical({ service: servicePolicy(db), accounts: globalHashes }),
+    );
+    if (config_digest !== stored.config_digest)
+      return { valid: false, reason: "config_changed" };
+    const storedRows = tableExists(db, "managed_audit_rows")
+      ? (db
+          .prepare(
+            "SELECT account_id,call_id,central_digest FROM managed_audit_rows WHERE audit_id=?",
+          )
+          .all(auditId) as any[])
+      : [];
+    for (const row of storedRows) {
+      const live = db
+        .prepare(
+          `SELECT ${CENTRAL_COLUMNS} FROM managed_reservations WHERE account_id=? AND call_id=?`,
+        )
+        .get(String(row.account_id), String(row.call_id)) as any;
+      if (!live || rowDigest("central", live) !== String(row.central_digest))
+        return { valid: false, reason: "baseline_changed" };
+    }
+    return { valid: true, reason: null };
+  } catch (error) {
+    if (error instanceof AuditDeny) return { valid: false, reason: error.reason };
+    if (error instanceof BrainError) return { valid: false, reason: "denied" };
+    throw error;
+  }
+}
+
+/**
+ * Per-send baseline check. It never runs the full terminal `validateManagedAudit`
+ * at send time. It proves: the stored known baseline is unchanged (config, account
+ * inventory, epoch/schema, and BOTH the central and tenant digests of every known
+ * audit row, so tenant-only field tamper is caught); the only nonterminal rows are
+ * those of the exact permitted current attempt slot; two bounded scans agree on
+ * every digest; and the central inventory digest is stable before and after. New
+ * post-baseline known/terminal/mapped rows are allowed, so a second legitimate paid
+ * call needs no re-audit. It opens no writer and no nested transaction.
+ */
+export function readSendGuardBaseline(
+  control: AuditControl,
+  root: string,
+  auditId: string,
+  permit: SendGuardPermit | null,
+): { valid: boolean; reason: string | null; central_inventory_digest?: string } {
+  const known = readEnrollmentBaseline(control, root, auditId);
+  if (!known.valid) return { valid: false, reason: known.reason };
+  try {
+    const epoch = requireEpoch(control, root);
+    const before = managedControlInventoryDigest(control.db);
+    const first = scanOnce(control, root, epoch, DEFAULT_MAX_ACCOUNTS, DEFAULT_MAX_ROWS, permit);
+    const second = scanOnce(control, root, epoch, DEFAULT_MAX_ACCOUNTS, DEFAULT_MAX_ROWS, permit);
+    if (
+      first.inventory_digest !== second.inventory_digest ||
+      first.control_digest !== second.control_digest ||
+      first.baseline_digest !== second.baseline_digest ||
+      first.file_digest !== second.file_digest ||
+      first.schema_digest !== second.schema_digest
+    )
+      return { valid: false, reason: "inventory_changed" };
+    const after = managedControlInventoryDigest(control.db);
+    if (before !== after) return { valid: false, reason: "inventory_changed" };
+
+    const live = new Map<string, { central_digest: string; tenant_digest: string }>();
+    for (const account of first.accounts)
+      for (const row of account.rows)
+        live.set(`${account.account_id}:${row.call_id}`, row);
+    const storedRows = tableExists(control.db, "managed_audit_rows")
+      ? (control.db
+          .prepare(
+            "SELECT account_id,call_id,central_digest,tenant_digest FROM managed_audit_rows WHERE audit_id=?",
+          )
+          .all(auditId) as any[])
+      : [];
+    for (const row of storedRows) {
+      const match = live.get(`${row.account_id}:${row.call_id}`);
+      if (
+        !match ||
+        match.central_digest !== String(row.central_digest) ||
+        match.tenant_digest !== String(row.tenant_digest)
+      )
+        return { valid: false, reason: "baseline_changed" };
+    }
+    return { valid: true, reason: null, central_inventory_digest: after };
   } catch (error) {
     if (error instanceof AuditDeny) return { valid: false, reason: error.reason };
     if (error instanceof BrainError) return { valid: false, reason: "denied" };

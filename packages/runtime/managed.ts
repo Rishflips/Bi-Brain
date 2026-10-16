@@ -8,6 +8,7 @@ import {
   rmSync,
   writeFileSync,
 } from "node:fs";
+import type { DatabaseSync } from "node:sqlite";
 import { dirname, isAbsolute, resolve, sep } from "node:path";
 import { randomBytes } from "node:crypto";
 import { z } from "zod";
@@ -17,6 +18,13 @@ import { Brain } from "../domain/service.ts";
 import { BrainError } from "../domain/logic.ts";
 import { MANAGED_RESTORE_INCOMPLETE } from "../storage/managed-restore-policy.ts";
 import { managedMoneyView } from "./managed-money.ts";
+import {
+  evaluateConfiguredPolicy,
+  readActivation,
+  serverCapability,
+} from "./managed-activation.ts";
+import { readWorkerReadiness } from "./worker-readiness.ts";
+import type { ActivationReason } from "../domain/managed-activation.ts";
 
 const UUID =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
@@ -24,6 +32,32 @@ const MARKER = "provisioned.json";
 
 export type ManagedAccount = Account;
 export type ManagedHandle = { brain: Brain; release: () => void };
+
+/**
+ * Trusted runtime capability helper. Derives the CURRENT shared-loader configured
+ * policy plus the fresh worker readiness lease for this exact root/control and
+ * returns a boolean + static reason. It never reads a caller field, an audit row,
+ * another account or a global total, and never grants admission.
+ */
+export function managedCapability(input: {
+  control: { db: DatabaseSync; path: string };
+  root: string;
+  now: Date;
+  optIn: boolean;
+}): { available: boolean; reason: ActivationReason } {
+  const configured = evaluateConfiguredPolicy({
+    control: input.control,
+    root: input.root,
+    now: input.now,
+    optIn: input.optIn,
+  });
+  if (!configured.ready) return { available: false, reason: configured.reason };
+  const profile = readActivation(input.control, input.root);
+  if (!profile) return { available: false, reason: "profile_invalid" };
+  const readiness = readWorkerReadiness(input.root, input.now);
+  const cap = serverCapability({ configured, readiness, profile });
+  return { available: cap.ready, reason: cap.reason };
+}
 
 type Entry = { brain: Brain; pins: number; lastUsed: number };
 type TenantPaths = {
@@ -50,12 +84,22 @@ export class ManagedRuntime {
   readonly control: ControlStore;
   private readonly clock: () => Date;
   private readonly maxOpen: number;
+  private readonly capability?: () => { ready: boolean; reason: string };
   private readonly cache = new Map<string, Entry>();
   private closed = false;
 
   constructor(
     root: string,
-    options: { maxOpen?: number; clock?: () => Date } = {},
+    options: {
+      maxOpen?: number;
+      clock?: () => Date;
+      /**
+       * Trusted, closed capability accessor bound to this exact root/control and the
+       * deployment opt-in. It returns a boolean + static reason only; it never reads a
+       * caller field and never grants admission. Absent => fail-closed false.
+       */
+      capability?: () => { ready: boolean; reason: string };
+    } = {},
   ) {
     if (typeof root !== "string" || !root || !isAbsolute(root))
       throw new BrainError(
@@ -65,6 +109,7 @@ export class ManagedRuntime {
       );
     this.root = resolve(root);
     this.clock = options.clock ?? (() => new Date());
+    this.capability = options.capability;
     this.maxOpen = z
       .number()
       .int()
@@ -345,6 +390,7 @@ export class ManagedRuntime {
         tenantId,
         () => this.control.account(tenantId)?.state === "active",
         () => managedMoneyView(this.control, tenantId, this.clock),
+        this.capability,
       ),
       pins: 1,
       lastUsed: this.clock().getTime(),

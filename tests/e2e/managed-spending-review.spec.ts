@@ -235,18 +235,18 @@ test("a settled managed charge stays honest while a stale tenant hold, another a
     // Own allowance: $1.000000 ceiling minus the $0.005000 settled commitment.
     await expect(spending).toContainText("Allowance left $0.995000.");
 
-    // Connected paid is hard-off: the authorization toggle is disabled and the
-    // plaintext note gives the reason without naming a vendor or a model.
+    // This root has no activation profile/readiness: the authorization toggle
+    // stays disabled and the note explains unavailability without a model name.
     const paid = page.getByRole("checkbox", {
       name: /I authorize selected text/,
     });
     await expect(paid).toBeVisible();
     await expect(paid).toBeDisabled();
     await expect(paid).not.toBeChecked();
-    const note = page.getByText(/not available on managed hosting/);
+    const note = page.getByText(/not available for this deployment/);
     await expect(note).toBeVisible();
     const noteText = await note.innerText();
-    expect(noteText).toContain("not available on managed hosting");
+    expect(noteText).toContain("not available for this deployment");
     expect(noteText).toContain("Your saved work stays");
     expect(noteText).not.toMatch(/OpenAI|Codex|GPT|Claude|Anthropic|Gemini|Llama/i);
 

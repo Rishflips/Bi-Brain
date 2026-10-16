@@ -3,29 +3,48 @@ import type {
   ManagedHandle,
   ManagedRuntime,
 } from "../../packages/runtime/managed.ts";
-import {
-  PreparedReasoningProvider,
-  type PreparedProvider,
-} from "../../packages/providers/prepared.ts";
+import type { PreparedProvider } from "../../packages/providers/prepared.ts";
 import { ManagedSpendingStore, AccountingPersistenceError } from "../../packages/storage/managed-spending.ts";
 import { ManagedDispatchAccounting } from "./managed-accounting.ts";
-import type { DispatchAccounting } from "./accounting.ts";
+import { TenantOnlyAccounting, type DispatchAccounting } from "./accounting.ts";
+import {
+  evaluateConfiguredPolicy,
+  readActivation,
+  type InstalledActivationPolicy,
+} from "../../packages/runtime/managed-activation.ts";
+import { validateActivationProfile } from "../../packages/domain/managed-activation.ts";
+import { BrainError } from "../../packages/domain/logic.ts";
 import { Worker } from "./engine.ts";
+
+/**
+ * A closed, production-unavailable provider. It throws on `prepareCall`, so a
+ * paid intent yields an explicit unavailable attempt with NO provider call and NO
+ * hold — never a lazy `process.env` key read and never an extractive false-success.
+ */
+const unavailableProvider: PreparedProvider = {
+  prepareCall(): never {
+    throw new BrainError(
+      "PROVIDER_UNAVAILABLE",
+      "Connected model processing is not available. Your saved work stays available and extractive.",
+      503,
+    );
+  },
+};
 
 export type ManagedWorkerOptions = {
   /**
-   * Explicit per-brain provider selection for operator policy and tests. When
-   * omitted, every tenant uses the default provider; a tenant with connected
-   * processing disabled still runs in clearly labelled extractive mode. There
-   * is never an automatic cross-provider fallback.
+   * Explicit per-brain provider transport for tests and operator policy. When
+   * omitted, the worker uses a fail-closed unavailable provider — never a lazy
+   * environment key. This is a TRANSPORT-ONLY seam and can never bypass the frozen
+   * activation gate.
    */
   providerFactory?: (brain: Brain) => PreparedProvider;
   /**
-   * Optional accounting seam for tests and explicit operator policy. When
-   * omitted, every tenant gets an account-bound central coordinator over the
-   * control database; its default-zero policy denies managed paid work.
+   * The frozen installed activation policy, validated and bound at BOOT. When
+   * present it is used exactly once and never upgraded per tick; a live profile
+   * that drifts from it makes the send guard deny.
    */
-  accountingFactory?: (brain: Brain) => DispatchAccounting;
+  bootstrap?: InstalledActivationPolicy;
 };
 
 /**
@@ -45,6 +64,8 @@ export class ManagedWorker {
   private cursor: string | null = null;
   private stopped = false;
   private inflight: Promise<boolean> | null = null;
+  /** `undefined` = not yet resolved; `null` = resolved to absent. */
+  private installedCache?: InstalledActivationPolicy | null;
 
   constructor(
     readonly runtime: ManagedRuntime,
@@ -73,11 +94,72 @@ export class ManagedWorker {
   }
 
   private providerFor(brain: Brain): PreparedProvider {
-    return this.options.providerFactory?.(brain) ?? new PreparedReasoningProvider();
+    if (this.options.providerFactory) return this.options.providerFactory(brain);
+    return unavailableProvider;
+  }
+
+  /**
+   * The frozen installed activation policy for this worker, resolved exactly ONCE
+   * and never upgraded per tick. `options.bootstrap` is validated as a full closed
+   * profile before use; otherwise the current shared-loader policy is read once at
+   * first use. A profile that changes later requires a restart.
+   */
+  private resolveInstalled(): InstalledActivationPolicy | undefined {
+    if (this.installedCache !== undefined)
+      return this.installedCache ?? undefined;
+    let resolved: InstalledActivationPolicy | undefined;
+    if (this.options.bootstrap) {
+      const profile = validateActivationProfile(this.options.bootstrap.profile);
+      resolved = { root: this.options.bootstrap.root, profile };
+    } else {
+      resolved = this.installedPolicy();
+    }
+    this.installedCache = resolved ?? null;
+    return resolved;
+  }
+
+  /**
+   * The frozen installed activation policy for this root, or undefined when the
+   * configured policy is not ready. It is the ONLY way a production paid
+   * coordinator is ever built; a test fake transport cannot skip it.
+   */
+  private installedPolicy(): InstalledActivationPolicy | undefined {
+    const control = this.runtime.control;
+    const optIn = (process.env.BRAIN_MANAGED_ALLOW_PAID ?? "").trim() === "1";
+    const configured = evaluateConfiguredPolicy({
+      control: { db: control.db, path: control.path },
+      root: this.runtime.root,
+      now: control.clock(),
+      optIn,
+    });
+    if (!configured.ready) return undefined;
+    const profile = readActivation(
+      { db: control.db, path: control.path },
+      this.runtime.root,
+    );
+    return profile ? { root: this.runtime.root, profile } : undefined;
+  }
+
+  private accountingFor(
+    brain: Brain,
+    installed: InstalledActivationPolicy | undefined,
+  ): DispatchAccounting {
+    // Without a ready policy there is no paid coordinator at all: the tenant-bound
+    // fail-closed accounting refuses any reserve, so paid intent yields an
+    // unavailable attempt with NO hold while capture/extractive work continues.
+    if (!installed)
+      return new TenantOnlyAccounting(brain.store, brain.clock, brain.tenantId!);
+    return new ManagedDispatchAccounting(
+      new ManagedSpendingStore(this.runtime.control, brain.clock),
+      brain,
+      brain.clock,
+      installed,
+    );
   }
 
   private async run(): Promise<boolean> {
     const attempted = new Set<string>();
+    const installed = this.resolveInstalled();
     for (;;) {
       const account = this.selectAccount();
       if (!account || attempted.has(account.id)) return false;
@@ -91,20 +173,16 @@ export class ManagedWorker {
         continue;
       }
       try {
-        const accounting =
-          this.options.accountingFactory?.(handle.brain) ??
-          new ManagedDispatchAccounting(
-            new ManagedSpendingStore(this.runtime.control, handle.brain.clock),
-            handle.brain,
-            handle.brain.clock,
-          );
+        const accounting = this.accountingFor(handle.brain, installed);
         const worker = new Worker(
           handle.brain,
           this.providerFor(handle.brain),
           accounting,
         );
         try {
-          return await worker.tick();
+          // A tick drains every active account once: an account with no queued
+          // job must not hide another account that does have work.
+          if (await worker.tick()) return true;
         } catch (error) {
           // A fatal accounting-persistence condition fail-stops managed
           // scheduling; the error propagates once so the operator sees it, and

@@ -22,6 +22,12 @@ export interface DispatchAccounting {
   readonly accountId?: string;
   reserve(spec: DispatchSpec, lease: JobLease, limits: SpendLimits): DispatchRecord;
   markDispatched(callId: string, lease: JobLease): DispatchRecord;
+  /**
+   * Optional final pre-I/O permission check, run directly before the single
+   * provider call. A managed paid coordinator implements it (frozen-policy live
+   * recheck); a local/self-hosted ledger leaves it undefined (no-op).
+   */
+  assertCanExecute?(callId: string, lease: JobLease): void;
   settle(callId: string, actualMicroUsd: number): DispatchRecord;
   releaseUndispatched(callId: string): DispatchRecord;
   readReceipt(callId: string): DispatchRecord | undefined;
