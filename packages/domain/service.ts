@@ -61,6 +61,10 @@ function managedBlockedMessage(
     tenantBlock?.reason === "restored_backup"
   )
     return "Managed paid processing is disabled after a restore until an operator reconciles the account.";
+  if (central.blocked_reason === "usage_pending")
+    return "Paid processing is waiting for an earlier call to finish accounting. Saved work and extractive preparation remain available. If it does not finish, an operator must review it.";
+  if (central.blocked_reason === "disputed_usage")
+    return "Managed paid processing is paused because a recorded charge conflicts with its accounting. An operator must review it before paid processing resumes.";
   if (tenantBlock)
     return "Managed paid processing is blocked until the recorded accounting is reconciled.";
   if (!central.configured)
@@ -1399,12 +1403,19 @@ export class Brain {
   prefs(p: Principal, input?: unknown) {
     this.owner(p);
     // Central money state decides whether paid processing is currently usable.
-    // A central block/pause or an unconfigured operator policy lowers the
-    // effective preference to false; it never grants authority and never
-    // rewrites the stored preference.
+    // A durable accounting block, the process fuse, or an unconfigured operator
+    // policy lowers the effective preference to false; it never grants authority
+    // and never rewrites the stored preference. The `usage_pending` admission
+    // barrier is deliberately excluded: a call that just marked itself must not
+    // revoke its own consent or its post-mark guard would cancel every send.
     const central = this.spending?.();
     const centrallyUnusable =
-      !!central && (!central.configured || central.blocked || central.paused);
+      !!central &&
+      (!central.configured ||
+        central.blocked_reason === "overrun" ||
+        central.blocked_reason === "restored_backup" ||
+        central.blocked_reason === "reconciliation_required" ||
+        central.blocked_reason === "disputed_usage");
     if (input !== undefined) {
       const next = preferencesSchema.parse(input);
       // A durable accounting block (tenant or central) forbids re-enabling paid
@@ -3052,6 +3063,8 @@ export class Brain {
           blocked,
           blocked_reason: blockedReason,
           blocked_message: managedBlockedMessage(central, block),
+          paused: central.paused,
+          paused_reason: central.paused_reason,
           configured: central.configured,
           service_available: central.service_available,
           available: false,

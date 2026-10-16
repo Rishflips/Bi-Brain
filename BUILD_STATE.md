@@ -26,7 +26,7 @@ Commands actually run on Windows with Node **v24.19.0**, npm **11.17.0**:
 
 ### Current gates
 
-Baseline G0, the local G1/G2 managed foundation, local prepared-call accounting/recovery, and the central managed spending authority slice are verified; see the latest checkpoint for **396 tests, 17 Chromium journeys and 4 offline evaluations**. Central account/service limits, account-bound worker accounting, own-account money views, operator policy tooling and cold managed recovery are implemented locally. Production managed paid processing remains unconditionally off pending reconciliation/control-storage/restart activation gates. System One transport is locally verified but not routed into processing. Semantic quality, native integrations, billing, live hosting and human release gates remain open. Only disposable synthetic identities were provisioned; no real external account was created, no runtime model was called, no public service was deployed and no source was pushed by this checkpoint. Open-source licensing remains an owner release decision.
+Baseline G0, the local G1/G2 managed foundation, prepared-call accounting/recovery, central managed spending authority and Phase 1 activation safeguards are verified; see the latest checkpoint for **478 tests passed, 1 POSIX-only skip, 17 Chromium journeys and 4 offline evaluations**. Central limits, durable one-inflight admission, guarded operator reconciliation, bounded all-account history audits and restore epoch rotation are implemented locally. Production managed paid processing remains unconditionally off: Phase 2 activation requires separate approval and live-provider/operational gates remain open. System One transport is locally verified but not routed into processing. Semantic quality, native integrations, billing, live hosting and human release gates remain open. Only disposable synthetic identities were provisioned; no real external account was created, no runtime model was called, no public service was deployed and no source was pushed by this checkpoint. Open-source licensing remains an owner release decision.
 
 ### Foundation review loop and restart checkpoint
 
@@ -205,6 +205,202 @@ No implementation plan or production/test change has started. The draft explicit
 does not prove full rollback detection, provider authenticity or actual worker
 quiescence; supported restore invalidation and acknowledged offline procedures are
 distinct from those guarantees. Phase 1 would keep production paid processing off.
+
+The owner subsequently **approved** the written activation architecture. Phase 1
+is authorized: durable one-inflight admission, guarded operator-attested
+reconciliation and bounded all-account history audits, with synthetic
+cross-process/restart drills. DeepSeek is writing the concrete plan before code
+changes. Phase 2 activation, paid calls, public deployment and pushing remain
+unauthorized. The earlier draft/pending-review wording is historical.
+
+Parent added `tests/integration/managed-ambiguity-review.test.ts` before
+implementation and observed **4/4 RED** against the current ledger. The cases
+exercise cross-account/stage admission and pre-existing reservations, unknown
+usage across UTC days without a new marker write, normal known-settlement
+release of the barrier, and a fresh control connection after restart. These are
+expected missing-feature failures, not a green checkpoint. DeepSeek's plan is
+still being drafted; no production code has changed for this slice.
+
+The [activation implementation plan](docs/superpowers/plans/2026-10-16-managed-activation.md)
+has been written and parent-reviewed. **Task 1 only** is assigned: durable
+admission barrier, private pause status and true multi-process mark competition.
+Parent expanded the independent suite to **6/6 observed RED**, adding a real
+managed worker whose own marker must not revoke its consent and a two-account
+private-status/capture case. Plan review also tightened atomic proof-plus-money
+writes, epoch binding, explicit USD, offline acknowledgement and all-account audit
+persistence before those later tasks are handed off. Task 2/3 code is not yet
+authorized to the executor; production paid availability remains hard-off.
+
+Task 1 executor delivered the durable barrier and cross-process/restart-focused
+tests without changing the money schema. Parent independently reran the two
+review files: **11/12 passed**, including all six new barrier/worker/privacy
+cases. Parent tightened one historical service-availability assertion to reflect
+the newly approved global pause: an account with headroom is not service-available
+while another account has a dispatched unknown. That case reproduced RED; the
+executor is removing a durable-block-only workaround rather than preserving the
+old expectation. Actual stored consent still remains distinct from admission,
+so a valid self-marked call must continue to execute once and settle normally.
+
+Parent reran the settled Task 1 focused set independently: **39/39 tests in six
+files passed**, including the two-child-process mark race and normal worker
+settlement. Task 1 is accepted locally. **Task 2 only** is now assigned: immutable
+operator attestations, atomic resolution-plus-money writes and explicit root/epoch
+binding. The parent is updating its browser regression to require the new global
+pause while preserving exact own-account money assertions. CLI/history audits
+and restore epoch rotation remain Task 3, not yet assigned. Production paid
+processing remains off.
+
+The parent ran the updated managed-spending browser journey for Task 1:
+**1/1 passed**. Another account's unknown usage now produces the global pause
+without contaminating this owner's central amounts, allowance or fractional-cap
+preferences; saving remains available. This is the focused synthetic-origin
+browser proof, not final combined verification of the activation slice.
+
+Task 2 executor delivered schema 2, immutable resolution records, strict offline
+options, guarded settlement transactions and explicit root/epoch binding. Parent
+independently ran **36/36 tests in four files**. Its new
+`managed-reconciliation-review.test.ts` then reproduced **3 failures in 5 cases**:
+free-form multiline actor text and blank request correlation were accepted, and
+an ignored settlement UPDATE could still produce a committed resolution proof.
+Overrun-plus-proof rollback and replacement of the marker by a junction already
+passed. An initial parent directory-rename fixture hit Windows EPERM and was
+corrected to the supported marker-junction case; it is not counted as a code bug.
+DeepSeek is repairing those three findings. The executor did not record the
+original Task 2 pre-implementation RED; parent did not authorize skipping it.
+The newly reproduced behavior REDs are recorded separately, without inventing
+earlier evidence. Task 3 remains unassigned.
+
+After the Task 2 repairs, parent independently ran reconciliation, its review,
+epoch, core spend and ambiguity review suites: **68 passed, 1 POSIX-only check
+skipped on Windows, six files**. The parent reconciliation review now has six
+passing cases, including refusal of an unrelated directory without a control DB.
+Task 2 is accepted locally. A fresh DeepSeek executor owns **Task 3 only**:
+strict offline CLI, persisted all-account history audits and supported restore
+epoch rotation. A separate read-only DeepSeek review of Task 2 is pending; no
+further Astra/model advice was requested.
+
+Parent added `managed-reconcile-cli-review.test.ts` before Task 3 completion;
+the first run observed **2 failed / 2 passed**. Positive read-only status and
+valid exact-call settlement commands currently fail; negative-command results
+are not counted as security proof until the CLI actually works. These review
+tests remain parent-owned. Final combined tests/browser/evaluations have not yet
+run for this activation slice, and production paid processing remains off.
+
+Task 3 initial parent verification passed **24/24 tests in five files**, including
+real CLI positive/negative cases and matched new paid rows beyond an old audit
+baseline. Parent then expanded `managed-audit-review.test.ts` and reproduced
+**4 failures in 5 cases**: service policy and future schema changes did not stale
+an audit, provisioning-marker subject mismatch was ignored, and changing a
+baseline central identity hash was missed. A separate read-only DeepSeek review
+confirmed the config recheck gap and identified a manifest/marker mismatch;
+parent reproduced it in `managed-epoch-restore-review.test.ts` (**1/1 RED**).
+The executor is repairing these five findings, bounded row materialization and
+the final control-transaction freshness recheck. Task 3 is not yet accepted;
+production paid processing remains off. The Task 2 read-only review reported no
+additional material findings; this is static review, not extra execution proof.
+
+The parent also added a deterministic final-lock interleaving: a second real
+SQLite connection lowers an account policy after both audit scans but before
+the audit write transaction acquires its lock. The audit incorrectly committed
+its stale snapshot (**1 RED in the now-six-case audit review suite**; the other
+five cases passed after in-progress repairs). The executor is closing that final
+transactional recheck before Task 3 acceptance. No final combined verification
+has been started on this moving tree.
+
+The final-lock race and original audit binding checks passed on a subsequent
+parent rerun. One additional amount-invariant check then reproduced a failure:
+SQLite can retain matching fractional `7.5` values in both nonnegative INTEGER
+columns, and a fresh audit accepted them. The executor is adding explicit
+safe-integer monetary validation before hashing or approving matched history.
+This is a new observed behavior RED, not evidence of a live charge or user-data
+corruption; the fixtures are synthetic.
+
+### Activation safeguards Phase 1 — independently verified, 2026-10-16
+
+All three tasks in the [approved activation plan](docs/superpowers/plans/2026-10-16-managed-activation.md)
+are accepted locally. DeepSeek executed; parent review reproduced and verified
+the repairs above. Task 3's final independent focused run passed **31/31 tests
+in six files**, including all six audit review cases and the restore-marker
+regression. All implementers stopped before the final serial run.
+
+Delivered:
+
+- A committed dispatched row is a durable global one-inflight barrier, checked
+  inside reservation/mark transactions across accounts, stages, days and process
+  restarts. No later marker write is needed to preserve an unknown-use pause.
+  Reserved-only holds are distinct; ordinary known settlement unblocks the next
+  admission. A call's own marker does not revoke its stored consent.
+- Operator-attested resolutions require exact identity, currency, epoch and
+  prior-state binding plus explicit offline/worker-termination acknowledgements.
+  Immutable proof, known cost and any overrun/dispute block commit atomically.
+  Ignored SQLite updates cannot fabricate proof. A dispatched unknown is never
+  refunded; conflicting known amounts retain the original actual and add a dispute.
+- `managed:reconcile` provides read-only status/inspection/validation and guarded
+  offline mutation commands. All-account audits include suspended accounts and
+  use bounded read-only tenant access. They reject legacy, unmapped, orphan,
+  nonterminal, mismatched and invalid-money rows; recheck current control
+  money/config/blocks after acquiring the write lock; and detect stale schema,
+  config, identity and baseline bindings without rejecting legitimate new mapped
+  terminal rows. Only ids, financial metadata and hashes are retained.
+- Supported restore rotates an existing control epoch and root marker before
+  publish, invalidating previous audits while preserving financial blocks and
+  credential invalidation. Manifest declaration and actual marker presence must
+  agree. Genuine older marker-less snapshots remain supported and blocked.
+
+Final parent commands, serial on Windows/Node 24.19.0:
+
+| Command | Actual result |
+| --- | --- |
+| `npm test -- --maxWorkers=1` | **478 passed, 1 skipped, 60 files**, 129.57 seconds |
+| `npm run typecheck` | passed |
+| `npm run lint` | passed |
+| `npm run build` | passed, 18 modules |
+| `npm run brain-eval` | **4/4 synthetic offline cases** |
+| `npm run test:e2e -- --workers=1 --output=test-results/final-activation-phase1-parent` | **17/17 Chromium journeys**, 59.0 seconds |
+| `npm audit --audit-level=high` | zero vulnerabilities |
+
+The skipped test checks distinct case-sensitive POSIX root paths and is not
+applicable on this Windows host; no Linux execution proof is implied. Reference
+screenshots regenerated by the parent browser run were restored to their known
+pre-run HEAD state. Documentation-only checkpoint updates follow the test/build
+commands. `git diff --check` and `git diff --cached --check` passed afterward
+(line-ending warnings only); `git diff --quiet` confirms both screenshots match
+HEAD. A Node scan of all **34 changed/new text files** found no trailing
+whitespace or common long-token/private-key patterns. This pattern check is not
+a complete secret or Git-history audit.
+
+Limits: production paid processing remains **hard-off**, including configured
+policies and `BRAIN_MANAGED_ALLOW_PAID=1`. There is no automatic block clearing or
+dispatched-call refund. Offline acknowledgements are operator preconditions, not
+proof that paused workers cannot resume. Attestations are externally checked by
+the trusted operator, not cryptographically provider-verified. Root epochs do not
+detect simultaneous rollback of both DB and marker; backup hashes provide
+integrity, not authenticity. Fault-injection/process tests are not physical
+disk-full, power-loss or hosted-operation drills. Live identity/provider quality,
+System One policy, native clients, billing, TLS, human usability and licensing
+remain separate gates. Phase 2 activation is not implemented or authorized.
+
+This slice remains uncommitted on `feat/managed-suite-foundation`, after the local
+checkpoints `07c93e6` and `00611f3`. Nothing was pushed or deployed; no paid
+provider call, real external account creation or license change occurred.
+
+### Repository delivery authorized — push and pull request
+
+The owner explicitly requested **"Push and create a Pull Request"** after Phase 1
+verification. The delivery target is `Rishflips/Bi-Brain`, branch
+`feat/managed-suite-foundation` against `main`; the repository remains private.
+GitHub account `Rishflips` has repository and workflow push permission. Fetch
+confirmed `origin/main` is still the implementation fork point `5598741`; no
+upstream changes require a merge or rebase, and no existing open PR for this
+branch or repository PR template was found.
+
+Fresh pre-commit command: `npm test -- --maxWorkers=1` — **478 passed,
+1 POSIX-only skip, 60 files**, 133.04 seconds. The earlier settled Phase 1
+typecheck/lint/build, 17 Chromium journeys, 4 offline evaluations and zero-audit
+checkpoint still applies; only documentation changed afterward. The PR includes
+the earlier isolated-account/OIDC/central-money checkpoint as well as Phase 1,
+not just the last safety changes. This authorizes source delivery, not merging,
+production activation or deployment. Production paid processing remains off.
 
 ## Independent deployment and ship audit — 2026-10-07
 

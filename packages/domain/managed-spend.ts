@@ -57,6 +57,24 @@ export const managedReservationStates = [
 ] as const;
 export type ManagedReservationState = (typeof managedReservationStates)[number];
 
+/**
+ * Content-free public pause reasons for the shared managed service.
+ *
+ * `usage_pending` is an ADMISSION barrier: a committed `dispatched` row may have
+ * reached a provider and awaits a known settlement. It is deliberately distinct
+ * from consent: it never revokes the owner's stored paid preference. The other
+ * reason, `awaiting_accounting`, covers a durable money/service block or the
+ * process fuse, where paid work must stay unavailable until an operator
+ * reconciles. Neither reason carries an id, account or amount.
+ */
+export const managedPauseReasons = ["usage_pending", "awaiting_accounting"] as const;
+export type ManagedPauseReason = (typeof managedPauseReasons)[number];
+
+export interface ManagedServiceBarrier {
+  paused: boolean;
+  reason: ManagedPauseReason | null;
+}
+
 export interface AccountAllowancePeriod {
   period_id: string;
   account_id: string;
@@ -141,7 +159,13 @@ export interface ManagedAccountStatus {
     unresolved_micro_usd: number;
   };
   blocked: boolean;
-  blocked_reason: "overrun" | "restored_backup" | "reconciliation_required" | null;
+  blocked_reason:
+    | "overrun"
+    | "restored_backup"
+    | "reconciliation_required"
+    | "disputed_usage"
+    | "usage_pending"
+    | null;
   reconciliation_required: boolean;
 }
 
@@ -160,10 +184,18 @@ export interface ManagedSpendView {
   available: false;
   /** Operator policy exists and is usable for this account. */
   configured: boolean;
-  /** A failed safety marker paused managed spending for this process. */
+  /** Managed paid admission is paused for this owner's service (barrier or block). */
   paused: boolean;
+  /** Content-free public pause reason; never an id, account or amount. */
+  paused_reason: ManagedPauseReason | null;
   blocked: boolean;
-  blocked_reason: "overrun" | "restored_backup" | "reconciliation_required" | null;
+  blocked_reason:
+    | "overrun"
+    | "restored_backup"
+    | "reconciliation_required"
+    | "disputed_usage"
+    | "usage_pending"
+    | null;
   account_id: string;
   time_zone: string | null;
   budget_day: string;

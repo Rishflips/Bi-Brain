@@ -1,8 +1,9 @@
 # Managed activation design — durable ambiguity gate and operator-attested reconciliation
 
-**Status: DRAFT — awaiting human review. Design only.** No implementation, plan,
-production or test edit is authorized. The owner approved the *intent* to close the
-activation gate, not this architecture.
+**Status: PHASE 1 IMPLEMENTED AND VERIFIED LOCALLY — owner approval on 2026-10-16
+("approved").** Parent verification: 478 passed, 1 POSIX-only skip, 17 Chromium
+journeys and 4 offline evaluations; typecheck/lint/build/audit passed. Production
+paid processing remains off; Phase 2 activation still requires separate approval.
 
 Scope: the **next financial safety slice**. It is not the only open gate: live provider
 quality, real identity, hosted TLS/operations and human release gates all remain open and
@@ -167,6 +168,6 @@ Billing/checkout, System One policy/quality, native clients, hosted TLS/operatio
 runtime model/provider selection, and any generic recovery framework. Development stays
 DeepSeek primary with Astra Medium advice only; no global configuration change.
 
-## Decision requested (one)
-Approve the global one-inflight barrier, where any unknown ambiguity pauses **all** managed
-paid. No implementation or plan begins until the human approves this spec.
+## Accepted decision
+The owner approved the global one-inflight barrier: any unknown ambiguity pauses
+**all** managed paid processing. Saving, search and extractive work continue.

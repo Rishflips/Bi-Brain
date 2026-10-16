@@ -319,4 +319,69 @@ describe("central managed spending multi-process contention", () => {
       }
     }
   }, 30_000);
+
+  it("lets exactly one of two processes commit the first mark on two reserved accounts", async () => {
+    const dir = tempDir();
+    const db = join(dir, "control.sqlite");
+    const now = "2026-10-16T09:00:00Z";
+    const clock = () => new Date(now);
+
+    let accountA = "";
+    let accountB = "";
+    let callA = "";
+    let callB = "";
+    {
+      const control = new ControlStore(db, clock);
+      const spending = new ManagedSpendingStore(control, clock);
+      try {
+        accountA = control.provision(ISSUER, "mark-race-a").id;
+        accountB = control.provision(ISSUER, "mark-race-b").id;
+        for (const account_id of [accountA, accountB]) {
+          spending.configureAccountPeriod({
+            account_id,
+            starts_at: "2026-10-16T00:00:00Z",
+            ends_at: "2026-10-17T00:00:00Z",
+            allowance_micro_usd: 1000,
+          });
+          spending.setAccountPolicy({
+            account_id,
+            per_job_micro_usd: 100,
+            user_daily_micro_usd: 100,
+          });
+        }
+        spending.setServicePolicy({ daily_micro_usd: 100 });
+        // Both holds are reserved first, so this is a valid reserve-before-mark
+        // race and the barrier is not yet active.
+        callA = spending.reserve(spec(accountA, "mark-race-a-job")).call_id;
+        callB = spending.reserve(spec(accountB, "mark-race-b-job")).call_id;
+      } finally {
+        control.close();
+      }
+    }
+
+    const results = await runTogether([
+      { action: "mark", db, now, call_id: callA, limits },
+      { action: "mark", db, now, call_id: callB, limits },
+    ]);
+
+    expect(results.filter((result) => result.ok)).toHaveLength(1);
+    const loser = results.find((result) => !result.ok)!;
+    expect(loser.code).toBe("BUDGET_BLOCKED");
+
+    const verify = new ControlStore(db, clock);
+    const spending = new ManagedSpendingStore(verify, clock);
+    try {
+      expect(
+        verify.db
+          .prepare(
+            "SELECT count(*) AS n FROM managed_reservations WHERE state='dispatched'",
+          )
+          .get()!.n,
+      ).toBe(1);
+      const loserCall = results[0]!.ok ? callB : callA;
+      expect(spending.readReceipt(loserCall)).toMatchObject({ state: "reserved" });
+    } finally {
+      verify.close();
+    }
+  }, 30_000);
 });

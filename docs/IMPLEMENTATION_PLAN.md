@@ -95,7 +95,8 @@ The 2026-10-16 owner direction brings managed personal delivery into the primary
   - [x] Account-bound worker accounting, fresh-mark-only execution, retained unknown holds and central-first known settlement with independently tested failure containment.
   - [x] Central own-account status, lower user limits, private service totals and strict trusted operator policy tooling. (Parent Task 3 focused run: 18/18.)
   - [x] Managed cold snapshot/restore and final combined browser/recovery verification. (2026-10-16 parent: 396 tests, 17 Chromium journeys, 4 offline evaluations; typecheck/lint/build/audit passed. See BUILD_STATE for offline/recovery limits.)
-  - [ ] Explicit reconciliation and control-storage/restart/multi-process activation gates. Production managed paid dispatch remains off.
+  - [x] Durable one-inflight barrier, guarded operator reconciliation, bounded all-account history audits and restore epoch invalidation. (Phase 1 parent checkpoint: 478 passed, 1 POSIX-only skip; 17 Chromium journeys and 4 offline evaluations. See BUILD_STATE for test/trust limits.)
+  - [ ] Separately approved shared production activation path, live provider/quality and target-host storage/restart drills. Production managed paid dispatch remains off.
 - [ ] G4: Real System 1 adapter, tested policy integration, consent, failure fallback and held-out quality/cost evidence.
 - [ ] G5: Ordinary-prose understanding/recall/correction and goal-linked preparation with live evidence.
 - [ ] G6: Two named native integrations with fresh-session correction/privacy/revocation evidence.

@@ -104,13 +104,27 @@ Unknown or unmapped tenant history requires reconciliation rather than a new
 allowance. Managed status reads central own-account figures and strips all shared
 service financial totals before returning them to a user.
 
+A dispatched central row now also acts as a durable **service-wide one-inflight
+barrier**. Reserve and fresh-mark admission check it inside their immediate
+transactions, across all accounts and stages. Unknown usage survives restart as
+a global paid pause without depending on a later marker write; ordinary known
+settlement clears that ambiguity. A reserved-only hold is not a global pause.
+Admission is distinct from user consent: a call's own marker must not cancel
+its post-mark consent check.
+
 A failed central settlement writes a service-wide reconciliation block. If that
-safety write also fails, a shared-control-handle process fuse pauses managed
-admission and fail-stops its scheduler, without disabling capture. This fuse is
-**not durable or cross-process**. Production managed paid processing remains
-unconditionally unavailable across restart; operator reconciliation and
-control-storage failure/restart drills are separate activation gates. See the
-[approved managed spending design](superpowers/specs/2026-10-16-managed-spending-design.md).
+safety write also fails, the committed dispatched row retains the durable pause;
+the shared-control-handle process fuse is additional fail-stop protection, not
+the durable or cross-process mechanism. Guarded local operator attestations bind
+the exact call identity, current epoch and expected state; immutable proof and
+cost commit together. They are operator-attested, not cryptographic provider
+verification, and require all old workers terminated as an offline precondition.
+No dispatched row is refunded or released by this workflow.
+
+Production managed paid processing remains unconditionally unavailable, including
+across restart. History audit/restore verification and a separately approved
+activation path remain gates; no local test implies a live provider or hosted
+release. See the [approved managed activation design](superpowers/specs/2026-10-16-managed-activation-design.md).
 
 ## Observability
 

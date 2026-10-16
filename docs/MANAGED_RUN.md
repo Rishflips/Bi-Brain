@@ -181,3 +181,95 @@ restore.
 This tool is not a hot-snapshot tool: it cannot prove writers were quiesced, it
 covers only the deletions visible in the supplied current root, and it does not
 claim to be an adversarial or authenticated backup.
+
+## Operator reconciliation CLI and all-account audit (Task 3 slice)
+
+The trusted offline reconciliation CLI runs only on the server filesystem
+against one explicit existing absolute managed root; there is no local default
+and no admin HTTP route, browser setter or "clear all blocks".
+
+Set `BRAIN_MANAGED_ROOT` to the managed root, then:
+
+```
+npm run managed:reconcile -- status
+npm run managed:reconcile -- inspect <call_id>
+npm run managed:reconcile -- validate-audit <audit_id>
+npm run managed:reconcile -- init-epoch --offline --workers-terminated
+npm run managed:reconcile -- attest-settled <attestation.json> --offline --workers-terminated
+npm run managed:reconcile -- attest-zero <attestation.json> --offline --workers-terminated
+npm run managed:reconcile -- audit-history --offline --workers-terminated
+npm run managed:reconcile -- suspend <account_id> --offline --workers-terminated
+```
+
+- `status`, `inspect` and `validate-audit` are **read-only**. They open the
+  control database through a genuine read-only handle and never create a money
+  table, a control epoch, a credential or a file; an uninitialized money
+  namespace is reported rather than created. `status` prints every managed
+  account's opaque id and state to the trusted operator — it never prints
+  knowledge, a session token, a CSRF value or any credential. The authenticated
+  owner's HTTP money view (own-account only) is a separate surface.
+- `inspect <call_id>` prints the curated immutable financial identity of one
+  dispatch — account/call id, state, reserved/actual micro-USD, the identity,
+  content, request and config hashes, the account-period id, provider/model/price
+  version, the frozen service/user day and accounting zone, and the current control
+  epoch — so a trusted operator can construct one exact typed attestation. It never
+  prints a request body, actor, key, evidence or source text; the exact external
+  provider correlation (`provider_request_id`) must still be obtained from a
+  verified receipt.
+- Mutating commands require **both** `--offline` and `--workers-terminated`.
+  Those flags are an operator precondition that every managed writer was
+  stopped, not a programmatic quiescence proof. A missing acknowledgement denies
+  before any write. Each command accepts its exact documented arity
+  (`status`/`init-epoch`/`audit-history` take no positional argument;
+  `inspect`/`validate-audit`/`attest-settled`/`attest-zero`/`suspend` take exactly
+  one), unknown or duplicated flags are rejected, and the CLI prints static,
+  content-free errors without a stack, input path or proof body.
+- `attest-settled` / `attest-zero` read one **absolute, regular, non-linked**
+  operator JSON file of at most 256 KiB. The file must be a closed, strictly
+  validated attestation (a UUID idempotency key, kind, exact call identity and
+  pricing/request/config hashes, expected state/actual CAS, integer micro-USD
+  `USD` cost, evidence digest, method, bounded actor metadata, ISO instant and
+  the current control epoch). Unknown fields, a non-USD currency, a blank
+  correlation id or an undispatched `reserved` row are denied. The command
+  reports only the resolution UUID, kind, integer cost, currency and epoch — never
+  the correlation id, actor or evidence body. A repeat of the same resolution id
+  is idempotent; a changed binding conflicts.
+- `audit-history` scans **every** account (including suspended ones) one
+  read-only tenant database at a time, after validating the tenant's provisioning
+  marker against the trusted control identity, and refuses the whole audit on any
+  legacy reservation row, orphan or unmapped projection, non-terminal row, a
+  state/amount/price/request/config mismatch, a non-integer/negative amount (or a
+  released row carrying a non-null actual), or an unsupported money schema. Every
+  read is bounded (`LIMIT remaining+1` on the account inventory, the central
+  journal and the tenant journal) and the global `maxRows` budget (default 100000;
+  the central and tenant journals are each counted) spans all accounts, so
+  exhaustion denies rather than partially auditing. It records only ids, hashes and
+  integer money. A record is written only after two complete scans agree and a
+  short write transaction re-checks the epoch and the bounded central
+  money/config/blocks. `validate-audit` re-derives the live baseline and confirms
+  the epoch, money-schema version/digest, service + per-account config and prior
+  baseline rows; a changed schema or config, a new unsurveyed account or a supported
+  restore makes the audit invalid. Legitimate new terminal mapped rows beyond the
+  baseline stay valid.
+
+## Root generation on restore
+
+`managed:backup` records an optional, hashed `control-epoch.json` root marker and
+refuses to capture a root whose marker does not bind its control generation. A
+supported `managed:restore` rotates the control epoch (a safe increment with a
+fresh nonce) and rewrites the root marker at staging **before** publish, so every
+prior audit becomes invalid while each financial block and the deletion of
+restored sessions, agent-token routes and pending OIDC correlations is preserved.
+A marker whose bundled generation is missing or different is rejected before
+anything is published. A previous-format bundle without the marker field is still
+supported — it restores with the paid block and derives a fresh generation from
+its known control row (never copying an approval); a bundle with no generation at
+all stays uninitialized until an explicit `init-epoch`. Any rotation or marker
+write failure leaves the `MANAGED_RESTORE_INCOMPLETE` root unavailable.
+
+Explicit non-guarantees: this does not provide full rollback detection (a mirrored
+nonce detects a mismatched copy, not a simultaneous rollback of both the control
+database and the marker), does not verify provider authenticity, does not prove
+writer quiescence, and treats hashes as integrity rather than an adversarial
+signature. Managed paid processing remains **hard-off**: `connected_processing_available`
+is false and `BRAIN_MANAGED_ALLOW_PAID=1` has no effect.

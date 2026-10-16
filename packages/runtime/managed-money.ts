@@ -1,7 +1,6 @@
 import type { ControlStore } from "../storage/control.ts";
 import {
   ManagedSpendingStore,
-  isManagedControlPaused,
 } from "../storage/managed-spending.ts";
 import { BrainError } from "../domain/logic.ts";
 import { accountingDay, safeAdd } from "../domain/spend.ts";
@@ -31,8 +30,9 @@ export function managedMoneyView(
   assertActive();
   const store = new ManagedSpendingStore(control, clock);
   const status = store.accountStatus(accountId);
+  const barrier = store.serviceBarrier();
   const now = clock();
-  const paused = isManagedControlPaused(control);
+  const paused = barrier.paused;
   const tz = status.policy?.accounting_tz ?? null;
   const budgetDay = tz ? accountingDay(now, tz) : utcDay(now);
   const settled = store.ownDaySettledMicroUsd(accountId, budgetDay);
@@ -42,7 +42,9 @@ export function managedMoneyView(
   const dailyLimit = status.policy?.user_daily_micro_usd ?? 0;
   const serviceConfigured = !!status.service && status.service.daily_micro_usd > 0;
   // Capacity, not paid activation: the shared service has a positive policy AND
-  // headroom today. `available` remains hard-false regardless.
+  // headroom today. The approved one-inflight policy pauses the whole service
+  // while any call's usage is unknown, so a dispatch elsewhere makes this false
+  // even for a configured account with spare dollars. `available` stays hard-false.
   const serviceAvailable =
     serviceConfigured &&
     !status.blocked &&
@@ -63,6 +65,7 @@ export function managedMoneyView(
     available: false,
     configured,
     paused,
+    paused_reason: barrier.reason,
     blocked: status.blocked || paused,
     blocked_reason: status.blocked_reason,
     account_id: accountId,

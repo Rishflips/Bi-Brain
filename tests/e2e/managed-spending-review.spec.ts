@@ -317,7 +317,11 @@ test("a settled managed charge stays honest while a stale tenant hold, another a
       reserved: 0,
       daily_limit_micro_usd: 200_002,
       per_job_limit_micro_usd: 100_001,
-      blocked: false,
+      // B's unknown dispatched call now pauses all managed paid admission, but
+      // must not contaminate A's own central amounts or saved preferences.
+      blocked: true,
+      paused: true,
+      paused_reason: "usage_pending",
     });
     expect(today.status.spend.allowance).toMatchObject({
       limit_micro_usd: MICRO_USD,

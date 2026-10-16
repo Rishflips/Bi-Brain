@@ -21,6 +21,7 @@ import {
   type ManagedMoneyReceipt,
   type ManagedReservation,
   type ManagedReservationState,
+  type ManagedServiceBarrier,
   type ManagedServiceId,
   type ServicePolicy,
 } from "../domain/managed-spend.ts";
@@ -38,7 +39,7 @@ import {
  * The per-tenant `DispatchLedger` is retained unchanged as a conservative
  * journal/projection; it is never an independent authority for managed money.
  */
-export const managedMoneySchemaVersion = 1;
+export const managedMoneySchemaVersion = 2;
 
 const SERVICE: ManagedServiceId = MANAGED_SERVICE_ID;
 
@@ -117,6 +118,41 @@ CREATE INDEX IF NOT EXISTS managed_reservations_account ON managed_reservations(
 CREATE INDEX IF NOT EXISTS managed_reservations_job ON managed_reservations(account_id,job_id,state);
 CREATE INDEX IF NOT EXISTS managed_reservations_service_day ON managed_reservations(service_day,state);
 CREATE UNIQUE INDEX IF NOT EXISTS managed_reservations_projection ON managed_reservations(projection_call_id);
+CREATE TABLE IF NOT EXISTS managed_resolutions(
+  resolution_id TEXT PRIMARY KEY,
+  kind TEXT NOT NULL CHECK(kind IN ('settled','zero','dispute')),
+  account_id TEXT NOT NULL REFERENCES managed_accounts(id),
+  call_id TEXT NOT NULL REFERENCES managed_reservations(call_id),
+  method TEXT NOT NULL CHECK(method IN ('usage_response','call_statement')),
+  evidence_digest TEXT NOT NULL, binding_digest TEXT NOT NULL,
+  cost_micro_usd INTEGER NOT NULL CHECK(cost_micro_usd>=0),
+  currency TEXT NOT NULL CHECK(currency='USD'),
+  provider_request_id TEXT NOT NULL, actor TEXT NOT NULL, checked_at TEXT NOT NULL,
+  epoch INTEGER NOT NULL CHECK(epoch>=1), decided_at TEXT NOT NULL);
+CREATE TRIGGER IF NOT EXISTS managed_resolutions_no_update BEFORE UPDATE ON managed_resolutions
+  BEGIN SELECT RAISE(ABORT,'managed resolutions are immutable'); END;
+CREATE TRIGGER IF NOT EXISTS managed_resolutions_no_delete BEFORE DELETE ON managed_resolutions
+  BEGIN SELECT RAISE(ABORT,'managed resolutions are immutable'); END;
+CREATE INDEX IF NOT EXISTS managed_resolutions_call ON managed_resolutions(call_id);
+CREATE TABLE IF NOT EXISTS managed_control_epoch(
+  singleton INTEGER PRIMARY KEY CHECK(singleton=1),
+  epoch INTEGER NOT NULL CHECK(epoch>=1), nonce TEXT NOT NULL, rotated_at TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS managed_audits(
+  audit_id TEXT PRIMARY KEY, epoch INTEGER NOT NULL CHECK(epoch>=1),
+  control_schema_version INTEGER NOT NULL,
+  config_digest TEXT NOT NULL, schema_digest TEXT NOT NULL,
+  inventory_digest TEXT NOT NULL, baseline_digest TEXT NOT NULL,
+  root_nonce TEXT NOT NULL, created_at TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS managed_audit_accounts(
+  audit_id TEXT NOT NULL REFERENCES managed_audits(audit_id),
+  account_id TEXT NOT NULL, config_digest TEXT NOT NULL,
+  baseline_digest TEXT NOT NULL, financial_digest TEXT NOT NULL,
+  PRIMARY KEY(audit_id, account_id));
+CREATE TABLE IF NOT EXISTS managed_audit_rows(
+  audit_id TEXT NOT NULL REFERENCES managed_audits(audit_id),
+  account_id TEXT NOT NULL, call_id TEXT NOT NULL,
+  central_digest TEXT NOT NULL, tenant_digest TEXT NOT NULL,
+  PRIMARY KEY(audit_id, account_id, call_id));
 `;
 
 const budget = (message: string) =>
@@ -177,17 +213,51 @@ export class ManagedSpendingStore {
       );
   }
 
+  private inOwnedTx = false;
+
   private tx<T>(fn: () => T): T {
     this.db.exec("BEGIN IMMEDIATE");
-    let result: T;
+    const prior = this.inOwnedTx;
+    this.inOwnedTx = true;
     try {
-      result = fn();
+      const result = fn();
+      // A thenable return would be committed as a half-finished transaction;
+      // refuse it so a promise is never committed.
+      if (result && typeof (result as { then?: unknown }).then === "function")
+        throw new BrainError(
+          "INVALID_INPUT",
+          "Managed transaction callbacks must be synchronous.",
+          400,
+        );
       this.db.exec("COMMIT");
+      return result;
     } catch (error) {
       this.db.exec("ROLLBACK");
       throw error;
+    } finally {
+      this.inOwnedTx = prior;
     }
-    return result;
+  }
+
+  /**
+   * Cohesive owned write transaction for financial seams (attestations). It
+   * refuses to open when a transaction is already active and refuses an `async`
+   * callback up front, so a promise can never be committed.
+   */
+  transaction<T>(fn: () => T): T {
+    if (this.inOwnedTx || this.db.isTransaction)
+      throw new BrainError(
+        "INVALID_INPUT",
+        "A managed transaction is already open.",
+        409,
+      );
+    if (typeof fn !== "function" || fn.constructor.name === "AsyncFunction")
+      throw new BrainError(
+        "INVALID_INPUT",
+        "Managed transaction callbacks must be synchronous.",
+        400,
+      );
+    return this.tx(fn);
   }
 
   // ---------------------------------------------------------------- operator
@@ -340,6 +410,14 @@ export class ManagedSpendingStore {
           "Managed paid processing is blocked until the recorded reason is reconciled.",
           409,
         );
+      // Durable service-wide ambiguity barrier: a committed `dispatched` row may
+      // have reached a provider, so no new hold may stack until it is resolved.
+      if (this.anyDispatchedRow())
+        throw new BrainError(
+          "BUDGET_BLOCKED",
+          "Managed paid processing is paused while a previous call awaits settlement accounting.",
+          409,
+        );
       const period = this.activePeriod(valid.account_id, now);
       if (!period) throw budget("No managed allowance period is active.");
       const serviceDaily = this.servicePolicyRow()?.daily_micro_usd ?? 0;
@@ -465,6 +543,15 @@ export class ManagedSpendingStore {
           "Only a reserved managed dispatch can be marked as sent.",
           409,
         );
+      // Another dispatched call anywhere in the shared service is a durable
+      // ambiguity: only a fresh CAS for this row may ever permit I/O, and it is
+      // denied while any other row is possibly sent.
+      if (this.otherDispatchedRow(callId))
+        throw new BrainError(
+          "BUDGET_BLOCKED",
+          "Managed paid processing is paused while a previous call awaits settlement accounting.",
+          409,
+        );
       const account = this.control.account(row.account_id);
       if (!account || account.state !== "active")
         throw new BrainError("UNAUTHORIZED", "Managed account unavailable.", 401);
@@ -546,40 +633,79 @@ export class ManagedSpendingStore {
    */
   settleKnown(callId: string, actualMicroUsd: number): ManagedReservation {
     const actual = validateActualMicroUsd(actualMicroUsd);
-    return this.tx(() => {
-      const now = this.clock();
-      const row = this.reservationRow(callId);
-      if (!row)
-        throw new BrainError("NOT_FOUND", "Unknown managed dispatch.", 404);
-      if (row.state === "settled") {
-        if (Number(row.actual_micro_usd) === actual) return toReservation(row);
-        throw new BrainError(
-          "SETTLEMENT_CONFLICT",
-          "This managed dispatch was already settled with a different amount.",
-          409,
-        );
-      }
-      if (row.state !== "dispatched")
-        throw new BrainError(
-          "INVALID_STATE",
-          "Mark the managed dispatch as sent before settling it.",
-          409,
-        );
+    return this.tx(() => this.settleDispatched(callId, actual));
+  }
+
+  /**
+   * Transaction-owned settlement mutation for the reconciliation seam. It
+   * always refuses outside an owned `BEGIN IMMEDIATE`, so a resolution proof and
+   * its money update can never be split across separate transactions.
+   */
+  settleKnownWithinTx(
+    callId: string,
+    actualMicroUsd: number,
+  ): ManagedReservation {
+    if (!this.inOwnedTx || !this.db.isTransaction)
+      throw new BrainError(
+        "INVALID_STATE",
+        "settleKnownWithinTx must run inside an owned managed transaction.",
+        409,
+      );
+    return this.settleDispatched(callId, validateActualMicroUsd(actualMicroUsd));
+  }
+
+  /** Shared settlement mutation. The caller owns the transaction boundary. */
+  private settleDispatched(callId: string, actual: number): ManagedReservation {
+    const now = this.clock();
+    const row = this.reservationRow(callId);
+    if (!row)
+      throw new BrainError("NOT_FOUND", "Unknown managed dispatch.", 404);
+    if (row.state === "settled") {
+      if (Number(row.actual_micro_usd) === actual) return toReservation(row);
+      throw new BrainError(
+        "SETTLEMENT_CONFLICT",
+        "This managed dispatch was already settled with a different amount.",
+        409,
+      );
+    }
+    if (row.state !== "dispatched")
+      throw new BrainError(
+        "INVALID_STATE",
+        "Mark the managed dispatch as sent before settling it.",
+        409,
+      );
+    const updated = this.db
+      .prepare(
+        "UPDATE managed_reservations SET state='settled',actual_micro_usd=?,settled_at=? WHERE call_id=? AND state='dispatched'",
+      )
+      .run(actual, now.toISOString(), callId);
+    // A trigger can silently IGNORE the update (changes=0) while returning
+    // success; never fabricate a settlement or a resolution proof.
+    if (Number(updated.changes) !== 1)
+      throw new BrainError(
+        "STATE_CONFLICT",
+        "The managed dispatch changed concurrently and was not settled.",
+        409,
+      );
+    const persisted = this.reservationRow(callId)!;
+    if (
+      persisted.state !== "settled" ||
+      Number(persisted.actual_micro_usd) !== actual
+    )
+      throw new BrainError(
+        "STATE_CONFLICT",
+        "The managed dispatch did not settle as expected.",
+        409,
+      );
+    if (actual > Number(row.reserved_micro_usd)) {
+      const over = actual - Number(row.reserved_micro_usd);
       this.db
         .prepare(
-          "UPDATE managed_reservations SET state='settled',actual_micro_usd=?,settled_at=? WHERE call_id=? AND state='dispatched'",
+          "INSERT INTO managed_service_blocks(service,call_id,account_id,over_micro_usd,at) VALUES(?,?,?,?,?) ON CONFLICT(service) DO UPDATE SET call_id=excluded.call_id,account_id=excluded.account_id,over_micro_usd=excluded.over_micro_usd,at=excluded.at",
         )
-        .run(actual, now.toISOString(), callId);
-      if (actual > Number(row.reserved_micro_usd)) {
-        const over = actual - Number(row.reserved_micro_usd);
-        this.db
-          .prepare(
-            "INSERT INTO managed_service_blocks(service,call_id,account_id,over_micro_usd,at) VALUES(?,?,?,?,?) ON CONFLICT(service) DO UPDATE SET call_id=excluded.call_id,account_id=excluded.account_id,over_micro_usd=excluded.over_micro_usd,at=excluded.at",
-          )
-          .run(SERVICE, callId, row.account_id, over, now.toISOString());
-      }
-      return toReservation(this.reservationRow(callId)!);
-    });
+        .run(SERVICE, callId, row.account_id, over, now.toISOString());
+    }
+    return toReservation(this.reservationRow(callId)!);
   }
 
   releaseUndispatched(callId: string): ManagedReservation {
@@ -776,6 +902,7 @@ export class ManagedSpendingStore {
           "SELECT 1 AS present FROM managed_reservations WHERE account_id=? AND reconciliation_required=1 LIMIT 1",
         )
         .get(accountId) as { present: number } | undefined;
+      const anyDispatched = this.anyDispatchedRow();
       const status: ManagedAccountStatus = {
         account_id: accountId,
         active: account.state === "active",
@@ -794,14 +921,18 @@ export class ManagedSpendingStore {
             : this.unresolvedCommitted(accountId),
           unresolved_micro_usd: this.unresolvedCommitted(accountId),
         },
-        blocked: !!block || !!serviceBlock,
+        blocked: !!block || !!serviceBlock || anyDispatched,
         blocked_reason: block
-          ? block.reason === "reconciliation_required"
-            ? "reconciliation_required"
-            : "restored_backup"
+          ? block.reason === "restored_backup"
+            ? "restored_backup"
+            : block.reason === "reconciliation_required"
+              ? "reconciliation_required"
+              : "disputed_usage"
           : serviceBlock
             ? "overrun"
-            : null,
+            : anyDispatched
+              ? "usage_pending"
+              : null,
         reconciliation_required: !!reconciliation,
       };
       // A poisoned shared handle reports paused even though the failed marker
@@ -811,6 +942,25 @@ export class ManagedSpendingStore {
         status.blocked_reason = "reconciliation_required";
       }
       return status;
+    });
+  }
+
+  /**
+   * Read-only service-wide admission barrier. The process fuse has the same
+   * precedence as `accountStatus`: a durable money/service block, or the fuse,
+   * is `awaiting_accounting`; a possibly-sent `dispatched` row is the softer
+   * `usage_pending` barrier that a real known settlement clears. The result
+   * carries no call id, account id or amount.
+   */
+  serviceBarrier(): ManagedServiceBarrier {
+    return this.tx(() => {
+      if (poisonedControls.has(this.control))
+        return { paused: true, reason: "awaiting_accounting" as const };
+      if (this.isBlocked())
+        return { paused: true, reason: "awaiting_accounting" as const };
+      if (this.anyDispatchedRow())
+        return { paused: true, reason: "usage_pending" as const };
+      return { paused: false, reason: null };
     });
   }
 
@@ -879,6 +1029,24 @@ export class ManagedSpendingStore {
         .prepare("SELECT 1 AS present FROM managed_service_blocks LIMIT 1")
         .get()
     );
+  }
+
+  /** Read-only: does any possibly-sent call exist anywhere in the service? */
+  private anyDispatchedRow(): boolean {
+    return !!this.db
+      .prepare(
+        "SELECT 1 AS present FROM managed_reservations WHERE state='dispatched' LIMIT 1",
+      )
+      .get();
+  }
+
+  /** Read-only: is a possibly-sent call other than `callId` present? */
+  private otherDispatchedRow(callId: string): boolean {
+    return !!this.db
+      .prepare(
+        "SELECT 1 AS present FROM managed_reservations WHERE state='dispatched' AND call_id<>? LIMIT 1",
+      )
+      .get(callId);
   }
 
   // -------------------------------------------------------------- row loads

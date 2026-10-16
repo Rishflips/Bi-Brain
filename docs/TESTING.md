@@ -45,6 +45,32 @@ Build harnesses that execute these scenarios against actual services. Static str
 - Missing evidence does not become a negative factual assertion.
 - Imported instructions cannot change authority.
 
+### Managed financial safety drills
+
+Run these against real SQLite and separate Node processes, without paid provider
+calls. Evidence belongs in BUILD_STATE.md, not inferred from a successful build.
+
+- Two accounts race pre-reserved marks: exactly one becomes dispatched. A
+  previously dispatched row pauses new paid admission after restart and across
+  accounting days, even if a later safety-marker write failed.
+- A call's own marker does not revoke stored consent; cancellation, changed
+  evidence and lower caps are still checked immediately before provider I/O.
+- Exact operator attestations require offline acknowledgements, root epoch,
+  currency, identity and prior-state binding. Proof, known cost and overrun block
+  commit together or all roll back, including ignored SQLite writes.
+- Unknown dispatched usage is never refunded. Conflicting settled amounts append
+  a dispute and pause the service without rewriting the original actual.
+- Audit every active and suspended account. Reject legacy, orphan, unmapped,
+  nonterminal and invalid-money rows; preserve valid new mapped terminal rows
+  beyond a baseline. Configuration/schema/identity changes stale its approval.
+- Recheck the audit snapshot after acquiring its final write lock. Restore must
+  rotate supported epochs, invalidate old audits, revoke credentials and preserve
+  financial blocks; manifest and marker presence must agree.
+
+Offline flags remain operator preconditions, not proof that all processes have
+terminated. Synthetic receipts do not establish provider authenticity, and an
+epoch marker does not detect rollback of both the database and marker together.
+
 ## Live model assessment
 
 Use a held-out set of at least 30 small scenarios before pilot deployment. Include supported claims, temporal changes, contradictions, unknowns, unrelated material, injected instructions, and multilingual text.

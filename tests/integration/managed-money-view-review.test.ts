@@ -318,7 +318,10 @@ describe("managed money view (independent review)", () => {
     expect(statusA.spend.budget_day).toBe("2026-10-16");
     expect(statusA.spend.configured).toBe(true);
     expect(statusA.spend.available).toBe(false);
-    expect(statusA.spend.service_available).toBe(true);
+    // The approved one-inflight policy now pauses A while B's usage is unknown;
+    // configured policies and spare dollars must not imply admission availability.
+    expect(statusA.spend.service_available).toBe(false);
+    expect(statusA.spend).toMatchObject({ paused: true, paused_reason: "usage_pending" });
 
     // Private, own-period metadata is allowed; the shared service dimension is
     // reduced to a bare boolean and is never a cap or a committed total.

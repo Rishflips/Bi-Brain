@@ -11,7 +11,7 @@ import {
   writeFileSync,
   type Stats,
 } from "node:fs";
-import { createHash } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { DatabaseSync, backup } from "node:sqlite";
 import { z } from "zod";
@@ -27,6 +27,13 @@ import {
   MANAGED_RESTORE_INCOMPLETE,
   applyControlRestoreBarrier,
 } from "../storage/managed-restore-policy.ts";
+import {
+  MANAGED_ROOT_MARKER,
+  readRootMarker,
+  rootEpochMatches,
+  rootMarkerSchema,
+  writeRootMarker,
+} from "./managed-operator.ts";
 
 /**
  * Conservative cold/offline managed backup and restore.
@@ -66,6 +73,7 @@ const manifestSchema = z
     created_at: z.string().datetime({ offset: true }),
     accounts: z.array(accountSchema).max(10000),
     files: z.array(fileSchema).max(1_000_000),
+    root_marker: z.string().min(1).max(4096).nullable().optional(),
   })
   .strict();
 
@@ -75,6 +83,7 @@ export interface ManagedBundleManifest {
   created_at: string;
   accounts: ManagedBundleAccount[];
   files: { path: string; sha256: string; size: number }[];
+  root_marker?: string | null;
 }
 
 const recoveryError = (message: string) =>
@@ -248,6 +257,72 @@ function controlInventory(path: string): ManagedBundleAccount[] {
   }
 }
 
+function readControlEpoch(
+  path: string,
+): { epoch: number; nonce: string; rotated_at: string } | undefined {
+  const db = new DatabaseSync(path, { readOnly: true });
+  try {
+    const has = db
+      .prepare(
+        "SELECT 1 AS present FROM sqlite_master WHERE type='table' AND name='managed_control_epoch'",
+      )
+      .get();
+    if (!has) return undefined;
+    const row = db
+      .prepare("SELECT epoch,nonce,rotated_at FROM managed_control_epoch WHERE singleton=1")
+      .get() as { epoch: number; nonce: string; rotated_at: string } | undefined;
+    if (!row) return undefined;
+    return {
+      epoch: Number(row.epoch),
+      nonce: String(row.nonce),
+      rotated_at: String(row.rotated_at),
+    };
+  } finally {
+    db.close();
+  }
+}
+
+/**
+ * Rotates the staged control generation and rewrites the root marker before
+ * publish. A snapshot without any control generation is left uninitialized (the
+ * operator runs the explicit init command later). A previous-format bundle with a
+ * known generation but no marker derives a fresh nonce/epoch here; an approval is
+ * never copied. Returns true when a marker was written.
+ */
+function rotateStagedEpoch(
+  control: ControlStore,
+  stagingRoot: string,
+  clock: () => Date,
+): boolean {
+  const has = control.db
+    .prepare(
+      "SELECT 1 AS present FROM sqlite_master WHERE type='table' AND name='managed_control_epoch'",
+    )
+    .get();
+  if (!has) return false;
+  const row = control.db
+    .prepare("SELECT epoch FROM managed_control_epoch WHERE singleton=1")
+    .get() as { epoch: number } | undefined;
+  if (!row) return false;
+  const next = Number(row.epoch) + 1;
+  if (!Number.isSafeInteger(next) || next < 1)
+    throw recoveryError("The control generation cannot be advanced safely.");
+  const nonce = randomBytes(32).toString("hex");
+  const rotated_at = clock().toISOString();
+  control.db.exec("BEGIN IMMEDIATE");
+  try {
+    control.db
+      .prepare("UPDATE managed_control_epoch SET epoch=?,nonce=?,rotated_at=? WHERE singleton=1")
+      .run(next, nonce, rotated_at);
+    control.db.exec("COMMIT");
+  } catch (error) {
+    control.db.exec("ROLLBACK");
+    throw error;
+  }
+  writeRootMarker(stagingRoot, { schema: 1, epoch: next, nonce });
+  return true;
+}
+
 function readManifest(bundle: string): ManagedBundleManifest {
   const path = join(bundle, "manifest.json");
   if (!existsSync(path)) throw recoveryError("The bundle has no manifest.json.");
@@ -292,7 +367,11 @@ function verifyBundle(bundle: string, manifest: ManagedBundleManifest): void {
 }
 
 function assertBundleTopLevel(bundle: string, manifest: ManagedBundleManifest): void {
-  const allowed = new Set<string>(["manifest.json", "control.sqlite"]);
+  const allowed = new Set<string>([
+    "manifest.json",
+    "control.sqlite",
+    MANAGED_ROOT_MARKER,
+  ]);
   for (const account of manifest.accounts) allowed.add(account.account_id);
   for (const name of readdirSync(bundle)) {
     if (!allowed.has(name))
@@ -392,10 +471,25 @@ export async function writeManagedBackup(
   const inventory = controlInventory(join(root, "control.sqlite"));
   const clock = input.clock ?? (() => new Date());
 
+  // Bind the root marker to the EXACT current control generation so a backup can
+  // never capture a marker from a different (or half-initialized) root.
+  const rootMarker = readRootMarker(root);
+  const controlEpoch = readControlEpoch(join(root, "control.sqlite"));
+  if (rootMarker && (!controlEpoch || !rootEpochMatches(rootMarker, controlEpoch)))
+    throw recoveryError(
+      "The managed root marker does not match its control generation; refusing to back it up.",
+    );
+  if (!rootMarker && controlEpoch)
+    throw recoveryError(
+      "The managed root has a control generation without a root marker; refusing to back it up.",
+    );
+
   const staging = newStaging(destination, clock);
   mkdirSync(staging, { recursive: true, mode: 0o700 });
   try {
     await snapshotSqlite(join(root, "control.sqlite"), join(staging, "control.sqlite"));
+    if (rootMarker)
+      copyTree(join(root, MANAGED_ROOT_MARKER), join(staging, MANAGED_ROOT_MARKER));
     for (const account of inventory) {
       const dir = join(root, account.account_id);
       assertTenantMarker(dir, account);
@@ -421,6 +515,7 @@ export async function writeManagedBackup(
       created_at: clock().toISOString(),
       accounts: inventory,
       files,
+      root_marker: rootMarker ? MANAGED_ROOT_MARKER : null,
     };
     writeFileSync(join(staging, "manifest.json"), JSON.stringify(manifest), {
       mode: 0o600,
@@ -473,6 +568,47 @@ export async function restoreManagedBackup(
   const bundledInventory = controlInventory(bundleControl);
   assertInventoryMatches(manifest.accounts, bundledInventory);
 
+  // A marker in the bundle must bind the bundled control generation exactly. The
+  // presence of the marker file must EQUAL the manifest declaration: a bundle can
+  // never hide a present (hashed) marker by declaring it absent, or claim a marker
+  // it does not carry. An old previous-format bundle without either is still
+  // supported (blocked for paid activation); a declared marker whose generation is
+  // absent or different is rejected before anything is published.
+  const bundledEpoch = readControlEpoch(bundleControl);
+  const bundledMarkerPath = join(bundle, MANAGED_ROOT_MARKER);
+  const bundledMarkerStat = (() => {
+    try {
+      return lstatSync(bundledMarkerPath);
+    } catch {
+      return undefined;
+    }
+  })();
+  const markerFilePresent = !!bundledMarkerStat;
+  if (bundledMarkerStat && (bundledMarkerStat.isSymbolicLink() || !bundledMarkerStat.isFile()))
+    throw recoveryError("The bundle marker is not a regular file.");
+  const declaredMarker = manifest.root_marker != null;
+  if (markerFilePresent !== declaredMarker)
+    throw recoveryError(
+      "The bundle marker presence does not match its manifest declaration.",
+    );
+  if (declaredMarker && manifest.root_marker !== MANAGED_ROOT_MARKER)
+    throw recoveryError("The bundle marker name is not the supported root marker.");
+  if (markerFilePresent) {
+    let rawMarker: unknown;
+    try {
+      rawMarker = JSON.parse(readFileSync(bundledMarkerPath, "utf8"));
+    } catch {
+      throw recoveryError("The bundle marker is unreadable.");
+    }
+    const parsedMarker = rootMarkerSchema.safeParse(rawMarker);
+    if (
+      !parsedMarker.success ||
+      !bundledEpoch ||
+      !rootEpochMatches(parsedMarker.data, bundledEpoch)
+    )
+      throw recoveryError("The bundle marker does not match its control generation.");
+  }
+
   // Bind backed accounts to the CURRENT trusted identities and require a
   // readable current tenant for every one before any SQLite open for replay.
   const currentControlPath = join(currentRoot, "control.sqlite");
@@ -520,6 +656,12 @@ export async function restoreManagedBackup(
         if (account.state === "suspended" || current.state === "suspended")
           stagingControl.setAccountState(account.account_id, "suspended");
       }
+      // A supported restore rotates the control generation and rewrites the root
+      // marker at staging BEFORE publish, invalidating prior audits while keeping
+      // every financial block. A snapshot with no generation is left for the
+      // operator's explicit init; an old bundle without a marker derives a fresh
+      // generation from its known control row and never copies an approval.
+      rotateStagedEpoch(stagingControl, staged, clock);
     } finally {
       stagingControl.close();
     }
