@@ -9,13 +9,20 @@ ChatGPT Sites is canceled as a deployment path. Use [SELF_HOSTING.md](SELF_HOSTI
 - [x] Include required Git, nonroot persistence, bounded shutdown and private build context.
 - [x] Provide independent Compose/TLS and a deployment-agent handoff; no deploy action in CI.
 - [x] Pass local 65-test suite, 8 browser journeys, 4 offline evals, typecheck/lint/build and dependency audit.
-- [ ] Record Linux/Docker CI evidence after workflow installation with an authorized credential.
+- [x] Record Linux/Docker CI evidence after workflow installation with an authorized credential. (Follow-up 2026-10-16: merged-main run 38889855879 at `5dd6ed0` passed; see BUILD_STATE.)
 - [ ] Prove chosen host DNS/TLS, reboot, disk/monitoring and encrypted full-volume recovery/deletion barriers.
 - [ ] Complete live-model, two-native-client, broader failure drills and human pilot gates.
 
 No owner host has been deployed. The previous private Sites probe was permanently deleted following the owner's explicit request and final confirmation on 2026-10-07. The owner list, connector project lookup and former URL verify removal/offline status. GitHub and local application data remain intact.
 
 ## Release levels
+
+The 2026-10-16 merged-main Linux/container checkpoint passed 479 tests, 17
+Chromium journeys, 4 offline evaluations, Docker build/container restart and
+persistence smoke, Compose and Caddy configuration validation. This closes the
+synthetic CI packaging gate, not live managed identity/provider quality,
+target-host HTTPS/operations, native-client or human pilot gates. No owner host
+was deployed. Historical verification records below retain their original scope.
 
 1. Build pack: documentation and contracts.
 2. Runnable local preview: durable capture and truthful extractive mode.

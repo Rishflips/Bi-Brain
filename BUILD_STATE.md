@@ -418,6 +418,76 @@ preserved for review. This documentation-only delivery record follows the fresh
 478-pass pre-commit run. No merge, production activation, deployment or paid
 provider call was performed.
 
+### Merged-main follow-up — controlled activation design started
+
+The owner merged PR #1; GitHub readback confirmed `main` merge commit
+**`5dd6ed0`**. The owner then requested **"proceed to next"** after the proposed
+controlled-provider activation sequence. A new local branch,
+`feat/managed-provider-activation`, starts from fetched `origin/main` at that
+merge commit in the existing isolated OpenCode worktree. The earlier feature
+branch and the separate Desktop checkout remain preserved; no reset, rebase or
+cleanup was performed.
+
+Merged-main CI run **38889855879** was still in progress at the initial check:
+Ubuntu dependency install/audit, typecheck, lint, tests, build and offline
+evaluations had succeeded; browser tests were running and container steps had
+not started. A background `gh run watch --exit-status` is awaiting its result.
+This is partial CI evidence, not a green Linux/container release claim.
+
+DeepSeek is drafting a Phase 2 shared server/worker activation design in
+`docs/superpowers/specs/2026-10-16-managed-provider-activation-design.md` for
+parent and human review. No implementation plan or production code has changed.
+The design must distinguish capability, user consent and per-call admission;
+preserve unknown-use/restore blocks; avoid invalidating a call's own audit or
+consent mid-dispatch; and prove the actual entry-point path with a synthetic
+provider before any separately authorized capped live smoke test. Production
+paid processing stays off; no deployment, provider call or external account is
+authorized by this design task.
+
+### Merged-main Linux/container CI — passed
+
+The CI watcher completed successfully. GitHub readback confirms
+[run 38889855879](https://github.com/Rishflips/Bi-Brain/actions/runs/38889855879)
+at **`5dd6ed0`** passed on the fresh Ubuntu runner. Logs show **479/479 tests,
+60 files, 72.09 seconds**, including the POSIX case skipped locally; **17/17
+Chromium journeys** in 43.8 seconds; and **4/4 offline evaluations**. Install,
+dependency audit, typecheck, lint and production build passed too.
+
+The same run passed Docker build and `scripts/container-smoke.mjs`: non-root
+startup, Git vault, owner authentication, worker preparation, retained
+session/source after container restart, origin denial and SQLite backup.
+Compose configuration and Caddy configuration validation passed. These are real
+Linux/container packaging results, not live hosted DNS/TLS, managed provider
+quality, target-host power-loss/graceful-shutdown or human-usability evidence.
+No CI repair was needed and no live service was deployed. This supersedes the
+initial pending-CI status above without changing its historical timing.
+
+Parent review of the Phase 2 draft requested corrections before human approval:
+separate worker bootstrap from readiness consumption; distinguish installed
+provider capability from momentary one-inflight admission; always permit consent
+withdrawal; and never describe a persistent environment flag as fresh per-boot
+approval or a rollback detector. SQL and marker-file writes must use explicit
+fail-closed mismatch handling rather than claim cross-store atomicity. Ordinary
+restart, supported restore disablement, exact slot-aware ongoing audit validation
+and readiness during long calls must have separate testable rules. The draft is
+being refined; no Phase 2 implementation is approved or started by this review.
+
+The [Phase 2 provider activation design](docs/superpowers/specs/2026-10-16-managed-provider-activation-design.md)
+is now written and parent-reviewed, **awaiting human approval**. Recommendation:
+one explicit operator profile and deployment opt-in, shared by server/worker;
+worker bootstrap independent of its readiness lease; fixed provider endpoint;
+financial audit at enrollment plus exact slot-aware send guards; consent always
+withdrawable; and immediate operator disablement. A supported restore disables
+activation and clears readiness; an ordinary restart can retain an explicitly
+enabled profile. A persistent opt-in is not a fresh boot challenge, and a raw
+whole-root clone is not detectable by this design. Parent review also clarified
+that unavailable work creates no new financial hold before actual admission and
+that enrollment binds provider configuration and financial audit evidence
+separately. No implementation plan, runtime change, owner-account activation or
+paid smoke test has begun. The green Linux/container CI evidence and corrected
+operator/release documentation are being checkpointed locally with this draft;
+no push or deployment is part of this design checkpoint.
+
 ## Independent deployment and ship audit — 2026-10-07
 
 The owner canceled ChatGPT Sites hosting. This supersedes the Sites migration plan below: no more Site publications, D1/R2 port or hybrid hosting work. The separate `sites-port/` probe checkout is preserved and ignored by parent Git/lint/Docker. On 2026-10-07 the owner explicitly requested and confirmed permanent deletion of the existing Bi Brain Site (`appgprj_6abc0b1d098c8191a74d673cec5862bc`). Deletion is verified: the owner Sites list shows “No sites yet,” `get_site` returns “Sites project not found,” and the former publication URL returns “404 Not found / No site here.” No new Site deployment occurred. Before deletion, `get_site` reported no linked automations. Local application data and official GitHub source are intact. Historical Sites evidence below is not the current deployment plan.

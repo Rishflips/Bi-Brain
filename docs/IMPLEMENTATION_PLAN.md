@@ -77,7 +77,7 @@ Gate: same authorized project knowledge is available in two clients; unrelated/p
 - [x] Backup/restore and migration recovery tested.
 - [x] Browser E2E suite, keyboard flows, responsive checks, error recovery.
 - [x] Owner settings, spending, worker status, export, and deletion accessible.
-- [ ] Clean-machine/reproducible setup verification. (Offline lockfile reinstall passed on this host; fresh machine and container unverified.)
+- [x] Clean Ubuntu CI install and container setup verification. (Merged-main run 38889855879 at `5dd6ed0`: `npm ci`, 479 tests, Docker build and non-root/container restart-persistence/auth/worker/backup smoke passed. Other target-host operations remain separate.)
 - [x] Run first-use pilot or mark human usability gate unverified.
 - [x] Document actual capabilities, limitations, screenshots, and license status.
 
