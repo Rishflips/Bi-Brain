@@ -402,6 +402,22 @@ the earlier isolated-account/OIDC/central-money checkpoint as well as Phase 1,
 not just the last safety changes. This authorizes source delivery, not merging,
 production activation or deployment. Production paid processing remains off.
 
+### Repository delivery completed — PR #1
+
+Phase 1 implementation was committed as **`b3f885b`** and the full
+`feat/managed-suite-foundation` branch was pushed to the private official
+repository using the authenticated `Rishflips` account. Remote readback confirmed
+the implementation commit. Pull request **[#1](https://github.com/Rishflips/Bi-Brain/pull/1)**
+is open against `main`, with the verification evidence, full-branch scope and
+remaining release/trust gates in its description. No PR template existed and no
+duplicate open branch PR was found.
+
+GitHub's `Verify release candidate` checks were **in progress** when the PR was
+created; no CI success is claimed here. The branch and OpenCode worktree are
+preserved for review. This documentation-only delivery record follows the fresh
+478-pass pre-commit run. No merge, production activation, deployment or paid
+provider call was performed.
+
 ## Independent deployment and ship audit — 2026-10-07
 
 The owner canceled ChatGPT Sites hosting. This supersedes the Sites migration plan below: no more Site publications, D1/R2 port or hybrid hosting work. The separate `sites-port/` probe checkout is preserved and ignored by parent Git/lint/Docker. On 2026-10-07 the owner explicitly requested and confirmed permanent deletion of the existing Bi Brain Site (`appgprj_6abc0b1d098c8191a74d673cec5862bc`). Deletion is verified: the owner Sites list shows “No sites yet,” `get_site` returns “Sites project not found,” and the former publication URL returns “404 Not found / No site here.” No new Site deployment occurred. Before deletion, `get_site` reported no linked automations. Local application data and official GitHub source are intact. Historical Sites evidence below is not the current deployment plan.
