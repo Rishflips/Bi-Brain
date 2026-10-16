@@ -185,6 +185,27 @@ architecture must receive human review before implementation. Current processing
 remains off. The design draft is separate from the verified implementation
 checkpoint and is not being included in that checkpoint commit.
 
+Repository checkpoint created: **`07c93e6`**, `feat(managed): checkpoint isolated
+accounts and spending controls` (104 files). It includes the locally verified
+implementation and earlier foundation work, not the next activation design.
+Fresh pre-commit typecheck/lint and staged whitespace checks passed. A staged
+common-token/private-key pattern check flagged only the intentional invalid
+`SYNTHETIC-TEST-ONLY` private-key fixture; the narrowly scoped rerun passed. This
+is not a full secret-history audit. Nothing was pushed. `git status` immediately
+after the commit showed only the new activation design draft as untracked.
+
+DeepSeek drafted the [managed activation design](docs/superpowers/specs/2026-10-16-managed-activation-design.md),
+then parent review narrowed unsafe marked-call refunds, clarified operator attestation
+versus provider verification, and separated ordinary one-shot settlement from offline
+operator reconciliation. Recommended next architecture: a durable service-wide
+one-inflight barrier over the existing committed dispatch marker. An unknown call
+pauses all managed paid admission across processes/restarts, while capture and
+extractive work continue. This throughput/recovery tradeoff **awaits human approval**.
+No implementation plan or production/test change has started. The draft explicitly
+does not prove full rollback detection, provider authenticity or actual worker
+quiescence; supported restore invalidation and acknowledged offline procedures are
+distinct from those guarantees. Phase 1 would keep production paid processing off.
+
 ## Independent deployment and ship audit — 2026-10-07
 
 The owner canceled ChatGPT Sites hosting. This supersedes the Sites migration plan below: no more Site publications, D1/R2 port or hybrid hosting work. The separate `sites-port/` probe checkout is preserved and ignored by parent Git/lint/Docker. On 2026-10-07 the owner explicitly requested and confirmed permanent deletion of the existing Bi Brain Site (`appgprj_6abc0b1d098c8191a74d673cec5862bc`). Deletion is verified: the owner Sites list shows “No sites yet,” `get_site` returns “Sites project not found,” and the former publication URL returns “404 Not found / No site here.” No new Site deployment occurred. Before deletion, `get_site` reported no linked automations. Local application data and official GitHub source are intact. Historical Sites evidence below is not the current deployment plan.
