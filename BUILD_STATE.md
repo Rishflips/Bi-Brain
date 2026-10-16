@@ -2,6 +2,144 @@
 
 Updated: 2026-10-16
 
+## Phase 2 accepted — final local synthetic checkpoint
+
+Parent ran the settled runtime implementation serially on Windows/Node 24.19.0:
+
+| Command | Actual result |
+| --- | --- |
+| `npm test -- --maxWorkers=1` | **579 passed, 2 skipped, 70 files**, 280.66 s after restart-assertion strengthening |
+| `npm run typecheck` | passed |
+| `npm run lint` | passed |
+| `npm run build` | passed |
+| `npm run test:e2e -- --workers=1 --output=test-results/final-phase2-parent` | **19/19 Chromium journeys** |
+| `npm run brain-eval` | **4/4 synthetic offline evaluations** |
+| `npm audit --audit-level=high` | zero vulnerabilities |
+| `git diff --check` | passed; line-ending warnings only |
+
+The two skips are Windows-inapplicable POSIX case-sensitivity/file-symlink checks in
+`managed-epoch.test.ts` and `worker-readiness.test.ts`; independent Windows
+junction/readiness-root checks passed. The two tracked reference screenshots
+were restored from pre-run copies. `package-lock.json` is unchanged.
+
+These results include default-off operation, one real-adapter synthetic dispatch
+settled at seven micro-USD, invalid/missing credential refusal, malformed-output
+known accounting, heartbeat beyond the initial TTL during I/O, real CLI disable
+with known-charge retention, and two-account unknown-usage/worker-restart
+coverage. The strengthened restart test explicitly checks a new ready worker
+identity, the original held central call id, retained tenant accounting, and
+failed subsequent paid attempts without new holds. The exact new extractive
+source is cited after the second account withdraws consent. Parent reran the
+entire suite after this test-only strengthening and reran typecheck/lint; no
+runtime/UI change followed the passing build and nineteen-journey browser run.
+
+**Phase 2 Tasks 1–3 are accepted locally.** The implementation is default-off:
+profile enrollment, deployment opt-in, valid worker installation/readiness,
+account policy, consent and fresh financial admission are independent checks.
+An unavailable intended paid attempt never becomes an extractive false-success;
+marked unknown usage remains held and known cost settles before discarded
+output. Supported restore disables activation and changes the epoch; raw
+database-plus-marker rollback remains undetectable and unsupported.
+
+The default-off implementation is not live activation: no real provider key,
+owner account activation, runtime paid call, hosted TLS, billing or native-client
+verification occurred. The current branch remains uncommitted/unpushed. New
+Linux CI/container verification requires separately authorized repository
+delivery; earlier merged-main CI is historical evidence, not this tree's result.
+Windows forced child termination proves restart persistence, not graceful
+target-host signal handling. Physical disk-full/power-loss resilience and human
+usability remain unverified. Synthetic temporary-directory cleanup can leave
+files behind when Windows retains a WAL lock; no deletion is falsely claimed.
+No background implementer remains active.
+
+### Repository delivery authorized
+
+The owner explicitly requested **"Push and create a Pull Request"** after the
+local acceptance checkpoint. This authorizes committing the Phase 2 work,
+pushing `feat/managed-provider-activation` to `Rishflips/Bi-Brain` and opening a
+PR against `main`; it does not authorize merging, live-provider activation or
+deployment. A final serial suite rerun is the pre-commit gate. Repository/PR
+delivery and fresh Linux CI status will be reported separately from local
+verification; no passing CI result is inferred in advance.
+
+## Resume history — superseded by the accepted checkpoint above
+
+The owner said: **"hang on at safe point will continue for later"**. No new
+implementation or verification runs are authorized until the owner continues.
+DeepSeek has been instructed to stop at the next safe file-write/test-cleanup
+boundary, preserve all changes and clean up any synthetic child processes.
+DeepSeek subsequently confirmed **PAUSED**, with no running commands or synthetic
+server/worker/heartbeat children of its own. No unrelated harness processes were
+killed. The implementation plan contains its paused handoff.
+
+Preserved branch: `feat/managed-provider-activation`; changes are uncommitted
+and unpushed. Last independently accepted checkpoint: Phase 2 Tasks 1/2,
+**545 passed, 1 POSIX-only skip, 66 files**, typecheck/lint/build passed.
+Task 3 is partially implemented and **not accepted or fully verified**: server,
+worker, runtime, consent contracts/UI and readiness files now have local edits.
+Do not apply earlier hard-off-entry-point claims to this partial Task 3 tree;
+activation is intended to remain default-off, but the current wiring still
+needs review. No owner activation, real credential, paid call, push or deployment
+was authorized or performed.
+
+On resume: read the executor's pause handoff and the implementation plan; inspect
+git status without discarding work; finish Task 3 real-process synthetic tests,
+independent consent/readiness review and the two new browser journeys, then run
+the settled combined verification. The browser journeys have not been run.
+
+Executor-reported partial Task 3 checks (not independent acceptance): typecheck
+and build passed; focused consent/readiness/activation/guard checks reported
+56 passed / 1 POSIX skip, and status/consent checks reported 13 passed. Lint
+reported `prefer-const` in the two new parent-owned consent review fixtures;
+that remains for the parent on explicit resume. The provider preload and
+real-process activation suite are not written, long-I/O heartbeat is unproven,
+and the full suite/browser gate has not run on the partial Task 3 tree.
+
+The owner subsequently said **"continue and pickup from exactly where we left"**.
+Execution is resumed at that precise Task 3 checkpoint; the pause prohibition
+above is historical, not the current instruction. DeepSeek is finishing the
+synthetic provider preload and real-process activation/heartbeat tests. Parent
+corrected the two fixture-only `prefer-const` declarations and owns independent
+runtime/consent/readiness, browser and settled full-suite verification. No scope
+expansion, real provider access, owner activation, commit, push or deployment is
+authorized by resuming.
+
+Resume checks: `npx eslint tests/integration/managed-consent-review.test.ts
+tests/e2e/managed-consent-review.spec.ts` passed after the fixture declarations
+were corrected. Parent then added a positive availability contract and ran it:
+**1 behavior RED, 6 deliberately filtered skips**. The response had capability,
+consent, configuration and headroom but still hard-coded `available:false`.
+DeepSeek is correcting status/UI truthfulness and verifying readiness-fenced
+production sends alongside the unfinished synthetic process tests. Task 3 is
+still unaccepted; no combined green claim applies to the current tree.
+
+The first new process test timed out before an extractive brief appeared.
+Parent independently reproduced the startup defect without any network call:
+`node --import tests/helpers/provider-preload.mjs -e ...` failed with
+`ERR_MODULE_NOT_FOUND` (Node treated `tests` as a package), while the `./tests/...`
+form loaded successfully. Consequently the initial zero-call missing/invalid-key
+cases were not valid safety evidence: their worker could exit before the test's
+assertion. DeepSeek is correcting preload resolution, requiring live worker/job
+outcome evidence and finishing the first actual known-charge dispatch proof.
+The incomplete process matrix remains unverified, not a passing checkpoint.
+
+Parent independently verified the first runtime integration slice after the
+preload repair: **44/44 tests in four suites passed**, including the actual
+default-off/known-charge process path, consent, readiness and send-guard review.
+`npm run test:e2e -- tests/e2e/managed-consent-review.spec.ts --workers=1
+--output=test-results/phase2-consent-parent` passed **2/2 Chromium journeys**.
+These prove stored-consent preservation/withdrawal and busy-versus-capability
+behavior through real HTTP/storage/built UI with synthetic-origin interception;
+they are not hosted TLS, live identity or real-provider quality proof.
+
+The remaining runtime process slice is assigned: beyond-TTL heartbeat during
+in-flight I/O, live disable with known-charge retention, two-account unknown
+usage plus worker restart/no-resend, and malformed-output known accounting.
+Parent also updated the older unavailable-spending browser copy assertion to
+the truthful deployment-specific wording, preserving its disabled-toggle,
+default-off metadata, refused-enable and no-model-name checks. Task 3 remains
+unaccepted until the remaining process and final combined checks pass.
+
 ## Managed suite execution — 2026-10-16 (in progress)
 
 The owner authorized active implementation with parent-agent orchestration/review/verification, GPT-6 Astra consultation and Ollama DeepSeek V4.1 Flash execution. The release target is now a browser-first managed personal suite with login and subscriptions plus a useful self-hosted open-source line. System 1 is a permanent capability with replaceable providers and rules-first policy, not an optional future feature or an obligatory inference on every action. This supersedes earlier local-only/deferred-managed/optional-System1 product direction; historical verification below remains historical.
@@ -26,7 +164,7 @@ Commands actually run on Windows with Node **v24.19.0**, npm **11.17.0**:
 
 ### Current gates
 
-Baseline G0, the local G1/G2 managed foundation, prepared-call accounting/recovery, central managed spending authority and Phase 1 activation safeguards are verified; see the latest checkpoint for **478 tests passed, 1 POSIX-only skip, 17 Chromium journeys and 4 offline evaluations**. Central limits, durable one-inflight admission, guarded operator reconciliation, bounded all-account history audits and restore epoch rotation are implemented locally. Production managed paid processing remains unconditionally off: Phase 2 activation requires separate approval and live-provider/operational gates remain open. System One transport is locally verified but not routed into processing. Semantic quality, native integrations, billing, live hosting and human release gates remain open. Only disposable synthetic identities were provisioned; no real external account was created, no runtime model was called, no public service was deployed and no source was pushed by this checkpoint. Open-source licensing remains an owner release decision.
+Baseline G0, local G1/G2, prepared-call accounting/recovery, central money authority, Phase 1 safeguards and Phase 2's default-off activation path are locally verified. Final Phase 2 parent evidence: **579 tests passed, 2 POSIX-only skips, 70 files; 19 Chromium journeys; 4 offline evaluations; typecheck/lint/build and zero-vulnerability audit passed**. The real server/worker process proofs use injected synthetic Responses transport, not a live model. No owner account or real provider is activated. System One transport is locally verified but not routed into processing. Semantic quality, native integrations, billing, live hosting and human release gates remain open. Only disposable synthetic identities were provisioned; no real external account was created, no runtime model was called and no public service was deployed. Phase 2 remains uncommitted/unpushed; the preceding foundation and Phase 1 were merged to main. Open-source licensing remains an owner release decision.
 
 ### Foundation review loop and restart checkpoint
 
@@ -417,6 +555,241 @@ created; no CI success is claimed here. The branch and OpenCode worktree are
 preserved for review. This documentation-only delivery record follows the fresh
 478-pass pre-commit run. No merge, production activation, deployment or paid
 provider call was performed.
+
+### Merged-main follow-up — controlled activation design started
+
+The owner merged PR #1; GitHub readback confirmed `main` merge commit
+**`5dd6ed0`**. The owner then requested **"proceed to next"** after the proposed
+controlled-provider activation sequence. A new local branch,
+`feat/managed-provider-activation`, starts from fetched `origin/main` at that
+merge commit in the existing isolated OpenCode worktree. The earlier feature
+branch and the separate Desktop checkout remain preserved; no reset, rebase or
+cleanup was performed.
+
+Merged-main CI run **38889855879** was still in progress at the initial check:
+Ubuntu dependency install/audit, typecheck, lint, tests, build and offline
+evaluations had succeeded; browser tests were running and container steps had
+not started. A background `gh run watch --exit-status` is awaiting its result.
+This is partial CI evidence, not a green Linux/container release claim.
+
+DeepSeek is drafting a Phase 2 shared server/worker activation design in
+`docs/superpowers/specs/2026-10-16-managed-provider-activation-design.md` for
+parent and human review. No implementation plan or production code has changed.
+The design must distinguish capability, user consent and per-call admission;
+preserve unknown-use/restore blocks; avoid invalidating a call's own audit or
+consent mid-dispatch; and prove the actual entry-point path with a synthetic
+provider before any separately authorized capped live smoke test. Production
+paid processing stays off; no deployment, provider call or external account is
+authorized by this design task.
+
+### Merged-main Linux/container CI — passed
+
+The CI watcher completed successfully. GitHub readback confirms
+[run 38889855879](https://github.com/Rishflips/Bi-Brain/actions/runs/38889855879)
+at **`5dd6ed0`** passed on the fresh Ubuntu runner. Logs show **479/479 tests,
+60 files, 72.09 seconds**, including the POSIX case skipped locally; **17/17
+Chromium journeys** in 43.8 seconds; and **4/4 offline evaluations**. Install,
+dependency audit, typecheck, lint and production build passed too.
+
+The same run passed Docker build and `scripts/container-smoke.mjs`: non-root
+startup, Git vault, owner authentication, worker preparation, retained
+session/source after container restart, origin denial and SQLite backup.
+Compose configuration and Caddy configuration validation passed. These are real
+Linux/container packaging results, not live hosted DNS/TLS, managed provider
+quality, target-host power-loss/graceful-shutdown or human-usability evidence.
+No CI repair was needed and no live service was deployed. This supersedes the
+initial pending-CI status above without changing its historical timing.
+
+Parent review of the Phase 2 draft requested corrections before human approval:
+separate worker bootstrap from readiness consumption; distinguish installed
+provider capability from momentary one-inflight admission; always permit consent
+withdrawal; and never describe a persistent environment flag as fresh per-boot
+approval or a rollback detector. SQL and marker-file writes must use explicit
+fail-closed mismatch handling rather than claim cross-store atomicity. Ordinary
+restart, supported restore disablement, exact slot-aware ongoing audit validation
+and readiness during long calls must have separate testable rules. The draft is
+being refined; no Phase 2 implementation is approved or started by this review.
+
+The [Phase 2 provider activation design](docs/superpowers/specs/2026-10-16-managed-provider-activation-design.md)
+is now written and parent-reviewed, **awaiting human approval**. Recommendation:
+one explicit operator profile and deployment opt-in, shared by server/worker;
+worker bootstrap independent of its readiness lease; fixed provider endpoint;
+financial audit at enrollment plus exact slot-aware send guards; consent always
+withdrawable; and immediate operator disablement. A supported restore disables
+activation and clears readiness; an ordinary restart can retain an explicitly
+enabled profile. A persistent opt-in is not a fresh boot challenge, and a raw
+whole-root clone is not detectable by this design. Parent review also clarified
+that unavailable work creates no new financial hold before actual admission and
+that enrollment binds provider configuration and financial audit evidence
+separately. No implementation plan, runtime change, owner-account activation or
+paid smoke test has begun. The green Linux/container CI evidence and corrected
+operator/release documentation are being checkpointed locally with this draft;
+no push or deployment is part of this design checkpoint.
+
+The owner subsequently **approved** the written Phase 2 design. Implementation
+planning is authorized on `feat/managed-provider-activation`, starting from local
+design checkpoint `5b63e19` and merged-main `5dd6ed0`. DeepSeek will execute
+reviewed vertical slices; parent owns independent verification. Existing owner
+accounts remain inactive, only synthetic provider transport may be used during
+verification, and no real key, paid call, push or deployment is authorized.
+
+Planning review is checking two integration hazards explicitly: prepared-call
+`config_hash` and activation `config_digest` have distinct canonical inputs and
+must not be compared as if identical; and stored consent must remain revocable
+without being silently rewritten by an effective disabled preference response
+or an unrelated settings save. Fresh branch `npm run typecheck` and
+`npm run lint` passed before any Phase 2 source edits. The runtime entry points
+still enforce the Phase 1 default-off boundary while planning proceeds.
+
+Parent added `managed-activation-profile-review.test.ts` from the approved pure
+profile contract before implementation. Its first run is **RED at module import**
+because `packages/domain/managed-activation.ts` does not exist yet (zero test
+bodies executed); this is not a claim that nine behavior assertions failed.
+The tests require recomputed, distinct provider-config/enrollment digests and
+reject unbound price edits, secrets, arbitrary endpoints and invalid numerical
+limits. The plan executor must preserve this parent-owned suite.
+
+The Phase 2 implementation plan is written and parent-reviewed. **Task 1 only**
+is assigned: closed profile validation, schema 3, exact SQL/mirror persistence,
+read-only policy loading, offline activation CLI and supported-restore
+disablement. Server/worker entry points remain hard-off in this task. Parent
+review corrected a collision with the existing `managed-activation.test.ts`,
+required fresh final-version fingerprints and exact audit digest binding,
+removed caller-supplied profile overrides from authority, and separated future
+worker credentials/readiness from server policy checks. Task 2 send guards and
+Task 3 runtime/UI integration are not handed off. The parent's future-schema
+audit fixture now uses version 4 so it remains newer than the planned schema 3;
+its stale-schema assertion is unchanged.
+
+Parent added `managed-activation-policy-review.test.ts` before Task 1
+implementation. Its first run failed at the missing storage-module import
+(zero test bodies executed). The six independent contracts cover opt-in-only
+denial, exact offline enrollment/CAS, current configuration and mirror tampering,
+historical caller-profile override after disablement, mirror publication failure
+and cold restore forcing activation off while excluding ephemeral readiness.
+These are pending implementation checks, not passing behavior claims.
+
+Task 1 executor delivered schema 3, pure profiles, matched SQL/mirror storage,
+read-only policy loading, activation CLI and restore disablement without changing
+runtime paid wiring. Parent independently ran six suites: **43/43 passed**. Its
+expanded policy review then reproduced **3 failures in 9 cases**: enrollment
+accepted unknown legacy history added after a clean audit, the row reader
+silently substituted schema 1 for an unsupported stored schema, and disabling
+an absent profile recursively deleted an unrecognized marker directory. DeepSeek
+is repairing all three plus the final-lock enrollment freshness check and
+content-free CLI failures. Task 1 is not yet accepted; Tasks 2/3 are unassigned.
+
+A tenth independent policy case reproduced the enrollment freshness race using
+a second real SQLite connection: account policy changed between validation and
+the final write-lock acquisition, but the enabled profile still committed.
+The expanded review run observed **4 RED / 6 GREEN**. The executor is now
+repairing this with an in-transaction authoritative recheck rather than relying
+on the offline acknowledgement to stand in for freshness.
+
+### Phase 2 Task 1 — independently accepted (local, synthetic only)
+
+DeepSeek repaired all four review failures. Enrollment now performs the full
+bounded terminal audit before taking the write lock, then rechecks the exact
+epoch/root marker, schema, chosen audit digest and central configuration/history
+inventory under that lock. Stored profile schema is validated as stored; unknown
+marker directories are left intact. SQL commits before mirror publication and
+any mismatch still denies capability.
+
+Parent actually ran, serially:
+
+- The six focused activation/audit review suites: **52/52 passed**.
+- `npm test -- --maxWorkers=1`: **520 passed, 1 POSIX-only skip, 64 files**, 210.43 s.
+- `npm run typecheck`, `npm run lint`, `npm run build`: passed.
+
+Task 1 is accepted as the local policy/persistence/operator/recovery foundation,
+not production activation. No server, worker, provider or UI paid entry point
+changed. The cheap enrollment-baseline loader does not yet prove ongoing tenant
+mapping; the next send-guard slice must supply that proof. Task 2 is being
+expanded from planning notes into concrete TDD steps for parent review before
+implementation. Task 3 is not assigned. Browser and live-provider verification
+are not claimed by this Task 1 checkpoint; no real key, owner activation, paid
+call, commit, push or deployment occurred.
+
+### Phase 2 Task 2 — guarded dispatch in progress
+
+Parent approved the refined Task 2 plan after requiring exact private attempt
+IDs (null is never a wildcard), phase-specific nonterminal tolerance, a final
+pre-I/O activation check, frozen-profile comparison, compared double scans and
+both central/tenant baseline digests. Cycle-free read-only activation state is
+shared by the money transaction and runtime helpers; no tenant scan may run in
+the money transaction. Production main entry points remain hard-off.
+
+Parent migrated its existing positive ambiguity review to real synthetic
+enrollment and a real prepared identity with a dummy credential and denied
+network transport; the unchanged six behavior assertions passed before Task 2.
+Its new seven-case `managed-activation-guard-review.test.ts` covers missing
+profiles, sequential known calls, cross-account legacy history, forged model
+identity, post-mark mirror loss, disable during I/O, and tenant-only baseline
+edits. Initial runs exposed planned guard gaps; runs while implementation is
+changing are not a settled pass/fail checkpoint. DeepSeek is implementing Task 2
+only; parent owns review fixtures and the final rerun. Task 3 remains unassigned.
+
+The Task 2 executor delivered and parent independently reran seven suites:
+**51/51 passed**. Further code review produced four additional **behavior REDs**
+in the expanded eleven-case independent guard suite (**4 failed / 7 passed**):
+an already-expired job lease still created a central hold; expiry inside the
+tenant dispatch mark still permitted I/O; a fresh coordinator could mark an
+older coordinator's reserved call by knowing its id; and a changed schema shape
+was accepted while its integer version stayed 3. DeepSeek is repairing actual
+lease checks before admission/after marking, original private attempt ownership,
+and enrollment schema-shape binding. Parent also requires strict complete
+account/spec/phase matching inside the money transaction. Task 2 is not accepted;
+entry-point paid processing remains off and Task 3 is not assigned.
+
+After those repairs, parent independently reran seven suites: **55/55 passed**.
+Final reservation-boundary checks found two remaining omissions: the reserve
+transaction matched scope/config but not every immutable identity field, and the
+coordinator could insert a hold for job B before rejecting a lease for job A.
+The expanded independent suite observed **6 RED / 11 GREEN** (five identity-field
+substitutions plus the cross-job lease). DeepSeek is closing these two narrow
+checks before a settled full-suite gate; prior repairs remain green.
+
+### Phase 2 Task 2 — independently accepted (local, synthetic only)
+
+DeepSeek closed full reservation identity matching and lease-to-job binding.
+The send path now binds the frozen installed profile, exact per-coordinator
+attempt IDs/spec/original lease owner/fence, current tenant lease and audited
+schema shape. The money transaction rechecks the complete guard against live
+SQL/mirror/root epoch and central inventory without opening tenant databases.
+The final pre-I/O check retains marked holds on refusal; known settlement happens
+before a changed activation policy can discard output.
+
+Parent actually ran `npm test -- --maxWorkers=1`: **545 passed, 1 POSIX-only skip,
+66 files**, 222.53 s; `npm run typecheck`, `npm run lint`, `npm run build` passed.
+This includes the expanded seventeen-case independent guard suite and preceding
+accounting, ambiguity, audit, recovery and local behavior. Task 2 is accepted.
+Server/worker main entry points remain hard-off; there is no live-provider or
+public-host proof. Task 3 runtime/readiness/consent planning is now assigned for
+parent review before code. No real credential, paid call, owner activation,
+commit, push or deployment occurred.
+
+### Phase 2 Task 3 — runtime integration in progress
+
+Parent approved the concrete runtime/readiness/consent plan with corrections:
+normal future lease expiry remains valid within the 15-second TTL; the shared
+runtime derives capability from the current profile plus an exact fresh worker
+lease; no-ready bootstrap uses an explicit unavailable provider; omitted consent
+keeps the raw stored value even during a durable block. Durable-block re-enable
+denial is preserved, while explicit withdrawal is always allowed for an active
+authorized account. Worker installation is frozen per boot; heartbeat and
+shutdown are independent of provider completion. Only synthetic transport may
+be used; real owner activation and paid verification are not authorized.
+
+Parent added seventeen independent readiness contracts. Their first run observed
+**16 GREEN / 1 behavior RED**: readiness reading followed a managed-root junction.
+DeepSeek is repairing reader/writer/cleanup containment. Six new independent HTTP
+consent cases were written; an intermediate run during source edits encountered
+the not-yet-exported runtime capability helper and is not a settled behavior
+checkpoint. Two new browser consent journeys are written but **not yet run**.
+They exercise actual SQLite/HTTP/built UI using synthetic-origin interception
+and explicitly synthetic liveness records, not real worker or hosted TLS proof.
+The executor owns actual server/worker subprocess verification with injected
+synthetic provider transport; parent owns the final browser/full-suite gates.
 
 ## Independent deployment and ship audit — 2026-10-07
 

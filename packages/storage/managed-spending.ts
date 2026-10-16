@@ -1,12 +1,21 @@
 import { randomUUID } from "node:crypto";
 import type { DatabaseSync } from "node:sqlite";
+import { dirname, resolve } from "node:path";
 import { ControlStore } from "./control.ts";
 import { BrainError } from "../domain/logic.ts";
+import type { ActivationGuard } from "../domain/managed-activation.ts";
+import { validateActivationGuard } from "../domain/managed-activation.ts";
+import {
+  centralSchemaDigest,
+  managedControlSchemaVersion,
+  readGuardSnapshot,
+} from "./managed-activation-state.ts";
 import { accountingDay, checkedSum, safeAdd, validateActualMicroUsd } from "../domain/spend.ts";
 import {
   MANAGED_SERVICE_ID,
   managedContentHash,
   managedIdentityHash,
+  managedMoneySchemaVersion,
   utcDay,
   validateAccountPolicyInput,
   validateAllowancePeriodInput,
@@ -39,7 +48,7 @@ import {
  * The per-tenant `DispatchLedger` is retained unchanged as a conservative
  * journal/projection; it is never an independent authority for managed money.
  */
-export const managedMoneySchemaVersion = 2;
+export { managedMoneySchemaVersion } from "../domain/managed-spend.ts";
 
 const SERVICE: ManagedServiceId = MANAGED_SERVICE_ID;
 
@@ -153,6 +162,16 @@ CREATE TABLE IF NOT EXISTS managed_audit_rows(
   account_id TEXT NOT NULL, call_id TEXT NOT NULL,
   central_digest TEXT NOT NULL, tenant_digest TEXT NOT NULL,
   PRIMARY KEY(audit_id, account_id, call_id));
+CREATE TABLE IF NOT EXISTS managed_activation(
+  singleton INTEGER PRIMARY KEY CHECK(singleton=1),
+  schema INTEGER NOT NULL, version INTEGER NOT NULL, enabled INTEGER NOT NULL CHECK(enabled IN (0,1)),
+  provider TEXT NOT NULL, model TEXT NOT NULL, price_version TEXT NOT NULL,
+  input_micro_usd_per_million INTEGER NOT NULL CHECK(input_micro_usd_per_million>=0),
+  output_micro_usd_per_million INTEGER NOT NULL CHECK(output_micro_usd_per_million>=0),
+  accepted_response_models TEXT NOT NULL, max_output_tokens INTEGER NOT NULL,
+  endpoint_class TEXT NOT NULL CHECK(endpoint_class='openai_responses'),
+  config_digest TEXT NOT NULL, audit_digest TEXT NOT NULL, audit_id TEXT NOT NULL, epoch INTEGER NOT NULL,
+  root_nonce TEXT NOT NULL, fingerprint TEXT NOT NULL, updated_at TEXT NOT NULL);
 `;
 
 const budget = (message: string) =>
@@ -211,6 +230,113 @@ export class ManagedSpendingStore {
       throw new AccountingPersistenceError(
         "Managed spending is paused until an operator reconciles a failed safety marker.",
       );
+  }
+
+  /**
+   * Narrow internal activation seam. When a guard is present, the immutable
+   * frozen-policy binding plus the current SQL profile, mirror, root marker, epoch,
+   * whole-audit digest and central-inventory digest are re-read under the acquired
+   * write lock and required to match BEFORE any money mutation. It opens no tenant
+   * database and no nested writer. A missing guard keeps the low-level compatibility
+   * behaviour (not a production entry point).
+   */
+  private assertActivationSeam(
+    guard: ActivationGuard | undefined,
+    spec?: {
+      account_id?: string;
+      job_id: string;
+      dispatch_key: string;
+      stage: string;
+      reserved_micro_usd: number;
+      provider: string;
+      model: string;
+      price_version: string;
+      request_hash: string;
+      config_hash: string;
+    },
+    callId?: string,
+  ): void {
+    if (!guard) return;
+    const deny = () =>
+      new BrainError(
+        "BUDGET_BLOCKED",
+        "Managed paid processing is not enabled for this call.",
+        409,
+      );
+    // Strict shape and phase/ids relation. A malformed or widened guard denies.
+    const valid = validateActivationGuard(guard);
+    if (valid.stage !== "reasoning") throw deny();
+    // The frozen guard's two hashes must agree (the preflight derives the expected
+    // hash from the installed profile; a forged config_hash cannot be accepted).
+    if (valid.config_hash !== valid.expected_prepared_config_hash) throw deny();
+    if (this.control.path === ":memory:") throw deny();
+    const isReserve = callId === undefined;
+    if (isReserve) {
+      if (valid.phase !== "before_reserve") throw deny();
+      if (valid.central_call_id !== null || valid.tenant_call_id !== null) throw deny();
+    } else {
+      if (valid.phase !== "before_mark") throw deny();
+      if (valid.central_call_id === null || valid.tenant_call_id === null) throw deny();
+    }
+    // Fresh expiry check under the acquired lock: the snapshot bound at preflight
+    // must still be in the future for THIS transaction's clock.
+    if (!(Date.parse(valid.lease_expires_at) > this.clock().getTime())) throw deny();
+    const root = dirname(resolve(this.control.path));
+    const snapshot = readGuardSnapshot({ db: this.db, path: this.control.path }, root);
+    if (snapshot.state !== "active") throw deny();
+    const live = snapshot.profile;
+    const profileOk =
+      live.enabled &&
+      live.version === valid.profile_version &&
+      live.fingerprint === valid.fingerprint &&
+      live.config_digest === valid.config_digest &&
+      live.epoch === valid.epoch &&
+      live.root_nonce === valid.root_nonce &&
+      live.audit_id === valid.audit_id;
+    const epochOk =
+      snapshot.epoch.epoch === valid.epoch && snapshot.epoch.nonce === valid.root_nonce;
+    const schemaOk =
+      managedControlSchemaVersion(this.db) === valid.schema_version &&
+      centralSchemaDigest(this.db) === valid.schema_digest;
+    const auditOk = snapshot.audit_digest === valid.audit_digest;
+    const inventoryOk = snapshot.central_inventory_digest === valid.central_inventory_digest;
+    let bindingOk = false;
+    if (isReserve && spec) {
+      bindingOk =
+        spec.account_id === valid.account_id &&
+        spec.job_id === valid.job_id &&
+        spec.dispatch_key === valid.dispatch_key &&
+        spec.stage === valid.stage &&
+        spec.reserved_micro_usd === valid.reserved_micro_usd &&
+        spec.provider === valid.provider &&
+        spec.model === valid.model &&
+        spec.price_version === valid.price_version &&
+        spec.request_hash === valid.request_hash &&
+        spec.config_hash === valid.config_hash &&
+        spec.config_hash === valid.expected_prepared_config_hash;
+      // Never adopt a pre-existing stranded slot hold for a fresh attempt.
+      if (bindingOk && spec.account_id && this.slotRow(spec.account_id, spec.job_id, spec.dispatch_key))
+        throw deny();
+    } else if (!isReserve) {
+      const row = this.reservationRow(callId!);
+      bindingOk =
+        !!row &&
+        row.state === "reserved" &&
+        row.account_id === valid.account_id &&
+        row.job_id === valid.job_id &&
+        row.dispatch_key === valid.dispatch_key &&
+        row.stage === valid.stage &&
+        row.provider === valid.provider &&
+        row.model === valid.model &&
+        row.price_version === valid.price_version &&
+        row.request_hash === valid.request_hash &&
+        row.config_hash === valid.config_hash &&
+        Number(row.reserved_micro_usd) === valid.reserved_micro_usd &&
+        row.call_id === valid.central_call_id &&
+        row.projection_call_id === valid.tenant_call_id;
+    }
+    if (!(profileOk && epochOk && schemaOk && auditOk && inventoryOk && bindingOk))
+      throw deny();
   }
 
   private inOwnedTx = false;
@@ -361,10 +487,11 @@ export class ManagedSpendingStore {
 
   // ---------------------------------------------------------------- lifecycle
 
-  reserve(spec: ManagedDispatchSpec): ManagedReservation {
+  reserve(spec: ManagedDispatchSpec, guard?: ActivationGuard): ManagedReservation {
     this.assertNotPaused();
     const valid = validateManagedDispatchSpec(spec);
     return this.tx(() => {
+      this.assertActivationSeam(guard, valid);
       const now = this.clock();
       const content = managedContentHash(valid);
       // Duplicate lookup happens before any day recomputation, so the same slot
@@ -523,10 +650,15 @@ export class ManagedSpendingStore {
    * A pre-existing dispatched/settled/released row is never treated as success:
    * only a fresh CAS is permission for the caller to execute.
    */
-  mark(callId: string, currentLimits: ManagedLimits): ManagedReservation {
+  mark(
+    callId: string,
+    currentLimits: ManagedLimits,
+    guard?: ActivationGuard,
+  ): ManagedReservation {
     this.assertNotPaused();
     const limits = validateManagedLimits(currentLimits);
     return this.tx(() => {
+      this.assertActivationSeam(guard, undefined, callId);
       const now = this.clock();
       const row = this.reservationRow(callId);
       if (!row)

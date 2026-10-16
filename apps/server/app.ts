@@ -11,10 +11,7 @@ import { BrainError, hash } from "../../packages/domain/logic.ts";
 import { Storage } from "../../packages/storage/index.ts";
 import type { Principal } from "../../packages/contracts/index.ts";
 import type { ManagedRuntime } from "../../packages/runtime/managed.ts";
-import {
-  managedPaidAvailable,
-  managedPaidNotEnabledMessage,
-} from "./startup-gates.ts";
+import { managedPaidReason } from "./startup-gates.ts";
 import {
   OIDC_CORRELATION_TTL_MS,
   type ManagedLogin,
@@ -88,6 +85,12 @@ export async function createApp(
      * protocol configuration, never from a browser-supplied value.
      */
     oidcCallbackPath?: string;
+    /**
+     * Trusted, closed capability accessor (operator policy + fresh worker lease)
+     * bound to the managed root/control and the deployment opt-in. It returns a
+     * boolean + static reason only. Absent => false.
+     */
+    capability?: () => { available: boolean; reason: string };
   } = {},
 ) {
   const managed = options.managed;
@@ -342,17 +345,24 @@ export async function createApp(
   // Public, identity-free runtime metadata. It tells the browser whether this
   // deployment is local or managed and whether a real sign-in link exists, so
   // the UI never shows a pairing form that cannot work or a button that lies.
-  app.get("/api/v1/runtime", () => ({
-    mode: managed ? "managed" : "local",
-    sign_in_url: managed && login ? LOGIN_PATH : null,
-    sign_in_available: managed ? !!login : false,
-    pairing_available: !managed,
-    // Managed paid processing is not enabled in this batch. This stays false
-    // even with a positive operator policy and BRAIN_MANAGED_ALLOW_PAID=1, so
-    // the browser can never show a working button while the worker denies.
-    connected_processing_available: managedPaidAvailable,
-    managed_paid_reason: managed ? managedPaidNotEnabledMessage : null,
-  }));
+  app.get("/api/v1/runtime", () => {
+    const cap = options.capability?.() ?? { available: false, reason: "off" };
+    return {
+      mode: managed ? "managed" : "local",
+      sign_in_url: managed && login ? LOGIN_PATH : null,
+      sign_in_available: managed ? !!login : false,
+      pairing_available: !managed,
+      // One global truth: whether this deployment could run a real provider
+      // (operator policy configured AND a fresh worker lease), never a per-account
+      // or admission claim. It stays true while a call is busy (usage_pending).
+      connected_processing_available: managed ? cap.available : false,
+      managed_paid_reason: managed
+        ? cap.available
+          ? null
+          : managedPaidReason(cap.reason)
+        : null,
+    };
+  });
   app.get("/api/v1/health/ready", (req) => ({
     storage: req.brain.store.get("PRAGMA integrity_check"),
     ...req.brain.status(req.principal),
@@ -675,21 +685,24 @@ export async function createApp(
     req.brain.prefs(req.principal),
   );
   app.patch("/api/v1/preferences/background", (req) => {
-    // Managed accounts cannot switch on globally configured paid keys merely by
-    // editing preferences. Fair per-dispatch/aggregate accounting is a separate,
-    // unimplemented gate, so an explicit paid switch fails closed here while
-    // capture and extractive preparation stay available.
-    if (
-      managed &&
-      req.body !== null &&
-      typeof req.body === "object" &&
-      (req.body as { provider_enabled?: unknown }).provider_enabled === true
-    )
-      throw new BrainError(
-        "PROVIDER_UNAVAILABLE",
-        "Connected model processing is not available on managed hosting yet. Your saved work stays available and extractive.",
-        503,
-      );
+    // A managed account cannot switch paid processing on unless this deployment's
+    // operator policy is configured and a fresh worker lease exists. An explicit
+    // OFF is always accepted; a durable accounting block is refused by the domain
+    // (409). Capability never depends on this request.
+    if (managed) {
+      const cap = options.capability?.() ?? { available: false, reason: "off" };
+      if (
+        req.body !== null &&
+        typeof req.body === "object" &&
+        (req.body as { provider_enabled?: unknown }).provider_enabled === true &&
+        !cap.available
+      )
+        throw new BrainError(
+          "PROVIDER_UNAVAILABLE",
+          "Connected model processing is not enabled for this deployment yet. Your saved work stays extractive.",
+          503,
+        );
+    }
     return req.brain.prefs(req.principal, req.body);
   });
   app.get("/api/v1/connections", (req) =>

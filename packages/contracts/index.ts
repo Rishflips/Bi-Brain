@@ -62,6 +62,16 @@ export const preferencesSchema = z
 export type Evidence = z.infer<typeof evidenceSchema>;
 export type Item = z.infer<typeof itemSchema>;
 export type Preferences = z.infer<typeof preferencesSchema>;
+
+/**
+ * Managed write schema: identical to the full preferences schema EXCEPT
+ * `provider_enabled` is optional. A client that omits it preserves the RAW stored
+ * consent (the effective getter is never used to rewrite it); only an explicit
+ * value is treated as a consent change.
+ */
+export const managedPreferencesPatchSchema = preferencesSchema.partial({
+  provider_enabled: true,
+});
 export type Source = {
   id: string;
   project_id: string;

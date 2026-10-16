@@ -187,7 +187,7 @@ it("preserves identity and session rows across a newer-schema refusal", () => {
     const session = control.issueSession(account.id);
     new ManagedSpendingStore(control, clock);
     control.db.exec(
-      "INSERT INTO managed_money_schema(version,applied_at) VALUES(3,'2026-10-16T00:00:00Z')",
+      "INSERT INTO managed_money_schema(version,applied_at) VALUES(4,'2026-10-16T00:00:00Z')",
     );
     expect(() => new ManagedSpendingStore(control, clock)).toThrow("newer version");
     expect(control.account(account.id)?.id).toBe(account.id);

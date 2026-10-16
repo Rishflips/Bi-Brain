@@ -209,6 +209,7 @@ function App() {
     [snooze, setSnooze] = useState(""),
     [confirmation, setConfirmation] = useState("");
   const preferencesDirty = useRef(false);
+  const [consentOverride, setConsentOverride] = useState<boolean | null>(null);
   const [comparison, setComparison] = useState<{
     receipt: Entity;
     goal: Entity;
@@ -349,6 +350,7 @@ function App() {
     setClaimQuote("");
     setBusy(false);
     preferencesDirty.current = false;
+    setConsentOverride(null);
   }, []);
   /**
    * Central invalidation: advance the generation (fencing every in-flight
@@ -1560,9 +1562,18 @@ function App() {
                     onSubmit={(e) => {
                       e.preventDefault();
                       void act(async () => {
+                        const body: Record<string, unknown> = { ...prefs };
+                        if (runtime?.mode === "managed") {
+                          // Send the consent field ONLY when the user explicitly
+                          // toggled it; otherwise omit it so the raw stored value is
+                          // preserved (never rewrite from the effective getter).
+                          if (consentOverride === null) delete body.provider_enabled;
+                          else body.provider_enabled = consentOverride;
+                        }
                         setPrefs(
-                          await api("/preferences/background", prefs, "PATCH"),
+                          await api("/preferences/background", body, "PATCH"),
                         );
+                        setConsentOverride(null);
                         preferencesDirty.current = false;
                         setNotice("Background preferences saved.");
                       });
@@ -1687,26 +1698,60 @@ function App() {
                     <label>
                       <input
                         type="checkbox"
-                        checked={prefs.provider_enabled}
+                        checked={
+                          runtime?.mode === "managed"
+                            ? (consentOverride ??
+                              today.status.spend?.stored_consent_active ??
+                              false)
+                            : prefs.provider_enabled
+                        }
                         disabled={
-                          runtime?.mode === "managed" ||
-                          today.status.spend?.blocked
+                          runtime?.mode === "managed"
+                            ? !(
+                                consentOverride ??
+                                today.status.spend?.stored_consent_active ??
+                                false
+                              ) &&
+                              !(
+                                today.status.spend?.capability_ready &&
+                                today.status.spend?.configured &&
+                                ![
+                                  "overrun",
+                                  "restored_backup",
+                                  "reconciliation_required",
+                                  "disputed_usage",
+                                ].includes(
+                                  today.status.spend?.blocked_reason ?? "",
+                                )
+                              )
+                            : today.status.spend?.blocked
                         }
-                        onChange={(e) =>
-                          setPrefs({
-                            ...prefs,
-                            provider_enabled: e.target.checked,
-                          })
-                        }
+                        onChange={(e) => {
+                          if (runtime?.mode === "managed") {
+                            setConsentOverride(e.target.checked);
+                            preferencesDirty.current = true;
+                          } else {
+                            setPrefs({
+                              ...prefs,
+                              provider_enabled: e.target.checked,
+                            });
+                          }
+                        }}
                       />{" "}
                       I authorize selected text to be processed by OpenAI within
                       these caps
                     </label>
                     {runtime?.mode === "managed" ? (
                       <p className="muted" role="status">
-                        Connected model processing is not available on managed
-                        hosting yet. Your saved work stays extractive and inside
-                        your account.
+                        {today.status.spend?.consent_effective
+                          ? today.status.spend?.paused
+                            ? "Connected model processing is temporarily awaiting usage accounting. Your saved work stays available."
+                            : "Connected model processing is ready for this deployment."
+                          : today.status.spend?.stored_consent_active
+                            ? "Your authorization is saved. Connected model processing is not available right now; saved work stays extractive."
+                            : today.status.spend?.capability_ready
+                              ? "Connected model processing is ready; authorize selected text below within your caps."
+                              : "Connected model processing is not available for this deployment. Your saved work stays extractive."}
                       </p>
                     ) : null}
                     <div className="actions">
@@ -1716,10 +1761,17 @@ function App() {
                     </div>
                   </form>
                   <p className="muted">
-                    Provider key{" "}
-                    {today.status.provider_configured
-                      ? "configured"
-                      : "not configured"}{" "}
+                    {runtime?.mode === "managed"
+                      ? `Connected processing ${
+                          today.status.spend?.capability_ready
+                            ? "ready"
+                            : "unavailable"
+                        }`
+                      : `Provider key ${
+                          today.status.provider_configured
+                            ? "configured"
+                            : "not configured"
+                        }`}{" "}
                     · settled {formatUsd(today.status.spend?.settled_micro_usd ?? 0)}{" "}
                     · unresolved (usage unknown){" "}
                     {formatUsd(today.status.spend?.unresolved_micro_usd ?? 0)}
@@ -1731,9 +1783,11 @@ function App() {
                     <p className="muted" role="status">
                       {today.status.spend?.available
                         ? "Managed paid processing is available within your operator allowance."
-                        : today.status.spend?.configured
-                          ? "Your managed allowance is configured, but paid processing is not enabled yet. Saved work stays available."
-                          : "Managed paid processing is not enabled. Saved work stays available."}
+                        : today.status.spend?.paused
+                          ? "Connected processing is temporarily awaiting usage accounting; saved work stays available."
+                          : today.status.spend?.configured
+                            ? "Your managed allowance is configured; paid processing is not available right now. Saved work stays available."
+                            : "Managed paid processing is not enabled. Saved work stays available."}
                       {today.status.spend?.allowance
                         ? ` Allowance left ${formatUsd(
                             today.status.spend.allowance.remaining_micro_usd,

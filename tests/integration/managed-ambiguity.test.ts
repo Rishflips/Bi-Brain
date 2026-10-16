@@ -11,7 +11,10 @@ import {
 import type { ManagedDispatchSpec } from "../../packages/domain/managed-spend.ts";
 import { ManagedRuntime } from "../../packages/runtime/managed.ts";
 import { ManagedWorker } from "../../apps/worker/managed.ts";
-import { fakePreparedProvider } from "../helpers/prepared-provider.ts";
+import {
+  enrolSyntheticActivation,
+  syntheticActivationProvider,
+} from "../helpers/managed-activation.ts";
 
 /**
  * Own-account durable ambiguity barrier (Task 1).
@@ -458,14 +461,14 @@ it("lets a real ManagedWorker send once and settle its own marker", async () => 
   const runtime = new ManagedRuntime(root, { clock });
   try {
     const a = runtime.provision("https://synthetic.example.test", "worker-a");
-    enableProvider(runtime, a.id);
+    const profile = enrolSyntheticActivation(runtime, a.id, clock);
     const handle = runtime.acquire(a.id);
     const owner = handle.brain.ownerPrincipal();
     const saved = handle.brain.capture(owner, {
       title: "Synthetic",
       body: "SYNTHETIC worker consent",
     }) as { source_id: string; job: { id: string } };
-    const provider = fakePreparedProvider();
+    const provider = syntheticActivationProvider(profile);
     const worker = new ManagedWorker(runtime, { providerFactory: () => provider });
     try {
       expect(await worker.tick()).toBe(true);

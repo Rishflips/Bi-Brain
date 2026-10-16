@@ -1,4 +1,4 @@
-import { expect, it } from "vitest";
+import { expect, it, vi } from "vitest";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -7,7 +7,10 @@ import { ManagedSpendingStore } from "../../packages/storage/managed-spending.ts
 import type { ManagedDispatchSpec } from "../../packages/domain/managed-spend.ts";
 import { ManagedRuntime } from "../../packages/runtime/managed.ts";
 import { ManagedWorker } from "../../apps/worker/managed.ts";
-import type { PreparedProvider } from "../../packages/providers/prepared.ts";
+import { PreparedReasoningProvider, type PreparedProvider } from "../../packages/providers/prepared.ts";
+import { ManagedReconciliationStore } from "../../packages/storage/managed-reconciliation.ts";
+import { ManagedActivationStore } from "../../packages/storage/managed-activation.ts";
+import { auditManagedHistory } from "../../packages/runtime/managed-audit.ts";
 
 function fixture(path = ":memory:") {
   let now = "2026-10-16T09:00:00Z";
@@ -101,15 +104,31 @@ it("a valid managed call keeps consent through its own marker and settles once w
     const owner = handle.brain.ownerPrincipal();
     handle.brain.prefs(owner, { ...handle.brain.prefs(owner), time_zone: "UTC", provider_enabled: true, daily_cap_micro_usd: 1000, per_job_cap_micro_usd: 1000 });
     const saved = handle.brain.capture(owner, { title: "Synthetic", body: "SYNTHETIC consent remains granted" }) as { source_id: string; job: { id: string } };
+    const ack = { offline: true as const, workers_terminated: true as const };
+    new ManagedReconciliationStore(runtime.control, root, clock).initEpoch(ack);
+    const audit = auditManagedHistory({ runtime, root, clock, ...ack });
+    expect(audit.ok).toBe(true);
+    const profile = new ManagedActivationStore(runtime.control, root, clock).enable({
+      provider: "openai", model: "synthetic-model-v1", price_version: "synthetic-price-v1",
+      input_micro_usd_per_million: 10_000, output_micro_usd_per_million: 10_000,
+      accepted_response_models: ["synthetic-model-v1"], max_output_tokens: 100,
+      endpoint_class: "openai_responses", audit_id: audit.audit_id!, expected_version: 0,
+    }, ack);
+    const prepared = new PreparedReasoningProvider({
+      model: profile.model, key: "SYNTHETIC_UNUSED_KEY",
+      accepted_response_models: profile.accepted_response_models, max_output_tokens: profile.max_output_tokens,
+      price: { version: profile.price_version, input_micro_usd_per_million: profile.input_micro_usd_per_million, output_micro_usd_per_million: profile.output_micro_usd_per_million },
+    }, async () => { throw new Error("SYNTHETIC_NETWORK_DENIED"); });
+    vi.stubEnv("BRAIN_MANAGED_ALLOW_PAID", "1");
     let sends = 0, consentAtSend = false, pausedAtSend = false;
-    const provider: PreparedProvider = { prepareCall() { return {
-      identity: Object.freeze({ provider: "synthetic", model: "synthetic", price_version: "synthetic-v1", prompt_version: "synthetic-v1", request_hash: "a".repeat(64), config_hash: "b".repeat(64), reserved_micro_usd: 10 }),
-      request_bytes: 1,
+    const provider: PreparedProvider = { prepareCall(input) { const call = prepared.prepareCall(input); return {
+      identity: call.identity,
+      request_bytes: call.request_bytes,
       async execute() {
         sends++;
         consentAtSend = handle.brain.prefs(owner).provider_enabled;
         pausedAtSend = handle.brain.status(owner).spend.blocked;
-        return { accounting: { state: "known", cost_micro_usd: 7, usage: { input_tokens: 1, output_tokens: 1 }, model: "synthetic" }, output: { ok: true, kind: "brief", items: [{ text: "A supported synthetic statement", epistemic_status: "supported", evidence: [{ source_id: saved.source_id, source_version: 1, start: 0, end: 9, quote: "SYNTHETIC" }] }], unknowns: [] } };
+        return { accounting: { state: "known", cost_micro_usd: 7, usage: { input_tokens: 1, output_tokens: 1 }, model: profile.model }, output: { ok: true, kind: "brief", items: [{ text: "A supported synthetic statement", epistemic_status: "supported", evidence: [{ source_id: saved.source_id, source_version: 1, start: 0, end: 9, quote: "SYNTHETIC" }] }], unknowns: [] } };
       },
     }; } };
     const worker = new ManagedWorker(runtime, { providerFactory: () => provider });
@@ -122,7 +141,7 @@ it("a valid managed call keeps consent through its own marker and settles once w
       expect(central.latestForJob(account.id, saved.job.id)).toMatchObject({ state: "settled", actual_micro_usd: 7 });
       expect(central.accountStatus(account.id).blocked).toBe(false);
     } finally { await worker.stop(); }
-  } finally { handle.release(); runtime.close(); rmSync(root, { recursive: true, force: true }); }
+  } finally { vi.unstubAllEnvs(); handle.release(); runtime.close(); rmSync(root, { recursive: true, force: true }); }
 });
 
 it("another account's ambiguity produces a content-free pause while own money and capture remain available", () => {

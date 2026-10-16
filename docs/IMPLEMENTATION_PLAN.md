@@ -77,7 +77,7 @@ Gate: same authorized project knowledge is available in two clients; unrelated/p
 - [x] Backup/restore and migration recovery tested.
 - [x] Browser E2E suite, keyboard flows, responsive checks, error recovery.
 - [x] Owner settings, spending, worker status, export, and deletion accessible.
-- [ ] Clean-machine/reproducible setup verification. (Offline lockfile reinstall passed on this host; fresh machine and container unverified.)
+- [x] Clean Ubuntu CI install and container setup verification. (Merged-main run 38889855879 at `5dd6ed0`: `npm ci`, 479 tests, Docker build and non-root/container restart-persistence/auth/worker/backup smoke passed. Other target-host operations remain separate.)
 - [x] Run first-use pilot or mark human usability gate unverified.
 - [x] Document actual capabilities, limitations, screenshots, and license status.
 
@@ -96,7 +96,11 @@ The 2026-10-16 owner direction brings managed personal delivery into the primary
   - [x] Central own-account status, lower user limits, private service totals and strict trusted operator policy tooling. (Parent Task 3 focused run: 18/18.)
   - [x] Managed cold snapshot/restore and final combined browser/recovery verification. (2026-10-16 parent: 396 tests, 17 Chromium journeys, 4 offline evaluations; typecheck/lint/build/audit passed. See BUILD_STATE for offline/recovery limits.)
   - [x] Durable one-inflight barrier, guarded operator reconciliation, bounded all-account history audits and restore epoch invalidation. (Phase 1 parent checkpoint: 478 passed, 1 POSIX-only skip; 17 Chromium journeys and 4 offline evaluations. See BUILD_STATE for test/trust limits.)
-  - [ ] Separately approved shared production activation path, live provider/quality and target-host storage/restart drills. Production managed paid dispatch remains off.
+  - [ ] Approved shared activation path plus live-provider/quality and target-host storage/restart drills. Activation is implemented default-off; no real account/provider is enabled.
+    - [x] Phase 2 approval and local profile/persistence/operator/recovery foundation. (Parent: 520 passed, 1 POSIX-only skip in 64 files; typecheck/lint/build passed. SQL/mirror mismatch denies; restore disables at a new epoch. Synthetic fixtures only.)
+    - [x] Exact current-slot send guards and independent synthetic verification. (Task 2 parent checkpoint: 545 passed, 1 POSIX-only skip, 66 files; typecheck/lint/build passed.)
+    - [x] Shared server/worker activation, readiness and revocable consent with real-process synthetic verification. (Final parent: 579 passed, 2 POSIX-only skips, 70 files; 19 Chromium journeys; 4 offline evaluations; typecheck/lint/build/audit passed. Long-call heartbeat, CLI disable and unknown-usage worker restart/no-resend covered.)
+    - [ ] Separately authorized capped live-provider quality/cost smoke and target-host storage/operations drills.
 - [ ] G4: Real System 1 adapter, tested policy integration, consent, failure fallback and held-out quality/cost evidence.
 - [ ] G5: Ordinary-prose understanding/recall/correction and goal-linked preparation with live evidence.
 - [ ] G6: Two named native integrations with fresh-session correction/privacy/revocation evidence.

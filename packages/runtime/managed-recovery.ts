@@ -18,7 +18,13 @@ import { z } from "zod";
 import { ControlStore } from "../storage/control.ts";
 import { Storage } from "../storage/index.ts";
 import { Brain } from "../domain/service.ts";
-import { BrainError } from "../domain/logic.ts";
+import { BrainError, canonical } from "../domain/logic.ts";
+import {
+  ManagedActivationStore,
+  activationMirrorPath,
+  readActivationMirror,
+  readActivationRow,
+} from "../storage/managed-activation.ts";
 import {
   applyRestoreSafetyBarrier,
   purgeRetainedDeletedSource,
@@ -371,6 +377,7 @@ function assertBundleTopLevel(bundle: string, manifest: ManagedBundleManifest): 
     "manifest.json",
     "control.sqlite",
     MANAGED_ROOT_MARKER,
+    "activation.json",
   ]);
   for (const account of manifest.accounts) allowed.add(account.account_id);
   for (const name of readdirSync(bundle)) {
@@ -379,6 +386,57 @@ function assertBundleTopLevel(bundle: string, manifest: ManagedBundleManifest): 
     const stat = lstatSync(join(bundle, name));
     if (stat.isSymbolicLink()) throw recoveryError("The bundle contains a link.");
   }
+}
+
+function lstatOptional(path: string) {
+  try {
+    return lstatSync(path);
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * The activation SQL row and its mirrored file must agree exactly: both present
+ * and equal, or both absent. A present file with no row (or the reverse), or a
+ * mismatched row, is refused rather than silently dropping a trusted activation
+ * claim. Read-only; never creates the table or the marker.
+ */
+function assertActivationConsistent(
+  controlPath: string,
+  root: string,
+): { present: boolean } {
+  let db: DatabaseSync;
+  try {
+    db = new DatabaseSync(controlPath, { readOnly: true });
+  } catch {
+    throw recoveryError("The managed control database is unreadable.");
+  }
+  let row;
+  try {
+    row = readActivationRow(db);
+  } finally {
+    db.close();
+  }
+  const path = activationMirrorPath(root);
+  const stat = lstatOptional(path);
+  if (stat && (stat.isSymbolicLink() || !stat.isFile()))
+    throw recoveryError("The activation mirror is not a real file.");
+  if (!!row !== !!stat)
+    throw recoveryError(
+      "The activation profile and its mirror disagree; refusing to back up or restore this root.",
+    );
+  if (row) {
+    let mirror;
+    try {
+      mirror = readActivationMirror(root);
+    } catch {
+      throw recoveryError("The activation mirror is invalid.");
+    }
+    if (!mirror || canonical(mirror) !== canonical(row))
+      throw recoveryError("The activation mirror does not match its stored profile.");
+  }
+  return { present: !!row };
 }
 
 function assertInventoryMatches(
@@ -490,6 +548,9 @@ export async function writeManagedBackup(
     await snapshotSqlite(join(root, "control.sqlite"), join(staging, "control.sqlite"));
     if (rootMarker)
       copyTree(join(root, MANAGED_ROOT_MARKER), join(staging, MANAGED_ROOT_MARKER));
+    const activation = assertActivationConsistent(join(staging, "control.sqlite"), root);
+    if (activation.present)
+      copyTree(activationMirrorPath(root), join(staging, "activation.json"));
     for (const account of inventory) {
       const dir = join(root, account.account_id);
       assertTenantMarker(dir, account);
@@ -567,6 +628,9 @@ export async function restoreManagedBackup(
   assertSqliteHealthy(bundleControl);
   const bundledInventory = controlInventory(bundleControl);
   assertInventoryMatches(manifest.accounts, bundledInventory);
+  // A bundled activation profile and its mirror must agree; a split claim is
+  // refused rather than silently dropped or half-reactivated.
+  const bundleActivation = assertActivationConsistent(bundleControl, bundle);
 
   // A marker in the bundle must bind the bundled control generation exactly. The
   // presence of the marker file must EQUAL the manifest declaration: a bundle can
@@ -636,6 +700,8 @@ export async function restoreManagedBackup(
   let replayed = 0;
   try {
     copyTree(bundleControl, join(staged, "control.sqlite"));
+    if (bundleActivation.present)
+      copyTree(join(bundle, "activation.json"), join(staged, "activation.json"));
     for (const account of manifest.accounts) {
       const from = join(bundle, account.account_id);
       assertTenantMarker(from, account);
@@ -661,7 +727,19 @@ export async function restoreManagedBackup(
       // every financial block. A snapshot with no generation is left for the
       // operator's explicit init; an old bundle without a marker derives a fresh
       // generation from its known control row and never copies an approval.
-      rotateStagedEpoch(stagingControl, staged, clock);
+      const rotated = rotateStagedEpoch(stagingControl, staged, clock);
+      if (rotated) {
+        const epochRow = stagingControl.db
+          .prepare("SELECT epoch,nonce FROM managed_control_epoch WHERE singleton=1")
+          .get() as { epoch: number; nonce: string } | undefined;
+        if (epochRow)
+          new ManagedActivationStore(stagingControl, staged, clock).disableForRestore({
+            epoch: Number(epochRow.epoch),
+            nonce: String(epochRow.nonce),
+          });
+      }
+      // Worker readiness is ephemeral and is never copied into a restore.
+      rmSync(join(staged, "worker-ready.json"), { force: true });
     } finally {
       stagingControl.close();
     }

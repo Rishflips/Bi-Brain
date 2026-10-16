@@ -2,9 +2,10 @@
 
 Managed mode serves an isolated personal brain per signed-in account from a
 standards-based OIDC login. It is **not a public release**. One central
-account/service spending authority is implemented and locally verified, but
-production paid-model dispatch stays OFF pending restore/control-IO/restart
-activation, a live provider, TLS and billing. Do not advertise or open the
+account/service spending authority is implemented and locally verified. The
+default-off activation path is locally verified with synthetic provider transport;
+no real owner account or live provider has been activated. Live-provider quality,
+target-host recovery, TLS and billing remain separate gates. Do not advertise or open the
 managed service to the public. Local self-hosting is unchanged and remains the
 supported path.
 
@@ -23,6 +24,8 @@ runtime, tenant store or local database is created.
 | `BRAIN_OIDC_CLIENT_ID` | yes | Registered client id. |
 | `BRAIN_OIDC_CLIENT_SECRET` | yes | Server-side only. Never printed, logged or bundled. |
 | `BRAIN_OIDC_CALLBACK_PATH` | no | Fixed absolute path; defaults to `/auth/callback`. |
+| `BRAIN_MANAGED_ALLOW_PAID` | no | Default off. `1` is a deployment opt-in, never sufficient by itself. |
+| `OPENAI_API_KEY` | worker only, when separately authorized | Loaded once at worker startup; never needed by the server or written to a profile/readiness file. Rotation requires restarting the worker. |
 
 The server and worker read the same validated configuration. No secret is
 printed at startup; only the mode, origin and issuer are reported.
@@ -63,28 +66,37 @@ the general poll limit.
 
 ## Provider and spending gate
 
-Managed accounts run **extractive preparation only** in this build. One central
+Managed accounts run **extractive preparation by default**. One central
 control-plane ledger governs managed money (account allowance windows, a single
 global service cap, cumulative job and frozen user-day limits), and the
-per-tenant ledger is a conservative journal/projection, but paid activation stays
-OFF:
+per-tenant ledger is a conservative journal/projection. Paid work requires all
+independent gates:
 
-- `PATCH /api/v1/preferences/background` with `provider_enabled: true` still fails
-  with `PROVIDER_UNAVAILABLE` (503) even with a valid session, CSRF and a positive
-  operator policy; `connected_processing_available` is false regardless of
-  `BRAIN_MANAGED_ALLOW_PAID=1`. Capture and extractive preparation remain
-  available.
-- The managed worker injects an explicit provider that refuses every dispatch,
-  independent of any persisted preference, so a legacy `provider_enabled` row
-  produces an explicit "unavailable" receipt — never a silent connected result.
+- An enabled, audited SQL profile and its exact `activation.json` mirror, the
+  deployment opt-in, a matching root epoch/schema and configured account limits.
+- A worker with the frozen profile and locally valid provider configuration
+  installed. Its independent 5-second heartbeat publishes a 15-second readiness
+  lease. The server needs no provider key; missing/stale/mismatched readiness
+  reports capability unavailable. A production send also checks its own lease.
+- Explicit stored account consent and fresh monetary admission. Capability is
+  separate from temporary `usage_pending`; a call never revokes its own consent.
+  Unknown marked usage pauses new paid sends across every account without losing
+  capture, search or extractive work. No marked call is resent or refunded.
+- Without capability, an explicit consent-on request returns HTTP 503. Stored
+  true consent remains withdrawable by an active authorized account. Omitting
+  consent from an unrelated settings save preserves its raw stored value.
+  Durable monetary blocks still deny re-enable and are never cleared by consent.
+- When paid work is not requested, the worker runs extractive directly. A paid
+  intent without an available path gets a truthful unavailable receipt, not a
+  fabricated connected result or an unlabelled extractive success.
 - A failed central safety-marker write pauses managed paid scheduling for the
   process (an in-memory fuse, not a durable or multi-process guarantee) while
   capture stays available.
 
-Do not attach a shared provider key to managed tenants, and do not enable paid
-processing until restore/control-IO/restart activation, a live provider and TLS
-are wired and reviewed. Paid activation is off by default and no environment flag
-flips it on in this build.
+Do not load a real provider key or activate owner accounts without separate
+authorization and the live-provider/operational gates. Synthetic fixtures use a
+dummy key and an intercepted transport, not a live connection or quality proof.
+An environment flag alone never activates paid processing.
 
 ## Data and isolation
 
@@ -108,8 +120,8 @@ is never read or adopted.
 Not implemented or verified as a release: public hosting, billing, entitlements,
 live paid-model dispatch, TLS and graceful signal handling on the target host.
 Central account/service spending control, restore barriers and the own-account
-money view are implemented and locally verified; paid production activation
-remains open pending a restore/control-IO/restart drill and a live provider. Managed login has HTTP integration and Chromium
+money view and default-off activation path are locally verified; this is not a
+live-provider or production-host claim. Managed login has HTTP integration and Chromium
 journey coverage against a signed disposable synthetic issuer, including two
 accounts, logout/relogin and account-switch privacy regressions. The browser
 fixture replaces redirect chains with documented hop pages; it is not native
@@ -138,12 +150,47 @@ their own allowance window and their own user-day remaining. It never reads the
 stale tenant projection and never exposes the shared-service cap or any service
 total or another account's data.
 
-Managed paid processing remains **OFF in this build**. `connected_processing_available`
-is false and enabling it through preferences returns HTTP 503 regardless of the
-operator policy or `BRAIN_MANAGED_ALLOW_PAID=1`; the managed worker still denies
-paid providers. A positive policy only marks the account "configured", not
-available. Paid activation is a separate, later gate that needs an operator
-reconciliation/restart/control-IO drill first.
+Managed paid processing remains **OFF by default**. A positive monetary policy
+marks an account "configured", not activated. Public
+`connected_processing_available` means the current operator profile and a fresh
+matching worker lease permit connected processing; it is not a provider-health,
+quality or affordability guarantee. Authenticated status separately reports
+stored/effective consent, capability, pause reason and own-account spending.
+
+### Phase 2 profile foundation (runtime integration in progress)
+
+The approved activation implementation adds an operator-only profile CLI:
+
+- `npm run managed:activation -- status`
+- `npm run managed:activation -- show`
+- `npm run managed:activation -- enable <absolute_profile_json> --offline --workers-terminated`
+- `npm run managed:activation -- disable --expected-version <n>`
+
+All commands require one explicit existing `BRAIN_MANAGED_ROOT`. Status/show are
+read-only; they never initialize money tables or create activation. Enable
+requires an existing current schema-3 terminal history audit, explicit offline
+acknowledgements and a version CAS (`expected_version: 0` creates the first
+profile). The JSON contains only the operator's exact provider/model/versioned
+integer prices, accepted returned models, output bound, fixed
+`endpoint_class: "openai_responses"`, audit id and expected version. Credentials,
+arbitrary URLs and browser-supplied activation are not accepted. No command makes
+a provider request. The acknowledgements are preconditions, not proof that
+workers are stopped.
+
+The control-database profile commits before its complete `activation.json`
+mirror. These writes are **not atomic together**: a missing, invalid or mismatched
+mirror denies use. Never repair authority by hand-editing either representation.
+Disable needs no offline acknowledgement and cannot erase a marked charge or
+hold. Supported cold restore disables an enabled profile at a new version/epoch
+and excludes ephemeral worker readiness; re-enrollment requires a fresh audit.
+A raw database-plus-marker rollback is undetectable and unsupported.
+
+**This is not a live production activation:** main entry points now share the
+default-off policy and guarded provider path. Real-process synthetic dispatch,
+long-call heartbeat, CLI disable, unknown-usage worker restart/no-resend and
+consent browser checks passed; full evidence is recorded in BUILD_STATE.md.
+Nothing here authorizes enabling an owner's
+account, loading a real provider key or making a paid smoke call.
 
 ## Cold/offline managed backup and restore (Task 4 slice)
 

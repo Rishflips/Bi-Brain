@@ -4,6 +4,10 @@ import { loadConfig } from "./config.ts";
 import { ManagedRuntime } from "../../packages/runtime/managed.ts";
 import { OidcClient } from "../../packages/identity/oidc.ts";
 import { ManagedLogin } from "../../packages/identity/managed-login.ts";
+import {
+  managedAllowPaidFlag,
+  managedCapability,
+} from "./startup-gates.ts";
 
 // Fail closed before any storage or adapter is constructed: an unknown mode or
 // a missing managed field throws here rather than silently serving local data.
@@ -22,7 +26,25 @@ if (config.mode === "managed") {
     publicOrigin: config.publicOrigin,
     callbackPath: config.oidc.callbackPath,
   });
-  const runtime = new ManagedRuntime(config.managedRoot);
+  let capability = (): { available: boolean; reason: string } => ({
+    available: false,
+    reason: "off",
+  });
+  const runtime = new ManagedRuntime(config.managedRoot, {
+    capability: () => {
+      const c = capability();
+      return { ready: c.available, reason: c.reason };
+    },
+  });
+  capability = () => {
+    const c = managedCapability({
+      control: runtime.control,
+      root: runtime.root,
+      now: runtime.control.clock(),
+      optIn: managedAllowPaidFlag(),
+    });
+    return { available: c.available, reason: c.reason };
+  };
   const login = new ManagedLogin(runtime, oidc);
   const app = await createApp(undefined, {
     managed: runtime,
@@ -30,6 +52,7 @@ if (config.mode === "managed") {
     oidcCallbackPath: config.oidc.callbackPath,
     publicOrigin: config.publicOrigin,
     metadataLogs: true,
+    capability: () => capability(),
   });
   await app.listen({ host, port });
   // No secret is ever printed; the operator learns the mode and origin only.

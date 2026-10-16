@@ -5,7 +5,10 @@ import {
   paidProcessingBlockedSetting,
 } from "../../packages/storage/spend.ts";
 import { ManagedSpendingStore } from "../../packages/storage/managed-spending.ts";
+import { readGuardSnapshot } from "../../packages/storage/managed-activation-state.ts";
+import type { ActivationGuard } from "../../packages/domain/managed-activation.ts";
 import type {
+  ManagedDispatchSpec,
   ManagedLimits,
   ManagedReservation,
 } from "../../packages/domain/managed-spend.ts";
@@ -15,6 +18,11 @@ import type {
   JobLease,
   SpendLimits,
 } from "../../packages/domain/spend.ts";
+import {
+  assertSendGuardContext,
+  readActivationGuardContext,
+  type InstalledActivationPolicy,
+} from "../../packages/runtime/managed-activation.ts";
 import type { DispatchAccounting } from "./accounting.ts";
 
 const reconcile = (message: string) =>
@@ -41,6 +49,7 @@ export class ManagedDispatchAccounting implements DispatchAccounting {
     private readonly central: ManagedSpendingStore,
     private readonly brain: Brain,
     private readonly clock: () => Date = brain.clock,
+    private readonly installed?: InstalledActivationPolicy,
   ) {
     const accountId = brain.tenantId;
     if (!accountId)
@@ -57,6 +66,128 @@ export class ManagedDispatchAccounting implements DispatchAccounting {
       );
     this.accountId = accountId;
     this.tenant = new DispatchLedger(brain.store, clock);
+  }
+
+  /**
+   * Private in-memory map of the exact central AND tenant call ids produced by a
+   * fresh reserve in THIS coordinator process. It lets after_reserve/before_mark/
+   * after_mark tolerate only the current attempt slot; a new coordinator/tick has an
+   * empty map, so a stranded nonterminal hold fails closed to an operator.
+   */
+  private readonly attempts = new Map<
+    string,
+    {
+      central_call_id: string;
+      tenant_call_id: string;
+      owner: string;
+      fence: number;
+      spec: {
+        job_id: string;
+        dispatch_key: string;
+        stage: DispatchSpec["stage"];
+        reserved_micro_usd: number;
+        provider: string;
+        model: string;
+        price_version: string;
+        request_hash: string;
+        config_hash: string;
+      };
+    }
+  >();
+
+  /**
+   * Re-reads the trusted tenant job row and returns a FRESH lease limited to the
+   * ORIGINAL owner/fence. The deadline may legitimately be extended by the worker
+   * heartbeat, so it is refreshed (bounded to the same owner/fence) rather than
+   * pinned to the first snapshot; an expired or foreign lease denies.
+   */
+  private refreshLease(jobId: string, owner: string, fence: number): JobLease {
+    const row = this.brain.store.get<{
+      status: string;
+      lease_owner: string;
+      lease_until: string | null;
+      fence: number;
+    }>("SELECT status,lease_owner,lease_until,fence FROM jobs WHERE id=?", jobId);
+    if (
+      !row ||
+      row.status !== "running" ||
+      row.lease_owner !== owner ||
+      row.fence !== fence ||
+      !row.lease_until
+    )
+      throw new BrainError(
+        "BUDGET_BLOCKED",
+        "The managed paid attempt lease is no longer current.",
+        409,
+      );
+    if (Date.parse(row.lease_until) <= this.clock().getTime())
+      throw new BrainError(
+        "BUDGET_BLOCKED",
+        "The managed paid attempt lease has expired.",
+        409,
+      );
+    return { job_id: jobId, owner, fence, expires_at: row.lease_until };
+  }
+
+  private attemptKey(jobId: string, dispatchKey: string, stage: string): string {
+    return `${jobId}|${dispatchKey}|${stage}`;
+  }
+
+  private kindOf(jobId: string): "brief" | "goal" {
+    const row = this.brain.store.get<{ kind: string }>(
+      "SELECT kind FROM jobs WHERE id=?",
+      jobId,
+    );
+    if (!row)
+      throw new BrainError(
+        "INVALID_STATE",
+        "Managed paid dispatch has no current job row.",
+        409,
+      );
+    if (row.kind === "derive_brief") return "brief";
+    if (row.kind === "review_changed_assumption") return "goal";
+    throw new BrainError("INVALID_STATE", "Unknown managed paid job kind.", 409);
+  }
+
+  private guardFor(
+    spec: {
+      job_id: string;
+      dispatch_key: string;
+      stage: DispatchSpec["stage"];
+      reserved_micro_usd: number;
+      provider: string;
+      model: string;
+      price_version: string;
+      request_hash: string;
+      config_hash: string;
+    },
+    lease: JobLease,
+    phase: ActivationGuard["phase"],
+    centralCallId: string | null,
+    tenantCallId: string | null,
+  ): ActivationGuard | undefined {
+    if (!this.installed) return undefined;
+    return readActivationGuardContext({
+      control: { db: this.central.control.db, path: this.central.control.path },
+      installed: this.installed,
+      accountId: this.accountId,
+      kind: this.kindOf(spec.job_id),
+      jobId: spec.job_id,
+      dispatchKey: spec.dispatch_key,
+      stage: spec.stage,
+      lease,
+      phase,
+      centralCallId,
+      tenantCallId,
+      spec: {
+        provider: spec.provider,
+        model: spec.model,
+        price_version: spec.price_version,
+        request_hash: spec.request_hash,
+        config_hash: spec.config_hash,
+        reserved_micro_usd: spec.reserved_micro_usd,
+      },
+    });
   }
 
   private binding(accountId: string): void {
@@ -184,44 +315,162 @@ export class ManagedDispatchAccounting implements DispatchAccounting {
   reserve(spec: DispatchSpec, lease: JobLease, limits: SpendLimits): DispatchRecord {
     this.requireActive();
     this.assertHistoryEligible();
-    const central = this.central.reserve({
-      account_id: this.accountId,
-      job_id: spec.job_id,
-      dispatch_key: spec.dispatch_key,
-      stage: spec.stage,
-      reserved_micro_usd: spec.reserved_micro_usd,
-      provider: spec.provider,
-      model: spec.model,
-      price_version: spec.price_version,
-      request_hash: spec.request_hash,
-      config_hash: spec.config_hash,
-      limits: {
-        per_job_micro_usd: limits.per_job_micro_usd,
-        user_daily_micro_usd: limits.daily_micro_usd,
-        time_zone: limits.time_zone,
-      },
-    });
+    const key = this.attemptKey(spec.job_id, spec.dispatch_key, spec.stage);
+    if (this.installed && this.attempts.has(key))
+      throw new BrainError(
+        "BUDGET_BLOCKED",
+        "A managed paid attempt for this slot is already in progress.",
+        409,
+      );
+    // Fresh trusted lease preflight BEFORE any central hold is inserted.
+    if (this.installed && lease.job_id !== spec.job_id)
+      throw new BrainError(
+        "BUDGET_BLOCKED",
+        "The managed paid lease does not belong to this job.",
+        409,
+      );
+    const current = this.installed
+      ? this.refreshLease(lease.job_id, lease.owner, lease.fence)
+      : lease;
+    const guard = this.guardFor(spec, current, "before_reserve", null, null);
+    const central = this.central.reserve(
+      {
+        account_id: this.accountId,
+        job_id: spec.job_id,
+        dispatch_key: spec.dispatch_key,
+        stage: spec.stage,
+        reserved_micro_usd: spec.reserved_micro_usd,
+        provider: spec.provider,
+        model: spec.model,
+        price_version: spec.price_version,
+        request_hash: spec.request_hash,
+        config_hash: spec.config_hash,
+        limits: {
+          per_job_micro_usd: limits.per_job_micro_usd,
+          user_daily_micro_usd: limits.daily_micro_usd,
+          time_zone: limits.time_zone,
+        },
+      } satisfies ManagedDispatchSpec,
+      guard,
+    );
     this.binding(central.account_id);
     if (central.projection_call_id) {
-      // A re-reserve returns the central authority mapped to the tenant call id,
-      // even when the tenant projection has drifted.
+      if (this.installed)
+        throw new BrainError(
+          "BUDGET_BLOCKED",
+          "A managed paid attempt already exists for this slot.",
+          409,
+        );
       return this.toRecord(central);
     }
     const record = this.tenant.reserve(spec, lease, limits);
     this.central.linkProjection(central.call_id, record.call_id);
+    this.attempts.set(key, {
+      central_call_id: central.call_id,
+      tenant_call_id: record.call_id,
+      owner: current.owner,
+      fence: current.fence,
+      spec: {
+        job_id: spec.job_id,
+        dispatch_key: spec.dispatch_key,
+        stage: spec.stage,
+        reserved_micro_usd: spec.reserved_micro_usd,
+        provider: spec.provider,
+        model: spec.model,
+        price_version: spec.price_version,
+        request_hash: spec.request_hash,
+        config_hash: spec.config_hash,
+      },
+    });
     return record;
   }
 
   markDispatched(callId: string, lease: JobLease): DispatchRecord {
     this.requireActive();
     const central = this.centralFor(callId);
+    if (!this.installed) {
+      // Low-level compatibility (bounded tests, local coordinator): no guard.
+      this.central.mark(central.call_id, this.currentLimits());
+      const record = this.tenant.markDispatched(callId, lease);
+      this.requireActive();
+      return record;
+    }
+    const key = this.attemptKey(central.job_id, central.dispatch_key, central.stage);
+    const attempt = this.attempts.get(key);
+    if (
+      !attempt ||
+      attempt.central_call_id !== central.call_id ||
+      attempt.tenant_call_id !== callId ||
+      attempt.owner !== lease.owner ||
+      attempt.fence !== lease.fence
+    )
+      throw new BrainError(
+        "BUDGET_BLOCKED",
+        "No current coordinator attempt authorizes this dispatch.",
+        409,
+      );
+    const current = this.refreshLease(central.job_id, attempt.owner, attempt.fence);
+    const guard = this.guardFor(
+      attempt.spec,
+      current,
+      "before_mark",
+      attempt.central_call_id,
+      attempt.tenant_call_id,
+    );
     // A fresh central reserved -> dispatched CAS is the only permission to run.
     // An already-dispatched or settled centre throws here and must not be caught.
-    this.central.mark(central.call_id, this.currentLimits());
+    this.central.mark(central.call_id, this.currentLimits(), guard);
     const record = this.tenant.markDispatched(callId, lease);
     // A revocation between the two marks cancels this invocation before any I/O.
     this.requireActive();
     return record;
+  }
+
+  /**
+   * Final pre-I/O permission check. It requires the SAME coordinator attempt map
+   * entry (exact central + tenant ids + original owner/fence), re-reads the ACTUAL
+   * tenant job row (running, matching owner/fence, future deadline), and re-reads
+   * the live frozen policy. Read-only, no central writes; a failure leaves the
+   * marked hold in place.
+   */
+  assertCanExecute(callId: string, lease: JobLease): void {
+    if (!this.installed) return; // local/self-hosted no-op
+    this.requireActive();
+    const central = this.centralFor(callId);
+    if (central.state !== "dispatched")
+      throw new BrainError(
+        "BUDGET_BLOCKED",
+        "The managed paid call is not dispatched.",
+        409,
+      );
+    const key = this.attemptKey(central.job_id, central.dispatch_key, central.stage);
+    const attempt = this.attempts.get(key);
+    if (
+      !attempt ||
+      attempt.central_call_id !== central.call_id ||
+      attempt.tenant_call_id !== callId ||
+      attempt.owner !== lease.owner ||
+      attempt.fence !== lease.fence
+    )
+      throw new BrainError(
+        "BUDGET_BLOCKED",
+        "No current coordinator attempt authorizes this call.",
+        409,
+      );
+    // The ACTUAL current tenant job lease must still be live (a heartbeat may have
+    // extended it; a stale/foreign/expired one denies).
+    const current = this.refreshLease(central.job_id, attempt.owner, attempt.fence);
+    const guard = this.guardFor(
+      attempt.spec,
+      current,
+      "after_mark",
+      central.call_id,
+      callId,
+    );
+    assertSendGuardContext(guard!, this.installed.root, {
+      db: this.central.control.db,
+      path: this.central.control.path,
+    });
   }
 
   settle(callId: string, actualMicroUsd: number): DispatchRecord {
@@ -256,6 +505,31 @@ export class ManagedDispatchAccounting implements DispatchAccounting {
     // A failure to persist the global deny must not be swallowed: fail closed.
     if (markerError) throw markerError;
     if (centralError) throw centralError;
+    // Narrow post-settlement frozen-policy check: the known charge is already
+    // recorded (central first, tenant independently); if the policy changed while
+    // the call was in flight, discard the output rather than publish a proposal.
+    // It never runs before settlement, never releases a permit, never caches unknown.
+    if (this.installed) {
+      const snapshot = readGuardSnapshot(
+        { db: this.central.control.db, path: this.central.control.path },
+        this.installed.root,
+      );
+      const frozen = this.installed.profile;
+      const changed =
+        snapshot.state !== "active" ||
+        !snapshot.profile.enabled ||
+        snapshot.profile.fingerprint !== frozen.fingerprint ||
+        snapshot.profile.version !== frozen.version ||
+        snapshot.profile.config_digest !== frozen.config_digest ||
+        snapshot.profile.epoch !== frozen.epoch ||
+        snapshot.profile.root_nonce !== frozen.root_nonce;
+      if (changed)
+        throw new BrainError(
+          "PROVIDER_UNAVAILABLE",
+          "The provider output was discarded because managed processing changed. Any known charge was retained.",
+          503,
+        );
+    }
     return this.toRecord(settled!);
   }
 

@@ -16,6 +16,7 @@ import {
   outputSchema,
   evidenceSchema,
   preferencesSchema,
+  managedPreferencesPatchSchema,
   type Entity,
   type Source,
   type Principal,
@@ -84,6 +85,10 @@ export class Brain {
     // It is a pure read over the control store and never calls back into Brain,
     // so prefs/status compose it without a domain→runtime cycle.
     private readonly spending?: () => ManagedSpendView,
+    // Runtime-supplied, closed capability accessor (policy + fresh worker lease).
+    // It returns a boolean + a static reason only and never grants authority.
+    // Absent => fail-closed false.
+    private readonly capability?: () => { ready: boolean; reason: string },
   ) {}
   /**
    * The owner principal for this brain. An unbound local brain yields an
@@ -1416,28 +1421,42 @@ export class Brain {
         central.blocked_reason === "restored_backup" ||
         central.blocked_reason === "reconciliation_required" ||
         central.blocked_reason === "disputed_usage");
+    const tenantBlocked =
+      this.store.setting(paidProcessingBlockedSetting, null) !== null;
     if (input !== undefined) {
-      const next = preferencesSchema.parse(input);
-      // A durable accounting block (tenant or central) forbids re-enabling paid
-      // processing. Unrelated preferences may still change and paid processing
-      // may be turned off.
-      if (
-        next.provider_enabled &&
-        (this.store.setting(paidProcessingBlockedSetting, null) !== null ||
-          centrallyUnusable)
-      )
+      const patch = this.spending
+        ? managedPreferencesPatchSchema.parse(input)
+        : preferencesSchema.parse(input);
+      const raw = this.store.setting("preferences", defaults);
+      const explicit = patch.provider_enabled !== undefined;
+      const providerEnabled = patch.provider_enabled ?? raw.provider_enabled;
+      // An EXPLICIT true under a durable accounting block (never `usage_pending`)
+      // or an unconfigured policy is refused. Omitting `provider_enabled`
+      // preserves the RAW stored value and skips this check.
+      if (explicit && providerEnabled && (tenantBlocked || centrallyUnusable))
         throw new BrainError(
           "BUDGET_BLOCKED",
           "Paid processing is blocked until the recorded reason is reconciled.",
           409,
         );
-      this.store.set("preferences", next);
+      this.store.set(
+        "preferences",
+        { ...raw, ...patch, provider_enabled: providerEnabled },
+      );
     }
     const stored = this.store.setting("preferences", defaults);
-    return this.store.setting(paidProcessingBlockedSetting, null) !== null ||
-      centrallyUnusable
+    return tenantBlocked || centrallyUnusable
       ? { ...stored, provider_enabled: false }
       : stored;
+  }
+  /**
+   * RAW stored paid consent for this owner (never the effective getter, never a
+   * central figure). Own account only. It is a read helper for the authenticated
+   * status/UI; it never grants admission.
+   */
+  backgroundConsent(p: Principal): boolean {
+    this.owner(p);
+    return this.store.setting("preferences", defaults).provider_enabled === true;
   }
   connections(p: Principal) {
     this.owner(p);
@@ -3028,6 +3047,30 @@ export class Brain {
         central.per_job_limit_micro_usd,
       );
       const blocked = central.blocked || block !== null;
+      // Durable = a committed money/restore/reconciliation/dispute block, or the
+      // tenant block. `usage_pending` (an own in-flight call) is NOT durable and
+      // must never revoke consent or capability.
+      const durable =
+        block !== null ||
+        central.blocked_reason === "overrun" ||
+        central.blocked_reason === "restored_backup" ||
+        central.blocked_reason === "reconciliation_required" ||
+        central.blocked_reason === "disputed_usage";
+      const rawConsent = this.backgroundConsent(p);
+      const capabilityReady = this.capability?.().ready ?? false;
+      const dayRemaining = Math.max(0, dailyLimit - Math.min(dailyLimit, committed));
+      // Real admission usability for THIS owner: capability AND raw consent AND a
+      // configured account AND no durable block AND service/allowance/day/per-job
+      // headroom. Public capability stays independent of this momentary state.
+      const availableNow =
+        capabilityReady &&
+        rawConsent &&
+        central.configured &&
+        !durable &&
+        central.service_available &&
+        dayRemaining > 0 &&
+        (central.allowance?.remaining_micro_usd ?? 0) > 0 &&
+        perJobLimit > 0;
       const blockedReason = central.blocked_reason
         ? central.blocked_reason
         : block
@@ -3067,7 +3110,15 @@ export class Brain {
           paused_reason: central.paused_reason,
           configured: central.configured,
           service_available: central.service_available,
-          available: false,
+          available: availableNow,
+          // Capability (operator policy + fresh worker lease) is distinct from
+          // admission. `stored_consent_active` is the RAW persisted preference;
+          // `consent_effective` additionally requires capability, a configured
+          // account and no durable block (an own `usage_pending` never clears it).
+          capability_ready: capabilityReady,
+          stored_consent_active: rawConsent,
+          consent_effective:
+            rawConsent && capabilityReady && central.configured && !durable,
           allowance: central.allowance,
         },
         jobs: this.store.all(
@@ -3120,6 +3171,9 @@ export class Brain {
         configured: false,
         service_available: false,
         available: false,
+        capability_ready: false,
+        stored_consent_active: this.backgroundConsent(p),
+        consent_effective: this.backgroundConsent(p) && block === null,
         allowance: null,
       },
       jobs: this.store.all(

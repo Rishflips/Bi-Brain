@@ -547,7 +547,7 @@ describe("central managed spending primitives", () => {
     const account = control.provision(ISSUER, "subject-guard");
     const session = control.issueSession(account.id);
     control.db.exec(
-      "INSERT INTO managed_money_schema(version,applied_at) VALUES(3,'2026-10-16T00:00:00Z')",
+      "INSERT INTO managed_money_schema(version,applied_at) VALUES(4,'2026-10-16T00:00:00Z')",
     );
     expect(() => new ManagedSpendingStore(control, clock)).toThrow(
       "newer version",

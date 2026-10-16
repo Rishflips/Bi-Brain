@@ -1,13 +1,17 @@
+import { managedCapability } from "../../packages/runtime/managed.ts";
+
 /**
- * Managed paid-activation gate.
+ * Thin server-facing surface over the runtime capability helper.
  *
- * This batch keeps managed paid processing OFF in every case, including a
- * positive operator policy and an explicit `BRAIN_MANAGED_ALLOW_PAID=1` flag.
- * The pure gate can report that a policy is *ready*, but the public runtime
- * metadata must never advertise functional connected processing while the
- * managed worker still denies it, so `managedPaidAvailable` is hard-false and
- * `main.ts` keeps its unavailable provider.
+ * `managedCapability` derives the CURRENT shared-loader configured policy plus the
+ * fresh worker readiness lease for the trusted root/control and returns a boolean
+ * and a static, content-free reason. It never reads a caller field, an audit row,
+ * another account or a global total, and it never grants admission.
+ *
+ * The pure `managedActivationGate` remains for unit-level policy reasoning.
  */
+export { managedCapability };
+
 export type ManagedActivation = {
   /** The policy inputs alone would permit paid work; not an availability claim. */
   policy_ready: boolean;
@@ -28,11 +32,29 @@ export function managedActivationGate(input: {
   return { policy_ready: true, reason: "policy_ready" };
 }
 
-/** Managed paid processing is not enabled in this batch, regardless of policy. */
-export const managedPaidAvailable = false;
-
 export const managedPaidNotEnabledMessage =
   "Managed paid processing is not enabled; saved work stays available.";
+
+/** Static, content-free public reason. Never a path, id, model, key or amount. */
+export function managedPaidReason(reason: string): string {
+  switch (reason) {
+    case "ready":
+      return "Connected model processing is available for this deployment.";
+    case "key_missing":
+      return "Managed paid processing is not configured by the operator; saved work stays available.";
+    case "worker_absent":
+    case "worker_stale":
+      return "Connected model processing is starting; saved work stays available.";
+    case "worker_config_mismatch":
+    case "profile_invalid":
+    case "audit_stale":
+    case "epoch_mismatch":
+    case "epoch_uninitialized":
+      return "Connected model processing is unavailable; saved work stays available.";
+    default:
+      return managedPaidNotEnabledMessage;
+  }
+}
 
 /** Reads the operator activation flag; only the operator process controls it. */
 export function managedAllowPaidFlag(env: NodeJS.ProcessEnv = process.env): boolean {
