@@ -30,9 +30,10 @@ Gate: a clean checkout installs and starts using documented commands; production
   keyboard and 320px layout with independent browser checks.
 - [x] Run changed-frontend typecheck/lint/build and browser regression: **41/41 Chromium
   journeys**, including source-attribution and delayed-removal/correction regressions.
-- [ ] Publish reviewed feature branch and safely sync Desktop while retaining the
-  owner's personal note. User authorized this after the green final gate; publication
-  is proceeding, not yet verified here.
+- [x] Publish reviewed feature branch and safely sync Desktop while retaining the
+  owner's personal note: source commit `92a69b2`, matching remote/Desktop SHA,
+  personal note SHA-256 unchanged; [draft PR #5](https://github.com/Rishflips/Bi-Brain/pull/5)
+  opened, not merged. A documentation-only checkpoint follows this source commit.
 - [x] Verify the final source-frozen serial full regression using explicit filesystem
   module cache: **1,450 passed / 8 platform skips, zero failed, 132 files**, 637.12 s;
   source hashes unchanged. Whole-tree typecheck/lint/build passed separately.

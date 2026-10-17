@@ -54,9 +54,12 @@ source review finding no material security regression. Fresh whole-tree typechec
 lint and build passed. The settled full run used one worker and Vitest's persistent
 module cache: **1,450 passed / 8 platform skips / zero failed, 132 files**, 637.12 s;
 parent read `success:true` and verified the frozen source/test/config hashes unchanged.
-Report: `test-results/vitest/product-release-settled-parent.json`. Publication is now
-proceeding under explicit user authorization; exact-revision Linux/container CI is
-pending, not inferred from this local result.
+Report: `test-results/vitest/product-release-settled-parent.json`. Functional source
+was pushed as `92a69b2684b6d852b16e7be6214f629f0245655c`, Desktop safely fast-forwarded
+with its personal note unchanged, and [draft PR #5](https://github.com/Rishflips/Bi-Brain/pull/5)
+opened. This documentation-only checkpoint follows that source commit. Exact final
+PR-head Linux/container CI is pending, not inferred from this local result; its
+terminal evidence belongs to PR #5's checks. Nothing was merged or publicly deployed.
 The earlier full release run
 failed (missing Vitest temporary transform files plus the actual readiness failure)
 and remains retained, not counted as passing. See BUILD_STATE for the exact reports.

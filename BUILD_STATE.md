@@ -2,7 +2,7 @@
 
 Updated: 2026-10-18
 
-## Current checkpoint — functional capture and readiness repair verified; publication underway
+## Current checkpoint — functional follow-up published; exact-revision CI pending
 
 The owner approved the bounded inline first-note composer → durable saved result →
 find/reopen in Your brain flow, then prioritized calm functionality over visual
@@ -45,10 +45,19 @@ parent separately verified 19 readiness/consent/process checks with one platform
 including the original long-call heartbeat assertion. Fresh whole-tree typecheck,
 lint and build passed before the settled regression.
 
-The failed earlier run is retained below, not counted as passing. User authorized
-commit/push, Desktop sync and a follow-up PR on green; publication is now proceeding.
-Exact pushed-revision Linux/container CI remains to be checked. Payments, runtime
-providers and public deployment stay off; no merge of this follow-up is authorized.
+The failed earlier run is retained below, not counted as passing. Functional source
+was committed/pushed as **`92a69b2684b6d852b16e7be6214f629f0245655c`** and Desktop
+`review/latest-build` fast-forwarded to the same SHA. Parent checked the remote SHA
+and the personal licensing note's unchanged SHA-256. Follow-up
+[draft PR #5](https://github.com/Rishflips/Bi-Brain/pull/5) is open; nothing was merged.
+This documentation-only delivery checkpoint follows that source commit.
+
+The exact final PR-head Linux/container result must be read from PR #5's checks;
+the first source-revision run is [39069371589](https://github.com/Rishflips/Bi-Brain/actions/runs/39069371589).
+An automated completion watcher is running; no CI success is claimed before its
+terminal result. This documentation checkpoint does not change the verified source.
+Payments, runtime providers and public deployment stay off; no merge of this
+follow-up is authorized.
 
 **Latest parent continuation:** the UI's **41/41** browser acceptance is retained.
 Parent independently verified the readiness repair with **19 passed / 1 explicit

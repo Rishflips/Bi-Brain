@@ -75,8 +75,12 @@ Vitest's persistent module cache (`--maxWorkers=1 --fsModuleCache
 disabled. Parent read `success:true`, **1,450 passed / 8 platform skips / zero failed
 across 132 files**, 637.12 s, and verified unchanged frozen source/test/config hashes.
 Its report is `test-results/vitest/product-release-settled-parent.json`.
-Publication is proceeding under the owner's explicit authorization; exact pushed
-revision Linux/container CI is still pending. This does not close the public launch gates.
+Functional source is published as `92a69b2684b6d852b16e7be6214f629f0245655c`,
+Desktop was safely fast-forwarded to the same SHA with the personal note preserved,
+and [draft PR #5](https://github.com/Rishflips/Bi-Brain/pull/5) is open, not merged.
+This documentation-only checkpoint follows that source commit. Exact final PR-head
+Linux/container CI is still pending; read its terminal result in PR #5's checks.
+This does not close the public launch gates.
 The failed report is retained as `test-results/product-release-full-parent.json`;
 it is not being represented as passing.
 
