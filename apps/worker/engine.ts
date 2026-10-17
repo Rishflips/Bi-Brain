@@ -19,7 +19,10 @@ import {
   type PreparedProvider,
   type PreparedUsage,
 } from "../../packages/providers/prepared.ts";
+import type { PreparedDecisionProvider } from "../../packages/providers/prepared-decision.ts";
+import type { DispatchRecord } from "../../packages/domain/spend.ts";
 import { dispatchPrepared, type PreparedAttempt } from "./dispatch.ts";
+import { runDecisionAdvisory } from "./decision-advisory.ts";
 import { AccountingPersistenceError } from "../../packages/storage/managed-spending.ts";
 import {
   LocalDispatchAccounting,
@@ -39,10 +42,26 @@ type GoalPrepared = {
 export class Worker {
   readonly id = randomUUID();
   private readonly accounting: DispatchAccounting;
+  /**
+   * The explicit, OPTIONAL decision-stage pair. When BOTH are present the same
+   * owner review job runs one bounded advisory pass (its own account-bound
+   * coordinator and a structural one-method adapter) BEFORE the independent
+   * reasoning pass. When either is absent, only the reasoning path exists and it
+   * behaves exactly as the S1 worker.
+   */
+  private readonly decisionAccounting?: DispatchAccounting;
+  private readonly decisionProvider?: Pick<
+    PreparedDecisionProvider,
+    "prepareDecision"
+  >;
   constructor(
     readonly brain: Brain,
     readonly provider: PreparedProvider = new PreparedReasoningProvider(),
     accounting?: DispatchAccounting,
+    decision?: {
+      decisionAccounting?: DispatchAccounting;
+      decisionProvider?: Pick<PreparedDecisionProvider, "prepareDecision">;
+    },
   ) {
     if (brain.tenantId !== undefined) {
       // A tenant-bound brain must never fall back to local money. Without an
@@ -59,6 +78,22 @@ export class Worker {
     } else {
       this.accounting =
         accounting ?? new LocalDispatchAccounting(brain.store, brain.clock);
+    }
+    const decisionAccounting = decision?.decisionAccounting;
+    const decisionProvider = decision?.decisionProvider;
+    // Both halves are required to opt into the decision path: a coordinator with
+    // no adapter (or vice versa) leaves the reasoning behavior untouched. A
+    // decision coordinator is account-bound exactly like the reasoning one, so a
+    // foreign account can never be attached.
+    if (decisionAccounting && decisionProvider) {
+      if (decisionAccounting.accountId !== brain.tenantId)
+        throw new BrainError(
+          "UNAUTHORIZED",
+          "Managed decision work requires its account-bound coordinator.",
+          401,
+        );
+      this.decisionAccounting = decisionAccounting;
+      this.decisionProvider = decisionProvider;
     }
   }
   /**
@@ -250,6 +285,27 @@ export class Worker {
       let goalPrepared: GoalPrepared | undefined;
       let attempt: PreparedAttempt | undefined;
       let goalGuardVersion: number | undefined;
+      // The advisory decision stage of the SAME owner review job. It runs after
+      // the tick's cancellation/principal/access checks and BEFORE the
+      // independently authorized reasoning branch, so a decision outcome can
+      // never suppress or authorize reasoning. Missing decision config leaves
+      // this block inert and the reasoning path byte-unchanged.
+      if (
+        this.decisionAccounting &&
+        this.decisionProvider &&
+        j.kind === "review_changed_assumption"
+      )
+        await runDecisionAdvisory(
+          {
+            brain: b,
+            accounting: this.decisionAccounting,
+            provider: this.decisionProvider,
+            owner: this.owner,
+          },
+          j as { id: string; fence: number },
+          this.id,
+          controller.signal,
+        );
       if (
         prefs.provider_enabled &&
         sources.some((s) => s.visibility === "project") &&
@@ -575,7 +631,34 @@ export class Worker {
             });
           }
         } else throw new BrainError("INVALID_INPUT", "Unsupported job kind.");
-        const persisted = this.accounting.receiptForJob(j.id);
+        const combined = this.decisionAccounting
+          ? this.combinedPaidAccounting(j.id)
+          : undefined;
+        let call_id: string | null;
+        let cost_micro_usd: number | null;
+        let usage_status: string;
+        if (combined?.present) {
+          call_id = combined.call_id;
+          usage_status = combined.usage_status;
+          cost_micro_usd =
+            combined.usage_status === "settled"
+              ? combined.cost_micro_usd
+              : combined.usage_status === "no_attempt"
+                ? cost
+                : null;
+        } else {
+          const persisted = this.accounting.receiptForJob(j.id);
+          call_id = persisted?.call_id ?? null;
+          cost_micro_usd =
+            persisted?.state === "settled" ? persisted.actual_micro_usd : cost;
+          usage_status = !persisted
+            ? "no_provider_call"
+            : persisted.state === "settled"
+              ? "settled"
+              : persisted.state === "released"
+                ? "no_attempt"
+                : "unknown";
+        }
         b.createEntity(j.project_id, "receipt", {
           job_id: j.id,
           input_hash: signature,
@@ -585,16 +668,9 @@ export class Worker {
           result_id: resultId,
           evidence: output.items.flatMap((i) => i.evidence),
           goal_evidence: goalPrepared?.evidence ?? [],
-          call_id: persisted?.call_id ?? null,
-          cost_micro_usd:
-            persisted?.state === "settled" ? persisted.actual_micro_usd : cost,
-          usage_status: !persisted
-            ? "no_provider_call"
-            : persisted.state === "settled"
-              ? "settled"
-              : persisted.state === "released"
-                ? "no_attempt"
-                : "unknown",
+          call_id,
+          cost_micro_usd,
+          usage_status,
           ...metadata,
         });
         b.store.run(
@@ -616,7 +692,16 @@ export class Worker {
       try {
         b.store.transaction(() => {
           this.fenced(j);
-          const accounted = this.accounting.hasUnresolved(j.id);
+          // The exact REASONING slot decides whether this attempt may be retried.
+          // A settled/held DECISION row on the SAME job must never suppress a
+          // normal pre-send reasoning retry (its own `hasUnresolved` stays
+          // byte-identical; only the new D-enabled path distinguishes the slots).
+          const accounted = this.decisionAccounting
+            ? (() => {
+                const r = this.accounting.receiptForSlot(j.id, "reasoning");
+                return !!r && r.state !== "released";
+              })()
+            : this.accounting.hasUnresolved(j.id);
           const legacy = !!b.store.get(
             "SELECT 1 FROM reservations WHERE job_id=?",
             j.id,
@@ -650,32 +735,53 @@ export class Worker {
                 "SELECT status,reserved,actual FROM reservations WHERE job_id=?",
                 j.id,
               );
+          let receiptCallId = persisted?.call_id ?? null;
+          let accountingSource = persisted ? "dispatch" : legacyRow ? "legacy" : null;
+          let legacyJobId = legacyRow ? j.id : null;
+          let usageStatus = persisted
+            ? persisted.state === "settled"
+              ? "settled"
+              : persisted.state === "released"
+                ? "no_attempt"
+                : "unknown"
+            : legacyRow
+              ? legacyRow.status === "settled"
+                ? "settled"
+                : "unknown"
+              : "no_attempt";
+          let costMicroUsd = persisted
+            ? persisted.state === "settled"
+              ? persisted.actual_micro_usd
+              : null
+            : legacyRow?.status === "settled"
+              ? Number(legacyRow.actual)
+              : null;
+          // D-enabled: read BOTH exact own-account stage slots and aggregate. Any
+          // marked stage keeps the whole-job total unknown (never zero or a
+          // partial subtotal).
+          const combined = this.decisionAccounting
+            ? this.combinedPaidAccounting(j.id)
+            : undefined;
+          if (combined?.present) {
+            receiptCallId = combined.call_id;
+            accountingSource = "dispatch";
+            legacyJobId = null;
+            usageStatus = combined.usage_status;
+            costMicroUsd =
+              combined.usage_status === "settled"
+                ? combined.cost_micro_usd
+                : null;
+          }
           b.createEntity(j.project_id, "receipt", {
             job_id: j.id,
             outcome: "failed",
             reason: safe,
             code,
-            call_id: persisted?.call_id ?? null,
-            accounting_source: persisted ? "dispatch" : legacyRow ? "legacy" : null,
-            legacy_job_id: legacyRow ? j.id : null,
-            usage_status: persisted
-              ? persisted.state === "settled"
-                ? "settled"
-                : persisted.state === "released"
-                  ? "no_attempt"
-                  : "unknown"
-              : legacyRow
-                ? legacyRow.status === "settled"
-                  ? "settled"
-                  : "unknown"
-                : "no_attempt",
-            cost_micro_usd: persisted
-              ? persisted.state === "settled"
-                ? persisted.actual_micro_usd
-                : null
-              : legacyRow?.status === "settled"
-                ? Number(legacyRow.actual)
-                : null,
+            call_id: receiptCallId,
+            accounting_source: accountingSource,
+            legacy_job_id: legacyJobId,
+            usage_status: usageStatus,
+            cost_micro_usd: costMicroUsd,
             evidence: [],
           });
         });
@@ -687,6 +793,49 @@ export class Worker {
       clearInterval(beat);
     }
     return true;
+  }
+  /**
+   * Exact own-account stage accounting for one job. It reads the DECISION and
+   * REASONING slots independently (never the "latest" row), so a settled decision
+   * and a settled reasoning call sum to the true known job cost while ANY still
+   * marked/unresolved stage forces the whole-job total to unknown — never zero and
+   * never a partial subtotal. Only used on the D-enabled path; the default
+   * reasoning-only path keeps its original receipt mapping byte-for-byte.
+   */
+  private combinedPaidAccounting(jobId: string): {
+    present: boolean;
+    call_id: string | null;
+    cost_micro_usd: number | null;
+    usage_status: "settled" | "unknown" | "no_attempt";
+  } {
+    const slots = [
+      this.decisionAccounting?.receiptForSlot(jobId, "decision"),
+      this.accounting.receiptForSlot(jobId, "reasoning"),
+    ].filter((slot): slot is DispatchRecord => !!slot);
+    if (!slots.length)
+      return {
+        present: false,
+        call_id: null,
+        cost_micro_usd: null,
+        usage_status: "no_attempt",
+      };
+    const call_id = slots[slots.length - 1].call_id;
+    if (slots.some((s) => s.state === "reserved" || s.state === "dispatched"))
+      return { present: true, call_id, cost_micro_usd: null, usage_status: "unknown" };
+    if (slots.every((s) => s.state === "released"))
+      return { present: true, call_id, cost_micro_usd: null, usage_status: "no_attempt" };
+    let total = 0;
+    for (const slot of slots) {
+      if (slot.state !== "settled") continue;
+      const value = slot.actual_micro_usd;
+      if (value === null || !Number.isSafeInteger(value))
+        return { present: true, call_id, cost_micro_usd: null, usage_status: "unknown" };
+      const next = total + value;
+      if (!Number.isSafeInteger(next))
+        return { present: true, call_id, cost_micro_usd: null, usage_status: "unknown" };
+      total = next;
+    }
+    return { present: true, call_id, cost_micro_usd: total, usage_status: "settled" };
   }
   relevant(sources: Source[], goal: string) {
     const words = goal.toLowerCase().match(/[\p{L}\p{N}]{4,}/gu) ?? [];

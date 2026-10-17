@@ -5,13 +5,17 @@ import type {
 } from "../../packages/runtime/managed.ts";
 import type { PreparedProvider } from "../../packages/providers/prepared.ts";
 import { ManagedSpendingStore, AccountingPersistenceError } from "../../packages/storage/managed-spending.ts";
+import { paidTransportsAllowed } from "../../packages/storage/billing-verify.ts";
 import { ManagedDispatchAccounting } from "./managed-accounting.ts";
 import { TenantOnlyAccounting, type DispatchAccounting } from "./accounting.ts";
 import {
   evaluateConfiguredPolicy,
+  installDecisionPolicy,
   readActivation,
   type InstalledActivationPolicy,
+  type InstalledDecisionPolicy,
 } from "../../packages/runtime/managed-activation.ts";
+import type { PreparedDecisionProvider } from "../../packages/providers/prepared-decision.ts";
 import { validateActivationProfile } from "../../packages/domain/managed-activation.ts";
 import { BrainError } from "../../packages/domain/logic.ts";
 import { Worker } from "./engine.ts";
@@ -45,6 +49,22 @@ export type ManagedWorkerOptions = {
    * that drifts from it makes the send guard deny.
    */
   bootstrap?: InstalledActivationPolicy;
+  /**
+   * The frozen installed DECISION policy, resolved exactly ONCE at boot and never
+   * upgraded per tick. Its `worker_id` is the PROCESS boot identity that must match
+   * `decision-worker-ready.json`; it is deliberately distinct from each job's
+   * per-lease `Worker.id`. When absent there is no decision path and reasoning is
+   * byte-unchanged.
+   */
+  decisionBootstrap?: InstalledDecisionPolicy;
+  /**
+   * Explicit per-brain DECISION transport for tests and operator policy. When
+   * omitted (or no frozen decision bootstrap exists) the decision path is inert; a
+   * fake transport can never skip the installed policy or the money coordinator.
+   */
+  decisionProviderFactory?: (
+    brain: Brain,
+  ) => Pick<PreparedDecisionProvider, "prepareDecision">;
 };
 
 /**
@@ -66,6 +86,8 @@ export class ManagedWorker {
   private inflight: Promise<boolean> | null = null;
   /** `undefined` = not yet resolved; `null` = resolved to absent. */
   private installedCache?: InstalledActivationPolicy | null;
+  /** `undefined` = not yet resolved; `null` = resolved to absent (no decision path). */
+  private decisionCache?: InstalledDecisionPolicy | null;
 
   constructor(
     readonly runtime: ManagedRuntime,
@@ -94,8 +116,23 @@ export class ManagedWorker {
   }
 
   private providerFor(brain: Brain): PreparedProvider {
+    if (!this.paidTransportsAllowed()) return unavailableProvider;
     if (this.options.providerFactory) return this.options.providerFactory(brain);
     return unavailableProvider;
+  }
+
+  /**
+   * The ACTUAL enrolled billing mode gate. A sandbox billing root must never install a
+   * real paid transport or paid coordinator, regardless of ALLOW/keys/profile flags,
+   * so no synthetic sandbox payment can ever fund a real model call. Unenrolled/legacy
+   * roots keep their existing behavior; the ledger itself still allows injected
+   * synthetic funding (that is a test-only composition, not a live transport).
+   */
+  private paidTransportsAllowed(): boolean {
+    return paidTransportsAllowed(
+      { db: this.runtime.control.db, path: this.runtime.control.path },
+      this.runtime.root,
+    );
   }
 
   /**
@@ -124,6 +161,7 @@ export class ManagedWorker {
    * coordinator is ever built; a test fake transport cannot skip it.
    */
   private installedPolicy(): InstalledActivationPolicy | undefined {
+    if (!this.paidTransportsAllowed()) return undefined;
     const control = this.runtime.control;
     const optIn = (process.env.BRAIN_MANAGED_ALLOW_PAID ?? "").trim() === "1";
     const configured = evaluateConfiguredPolicy({
@@ -157,6 +195,50 @@ export class ManagedWorker {
     );
   }
 
+  /**
+   * The frozen installed DECISION policy, resolved exactly ONCE and never upgraded
+   * per tick. Only an explicit boot `decisionBootstrap` installs it; there is no
+   * live hot-reload, so a profile change requires a restart.
+   */
+  private decisionInstalled(): InstalledDecisionPolicy | undefined {
+    if (!this.paidTransportsAllowed()) return undefined;
+    if (this.decisionCache !== undefined)
+      return this.decisionCache ?? undefined;
+    const bootstrap = this.options.decisionBootstrap;
+    const resolved = bootstrap
+      ? installDecisionPolicy({
+          root: bootstrap.root,
+          profile: bootstrap.profile,
+          worker_id: bootstrap.worker_id,
+          optIn: bootstrap.optIn,
+        })
+      : undefined;
+    this.decisionCache = resolved ?? null;
+    return resolved;
+  }
+
+  private decisionAccountingFor(
+    brain: Brain,
+    installed: InstalledDecisionPolicy | undefined,
+  ): DispatchAccounting | undefined {
+    if (!installed) return undefined;
+    return new ManagedDispatchAccounting(
+      new ManagedSpendingStore(this.runtime.control, brain.clock),
+      brain,
+      brain.clock,
+      installed,
+    );
+  }
+
+  private decisionProviderFor(
+    brain: Brain,
+  ): Pick<PreparedDecisionProvider, "prepareDecision"> | undefined {
+    if (!this.paidTransportsAllowed()) return undefined;
+    return this.options.decisionProviderFactory
+      ? this.options.decisionProviderFactory(brain)
+      : undefined;
+  }
+
   private async run(): Promise<boolean> {
     const attempted = new Set<string>();
     const installed = this.resolveInstalled();
@@ -174,10 +256,19 @@ export class ManagedWorker {
       }
       try {
         const accounting = this.accountingFor(handle.brain, installed);
+        const installedDecision = this.decisionInstalled();
+        const decisionProvider = installedDecision
+          ? this.decisionProviderFor(handle.brain)
+          : undefined;
+        const decisionAccounting =
+          installedDecision && decisionProvider
+            ? this.decisionAccountingFor(handle.brain, installedDecision)
+            : undefined;
         const worker = new Worker(
           handle.brain,
           this.providerFor(handle.brain),
           accounting,
+          { decisionAccounting, decisionProvider },
         );
         try {
           // A tick drains every active account once: an account with no queued

@@ -6,7 +6,7 @@ The product runtime is model-agnostic. The owner's development orchestration cho
 
 Current reasoning: `PreparedProvider.prepareCall(input)` synchronously freezes request/configuration and returns identity, a reservation bound and one-shot `execute(signal)`. Execution returns accounting separately from validated output. `packages/providers/prepared.ts` contains the Responses adapter; the legacy `openai.ts` path is removed.
 
-Current decision transport: the legacy `DecisionProvider.upperBound(input)` / `decide(input, signal)` in `system-one.ts` remains compatible. `PreparedDecisionProvider` in `prepared-decision.ts` provides a separate one-shot contract for the same bounded TypeSafe/Cloudflare request format; it deliberately exposes no `decide` shortcut. Decision policy, worker routing and managed decision accounting/activation are not integrated. General triage/connector interfaces remain design targets, not proof of installed integrations.
+Current decision transport: the legacy `DecisionProvider.upperBound(input)` / `decide(input, signal)` in `system-one.ts` remains compatible. `PreparedDecisionProvider` in `prepared-decision.ts` provides a separate one-shot contract for the same bounded TypeSafe/Cloudflare request format; it deliberately exposes no `decide` shortcut. S1's separate default-off managed activation/accounting/consent and S2's advisory worker are locally accepted with synthetic transport, including actual worker-process restart/readiness tests. This is not live endpoint, pricing or semantic-quality verification. General triage/connector interfaces remain design targets, not proof of installed integrations.
 
 Provider calls are server/worker only. No API keys in browser code, context packages, or agent prompts.
 
@@ -40,7 +40,7 @@ Do not hardcode unverified pricing, speed, probability calibration, or model cap
 
 Reserve each provider dispatch and enforce aggregate job/tenant/service limits before integrating decision calls with deeper reasoning. Existing job-keyed reservations are not sufficient to account for multiple paid stages. Preserve uncertain usage after ambiguous failures. No external provider fallback without explicit consent, no model calls in storage transactions, and no classifier-driven loss of saved originals.
 
-### Prepared decision contract (not wired into production)
+### Prepared decision contract and default-off managed consumer
 
 `new PreparedDecisionProvider(config, fetcher?).prepareDecision(input)` performs no
 I/O. Configuration is defensively copied at construction; preparation fixes the
@@ -68,9 +68,23 @@ Choices/probabilities must match the closed prepared option set; probabilities
 remain uncalibrated and advisory. There is no retry, fallback or repair.
 
 The adapter's one-shot latch is **instance-local**, not durable deduplication or
-spending authority. A future coordinator must obtain fresh financial marks and
-enforce consent/authorization before I/O. No worker, HTTP or UI imports this
-module yet. Synthetic transport tests establish these contract properties, not
+spending authority. The S1 account-bound decision coordinator obtains fresh
+financial marks and checks consent, installed policy, job/goal binding and lease
+before I/O. S2's managed worker explicitly runs the decision and reasoning stages
+on the same opted-in goal-review job with separate coordinators and paid slots.
+It rechecks the exact bounded source/goal context before reserve, mark and I/O,
+then checks both known-settled financial projections before publication/recovery.
+Unknown usage retains its shared hold; no resend or external-provider fallback
+occurs. A decision result is an internal hypothesis, never dispatch permission or
+a reason to suppress reasoning. Its extra cost can still exhaust the ordinary
+shared job budget; this is not a claim of a cost-saving policy.
+
+The worker freezes its enrolled decision profile and worker-only
+`BRAIN_DECISION_API_KEY` at startup. Its own separate readiness is checked at
+prepare/execute and refreshed by the existing heartbeat. Missing decision setup
+does not install a decision path or change baseline reasoning. Rotation requires
+a worker restart, not a live configuration/key reload. Synthetic transport tests
+establish these properties, not
 live endpoint compatibility, real pricing, semantic quality or a completed G4.
 
 ## Output contract

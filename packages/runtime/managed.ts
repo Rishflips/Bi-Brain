@@ -8,7 +8,7 @@ import {
   rmSync,
   writeFileSync,
 } from "node:fs";
-import type { DatabaseSync } from "node:sqlite";
+import { DatabaseSync } from "node:sqlite";
 import { dirname, isAbsolute, resolve, sep } from "node:path";
 import { randomBytes } from "node:crypto";
 import { z } from "zod";
@@ -19,11 +19,23 @@ import { BrainError } from "../domain/logic.ts";
 import { MANAGED_RESTORE_INCOMPLETE } from "../storage/managed-restore-policy.ts";
 import { managedMoneyView } from "./managed-money.ts";
 import {
+  activeFence,
+  clearFence,
+  fenceAccount,
+  mintAccountIncarnation,
+  readAccountIncarnation,
+} from "../storage/managed-incarnation.ts";
+import type { Incarnation } from "../domain/billing-admission.ts";
+import {
+  decisionServerCapability,
+  evaluateConfiguredDecisionPolicy,
   evaluateConfiguredPolicy,
   readActivation,
+  readDecisionActivation,
   serverCapability,
 } from "./managed-activation.ts";
 import { readWorkerReadiness } from "./worker-readiness.ts";
+import { readDecisionReadiness } from "./decision-worker-readiness.ts";
 import type { ActivationReason } from "../domain/managed-activation.ts";
 
 const UUID =
@@ -32,6 +44,32 @@ const MARKER = "provisioned.json";
 
 export type ManagedAccount = Account;
 export type ManagedHandle = { brain: Brain; release: () => void };
+
+/**
+ * Trusted DECISION-stage runtime capability helper. It is the exact decision
+ * analogue of `managedCapability`, using only the separate decision manifest and
+ * the separate `decision-worker-ready.json` lease. It never reads the reasoning
+ * readiness file, never trusts a caller field and never grants admission.
+ */
+export function managedDecisionCapability(input: {
+  control: { db: DatabaseSync; path: string };
+  root: string;
+  now: Date;
+  optIn: boolean;
+}): { available: boolean; reason: ActivationReason } {
+  const configured = evaluateConfiguredDecisionPolicy({
+    control: input.control,
+    root: input.root,
+    now: input.now,
+    optIn: input.optIn,
+  });
+  if (!configured.ready) return { available: false, reason: configured.reason };
+  const profile = readDecisionActivation(input.control, input.root);
+  if (!profile) return { available: false, reason: "profile_invalid" };
+  const readiness = readDecisionReadiness(input.root, input.now);
+  const cap = decisionServerCapability({ configured, readiness, profile });
+  return { available: cap.ready, reason: cap.reason };
+}
 
 /**
  * Trusted runtime capability helper. Derives the CURRENT shared-loader configured
@@ -68,6 +106,123 @@ type TenantPaths = {
   marker: string;
 };
 
+type TenantStorageProbe = {
+  dbPresent: boolean;
+  dbOperational: boolean;
+  vaultManifest: boolean;
+};
+
+/**
+ * Reads only the tenant's own structural metadata (never a financial row) to decide
+ * whether opening it would rebuild its operational database from an existing vault.
+ * It opens the database read-only and closes it immediately; it never migrates,
+ * repairs or writes. A missing/empty/unreadable database with a valid vault is
+ * exactly the constructor's history-changing rebuild branch.
+ */
+function probeTenantStorage(
+  dbPath: string,
+  vaultPath: string,
+): TenantStorageProbe {
+  const dbPresent = existsSync(dbPath);
+  let dbOperational = false;
+  if (dbPresent) {
+    let db: DatabaseSync | undefined;
+    try {
+      db = new DatabaseSync(dbPath, { readOnly: true });
+      dbOperational = !!db
+        .prepare(
+          "SELECT name FROM sqlite_master WHERE type='table' AND name='migrations'",
+        )
+        .get();
+    } catch {
+      dbOperational = false;
+    } finally {
+      try {
+        db?.close();
+      } catch {
+        /* an unreadable tenant database is treated as not operational */
+      }
+    }
+  }
+  return {
+    dbPresent,
+    dbOperational,
+    vaultManifest: existsSync(resolve(vaultPath, "manifest.json")),
+  };
+}
+
+/** Atomic marker write (tmp + rename) inside the tenant directory. */
+function writeTenantMarker(
+  markerPath: string,
+  payload: Record<string, unknown>,
+): void {
+  const tmp = resolve(
+    dirname(markerPath),
+    `${MARKER}.${randomBytes(6).toString("hex")}.tmp`,
+  );
+  rmSync(tmp, { force: true });
+  writeFileSync(tmp, JSON.stringify(payload), { mode: 0o600 });
+  renameSync(tmp, markerPath);
+}
+
+/**
+ * Replaces a tenant completion marker after its exact identity has been verified:
+ * it must already be a schema-2 marker for this account/subject bound to the exact
+ * previous incarnation. A link, unreadable, foreign or tampered marker is refused
+ * and never overwritten.
+ */
+function replaceTenantMarker(
+  markerPath: string,
+  account: { id: string; issuer: string; subject: string },
+  previous: Incarnation,
+  next: Incarnation,
+): void {
+  const stat = (() => {
+    try {
+      return lstatSync(markerPath);
+    } catch {
+      return undefined;
+    }
+  })();
+  if (!stat || stat.isSymbolicLink() || !stat.isFile())
+    throw new BrainError(
+      "UNAUTHORIZED",
+      "Managed account marker is not a real file.",
+      401,
+    );
+  let existing: any;
+  try {
+    existing = JSON.parse(readFileSync(markerPath, "utf8"));
+  } catch {
+    throw new BrainError(
+      "UNAUTHORIZED",
+      "Managed account marker is unreadable.",
+      401,
+    );
+  }
+  if (
+    existing?.schema !== 2 ||
+    existing.account_id !== account.id ||
+    existing.issuer !== account.issuer ||
+    existing.subject !== account.subject ||
+    existing.incarnation !== previous.incarnation ||
+    Number(existing.provisioning_generation) !== previous.provisioning_generation
+  )
+    throw new BrainError(
+      "UNAUTHORIZED",
+      "Managed account marker does not match its provisioning incarnation.",
+      401,
+    );
+  writeTenantMarker(markerPath, {
+    schema: 2,
+    account_id: account.id,
+    issuer: account.issuer,
+    subject: account.subject,
+    incarnation: next.incarnation,
+    provisioning_generation: next.provisioning_generation,
+  });
+}
+
 /**
  * Owns one explicit managed filesystem root and the control store beside it.
  * Each managed account gets its own SQLite database, Git vault and protected
@@ -85,6 +240,7 @@ export class ManagedRuntime {
   private readonly clock: () => Date;
   private readonly maxOpen: number;
   private readonly capability?: () => { ready: boolean; reason: string };
+  private readonly decisionCapability?: () => { ready: boolean; reason: string };
   private readonly cache = new Map<string, Entry>();
   private closed = false;
 
@@ -99,6 +255,12 @@ export class ManagedRuntime {
        * caller field and never grants admission. Absent => fail-closed false.
        */
       capability?: () => { ready: boolean; reason: string };
+      /**
+       * Trusted, closed DECISION-stage capability accessor (separate live decision
+       * profile + fresh decision worker lease). Distinct from `capability`; absent =>
+       * fail-closed false, so a local brain can never enable decision consent.
+       */
+      decisionCapability?: () => { ready: boolean; reason: string };
     } = {},
   ) {
     if (typeof root !== "string" || !root || !isAbsolute(root))
@@ -110,6 +272,7 @@ export class ManagedRuntime {
     this.root = resolve(root);
     this.clock = options.clock ?? (() => new Date());
     this.capability = options.capability;
+    this.decisionCapability = options.decisionCapability;
     this.maxOpen = z
       .number()
       .int()
@@ -294,17 +457,132 @@ export class ManagedRuntime {
         401,
       );
     }
-    if (
+    const hasIncarnation = !!this.control.db
+      .prepare(
+        "SELECT 1 AS present FROM sqlite_master WHERE type='table' AND name='managed_account_incarnation'",
+      )
+      .get();
+    const incarnation = hasIncarnation
+      ? readAccountIncarnation(this.control.db, tenantId)
+      : undefined;
+    if (incarnation) {
+      if (
+        marker?.schema !== 2 ||
+        marker.account_id !== tenantId ||
+        marker.issuer !== account.issuer ||
+        marker.incarnation !== incarnation.incarnation ||
+        Number(marker.provisioning_generation) !== incarnation.provisioning_generation
+      )
+        throw new BrainError(
+          "UNAUTHORIZED",
+          "Managed account marker does not match its provisioning incarnation.",
+          401,
+        );
+      if (activeFence(this.control.db, tenantId))
+        throw new BrainError(
+          "UNAUTHORIZED",
+          "Managed account is fenced for a history-changing operation.",
+          401,
+        );
+    } else if (
       marker?.schema !== 1 ||
       marker.account_id !== tenantId ||
       marker.issuer !== account.issuer
-    )
+    ) {
+      // A pre-enrollment schema-1 tenant (no incarnation row yet) stays trusted and
+      // knowledge-readable; it is simply non-funding until the offline enrollment
+      // backfills a generation. This is never a manual/billing fallback.
       throw new BrainError(
         "UNAUTHORIZED",
         "Managed account marker does not match its account.",
         401,
       );
+    }
     return paths;
+  }
+
+  private hasIncarnationTable(): boolean {
+    return !!this.control.db
+      .prepare(
+        "SELECT 1 AS present FROM sqlite_master WHERE type='table' AND name='managed_account_incarnation'",
+      )
+      .get();
+  }
+
+  /**
+   * If opening this tenant would rebuild its operational database from an existing
+   * vault — silently losing any tenant-side financial history — fence and advance the
+   * account's provisioning generation in ONE control transaction BEFORE the storage
+   * constructor runs. A legacy money-4 root or a pre-enrollment schema-1 tenant (no
+   * incarnation row) is left exactly as before. Returns true when it rebuilt; a
+   * failure after the fence leaves that fence ACTIVE.
+   */
+  private rebuildIfHistoryChanging(
+    account: ManagedAccount,
+    paths: TenantPaths,
+  ): boolean {
+    if (!this.hasIncarnationTable()) return false;
+    const previous = readAccountIncarnation(this.control.db, account.id);
+    if (!previous) return false;
+    const probe = probeTenantStorage(paths.db, paths.vault);
+    if (!probe.vaultManifest || probe.dbOperational) return false;
+    this.fencedRebuild(account, paths, previous);
+    return true;
+  }
+
+  private fencedRebuild(
+    account: ManagedAccount,
+    paths: TenantPaths,
+    previous: Incarnation,
+  ): void {
+    const now = this.clock().toISOString();
+    let next!: Incarnation;
+    this.control.db.exec("BEGIN IMMEDIATE");
+    try {
+      const row = this.control.db
+        .prepare("SELECT id,issuer,subject,state FROM managed_accounts WHERE id=?")
+        .get(account.id) as
+        | { id: string; issuer: string; subject: string; state: string }
+        | undefined;
+      if (
+        !row ||
+        row.state !== "active" ||
+        row.issuer !== account.issuer ||
+        row.subject !== account.subject
+      )
+        throw new BrainError("UNAUTHORIZED", "Managed account unavailable.", 401);
+      const current = readAccountIncarnation(this.control.db, account.id);
+      if (!current || current.incarnation !== previous.incarnation)
+        throw new BrainError(
+          "CONFLICT",
+          "The provisioning incarnation changed concurrently.",
+          409,
+        );
+      fenceAccount(this.control.db, account.id, "rebuild", now);
+      next = readAccountIncarnation(this.control.db, account.id)!;
+      this.control.db.exec("COMMIT");
+    } catch (error) {
+      this.control.db.exec("ROLLBACK");
+      throw error;
+    }
+    // The fence is now ACTIVE. There is deliberately no try/finally clear: any
+    // failure below leaves it active (paid held) until the operator explicitly
+    // re-admits offline. Old admissions stay stale forever otherwise.
+    const store = new Storage(paths.db, { vault: paths.vault });
+    store.close();
+    replaceTenantMarker(paths.marker, account, previous, next);
+    clearFence(this.control.db, account.id, this.clock().toISOString());
+    this.assertTenant(account.id, account);
+  }
+
+  private tenantPaths(dir: string): TenantPaths {
+    return {
+      dir,
+      db: resolve(dir, "brain.sqlite"),
+      vault: resolve(dir, "vault"),
+      protected: resolve(dir, "vault-protected"),
+      marker: resolve(dir, MARKER),
+    };
   }
 
   /**
@@ -317,42 +595,88 @@ export class ManagedRuntime {
     this.assertOpen();
     const account = this.control.provision(issuer, subject);
     const dir = this.container(account.id, true).dir;
-    const db = resolve(dir, "brain.sqlite");
-    const vault = resolve(dir, "vault");
-    const protectedDir = resolve(dir, "vault-protected");
-    const marker = resolve(dir, MARKER);
-    for (const path of [db, vault, protectedDir, marker])
+    const paths = this.tenantPaths(dir);
+    for (const path of [paths.db, paths.vault, paths.protected, paths.marker])
       if (existsSync(path) && lstatSync(path).isSymbolicLink())
         throw new BrainError(
           "INVALID_INPUT",
           "Managed account path is occupied by a link.",
           409,
         );
-    if (!existsSync(db) || !existsSync(vault)) {
-      const store = new Storage(db, { vault });
+    const rebuilt = this.rebuildIfHistoryChanging(account, paths);
+    if (!rebuilt && (!existsSync(paths.db) || !existsSync(paths.vault))) {
+      const store = new Storage(paths.db, { vault: paths.vault });
       store.close();
     }
-    if (!existsSync(protectedDir))
-      mkdirSync(protectedDir, { recursive: true, mode: 0o700 });
-    if (!existsSync(marker)) {
-      const tmp = resolve(
-        dir,
-        `${MARKER}.${randomBytes(6).toString("hex")}.tmp`,
+    if (!existsSync(paths.protected))
+      mkdirSync(paths.protected, { recursive: true, mode: 0o700 });
+
+    const hasIncarnationTable = this.hasIncarnationTable();
+    let incarnation = hasIncarnationTable
+      ? readAccountIncarnation(this.control.db, account.id)
+      : undefined;
+    const markerPresent = existsSync(paths.marker);
+    // A newly provisioned v5 account mints exactly one generation-1 incarnation. An
+    // already-marked account (including a pre-enrollment schema-1 tenant) is never
+    // silently adopted into billing by minting a generation during provision.
+    if (hasIncarnationTable && !incarnation && !markerPresent) {
+      incarnation = mintAccountIncarnation(this.control.db, {
+        account_id: account.id,
+        issuer: account.issuer,
+        subject: account.subject,
+        now: this.clock().toISOString(),
+        nonce: randomBytes(32).toString("hex"),
+      });
+    }
+    if (!markerPresent) {
+      writeTenantMarker(
+        paths.marker,
+        incarnation
+          ? {
+              schema: 2,
+              account_id: account.id,
+              issuer: account.issuer,
+              subject: account.subject,
+              incarnation: incarnation.incarnation,
+              provisioning_generation: incarnation.provisioning_generation,
+            }
+          : {
+              schema: 1,
+              account_id: account.id,
+              issuer: account.issuer,
+              subject: account.subject,
+            },
       );
-      rmSync(tmp, { force: true });
-      writeFileSync(
-        tmp,
-        JSON.stringify({
-          schema: 1,
-          account_id: account.id,
-          issuer: account.issuer,
-          subject: account.subject,
-        }),
-        { mode: 0o600 },
-      );
-      renameSync(tmp, marker);
     }
     this.assertTenant(account.id, account);
+    return account;
+  }
+
+  /**
+   * Explicit supported rebuild of one provisioned tenant from its own vault. It is
+   * the only operation that rebuilds a missing/empty operational database for an
+   * enrolled schema-2 account, and it fences and advances that account's generation
+   * first, so any pre-rebuild admission is stale and paid work is held. A failure
+   * leaves the fence active; only an explicit offline re-admit restores funding. A
+   * legacy money-4 root and a healthy tenant are left unchanged.
+   */
+  reprovision(tenantId: string): ManagedAccount {
+    this.assertOpen();
+    if (typeof tenantId !== "string" || !UUID.test(tenantId))
+      throw new BrainError("UNAUTHORIZED", "Managed account unavailable.", 401);
+    const account = this.control.account(tenantId);
+    if (!account || account.state !== "active")
+      throw new BrainError("UNAUTHORIZED", "Managed account unavailable.", 401);
+    const dir = this.container(tenantId, false).dir;
+    const paths = this.tenantPaths(dir);
+    const rebuilt = this.rebuildIfHistoryChanging(account, paths);
+    if (!rebuilt && (!existsSync(paths.db) || !existsSync(paths.vault))) {
+      const store = new Storage(paths.db, { vault: paths.vault });
+      store.close();
+    }
+    if (!existsSync(paths.protected))
+      mkdirSync(paths.protected, { recursive: true, mode: 0o700 });
+    if (!rebuilt) this.assertTenant(tenantId, account);
     return account;
   }
 
@@ -376,6 +700,9 @@ export class ManagedRuntime {
       cached.lastUsed = this.clock().getTime();
       return this.handle(tenantId, cached);
     }
+    // Fence and advance BEFORE the storage constructor can rebuild an empty
+    // operational database from the vault. A healthy tenant is untouched.
+    this.rebuildIfHistoryChanging(account, paths);
     this.evictIdle(this.maxOpen - 1);
     if (this.cache.size >= this.maxOpen)
       throw new BrainError(
@@ -391,6 +718,7 @@ export class ManagedRuntime {
         () => this.control.account(tenantId)?.state === "active",
         () => managedMoneyView(this.control, tenantId, this.clock),
         this.capability,
+        this.decisionCapability,
       ),
       pins: 1,
       lastUsed: this.clock().getTime(),

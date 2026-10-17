@@ -30,6 +30,13 @@ export interface DispatchAccounting {
   assertCanExecute?(callId: string, lease: JobLease): void;
   settle(callId: string, actualMicroUsd: number): DispatchRecord;
   releaseUndispatched(callId: string): DispatchRecord;
+  /**
+   * Authoritative READ of this account's dispatch slot by its exact logical key
+   * (job + dispatch_key). It is stage-agnostic and account-scoped: a decision and a
+   * reasoning slot on the SAME job stay distinct, and it never returns another
+   * account's row. Read-only; it never creates, holds or settles money.
+   */
+  receiptForSlot(jobId: string, dispatchKey: string): DispatchRecord | undefined;
   readReceipt(callId: string): DispatchRecord | undefined;
   /**
    * Authoritative latest receipt for a job, available even before a call id was
@@ -68,6 +75,14 @@ export class LocalDispatchAccounting implements DispatchAccounting {
   }
   readReceipt(callId: string) {
     return this.ledger.readReceipt(callId);
+  }
+  receiptForSlot(jobId: string, dispatchKey: string) {
+    const row = this.store.get<{ call_id: string }>(
+      "SELECT call_id FROM provider_dispatches WHERE job_id=? AND dispatch_key=? ORDER BY created_at DESC LIMIT 1",
+      jobId,
+      dispatchKey,
+    );
+    return row ? this.ledger.readReceipt(row.call_id) : undefined;
   }
   receiptForJob(jobId: string) {
     const row = this.store.get<{ call_id: string }>(
@@ -118,6 +133,9 @@ export class TenantOnlyAccounting implements DispatchAccounting {
   }
   readReceipt(callId: string) {
     return this.reads.readReceipt(callId);
+  }
+  receiptForSlot(jobId: string, dispatchKey: string) {
+    return this.reads.receiptForSlot(jobId, dispatchKey);
   }
   receiptForJob(jobId: string) {
     return this.reads.receiptForJob(jobId);

@@ -9,7 +9,8 @@ import {
 } from "node:fs";
 import { resolve } from "node:path";
 import { ControlStore } from "./control.ts";
-import { managedMoneySchemaVersion, ManagedSpendingStore } from "./managed-spending.ts";
+import { ManagedSpendingStore } from "./managed-spending.ts";
+import { supportedActivationSchema } from "./managed-activation-state.ts";
 import { BrainError, canonical } from "../domain/logic.ts";
 import { validateAttestOptions } from "../domain/managed-reconciliation.ts";
 import {
@@ -33,6 +34,11 @@ import {
   validateManagedAudit,
 } from "../runtime/managed-audit.ts";
 import type { ControlEpoch } from "../domain/managed-reconciliation.ts";
+import {
+  appendActivationEvent,
+  disableDecisionActivationInTx,
+  writeDecisionActivationMirror,
+} from "./managed-decision-activation.ts";
 
 /**
  * Persistence for the one shared, default-off activation policy.
@@ -341,6 +347,8 @@ export type ActivationDisableResult = {
   disabled: true;
   version: number;
   profile?: ActivationProfile;
+  /** Version of the decision profile after the coordinated global stop, if any. */
+  decision_version?: number;
 };
 
 function sameProfile(
@@ -489,6 +497,16 @@ export class ManagedActivationStore {
     // Explicit schema migration before any audit/enrollment.
     void new ManagedSpendingStore(this.control, this.clock);
     const auditControl = { db: this.control.db, path: this.control.path };
+    // The ACTUAL closed, supported control version (money-4, or money-5 with the
+    // strict integrated schema and verified protected enrollment). Never a fixed 4,
+    // and never a loosened `>= 4`.
+    const liveSchema = managedControlSchemaVersion(this.control.db);
+    if (!supportedActivationSchema(auditControl, this.root))
+      throw new BrainError(
+        "AUDIT_STALE",
+        "Enroll with a current supported control schema; initialize or reconcile first.",
+        409,
+      );
 
     // Bounded preflight OUTSIDE the write transaction.
     const epoch = this.requireLiveEpoch();
@@ -501,7 +519,7 @@ export class ManagedActivationStore {
       );
     const audit = this.readAudit(operator.audit_id);
     if (!audit) throw invalid("The activation audit id is unknown.");
-    if (audit.control_schema_version !== managedMoneySchemaVersion)
+    if (audit.control_schema_version !== liveSchema)
       throw new BrainError(
         "AUDIT_STALE",
         "Enroll with a current schema audit; run managed:reconcile audit-history first.",
@@ -526,7 +544,7 @@ export class ManagedActivationStore {
     const preflight = {
       epoch: epoch.epoch,
       nonce: epoch.nonce,
-      schema: managedMoneySchemaVersion,
+      schema: liveSchema,
       auditDigest,
       inventoryDigest: managedControlInventoryDigest(this.control.db),
     };
@@ -629,51 +647,99 @@ export class ManagedActivationStore {
     if (!Number.isSafeInteger(expectedVersion) || expectedVersion < 0)
       throw invalid("Invalid expected activation version.");
     assertTrustedManagedRoot(this.root, this.control.path);
+    // Reversible schema-forward before the stop transaction (same as enroll) so a
+    // genuine v3 root can still be stopped atomically and the event table exists.
+    void new ManagedSpendingStore(this.control, this.clock);
+    let decisionDisabled: ReturnType<typeof disableDecisionActivationInTx> | undefined;
     const result = this.transaction<ActivationDisableResult>(() => {
       const current = readActivationRow(this.control.db);
-      if (!current) return { disabled: true, version: 0 };
-      if (current.version !== expectedVersion)
+      let version = 0;
+      let profile: ActivationProfile | undefined;
+      if (current) {
+        if (current.version !== expectedVersion)
+          throw new BrainError(
+            "DISPATCH_CONFLICT",
+            "The activation profile changed concurrently.",
+            409,
+          );
+        if (current.enabled) {
+          const nextVersion = current.version + 1;
+          if (!Number.isSafeInteger(nextVersion))
+            throw new BrainError(
+              "DISPATCH_CONFLICT",
+              "The activation profile version cannot advance safely.",
+              409,
+            );
+          const next: ActivationProfile = {
+            ...current,
+            enabled: false,
+            version: nextVersion,
+            updated_at: this.clock().toISOString(),
+          };
+          next.config_digest = profileConfigDigest(next);
+          next.fingerprint = activationFingerprint(next);
+          upsertActivationRow(this.control.db, validateActivationProfile(next));
+          // Record the reasoning-stage stop in the SAME transaction, and only when the
+          // profile actually changed (never fabricate an event for an already-off row).
+          appendActivationEvent(
+            this.control.db,
+            "reasoning",
+            "disabled",
+            next.version,
+            next.fingerprint,
+            next.epoch,
+            next.updated_at,
+          );
+          version = nextVersion;
+          profile = next;
+        } else {
+          version = current.version;
+          profile = current;
+        }
+      } else if (expectedVersion !== 0) {
         throw new BrainError(
           "DISPATCH_CONFLICT",
           "The activation profile changed concurrently.",
           409,
         );
-      if (!current.enabled)
-        return { disabled: true, version: current.version, profile: current };
-      const nextVersion = current.version + 1;
-      if (!Number.isSafeInteger(nextVersion))
-        throw new BrainError(
-          "DISPATCH_CONFLICT",
-          "The activation profile version cannot advance safely.",
-          409,
-        );
-      const next: ActivationProfile = {
-        ...current,
-        enabled: false,
-        version: nextVersion,
-        updated_at: this.clock().toISOString(),
-      };
-      next.config_digest = profileConfigDigest(next);
-      next.fingerprint = activationFingerprint(next);
-      upsertActivationRow(this.control.db, validateActivationProfile(next));
-      return { disabled: true, version: nextVersion, profile: next };
-    });
-    // The SQL row is already authoritative-off. Only a profile we own may be
-    // rewritten to the disabled state; an unrecognized marker path is NEVER
-    // recursively deleted and no link is followed.
-    if (result.profile) {
-      try {
-        assertTrustedManagedRoot(this.root, this.control.path);
-        writeActivationMirror(this.root, result.profile);
-      } catch {
-        /* SQL is off; a stale or unrecognized mirror fails closed. */
       }
+      // The global paid stop disables BOTH stages in ONE transaction: a failure of
+      // the decision update rolls back the reasoning update too.
+      decisionDisabled = disableDecisionActivationInTx(this.control.db, this.clock);
+      return {
+        disabled: true,
+        version,
+        profile,
+        decision_version:
+          decisionDisabled.kind === "disabled" || decisionDisabled.kind === "unchanged"
+            ? decisionDisabled.profile.version
+            : undefined,
+      };
+    });
+    // The SQL rows are already authoritative-off. A mirror write is attempted for
+    // each profile we own; a failure throws (both SQL rows stay false, fail closed)
+    // and never recursively deletes an unrecognized marker path nor follows a link.
+    if (result.profile) {
+      assertTrustedManagedRoot(this.root, this.control.path);
+      writeActivationMirror(this.root, result.profile);
+    }
+    if (decisionDisabled?.kind === "disabled") {
+      assertTrustedManagedRoot(this.root, this.control.path);
+      writeDecisionActivationMirror(this.root, decisionDisabled.profile);
     }
     const readback = this.readState();
     if (readback.state === "active" && readback.profile?.enabled)
       throw new BrainError(
         "DISPATCH_CONFLICT",
         "The activation profile did not disable.",
+        409,
+      );
+    // The reasoning stop is committed and mirrored; a corrupt decision row was still
+    // stopped truthfully (raw enabled=0) and now needs operator repair.
+    if (decisionDisabled?.kind === "invalid_disabled")
+      throw new BrainError(
+        "INVALID_INPUT",
+        "Paid work stopped; decision configuration needs repair.",
         409,
       );
     return result;

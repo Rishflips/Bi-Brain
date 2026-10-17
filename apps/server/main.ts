@@ -7,6 +7,7 @@ import { ManagedLogin } from "../../packages/identity/managed-login.ts";
 import {
   managedAllowPaidFlag,
   managedCapability,
+  managedDecisionCapability,
 } from "./startup-gates.ts";
 
 // Fail closed before any storage or adapter is constructed: an unknown mode or
@@ -30,14 +31,31 @@ if (config.mode === "managed") {
     available: false,
     reason: "off",
   });
+  let decisionCapability = (): { available: boolean; reason: string } => ({
+    available: false,
+    reason: "off",
+  });
   const runtime = new ManagedRuntime(config.managedRoot, {
     capability: () => {
       const c = capability();
       return { ready: c.available, reason: c.reason };
     },
+    decisionCapability: () => {
+      const c = decisionCapability();
+      return { ready: c.available, reason: c.reason };
+    },
   });
   capability = () => {
     const c = managedCapability({
+      control: runtime.control,
+      root: runtime.root,
+      now: runtime.control.clock(),
+      optIn: managedAllowPaidFlag(),
+    });
+    return { available: c.available, reason: c.reason };
+  };
+  decisionCapability = () => {
+    const c = managedDecisionCapability({
       control: runtime.control,
       root: runtime.root,
       now: runtime.control.clock(),
@@ -53,6 +71,7 @@ if (config.mode === "managed") {
     publicOrigin: config.publicOrigin,
     metadataLogs: true,
     capability: () => capability(),
+    decisionCapability: () => decisionCapability(),
   });
   await app.listen({ host, port });
   // No secret is ever printed; the operator learns the mode and origin only.

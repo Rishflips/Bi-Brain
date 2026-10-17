@@ -26,6 +26,12 @@ import {
   readActivationRow,
 } from "../storage/managed-activation.ts";
 import {
+  ManagedDecisionActivationStore,
+  decisionActivationMirrorPath,
+  readDecisionActivationMirror,
+  readDecisionActivationRow,
+} from "../storage/managed-decision-activation.ts";
+import {
   applyRestoreSafetyBarrier,
   purgeRetainedDeletedSource,
 } from "../storage/restore-policy.ts";
@@ -40,6 +46,12 @@ import {
   rootMarkerSchema,
   writeRootMarker,
 } from "./managed-operator.ts";
+import {
+  clearFence,
+  fenceAccount,
+  readAccountIncarnation,
+} from "../storage/managed-incarnation.ts";
+import type { Incarnation } from "../domain/billing-admission.ts";
 
 /**
  * Conservative cold/offline managed backup and restore.
@@ -289,8 +301,106 @@ function readControlEpoch(
 }
 
 /**
- * Rotates the staged control generation and rewrites the root marker before
- * publish. A snapshot without any control generation is left uninitialized (the
+ * Reads the per-account provisioning incarnations from a control database, or an
+ * empty map when the money-5 incarnation table is absent (a legacy root). Read-only.
+ */
+function readIncarnations(
+  controlPath: string,
+): Map<string, { incarnation: string; provisioning_generation: number }> {
+  const map = new Map<
+    string,
+    { incarnation: string; provisioning_generation: number }
+  >();
+  let db: DatabaseSync;
+  try {
+    db = new DatabaseSync(controlPath, { readOnly: true });
+  } catch {
+    return map;
+  }
+  try {
+    const has = db
+      .prepare(
+        "SELECT 1 AS present FROM sqlite_master WHERE type='table' AND name='managed_account_incarnation'",
+      )
+      .get();
+    if (!has) return map;
+    for (const row of db
+      .prepare(
+        "SELECT account_id,incarnation,provisioning_generation FROM managed_account_incarnation",
+      )
+      .all() as {
+      account_id: string;
+      incarnation: string;
+      provisioning_generation: number;
+    }[])
+      map.set(row.account_id, {
+        incarnation: row.incarnation,
+        provisioning_generation: Number(row.provisioning_generation),
+      });
+  } finally {
+    db.close();
+  }
+  return map;
+}
+
+/**
+ * Atomically rewrites a staged tenant completion marker from the exact previous
+ * schema-2 incarnation to the new one rotated by the restore fence. A link,
+ * unreadable, foreign or tampered marker is refused, never overwritten.
+ */
+function replaceStagedMarker(
+  markerPath: string,
+  account: ManagedBundleAccount,
+  previous: { incarnation: string; provisioning_generation: number },
+  next: Incarnation,
+): void {
+  const stat = (() => {
+    try {
+      return lstatSync(markerPath);
+    } catch {
+      return undefined;
+    }
+  })();
+  if (!stat || stat.isSymbolicLink() || !stat.isFile())
+    throw recoveryError("A staged account marker is not a real file.");
+  let existing: any;
+  try {
+    existing = JSON.parse(readFileSync(markerPath, "utf8"));
+  } catch {
+    throw recoveryError("A staged account marker is unreadable.");
+  }
+  if (
+    existing?.schema !== 2 ||
+    existing.account_id !== account.account_id ||
+    existing.issuer !== account.issuer ||
+    existing.subject !== account.subject ||
+    existing.incarnation !== previous.incarnation ||
+    Number(existing.provisioning_generation) !== previous.provisioning_generation
+  )
+    throw recoveryError(
+      "A staged account marker does not match its provisioning incarnation.",
+    );
+  const tmp = resolve(
+    dirname(markerPath),
+    `${MARKER}.${randomBytes(6).toString("hex")}.tmp`,
+  );
+  rmSync(tmp, { force: true });
+  writeFileSync(
+    tmp,
+    JSON.stringify({
+      schema: 2,
+      account_id: account.account_id,
+      issuer: account.issuer,
+      subject: account.subject,
+      incarnation: next.incarnation,
+      provisioning_generation: next.provisioning_generation,
+    }),
+    { mode: 0o600 },
+  );
+  renameSync(tmp, markerPath);
+}
+
+/** A snapshot without any control generation is left uninitialized (the
  * operator runs the explicit init command later). A previous-format bundle with a
  * known generation but no marker derives a fresh nonce/epoch here; an approval is
  * never copied. Returns true when a marker was written.
@@ -378,6 +488,7 @@ function assertBundleTopLevel(bundle: string, manifest: ManagedBundleManifest): 
     "control.sqlite",
     MANAGED_ROOT_MARKER,
     "activation.json",
+    "decision-activation.json",
   ]);
   for (const account of manifest.accounts) allowed.add(account.account_id);
   for (const name of readdirSync(bundle)) {
@@ -439,6 +550,44 @@ function assertActivationConsistent(
   return { present: !!row };
 }
 
+/** Same agreement rule for the separate decision activation mirror. */
+function assertDecisionConsistent(
+  controlPath: string,
+  root: string,
+): { present: boolean } {
+  let db: DatabaseSync;
+  try {
+    db = new DatabaseSync(controlPath, { readOnly: true });
+  } catch {
+    throw recoveryError("The managed control database is unreadable.");
+  }
+  let row;
+  try {
+    row = readDecisionActivationRow(db);
+  } finally {
+    db.close();
+  }
+  const path = decisionActivationMirrorPath(root);
+  const stat = lstatOptional(path);
+  if (stat && (stat.isSymbolicLink() || !stat.isFile()))
+    throw recoveryError("The decision activation mirror is not a real file.");
+  if (!!row !== !!stat)
+    throw recoveryError(
+      "The decision activation profile and its mirror disagree; refusing to back up or restore this root.",
+    );
+  if (row) {
+    let mirror;
+    try {
+      mirror = readDecisionActivationMirror(root);
+    } catch {
+      throw recoveryError("The decision activation mirror is invalid.");
+    }
+    if (!mirror || canonical(mirror) !== canonical(row))
+      throw recoveryError("The decision activation mirror does not match its stored profile.");
+  }
+  return { present: !!row };
+}
+
 function assertInventoryMatches(
   manifestAccounts: ManagedBundleAccount[],
   controlAccounts: ManagedBundleAccount[],
@@ -470,7 +619,11 @@ function assertTenantDir(dir: string, parent: string, label: string): void {
   }
 }
 
-function assertTenantMarker(dir: string, account: ManagedBundleAccount): void {
+function assertTenantMarker(
+  dir: string,
+  account: ManagedBundleAccount,
+  expected?: { incarnation: string; provisioning_generation: number },
+): void {
   assertTenantDir(dir, dirname(dir), "A backed account");
   let marker: any;
   try {
@@ -479,12 +632,37 @@ function assertTenantMarker(dir: string, account: ManagedBundleAccount): void {
     throw recoveryError("A backed account marker is unreadable.");
   }
   if (
-    marker?.schema !== 1 ||
     marker.account_id !== account.account_id ||
     marker.issuer !== account.issuer ||
     marker.subject !== account.subject
   )
     throw recoveryError("A backed account marker does not match the manifest.");
+  // Both legitimate schema variants are accepted; an arbitrary forge is not. A
+  // schema-1 marker is a pre-enrollment tenant and must have no central incarnation;
+  // a schema-2 marker must carry a valid incarnation that matches its control row.
+  if (marker.schema === 1) {
+    if (expected)
+      throw recoveryError(
+        "A backed account marker omits its provisioning incarnation.",
+      );
+    return;
+  }
+  if (
+    marker.schema !== 2 ||
+    typeof marker.incarnation !== "string" ||
+    !/^[0-9a-f]{64}$/.test(marker.incarnation) ||
+    !Number.isSafeInteger(marker.provisioning_generation) ||
+    marker.provisioning_generation < 1
+  )
+    throw recoveryError("A backed account marker has an unsupported schema.");
+  if (
+    !expected ||
+    expected.incarnation !== marker.incarnation ||
+    Number(expected.provisioning_generation) !== marker.provisioning_generation
+  )
+    throw recoveryError(
+      "A backed account marker does not match its control incarnation.",
+    );
 }
 
 function applyTenantRestoreBarrier(store: Storage, clock: () => Date): void {
@@ -551,9 +729,13 @@ export async function writeManagedBackup(
     const activation = assertActivationConsistent(join(staging, "control.sqlite"), root);
     if (activation.present)
       copyTree(activationMirrorPath(root), join(staging, "activation.json"));
+    const decision = assertDecisionConsistent(join(staging, "control.sqlite"), root);
+    if (decision.present)
+      copyTree(decisionActivationMirrorPath(root), join(staging, "decision-activation.json"));
+    const rootIncarnations = readIncarnations(join(root, "control.sqlite"));
     for (const account of inventory) {
       const dir = join(root, account.account_id);
-      assertTenantMarker(dir, account);
+      assertTenantMarker(dir, account, rootIncarnations.get(account.account_id));
       const staged = join(staging, account.account_id);
       mkdirSync(staged, { recursive: true, mode: 0o700 });
       copyTree(join(dir, MARKER), join(staged, MARKER));
@@ -631,6 +813,7 @@ export async function restoreManagedBackup(
   // A bundled activation profile and its mirror must agree; a split claim is
   // refused rather than silently dropped or half-reactivated.
   const bundleActivation = assertActivationConsistent(bundleControl, bundle);
+  const bundleDecision = assertDecisionConsistent(bundleControl, bundle);
 
   // A marker in the bundle must bind the bundled control generation exactly. The
   // presence of the marker file must EQUAL the manifest declaration: a bundle can
@@ -692,6 +875,8 @@ export async function restoreManagedBackup(
     assertSqliteHealthy(join(currentRoot, account.account_id, "brain.sqlite"));
   }
 
+  const bundleIncarnations = readIncarnations(bundleControl);
+
   const staged = newStaging(destination, clock);
   mkdirSync(staged, { recursive: true, mode: 0o700 });
   writeFileSync(join(staged, MANAGED_RESTORE_INCOMPLETE), clock().toISOString(), {
@@ -702,9 +887,11 @@ export async function restoreManagedBackup(
     copyTree(bundleControl, join(staged, "control.sqlite"));
     if (bundleActivation.present)
       copyTree(join(bundle, "activation.json"), join(staged, "activation.json"));
+    if (bundleDecision.present)
+      copyTree(join(bundle, "decision-activation.json"), join(staged, "decision-activation.json"));
     for (const account of manifest.accounts) {
       const from = join(bundle, account.account_id);
-      assertTenantMarker(from, account);
+      assertTenantMarker(from, account, bundleIncarnations.get(account.account_id));
       const to = join(staged, account.account_id);
       mkdirSync(to, { recursive: true, mode: 0o700 });
       copyTree(join(from, MARKER), join(to, MARKER));
@@ -713,8 +900,16 @@ export async function restoreManagedBackup(
       copyTree(join(from, "vault-protected"), join(to, "vault-protected"));
     }
 
-    // Control barrier FIRST, then each tenant barrier, both before any replay.
+    // Control barrier FIRST, then each tenant barrier, both before any replay. The
+    // staging `MANAGED_RESTORE_INCOMPLETE` marker protects the whole bundle until
+    // publish. Every supported v5 account is fenced and advanced BEFORE its staged
+    // tenant is opened, and the fence stays active until the root is published.
     const stagingControl = new ControlStore(join(staged, "control.sqlite"), clock);
+    const fenced: string[] = [];
+    let stagedIncarnations = new Map<
+      string,
+      { incarnation: string; provisioning_generation: number }
+    >();
     try {
       applyControlRestoreBarrier(stagingControl, clock);
       for (const account of manifest.accounts) {
@@ -737,35 +932,101 @@ export async function restoreManagedBackup(
             epoch: Number(epochRow.epoch),
             nonce: String(epochRow.nonce),
           });
+        if (epochRow)
+          new ManagedDecisionActivationStore(stagingControl, staged, clock).disableForRestore({
+            epoch: Number(epochRow.epoch),
+            nonce: String(epochRow.nonce),
+          });
       }
       // Worker readiness is ephemeral and is never copied into a restore.
       rmSync(join(staged, "worker-ready.json"), { force: true });
+      rmSync(join(staged, "decision-worker-ready.json"), { force: true });
+
+      // Fence + advance each supported v5 account in ONE control transaction BEFORE
+      // any staged tenant storage mutation, so a partial restore stays fenced. A
+      // missing row is a pre-enrollment schema-1 tenant, left for offline enrollment.
+      stagedIncarnations = readIncarnations(join(staged, "control.sqlite"));
+      for (const account of manifest.accounts) {
+        if (!stagedIncarnations.has(account.account_id)) continue;
+        stagingControl.db.exec("BEGIN IMMEDIATE");
+        try {
+          fenceAccount(
+            stagingControl.db,
+            account.account_id,
+            "restore",
+            clock().toISOString(),
+          );
+          stagingControl.db.exec("COMMIT");
+        } catch (error) {
+          stagingControl.db.exec("ROLLBACK");
+          throw error;
+        }
+        fenced.push(account.account_id);
+      }
+
+      for (const account of manifest.accounts) {
+        const store = new Storage(join(staged, account.account_id, "brain.sqlite"), {
+          vault: join(staged, account.account_id, "vault"),
+        });
+        try {
+          applyTenantRestoreBarrier(store, clock);
+          // A missing or unreadable current tenant must reject the whole restore,
+          // never silently publish older content.
+          replayed += replayCurrentDeletions(
+            join(currentRoot, account.account_id, "brain.sqlite"),
+            store,
+            clock,
+          );
+        } finally {
+          store.close();
+        }
+        // Rewrite the staged marker to the exact schema-2 incarnation rotated above.
+        // The fence is NOT cleared here: it stays active until the root is published.
+        if (fenced.includes(account.account_id)) {
+          const previous = stagedIncarnations.get(account.account_id)!;
+          const next = readAccountIncarnation(
+            stagingControl.db,
+            account.account_id,
+          );
+          if (!next)
+            throw recoveryError(
+              "A staged account lost its provisioning incarnation.",
+            );
+          replaceStagedMarker(
+            join(staged, account.account_id, MARKER),
+            account,
+            previous,
+            next,
+          );
+        }
+      }
+
+      // The published root marker must already match the staged control generation.
+      const stagedEpoch = readControlEpoch(join(staged, "control.sqlite"));
+      const stagedMarker = readRootMarker(staged);
+      if (
+        stagedEpoch &&
+        (!stagedMarker || !rootEpochMatches(stagedMarker, stagedEpoch))
+      )
+        throw recoveryError(
+          "The staged root marker does not match its control generation.",
+        );
     } finally {
       stagingControl.close();
     }
 
-    for (const account of manifest.accounts) {
-      const store = new Storage(join(staged, account.account_id, "brain.sqlite"), {
-        vault: join(staged, account.account_id, "vault"),
-      });
+    // Publish the whole bundle, then clear the account fences ONLY after the root is
+    // actually in place. A failure to clear leaves the accounts fenced (fail closed).
+    renameSync(staged, destination);
+    if (fenced.length) {
+      const published = new ControlStore(join(destination, "control.sqlite"), clock);
       try {
-        applyTenantRestoreBarrier(store, clock);
-        // A missing or unreadable current tenant must reject the whole restore,
-        // never silently publish older content.
-        replayed += replayCurrentDeletions(
-          join(currentRoot, account.account_id, "brain.sqlite"),
-          store,
-          clock,
-        );
+        for (const accountId of fenced)
+          clearFence(published.db, accountId, clock().toISOString());
       } finally {
-        store.close();
+        published.close();
       }
     }
-
-    // Keep the marker inside through the rename: a rename failure cannot publish
-    // an unmarked, partially-ready root. If removing the marker fails, the
-    // destination stays unavailable, which is correct.
-    renameSync(staged, destination);
     rmSync(join(destination, MANAGED_RESTORE_INCOMPLETE), { force: true });
     return { destination, accounts: manifest.accounts.length, replayed };
   } catch (error) {

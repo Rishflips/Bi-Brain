@@ -14,6 +14,8 @@ import {
   managedControlSchemaVersion,
   managedMoneySchemaVersion,
 } from "../storage/managed-activation-state.ts";
+import { managedMoneyBillingVersion } from "../domain/managed-spend.ts";
+import { readAccountIncarnation } from "../storage/managed-incarnation.ts";
 import type { ControlEpoch } from "../domain/managed-reconciliation.ts";
 import type { DispatchStage } from "../domain/spend.ts";
 
@@ -139,6 +141,7 @@ interface AccountScan {
   config_hash: string;
   baseline_digest: string;
   financial_digest: string;
+  financial: boolean;
   rows: AuditRowDigest[];
 }
 
@@ -380,7 +383,7 @@ interface TenantFiles {
  * non-linked `schema 1` file whose account/issuer/subject match the trusted
  * control row. A suspended account is included read-only and never reactivated.
  */
-function assertTenant(root: string, account: AccountRow): TenantFiles {
+function assertTenant(root: string, account: AccountRow, db: DatabaseSync): TenantFiles {
   if (!UUID.test(account.id)) throw new AuditDeny("tenant_unavailable");
   const base = resolve(root);
   const dir = resolve(base, account.id);
@@ -434,13 +437,19 @@ function assertTenant(root: string, account: AccountRow): TenantFiles {
   } catch {
     throw new AuditDeny("tenant_unavailable");
   }
-  if (
-    marker?.schema !== 1 ||
-    marker.account_id !== account.id ||
-    marker.issuer !== account.issuer ||
-    marker.subject !== account.subject
-  )
-    throw new AuditDeny("tenant_marker_mismatch");
+  const hasIncarnation = tableExists(db, "managed_account_incarnation");
+  const incarnation = hasIncarnation ? readAccountIncarnation(db, account.id) : undefined;
+  const identityOk =
+    marker?.account_id === account.id &&
+    marker?.issuer === account.issuer &&
+    marker?.subject === account.subject;
+  const markerValid = incarnation
+    ? marker?.schema === 2 &&
+      identityOk &&
+      marker.incarnation === incarnation.incarnation &&
+      Number(marker.provisioning_generation) === incarnation.provisioning_generation
+    : marker?.schema === 1 && identityOk;
+  if (!markerValid) throw new AuditDeny("tenant_marker_mismatch");
   return { dbPath, vaultPath, protectedPath, markerPath, markerDigest: sha256(raw) };
 }
 
@@ -535,6 +544,49 @@ function centralRowsFor(db: DatabaseSync, accountId: string, limit: number): any
 }
 
 /**
+ * Static binding hash for an admitted billing account: identity, state and caps,
+ * with NO dynamic period list, so an authorized grant never changes the frozen audit.
+ */
+function staticAccountConfigHash(db: DatabaseSync, account: AccountRow): string {
+  const policy = db
+    .prepare("SELECT per_job_micro_usd,user_daily_micro_usd FROM managed_account_policy WHERE account_id=?")
+    .get(account.id) as any;
+  return sha256(
+    canonical({
+      account_id: account.id,
+      issuer: account.issuer,
+      subject: account.subject,
+      state: account.state,
+      policy: policy
+        ? {
+            per_job_micro_usd: Number(policy.per_job_micro_usd),
+            user_daily_micro_usd: Number(policy.user_daily_micro_usd),
+          }
+        : null,
+    }),
+  );
+}
+
+/** True only when the account has any original or granted financial history. */
+function accountHasFinancialHistory(db: DatabaseSync, accountId: string): boolean {
+  const probe = (table: string) => {
+    if (!tableExists(db, table)) return false;
+    return !!db
+      .prepare(`SELECT 1 AS present FROM ${table} WHERE account_id=? LIMIT 1`)
+      .get(accountId);
+  };
+  return (
+    probe("managed_reservations") ||
+    probe("managed_account_periods") ||
+    probe("control_billing_account") ||
+    probe("control_billing_terms") ||
+    probe("control_billing_period") ||
+    probe("control_billing_denials")
+  );
+}
+
+
+/**
  * Per-account configuration fingerprint. It deliberately excludes the frozen
  * accounting time zone and monotonic policy version (legitimate admission side
  * effects) but binds the trusted account identity, the caps and each period id.
@@ -609,7 +661,7 @@ function scanOnce(
   const db = control.db;
   const schema_version = controlSchemaVersion(db);
   if (schema_version <= 0) throw new AuditDeny("uninitialized");
-  if (schema_version !== managedMoneySchemaVersion)
+  if (schema_version !== managedMoneySchemaVersion && schema_version !== managedMoneyBillingVersion)
     throw new AuditDeny("unsupported_schema");
   for (const table of REQUIRED_TABLES)
     if (!tableExists(db, table)) throw new AuditDeny("uninitialized");
@@ -625,7 +677,7 @@ function scanOnce(
   let totalRows = 0;
 
   for (const account of accounts) {
-    const tenant = assertTenant(root, account);
+    const tenant = assertTenant(root, account, db);
     files.push({ path: `${account.id}/brain.sqlite`, identity: fileIdentity(tenant.dbPath) });
     files.push({ path: `${account.id}/vault`, identity: fileIdentity(tenant.vaultPath) });
     files.push({
@@ -705,12 +757,19 @@ function scanOnce(
         }),
       ),
     );
+    const admitted =
+      tableExists(db, "control_billing_account") &&
+      !!db
+        .prepare("SELECT 1 AS present FROM control_billing_account WHERE account_id=?")
+        .get(account.id);
+    const financial = admitted || accountHasFinancialHistory(db, account.id);
     accountScans.push({
       account_id: account.id,
       state: account.state,
-      config_hash: accountConfigHash(db, account),
+      config_hash: admitted ? staticAccountConfigHash(db, account) : accountConfigHash(db, account),
       baseline_digest,
       financial_digest,
+      financial,
       rows,
     });
   }
@@ -754,10 +813,16 @@ function scanOnce(
   const config_digest = sha256(
     canonical({
       service: servicePolicy(db),
-      accounts: globalHashes.map((account) => ({
-        account_id: account.account_id,
-        config_hash: account.config_hash,
-      })),
+      // Only financially-relevant accounts enter the frozen audit fingerprint, so a
+      // new no-history account or an authorized grant never stales a fresh audit while
+      // a raw period on an unadmitted account still changes it.
+      accounts: accountScans
+        .filter((account) => account.financial)
+        .map((account) => ({
+          account_id: account.account_id,
+          config_hash: account.config_hash,
+        }))
+        .sort((a, b) => a.account_id.localeCompare(b.account_id)),
     }),
   );
   const file_digest = sha256(
@@ -788,13 +853,20 @@ function recomputeControlDigest(
   maxRows: number,
 ): string {
   const accounts = accountRows(db, maxAccounts + 1);
+  const admittedOf = (accountId: string) =>
+    tableExists(db, "control_billing_account") &&
+    !!db
+      .prepare("SELECT 1 AS present FROM control_billing_account WHERE account_id=?")
+      .get(accountId);
   const accountDigests = accounts.map((account) => {
     const central = centralRowsFor(db, account.id, maxRows + 1);
     central.sort((a, b) => String(a.call_id).localeCompare(String(b.call_id)));
     return {
       account_id: account.id,
       state: account.state,
-      config_hash: accountConfigHash(db, account),
+      config_hash: admittedOf(account.id)
+        ? staticAccountConfigHash(db, account)
+        : accountConfigHash(db, account),
       central_digests: central.map((row) => rowDigest("central", row)),
     };
   });
@@ -858,6 +930,7 @@ function writeAudit(
       "INSERT INTO managed_audit_rows(audit_id,account_id,call_id,central_digest,tenant_digest) VALUES(?,?,?,?,?)",
     );
     for (const account of scan.accounts) {
+      if (!account.financial) continue;
       insertAccount.run(
         audit_id,
         account.account_id,
@@ -1087,9 +1160,11 @@ export function validateManagedAudit(
       if (live.config_hash !== account.config_digest)
         return { valid: false, reason: "config_changed" };
     }
-    for (const live of scan.accounts)
+    for (const live of scan.accounts) {
+      if (!live.financial) continue;
       if (!stored.accounts.some((account) => account.account_id === live.account_id))
         return { valid: false, reason: "unsurveyed_account" };
+    }
     if (scan.config_digest !== stored.config_digest)
       return { valid: false, reason: "config_changed" };
 
@@ -1146,7 +1221,8 @@ export function readEnrollmentBaseline(
       return { valid: false, reason: "epoch_mismatch" };
     const schema_version = controlSchemaVersion(db);
     if (
-      schema_version !== managedMoneySchemaVersion ||
+      (schema_version !== managedMoneySchemaVersion &&
+        schema_version !== managedMoneyBillingVersion) ||
       schema_version !== stored.control_schema_version
     )
       return { valid: false, reason: "schema_changed" };
@@ -1155,19 +1231,32 @@ export function readEnrollmentBaseline(
     const accounts = accountRows(db, DEFAULT_MAX_ACCOUNTS + 1);
     if (accounts.length > DEFAULT_MAX_ACCOUNTS)
       return { valid: false, reason: "account_limit" };
+    const admittedOf = (accountId: string) =>
+      tableExists(db, "control_billing_account") &&
+      !!db
+        .prepare("SELECT 1 AS present FROM control_billing_account WHERE account_id=?")
+        .get(accountId);
     for (const account of stored.accounts) {
       const live = accounts.find((candidate) => candidate.id === account.account_id);
       if (!live) return { valid: false, reason: "account_missing" };
-      if (accountConfigHash(db, live) !== account.config_digest)
+      const liveHash = admittedOf(live.id)
+        ? staticAccountConfigHash(db, live)
+        : accountConfigHash(db, live);
+      if (liveHash !== account.config_digest)
         return { valid: false, reason: "config_changed" };
     }
-    for (const live of accounts)
+    for (const live of accounts) {
+      if (!accountHasFinancialHistory(db, live.id)) continue;
       if (!stored.accounts.some((account) => account.account_id === live.id))
         return { valid: false, reason: "unsurveyed_account" };
+    }
     const globalHashes = accounts
+      .filter((account) => admittedOf(account.id) || accountHasFinancialHistory(db, account.id))
       .map((account) => ({
         account_id: account.id,
-        config_hash: accountConfigHash(db, account),
+        config_hash: admittedOf(account.id)
+          ? staticAccountConfigHash(db, account)
+          : accountConfigHash(db, account),
       }))
       .sort((a, b) => a.account_id.localeCompare(b.account_id));
     const config_digest = sha256(

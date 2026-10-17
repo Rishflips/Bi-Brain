@@ -47,6 +47,37 @@ usability and licensing remain separate gates. An integration decision is also
 required before merging. The owner has requested committing, pushing and opening
 a PR for the verified branch; that is repository delivery, not live activation.
 
+### Decision accounting and consent S1 — locally accepted, not deployed
+
+The 2026-10-17 settled parent checkpoint passed **829 tests / 2 existing
+POSIX-only skips**, **24 Chromium journeys** and **4 synthetic offline
+evaluations**, plus typecheck/lint/build and dependency audit. Separate default-off
+decision configuration, guarded accounting and withdrawable account consent are
+implemented. No production decision consumer or readiness writer is installed by
+S1. The separate S2 worker is now locally accepted with synthetic transport as
+recorded below, not live-provider quality evidence. This branch is uncommitted;
+no new Linux/container CI or public deployment is claimed. Billing, capped live
+quality/cost, native clients, target-host drills and owner release/legal decisions
+remain gates, not outcomes implied by passing tests.
+
+### Advisory worker S2 — all three tasks accepted locally, not deployed
+
+The repaired tenant-v5 lifecycle passed the settled parent checkpoint:
+**948 tests / 2 existing POSIX-only skips, 94 files**, **24 Chromium journeys**,
+**4 offline evaluations**, typecheck/lint/build and zero audit vulnerabilities.
+Independent review covers actual claim/lease binding, rollback of ignored writes,
+withdrawal, unavailable imported history and retained no-resend tombstones.
+The final worker checkpoint passed **984 tests / 2 existing POSIX-only skips,
+98 files**, **24 Chromium journeys**, **4 offline evaluations**, typecheck/lint/
+build/audit and whitespace checks. Five actual worker-process cases exercise both
+stages on one job, settled/unknown restart without resend, long-call heartbeats,
+unpaid account continuity and independent stage bootstraps. The stricter cleanup
+fixture passed without warnings. The consumer is real code with injected provider
+transport in verification, not a held-out quality or live-pricing result. No new
+runtime dependency, lockfile change, hosted release or current-branch Linux CI
+result is implied. Licensing, billing, native/live-provider and target-host gates
+remain open; defaults remain off and no owner/provider was activated.
+
 ## Local packaging
 
 Document exact Node/package-manager versions, clean installation, migrations, development, production build, API start, worker start, data directory, and stop/restart.

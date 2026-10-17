@@ -37,3 +37,60 @@ Measure return behavior, useful prepared artifacts, interruption burden, cost pe
 Publish architecture, revision semantics, reproducible failure tests, supported client evidence, and honest tradeoffs.
 Payment implementation follows willingness-to-pay evidence and reliable metering.
 Subscription enforcement may restrict new expensive managed processing, but must not strand already saved knowledge, correction, export or deletion. Server-verified, replay-safe payment events and reconciliation determine entitlements; a checkout return URL never proves payment. A payment provider's test mode is distinct from live billing.
+
+## Payment-provider direction — Paddle, subject to seller approval
+
+On 2026-10-17 the owner preferred Paddle over Stripe if it is suitable for an
+India-based seller serving global customers. Official documentation checked on
+that date supports using **Paddle Billing as the design target, sandbox first**:
+
+The owner subsequently specified **individual/sole proprietor** as the intended
+seller form. Plan onboarding accordingly, without assuming an approved account,
+waived identity/domain checks, bank eligibility or a particular Indian tax status.
+
+The owner selected **monthly and annual subscriptions** for the first managed
+release, rather than monthly-only. The proposed scope retains a fixed included
+processing allowance and no automatic overage charges; saved knowledge,
+export/deletion remain payment-independent. The owner explicitly approved that
+annual subscriptions are billed yearly but their processing allowance renews
+**monthly, with no rollover**, rather than granting a year's processing upfront.
+Use the same monthly no-rollover rule for monthly subscriptions. Exact prices,
+any annual discount, allowance amounts and cancellation/refund lifecycle remain
+separate design/economic decisions. Do not create Paddle products/prices or
+billing code from this choice alone; include both cadences in the separately
+reviewed billing design.
+
+- Paddle says it supports software sellers worldwide except its listed unsupported
+  countries; India is not on that list. This is eligibility in principle, not
+  approval of the owner's identity, bank account, domain or BiBrain product.
+- Its Merchant of Record service covers customer payment/billing and sales-tax
+  collection/remittance. It does not eliminate the seller's own Indian tax,
+  accounting or export-reporting obligations; confirm those with a qualified
+  adviser and the receiving bank.
+- Published standard pricing is **5% + US$0.50 per checkout transaction**. Payout
+  and currency-conversion charges can be additional; do not assume this is the
+  entire cost of receiving funds in India or adopt an application subscription
+  price without cost measurement/owner approval.
+- Published payouts are monthly, with a minimum threshold of **US$100**. INR is
+  not listed as a direct payout currency. Paddle describes foreign-currency
+  payouts with bank conversion when the local currency is unsupported; SWIFT,
+  receiving-bank and FX costs require account-specific confirmation.
+- Onboarding requires domain review and identity verification; business
+  verification is additionally required where applicable (individuals/sole
+  traders are exempt from that business-verification phase, not all checks).
+  Product eligibility remains subject to Paddle's acceptable-use review.
+
+No Paddle account was created, bank/KYC information collected, product/price
+created, checkout launched or payment enabled. Provider preference is not approval
+of a billing architecture, customer pricing, refunds policy or live rollout.
+The billing design still needs its separate review before implementation.
+
+Official sources (accessed 2026-10-17):
+
+- [Seller countries](https://www.paddle.com/help/start/intro-to-paddle/which-countries-are-supported-by-paddle)
+- [Pricing / Merchant of Record](https://www.paddle.com/pricing)
+- [Payout schedule and threshold](https://www.paddle.com/help/manage/get-paid/when-and-how-do-i-get-paid)
+- [Payout currencies](https://www.paddle.com/help/manage/get-paid/can-i-be-paid-in-my-local-currency)
+- [Payout/FX fees](https://www.paddle.com/help/manage/get-paid/is-there-a-fee-taken-for-payouts)
+- [Account verification](https://www.paddle.com/help/start/account-verification/what-is-account-verification)
+- [Acceptable use](https://www.paddle.com/help/start/intro-to-paddle/what-am-i-not-allowed-to-sell-on-paddle)

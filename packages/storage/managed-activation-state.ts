@@ -3,12 +3,17 @@ import { createHash } from "node:crypto";
 import { lstatSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { BrainError, canonical } from "../domain/logic.ts";
-import { managedMoneySchemaVersion } from "../domain/managed-spend.ts";
+import {
+  managedMoneySchemaVersion,
+  managedMoneySupportedVersions,
+} from "../domain/managed-spend.ts";
 import {
   validateActivationProfile,
   type ActivationProfile,
 } from "../domain/managed-activation.ts";
 import { assertTrustedManagedRoot, readRootMarker, rootEpochMatches } from "../runtime/managed-operator.ts";
+import { billingSchemaVariant } from "./billing-schema.ts";
+import { loadEnrollmentAnchor } from "./billing-verify.ts";
 
 /**
  * Cohesive, READ-ONLY activation state primitives shared by the money store,
@@ -112,6 +117,29 @@ export function managedControlSchemaVersion(db: DatabaseSync): number {
   return Number(row?.version ?? 0);
 }
 
+/**
+ * True only for a genuine supported activation control schema: exactly money-4, or
+ * money-5 with the strict INTEGRATED closed schema AND a verified protected
+ * enrollment anchor (the same trusted artifacts `BillingEnforcement` uses). A
+ * future/unknown version, an arbitrary `>=4` integer, a v5 without the integrated
+ * shape or a v5 without the anchor is never accepted. Read-only; no DDL.
+ */
+export function supportedActivationSchema(
+  control: { db: DatabaseSync; path: string },
+  root: string,
+): boolean {
+  const version = managedControlSchemaVersion(control.db);
+  if (!(managedMoneySupportedVersions as readonly number[]).includes(version))
+    return false;
+  if (version === managedMoneySchemaVersion) return true;
+  if (billingSchemaVariant(control.db) !== "integrated") return false;
+  try {
+    return loadEnrollmentAnchor(control, root) !== undefined;
+  } catch {
+    return false;
+  }
+}
+
 function columnNames(db: DatabaseSync, table: string): string[] {
   return (db.prepare(`PRAGMA table_info(${table})`).all() as { name: string }[]).map(
     (column) => column.name,
@@ -125,7 +153,7 @@ function columnNames(db: DatabaseSync, table: string): string[] {
  * still detected as a shape change.
  */
 function controlSchemaSignature(db: DatabaseSync): unknown {
-  return {
+  const base = {
     version: managedControlSchemaVersion(db),
     managed_reservations: columnNames(db, "managed_reservations"),
     managed_resolutions: columnNames(db, "managed_resolutions"),
@@ -134,6 +162,17 @@ function controlSchemaSignature(db: DatabaseSync): unknown {
     managed_audit_accounts: columnNames(db, "managed_audit_accounts"),
     managed_audit_rows: columnNames(db, "managed_audit_rows"),
     managed_activation: columnNames(db, "managed_activation"),
+    managed_decision_activation: columnNames(db, "managed_decision_activation"),
+    managed_decision_activation_events: columnNames(db, "managed_decision_activation_events"),
+  };
+  // The provisioning incarnation/fence tables exist only in the money-5 integrated
+  // schema. Adding even an empty field here would change the accepted v4 digest, so
+  // they are included ONLY when present.
+  if (!tableExists(db, "managed_account_incarnation")) return base;
+  return {
+    ...base,
+    managed_account_incarnation: columnNames(db, "managed_account_incarnation"),
+    managed_account_fence: columnNames(db, "managed_account_fence"),
   };
 }
 
@@ -375,10 +414,10 @@ export function readGuardSnapshot(
   if (!row && !mirror) return { state: "absent" };
   if (!row || !mirror) return { state: "mismatch" };
   if (canonical(row) !== canonical(mirror)) return { state: "mismatch" };
-  // The control schema must be the exact supported version, not a caller-chosen
+  // The control schema must be a genuine supported version (money-4, or money-5 with
+  // the strict integrated schema and verified enrollment), not a caller-chosen
   // future integer.
-  if (managedControlSchemaVersion(control.db) !== managedMoneySchemaVersion)
-    return { state: "mismatch" };
+  if (!supportedActivationSchema(control, root)) return { state: "mismatch" };
   const epoch = readLiveEpoch(control.db);
   if (!epoch) return { state: "mismatch" };
   let marker;

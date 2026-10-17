@@ -26,8 +26,16 @@ export type ManagedServiceId = typeof MANAGED_SERVICE_ID;
  * Current managed money schema version. It lives in the pure domain layer so
  * storage, runtime and the activation state helper can share it without an import
  * cycle through `storage/managed-spending.ts`.
+ *
+ * The normal constructor installs/accepts the LEGACY version (4) only; a genuine
+ * legacy v4 database is never auto-promoted. The billing version (5) is reached
+ * solely through the explicit `installBillingMoney5` operation.
  */
-export const managedMoneySchemaVersion = 3;
+export const managedMoneySchemaVersion = 4;
+/** The billing money schema version, installed only by `installBillingMoney5`. */
+export const managedMoneyBillingVersion = 5;
+/** Versions the runtime understands (activation/audit branch on the actual stored value). */
+export const managedMoneySupportedVersions = [4, 5] as const;
 
 export { maxMicroUsd };
 

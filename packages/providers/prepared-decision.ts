@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import { canonical } from "../domain/logic.ts";
+import type { DecisionActivationProfile } from "../domain/managed-decision-activation.ts";
 import {
   DECISION_QUESTION_ID,
   PROBABILITY_SUM_TOLERANCE,
@@ -30,6 +31,75 @@ import {
  */
 
 export const DECISION_QUESTION_SCHEMA_VERSION = "decision-question-v1";
+
+/**
+ * The ONE pure decision prepared-config hash. It is the exact canonical field/order
+ * shared by the decision adapter's `config_hash` and the runtime's
+ * `expectedDecisionConfigHash`. It is deliberately distinct from a stored profile's
+ * `config_digest`: the hashes have different canonical inputs and must never be equated.
+ */
+export function decisionPreparedConfigHash(input: {
+  provider: "typesafe" | "cloudflare";
+  model: string;
+  accepted: string[];
+  price: {
+    version: string;
+    input_micro_usd_per_million: number;
+    output_micro_usd_per_million: number;
+  };
+  endpoint: string;
+  timeout_ms: number;
+  max_request_bytes: number;
+  max_response_bytes: number;
+  request_overhead_bytes: number;
+}): string {
+  return createHash("sha256")
+    .update(
+      canonical({
+        provider: input.provider,
+        endpoint: input.endpoint,
+        model: input.model,
+        price_version: input.price.version,
+        input_micro_usd_per_million: input.price.input_micro_usd_per_million,
+        output_micro_usd_per_million: input.price.output_micro_usd_per_million,
+        accepted_response_models: [...input.accepted],
+        policy_version: SYSTEM_ONE_POLICY_VERSION,
+        question_schema_version: DECISION_QUESTION_SCHEMA_VERSION,
+        timeout_ms: input.timeout_ms,
+        max_request_bytes: input.max_request_bytes,
+        max_response_bytes: input.max_response_bytes,
+        request_overhead_bytes: input.request_overhead_bytes,
+      }),
+    )
+    .digest("hex");
+}
+
+/**
+ * The expected decision prepared-config hash implied by one installed decision
+ * profile. It maps the profile onto the ONE pure `decisionPreparedConfigHash` with
+ * the accepted-model array IN PROFILE ORDER (never sorted), over the key-free
+ * provider/pricing/endpoint/transport fields. It is deliberately NOT the profile's
+ * `config_digest`. It lives in the pure provider module so both the runtime
+ * preflight and the storage under-lock forge check derive the same value WITHOUT a
+ * storage→runtime import cycle and without duplicating the canonical hash formula.
+ */
+export function expectedDecisionConfigHash(profile: DecisionActivationProfile): string {
+  return decisionPreparedConfigHash({
+    provider: profile.provider,
+    model: profile.model,
+    accepted: [...profile.accepted_response_models],
+    price: {
+      version: profile.price_version,
+      input_micro_usd_per_million: profile.input_micro_usd_per_million,
+      output_micro_usd_per_million: profile.output_micro_usd_per_million,
+    },
+    endpoint: profile.endpoint,
+    timeout_ms: profile.timeout_ms,
+    max_request_bytes: profile.max_request_bytes,
+    max_response_bytes: profile.max_response_bytes,
+    request_overhead_bytes: profile.request_overhead_bytes,
+  });
+}
 
 const PROBABILITY_EPSILON = 1e-9;
 const CONTROL_CHARS = /[\u0000-\u001f\u007f]/;
@@ -227,23 +297,21 @@ export class PreparedDecisionProvider {
     const options_hash = sha256(
       canonical(prepared.input.options.map((option) => [option.id, option.description])),
     );
-    const config_hash = sha256(
-      canonical({
-        provider: resolved.provider,
-        endpoint: resolved.endpoint,
-        model: resolved.model,
-        price_version: resolved.price.version,
+    const config_hash = decisionPreparedConfigHash({
+      provider: resolved.provider,
+      model: resolved.model,
+      accepted: [...resolved.accepted_response_models],
+      price: {
+        version: resolved.price.version,
         input_micro_usd_per_million: resolved.price.input_micro_usd_per_million,
         output_micro_usd_per_million: resolved.price.output_micro_usd_per_million,
-        accepted_response_models: [...resolved.accepted_response_models],
-        policy_version: SYSTEM_ONE_POLICY_VERSION,
-        question_schema_version: DECISION_QUESTION_SCHEMA_VERSION,
-        timeout_ms: resolved.timeout_ms,
-        max_request_bytes: resolved.max_request_bytes,
-        max_response_bytes: resolved.max_response_bytes,
-        request_overhead_bytes: REQUEST_OVERHEAD_BYTES,
-      }),
-    );
+      },
+      endpoint: resolved.endpoint,
+      timeout_ms: resolved.timeout_ms,
+      max_request_bytes: resolved.max_request_bytes,
+      max_response_bytes: resolved.max_response_bytes,
+      request_overhead_bytes: REQUEST_OVERHEAD_BYTES,
+    });
 
     const identity: PreparedDecisionIdentity = deepFreeze({
       provider: resolved.provider,

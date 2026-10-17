@@ -168,7 +168,8 @@ The approved activation implementation adds an operator-only profile CLI:
 
 All commands require one explicit existing `BRAIN_MANAGED_ROOT`. Status/show are
 read-only; they never initialize money tables or create activation. Enable
-requires an existing current schema-3 terminal history audit, explicit offline
+requires an existing current-schema terminal history audit (schema 3 for the
+merged Phase 2 release; schema 4 in the decision-profile continuation), explicit offline
 acknowledgements and a version CAS (`expected_version: 0` creates the first
 profile). The JSON contains only the operator's exact provider/model/versioned
 integer prices, accepted returned models, output bound, fixed
@@ -191,6 +192,127 @@ long-call heartbeat, CLI disable, unknown-usage worker restart/no-resend and
 consent browser checks passed; full evidence is recorded in BUILD_STATE.md.
 Nothing here authorizes enabling an owner's
 account, loading a real provider key or making a paid smoke call.
+
+### Decision-profile continuation — default-off S1 foundation
+
+The approved S1 continuation adds a **separate, default-off** decision profile in
+schema 4, not a working decision dispatcher. Its operator commands are:
+
+- `npm run managed:decision-activation -- status` (or `show`)
+- `npm run managed:decision-activation -- enable <absolute_profile_json> --offline --workers-terminated`
+- `npm run managed:decision-activation -- disable --expected-version <n>`
+
+These commands make no provider request. Enrollment requires a fresh terminal
+schema-4 history audit and closed operator configuration: the official TypeSafe
+or Cloudflare endpoint, concrete models/accepted IDs, integer input price, zero
+output price, timeout/byte bounds, audit ID and expected version. No credential
+is accepted or retained in the profile. The protected canonical endpoint and its
+digest are persisted beside provider configuration; public status must not
+expose the endpoint's account path.
+
+Opening the new control schema migrates **3 → 4** atomically. Financial rows and
+the stored reasoning profile/consent are preserved, but old reasoning audits
+become stale: effective paid processing pauses until explicitly re-audited and
+re-enrolled. An unchanged stored `enabled:true` is not a claim of availability.
+This is a forward migration; do not drop financial tables to downgrade.
+
+The decision SQL row commits before the complete `decision-activation.json`
+mirror. Mismatch denies use. Decision-only disable leaves reasoning untouched;
+the existing `managed:activation disable` is the global paid stop and switches
+both SQL stages off in one transaction before publishing mirrors. A stop on a
+v3 root first performs the forward migration. Mirror failure is reported after
+SQL is safely off, not silently labelled complete success.
+
+A malformed decision profile cannot roll back a valid reasoning stop: it is
+turned off without rewriting its corrupt configuration or fabricating a valid
+fingerprint. A durable `decision_activation_invalid` monetary block is recorded
+and a static repair error is reported after commit. **No automated repair or
+block-clear path is supplied in this slice**; operator recovery remains a
+separate gate. Never bypass it with a hand-edited profile or a new allowance.
+
+Supported backup requires each present profile and mirror to agree; restore
+disables both at a new epoch. Both `worker-ready.json` and the separate
+`decision-worker-ready.json` are ephemeral and excluded. S1 alone had no decision
+worker; S2 now supplies its separately reviewed default-off bootstrap and consumer.
+See BUILD_STATE.md for current acceptance; these instructions do not authorize
+owner activation, real keys, live model calls or deployment.
+
+The account-bound coordinator and worker now implement the separate decision
+stage, verified locally with synthetic transport and actual worker processes,
+not a live provider call. The Settings control **Additional background checks** expresses a
+separate default-false choice. Sending requires both stored model consent and
+stored decision consent, background help, an opted-in active goal, fresh matching
+decision readiness, current authorization and fresh monetary admission. A
+configured profile alone never makes the capability available.
+
+Own-account status distinguishes `decision_stored_consent_active` (raw choice),
+`decision_capability_ready` (installation capability), and
+`decision_consent_effective` (configured, unblocked consent—not dispatch
+admission). Temporary `usage_pending` does not erase consent. A stored true stays
+checked and withdrawable while unavailable or blocked; unrelated settings saves
+omit both unchanged consent fields. Public runtime metadata
+`decision_processing_available` / `decision_paid_reason` is deployment-only,
+not account consent, money, provider identity or proof of a running worker.
+
+### Advisory persistence and worker (S2 accepted locally)
+
+Opening a tenant database now migrates **4 → 5** atomically. This is separate
+from the control database's monetary schema 4; original source versions, raw
+consent, reservations and dispatched/settled money rows are preserved. Do not
+drop tables or reset migration markers to downgrade. Marker failure rolls back
+the new advisory DDL as well as the marker.
+
+The internal advisory is a labeled hypothesis with exact goal/source versions
+and hashes, never accepted knowledge or spending authority. Source text is only
+transient in its bounded question; saved advisories contain references and a
+validated judgment (or null when unavailable), not prompts/source bodies. They
+are excluded from ordinary entity lists, Today, search and agent context. The
+portable vault stores them under `observations`, not daily dream receipts.
+
+Privacy changes, background/consent withdrawal and bound goal revisions withdraw
+the judgment. Resuming consent does not reactivate an archived judgment. Deletion
+purges every affected advisory version and its operational attempt mapping; a
+hash-only tombstone may remain to prevent resending the same claimed question.
+Source deletion remains conservatively project-wide for derived entities, as in
+the existing service. A newly captured source has a distinct identity. Actual
+forgetting verifies retained file/Git erasure and SQLite indexes separately.
+
+Owner export retains historical observations. Import always makes their
+judgments **unavailable/null**, never imports execution claims and never invents
+missing source bodies. Available provenance that contradicts a declared source
+hash or project is rejected. Supported restore withdraws retained observations,
+preserves monetary ambiguity and keeps paid processing blocked.
+
+The final S2 gate passed **984 tests, two existing POSIX-only skips, 98 files**;
+**24 Chromium journeys**, **4 offline evaluations**, typecheck/lint/build and
+dependency audit. The actual-main process proofs cover independent stage
+bootstraps, long-call readiness, settled/unknown restart without resend and
+continued unpaid work. Windows graceful SIGTERM cleanup and target-host/Linux
+verification remain separate; no real-provider quality/pricing result is implied.
+
+The managed worker requires the existing explicit deployment opt-in plus the
+separately enrolled decision profile and **worker-only** `BRAIN_DECISION_API_KEY`.
+The profile chooses its closed provider family; the key does not. The adapter,
+profile and key are frozen at startup, and synthetic preparation validates local
+configuration without sending a request before own readiness is published. The
+existing heartbeat refreshes each installed stage independently every 5 seconds
+with a 15-second TTL. Prepare and execution require that process's own fresh
+matching readiness. Missing decision setup leaves reasoning unchanged. Rotation
+requires restart. No code here automatically enrolls a provider or grants consent.
+
+`npm start` / `npm run dev` strip the decision key from API and Vite children;
+the worker retains it. Operators launching processes directly must likewise use
+separate environments. This is not an OS-owner sandbox. Never place credentials
+in profile JSON, CLI arguments, logs or frontend configuration.
+
+The decision stage uses at most one goal, ten eligible sources and a 16 KiB
+canonical question; oversized context skips the call without trimming source
+bodies. Decision and reasoning share the same job cap, so decision overhead can
+leave insufficient budget for reasoning even though the judgment cannot gate
+it. Known stage costs aggregate in receipts; unknown usage is never shown as
+zero or only the known subtotal. These operator notes do **not** authorize a live
+test, owner activation or deployment; a capped live run and release inputs remain
+separately required.
 
 ## Cold/offline managed backup and restore (Task 4 slice)
 
@@ -318,5 +440,8 @@ Explicit non-guarantees: this does not provide full rollback detection (a mirror
 nonce detects a mismatched copy, not a simultaneous rollback of both the control
 database and the marker), does not verify provider authenticity, does not prove
 writer quiescence, and treats hashes as integrity rather than an adversarial
-signature. Managed paid processing remains **hard-off**: `connected_processing_available`
-is false and `BRAIN_MANAGED_ALLOW_PAID=1` has no effect.
+signature. Managed paid processing remains **default-off**. The opt-in flag alone
+does not enable it: an audited installed profile, matching fresh worker readiness,
+current owner consent and monetary admission are also required. Restored roots
+remain blocked regardless of that flag until their separate guarded recovery
+requirements are satisfied; do not erase a block or invent a new allowance.

@@ -1,4 +1,4 @@
-import { managedCapability } from "../../packages/runtime/managed.ts";
+import { managedCapability, managedDecisionCapability } from "../../packages/runtime/managed.ts";
 
 /**
  * Thin server-facing surface over the runtime capability helper.
@@ -11,6 +11,13 @@ import { managedCapability } from "../../packages/runtime/managed.ts";
  * The pure `managedActivationGate` remains for unit-level policy reasoning.
  */
 export { managedCapability };
+
+/**
+ * The separate DECISION-stage deployment capability (a live decision profile plus a
+ * fresh `decision-worker-ready.json` lease). It is a distinct accessor from the
+ * reasoning capability and is never interchangeable with it.
+ */
+export { managedDecisionCapability };
 
 export type ManagedActivation = {
   /** The policy inputs alone would permit paid work; not an availability claim. */
@@ -53,6 +60,22 @@ export function managedPaidReason(reason: string): string {
       return "Connected model processing is unavailable; saved work stays available.";
     default:
       return managedPaidNotEnabledMessage;
+  }
+}
+
+/**
+ * Static, content-free public reason for the separate DECISION-stage deployment
+ * availability. It never names a model, endpoint, key, path, queue, token or
+ * classifier, and it never reads another account or a global total.
+ */
+export function managedDecisionReason(reason: string): string {
+  switch (reason) {
+    case "ready":
+      return "Additional background checks are available for this deployment.";
+    default:
+      // S1 ships no production decision worker/readiness writer, so an absent or
+      // stale lease is reported as plain unavailability, never "starting".
+      return "Additional background checks are not available on this installation.";
   }
 }
 

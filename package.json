@@ -27,6 +27,7 @@
     "db:migrate": "node --env-file-if-exists=.env --import tsx scripts/migrate.ts",
     "managed:policy": "node --env-file-if-exists=.env --import tsx scripts/managed-policy.ts",
     "managed:activation": "node --env-file-if-exists=.env --import tsx scripts/managed-activation.ts",
+    "managed:decision-activation": "node --env-file-if-exists=.env --import tsx scripts/managed-decision-activation.ts",
     "managed:backup": "node --env-file-if-exists=.env --import tsx scripts/managed-backup.ts",
     "managed:restore": "node --env-file-if-exists=.env --import tsx scripts/managed-restore.ts",
     "managed:reconcile": "node --env-file-if-exists=.env --import tsx scripts/managed-reconcile.ts",

@@ -210,6 +210,12 @@ function App() {
     [confirmation, setConfirmation] = useState("");
   const preferencesDirty = useRef(false);
   const [consentOverride, setConsentOverride] = useState<boolean | null>(null);
+  // An INDEPENDENT override for the separate decision-stage consent. It is never
+  // derived from the master override; an omitted field preserves the RAW stored
+  // choice and a toggled field sends exactly one explicit boolean.
+  const [decisionConsentOverride, setDecisionConsentOverride] = useState<
+    boolean | null
+  >(null);
   const [comparison, setComparison] = useState<{
     receipt: Entity;
     goal: Entity;
@@ -351,6 +357,7 @@ function App() {
     setBusy(false);
     preferencesDirty.current = false;
     setConsentOverride(null);
+    setDecisionConsentOverride(null);
   }, []);
   /**
    * Central invalidation: advance the generation (fencing every in-flight
@@ -539,6 +546,22 @@ function App() {
     } finally {
       if (generation === authGeneration) setBusy(false);
     }
+  }
+  /**
+   * Builds a `/preferences/background` PATCH body from the current form state.
+   * In managed mode it ALWAYS strips both RAW consent fields (`provider_enabled`
+   * and `decision_provider_enabled`) so an unrelated save, a quick pause or any
+   * other action can never echo the effective getter or re-grant a consent the user
+   * did not touch. Callers that represent an explicit toggle re-add exactly that
+   * field from its own override. Local mode keeps the full preference body.
+   */
+  function backgroundPatchBody(over: Record<string, unknown> = {}) {
+    const body: Record<string, unknown> = { ...(prefs ?? {}), ...over };
+    if (runtime?.mode === "managed") {
+      delete body.provider_enabled;
+      delete body.decision_provider_enabled;
+    }
+    return body;
   }
   function close() {
     setDialog(null);
@@ -1048,7 +1071,7 @@ function App() {
                       setPrefs(
                         await api(
                           "/preferences/background",
-                          { ...prefs, enabled: !prefs?.enabled },
+                          backgroundPatchBody({ enabled: !prefs?.enabled }),
                           "PATCH",
                         ),
                       );
@@ -1562,18 +1585,23 @@ function App() {
                     onSubmit={(e) => {
                       e.preventDefault();
                       void act(async () => {
-                        const body: Record<string, unknown> = { ...prefs };
+                        const body = backgroundPatchBody();
                         if (runtime?.mode === "managed") {
-                          // Send the consent field ONLY when the user explicitly
+                          // Send each consent field ONLY when the user explicitly
                           // toggled it; otherwise omit it so the raw stored value is
-                          // preserved (never rewrite from the effective getter).
-                          if (consentOverride === null) delete body.provider_enabled;
-                          else body.provider_enabled = consentOverride;
+                          // preserved (never rewrite from the effective getter). The
+                          // two overrides are independent.
+                          if (consentOverride !== null)
+                            body.provider_enabled = consentOverride;
+                          if (decisionConsentOverride !== null)
+                            body.decision_provider_enabled =
+                              decisionConsentOverride;
                         }
                         setPrefs(
                           await api("/preferences/background", body, "PATCH"),
                         );
                         setConsentOverride(null);
+                        setDecisionConsentOverride(null);
                         preferencesDirty.current = false;
                         setNotice("Background preferences saved.");
                       });
@@ -1741,6 +1769,61 @@ function App() {
                       I authorize selected text to be processed by OpenAI within
                       these caps
                     </label>
+                    {runtime?.mode === "managed" ? (
+                      <div>
+                        <label>
+                          <input
+                            type="checkbox"
+                            checked={
+                              decisionConsentOverride ??
+                              today.status.spend?.decision_stored_consent_active ??
+                              false
+                            }
+                            disabled={
+                              !(
+                                decisionConsentOverride ??
+                                today.status.spend?.decision_stored_consent_active ??
+                                false
+                              ) &&
+                              !(
+                                today.status.spend?.decision_capability_ready &&
+                                today.status.spend?.configured &&
+                                ![
+                                  "overrun",
+                                  "restored_backup",
+                                  "reconciliation_required",
+                                  "disputed_usage",
+                                ].includes(
+                                  today.status.spend?.blocked_reason ?? "",
+                                )
+                              )
+                            }
+                            onChange={(e) => {
+                              setDecisionConsentOverride(e.target.checked);
+                              preferencesDirty.current = true;
+                            }}
+                          />{" "}
+                          Additional background checks
+                        </label>
+                        <small className="muted">
+                          Allow selected goal context to be sent to an additional
+                          configured service for background checks.
+                        </small>
+                        <p className="muted" role="status">
+                          {today.status.spend?.decision_stored_consent_active
+                            ? today.status.spend?.decision_consent_effective
+                              ? "Additional background checks are authorized for this account."
+                              : today.status.spend?.decision_capability_ready
+                                ? today.status.spend?.stored_consent_active
+                                  ? "Your authorization for additional background checks is saved. Paid processing is not available right now; saved work stays available."
+                                  : "Your authorization for additional background checks is saved. The connected-model consent is also required; saved work stays available."
+                                : "Your authorization for additional background checks is saved; this installation cannot run them right now. You can withdraw it any time."
+                            : today.status.spend?.decision_capability_ready
+                              ? "Additional background checks are available for this installation."
+                              : "Additional background checks are not available on this installation."}
+                        </p>
+                      </div>
+                    ) : null}
                     {runtime?.mode === "managed" ? (
                       <p className="muted" role="status">
                         {today.status.spend?.consent_effective
