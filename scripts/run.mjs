@@ -1,17 +1,24 @@
 import { spawn } from "node:child_process";
 const dev = process.argv[2] === "dev";
-const children = [
+const entries = [
   ["--import", "tsx", "apps/server/main.ts"],
   ["--import", "tsx", "apps/worker/main.ts"],
   ...(dev
     ? [["node_modules/vite/bin/vite.js", "--config", "apps/web/vite.config.ts"]]
     : []),
-].map((args) =>
-  spawn(process.execPath, args, {
-    stdio: "inherit",
-    env: { ...process.env, NODE_ENV: dev ? "development" : "production" },
-  }),
-);
+];
+// The worker-only decision key must never reach the API server or the dev
+// frontend child. Every legacy variable (OPENAI/identity/etc.) is preserved; only
+// this one deliberately scoped key is removed from non-worker environments.
+const isWorker = (args) => args[args.length - 1] === "apps/worker/main.ts";
+const children = entries.map((args) => {
+  const env = {
+    ...process.env,
+    NODE_ENV: dev ? "development" : "production",
+  };
+  if (!isWorker(args)) delete env.BRAIN_DECISION_API_KEY;
+  return spawn(process.execPath, args, { stdio: "inherit", env });
+});
 let stopping = false;
 let exitCode = 0;
 let deadline;

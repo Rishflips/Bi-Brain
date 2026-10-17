@@ -1,6 +1,1245 @@
 # Build state
 
-Updated: 2026-10-17
+Updated: 2026-10-18
+
+## Current checkpoint — B0 standalone writer accepted locally; admission integration next
+
+### Repository delivery / local preview — current owner request
+
+The owner requested commit/push or a PR, syncing the Desktop project folder and a local
+preview, plus an honest production score. Parent's fresh pre-commit run at **01:25:24**
+passed **488 checks / 6 platform skips, 36 files**, including billing and both old
+worker activation-guard suites (`test-results/billing-precommit-parent.json`). Separate
+typecheck/lint/build passed; fresh browser run passed **24/24**; offline evaluations
+**4/4**, audit zero vulnerabilities. All implementation executors are stopped and
+the source is frozen. A fresh full regression is running in background
+`sh_14b70b5e3001LOpelqA7ITNz5q`, report `test-results/prepublication-full-parent.json`;
+do not represent it as passing before completion.
+
+The isolated local supervisor is running on **http://127.0.0.1:4318**, with
+`data/local-preview/brain.sqlite` and its private `owner-secret`, no `.env` load and
+provider/billing variables removed. Parent opened its actual UI and confirmed
+`/api/v1/health/live` returned `{"live":true}`. The owner explicitly rejected the
+visible experience: the old local pairing screen and largely unchanged GUI are
+not delivery of the polished managed browser-first product. This is a product gap,
+not excused by backend test counts. See `docs/PRODUCTION_READINESS_2026-10-18.md`:
+**40/100 managed public readiness, blocked**, with concrete evidence and missing gates.
+
+Remote fetch found `origin/main` at `658565b`; the current feature branch was not yet
+pushed. The Desktop worktree was behind remote main and had one untracked personal
+licensing document. Preserve that file; publish only the reviewed development work.
+Do not merge a PR or claim main is updated merely because a feature branch is pushed.
+
+**Latest independent gate (Windows / Node 24.19.0, 2026-10-18 00:06:57): 430 passed /
+6 explicit platform skips across 20 files**, 14.54 s. Parent separately ran
+`npm run typecheck`, `npm run lint` and `npm run build`: all passed. Machine report
+`test-results/billing-authority-writer-final-parent.json` contains the final focused
+result; parent read `success:true`, 430 passed, zero failed, six pending. The batch
+covers **384 B0 checks plus 46 existing financial checks**, not a
+new full-suite invocation. The separate existing-runtime regression passed **984 /
+2 platform skips, 98 files**; browser **24/24**, offline evaluations **4/4**, dependency
+audit **zero vulnerabilities**. Those completed results were preserved rather than
+restarted during isolated writer repairs.
+
+Accepted: T1 calendar/reference/seal contracts, T2K protected key helper, T2L complete-frame
+journal verification/frozen-v4 fixture, T2P operator policy, and **T2W standalone writer**.
+The writer loads the actual protected key/policy/root, validates server-owned subscription
+correlation and authenticated retained evidence, privately appends grants/revocations,
+and atomically materializes immutable original central periods. Default-null evidence
+cannot use cached grants. Annual processing renews monthly, with no rollover or recharge.
+Both parent actual-process cases passed: one grant under same-window contention, and a
+separate process's adverse result fencing an older delayed active reply. All evidence
+is **synthetic**, not provider payment verification.
+
+Parent additionally reproduced and repaired a journal head whose singleton was
+changed to `2` using real SQLite's `ignore_check_constraints`; its signed content
+alone cannot excuse malformed row identity. The final gate includes this case,
+the failed-COMMIT refusal and the future-version fixture-digest regression.
+
+**T3 implemented in part but NOT yet accepted:** owned admission/provisioning
+generation, explicit non-funding v5 installation, mandatory reserve/mark/pre-I/O
+enforcement, audit split and lifecycle fencing are present. The final immutable
+reservation binding and strict suffix-only verification are being completed.
+Operational enrollment/key backup/restore remain T4, unimplemented. Genuine legacy
+roots stay central money **4**; only explicit installation opts into **5**; tenant
+schema remains **5**. Production evidence/correlation sources stay null. No actual owner key,
+account, activation, payment, provider call or deployment was created. B1 remains
+unapproved; positive configuration/MACs are not verified payment or permission.
+
+**Next action — implementation underway:** parent reviewed the revised
+`docs/superpowers/plans/2026-10-18-billing-admission-integration.md`, added the exact
+execution closures and authorized DeepSeek to implement the complete admission/
+generation + explicit money-5 installation + mandatory spending/audit integration
+test-first. No isolated helper passing is acceptance of the integrated boundary.
+No production caller or default evidence source was added by standalone acceptance.
+Known limits: coherent whole-DB rollback, Windows key ACL verification, target-host
+permission/drill proof and production incremental send-time verification remain open.
+The current writer uses bounded boot/writer scans, not a production model-send cache.
+
+**Latest T3 continuation:** the dedicated lifecycle executor finished its bounded
+slice (six own lifecycle checks; 32 passed across six lifecycle/existing-recovery
+files). Parent independently verified an actual cold v5 backup/restore: incarnation
+and epoch advanced, marker matched, unknown money row stayed byte-identical, and
+knowledge retrieval/new capture worked while the restore/accounting barrier stayed
+active. The first parent test expectation was corrected to respect the existing
+`awaiting_accounting` precedence; that assertion correction is not production RED.
+
+Parent sent the remaining two requirements back to the primary executor as a
+single finishing gate: `control_billing_reservation` authenticated immutable call →
+admission/generation/term/window/period binding, and a process-owned contiguous
+forward-suffix index. New parent binding tests reproduced **5/5 failures at 00:59:54**
+(missing proof, ignored/denied proof inserts leaving holds, changed model/request
+re-authorized). A new positive next-annual-window funding test also reproduced
+an originating-term/current-window grant confusion at **01:00:25**; legitimate
+monthly annual renewal must permit fresh funding once the previous usage is settled.
+That test additionally observes actual SQL and rejects a full historical rescan on
+forward-head refresh. Final full-suite/browser gates wait until this code is stable;
+no T3 acceptance or production migration is claimed from partial executor reports.
+
+The last binding fault test also exposed an actual ignored-COMMIT bug at **01:03:24**:
+after priming the verifier, SQLite authorizer `SQLITE_IGNORE` on the funding TX's
+COMMIT let `reserve()` return an undurable hold. The executor must verify the owned
+transaction actually ended before returning success and roll it back on refusal.
+The unprimed probe also exposed an owned read-TX cleanup leak; both require cleanup,
+not just converting the final return into an error. No model was called or owner
+funds touched: all fault tests use disposable synthetic control/tenant databases.
+
+Parent's fresh v5 activation check also failed at **01:06:07**: the existing public
+profile enrollment and read-guard path still required money version 4 even after
+a valid v5 audit. The lifecycle executor is repairing only the five activation
+reader/writer files to use the exact actual supported version (4 or 5), preserving
+profile schema 1 and all existing root/audit/opt-in checks. It owns no reservation/
+prefix source files, avoiding concurrent edits with the primary executor. The new
+`billing-admission-activation-review.test.ts` enrolls synthetic metadata only;
+it installs no provider/credentials/readiness and does not relax sandbox bootstrap.
+Scoped ESLint passed for the final parent activation/binding/funding review files.
+
+**Last-stage parent review, still NOT accepted:** at **01:08:28**, all **17/17**
+binding/funding/actual-process cases passed, including a new two-Node v5 fresh-mark
+race (one dispatched, one refused until known settlement; proofs retained). Parent
+then reproduced **two real funding bypasses at 01:09:37**: deleting the v5 marker
+alone downgraded the live ledger to legacy mode despite retained integrated state,
+and deleting an already-observed signed refund plus its projection/counter while
+keeping the same known head let the head-only cache forget the revocation. A known
+head alone is not the required authenticated per-account prefix/revocation index.
+These are not the acknowledged coherent whole-database rollback residual.
+
+At **01:10:15**, a separate installer fault test showed ignored COMMIT still
+reported success; at **01:11:10**, the installer healed a missing legacy immutable
+trigger and a v5 reopen ignored a missing retained money table. Parent's new tests
+require full retained money catalog validation as well as the added billing
+namespace. The primary executor is repairing these exact cases; the parallel
+activation executor remains confined to its five files. No full-suite run is
+claimed while these material defects are unresolved.
+
+**Activation version closure finished separately:** its executor reported 61/61
+checks across eight files, including the new parent v5 metadata-enrollment check.
+Parent then independently reproduced **5 failed / 20 passed** in the two existing
+worker activation-guard suites at **01:13:30** (`billing-legacy-dispatch-parent.json`).
+Root cause is concrete: the new coordinator pre-I/O call passed the **tenant call
+id** to the central ledger, which requires the mapped **central call id**. The
+executor is repairing that identity routing while preserving the original private
+attempt/lease checks. No synthetic transport call may be counted as executed when
+its durable central row is merely marked. This regression must pass before the
+long full regression is started; the earlier 984-test result is not fresh evidence
+for the currently changed integration tree.
+
+**Admission integration contract review in progress:** parent rejected optional
+caller guards, row-presence/manual fallback, supplied key/policy/tenant paths,
+unsigned checkpoints, a dynamically changing frozen inventory and the missing
+actual admission writer. Narrow Astra **Medium** advice confirmed the concrete
+closures: positively sealed baseline membership, durable lifecycle fencing,
+owned one-use preflight, verified prefix/revocation index and one non-funding
+migration/enforcement boundary. DeepSeek is rewriting the same plan consistently.
+Ordinary legacy construction will remain money-4; an explicit offline
+`installBillingMoney5` operation will install v5 without creating keys/enrollment
+or enabling paid processing. Genuine legacy manual behavior is not silently blocked
+by a universal constructor upgrade.
+
+Parent added `tests/integration/billing-admission-money5-review.test.ts` and witnessed
+missing-installer RED at **00:13:52** (zero assertions ran because
+`packages/storage/billing-install.ts` does not exist yet). This test file is new
+work-in-progress, not part of the accepted 430-check writer batch; a whole-tree
+typecheck is not claimed while its dependency is missing. Tests cover genuine frozen
+v4 rows/FKs, repeated install, missing acknowledgements, denied COMMIT, ignored marker,
+future schema and mandatory unenrolled-v5 denial with known settlement still allowed.
+No money version or production source changed during this planning gate.
+
+**T3 execution authorized after review:** the revised plan now preserves strict
+journal/standalone-authority schema variants and introduces an explicit integrated
+variant; signs the complete preflight record including expiry; supports a real
+first admission on an empty journal; derives correlation/generation privately;
+preserves v4 fingerprint bytes; and fences supported lifecycle mutations before
+they start. Separate v4/v5 version contracts preserve genuine legacy behavior.
+DeepSeek (`ses_eb4db8448ffeRnhsX14npdT9fe`) is the implementation executor, parent owns
+independent tests/final verification, and narrow Astra **Medium** advice remains
+advisory only. No final test result or actual v5 installation is claimed yet.
+The parent migration review also covers caller-owned transactions and refusal to
+auto-heal a lost v5 authority table. Owner data, activation, providers and B1 stay off.
+Parent also added `billing-admission-knowledge-review.test.ts`: real HTTP/session
+capture and retrieval must survive non-funding installation on an existing schema-1
+tenant; a newly provisioned v5 tenant gets a single durable incarnation while retaining
+knowledge access without a key or billing admission. Its behavior is not counted as
+passing yet. Scoped ESLint passed for both new parent-owned integration review files.
+
+**T3 first pass is NOT accepted:** DeepSeek returned partial generation/admission/
+installation/enforcement modules and 18 new own checks, with audit integration,
+restore fencing and true suffix verification still unimplemented. Its 473-pass
+reported batch did not establish the complete approved gate. Parent independently
+ran **394 passed / 3 failed / 6 skipped across 18 files** at 00:31:00:
+`test-results/billing-admission-first-parent.json`. Genuine standalone writer
+regressions remained green, but installation accepted an altered v4 reservation
+schema, caller-owned transactions produced the wrong failure, and an existing
+schema-1 user's real HTTP source read became 401 after installation (knowledge
+availability regression).
+
+Parent then reproduced a **critical funding bypass** at 00:32:20 in
+`billing-admission-enforcement-review.test.ts`: forged SQL enrollment/manual-baseline
+rows with no protected `billing-enrollment.json` let the actual `reserve()` create
+a hold. Classification trusted row presence and returned manual before validating
+the protected anchor/baseline. New send-time verifier also lacks several provenance
+checks already enforced by the accepted standalone writer; no weaker duplicated
+validator is acceptable for real spending. DeepSeek is completing the coherent
+slice and repairing these issues, with parent-owned tests unchanged. These are
+internal implementation failures, not unavailable credentials or business decisions.
+No production v5 root, key, enrollment, provider or payment was enabled.
+
+At **00:34:17**, parent independently reproduced **6/6 failing send-time provenance
+checks** in `billing-admission-provenance-review.test.ts`: receipt body substitution,
+observation/customer substitution, mismatched freshness revision, future evidence
+after clock rollback, term epoch/origin substitution, and a signed refund hidden by
+resetting a mutable counter. The new send-time verifier returned authorization in
+each case. DeepSeek received these exact REDs and must restore parity with the
+accepted writer while retaining bounded indexed send-time verification.
+
+Parent has also prepared actual-ledger positive/negative tests in
+`billing-admission-funding-review.test.ts` for valid reserve/mark/settle, post-refund
+mark denial, known settlement after refund, annual-boundary no-rebind and retained
+unknown usage. These require explicitly enrolled synthetic fixture composition;
+blanket denial does not satisfy the positive gate. Behavior results are not counted
+before the complete repaired run. Scoped ESLint passed for all five new parent
+integration review files. No full-runtime/browser rerun is being duplicated while
+the shared implementation is still changing.
+
+Parent added `billing-admission-audit-review.test.ts` and witnessed **3/3 RED** at
+00:36:36: the actual v5 audit currently refuses even valid synthetic enrolled setup.
+The positive requirements are renewal and new unpaid capture without staling the
+existing frozen audit; the paired negative requirement forbids hiding an unadmitted
+account's raw financial period in that exemption. DeepSeek has all seven parent
+integration-review files and is completing the missing audit/recovery/suffix work
+and repaired validation together, not accepting a blanket-deny substitute.
+
+**Second independent T3 checkpoint, 00:43:42:**
+`npx vitest run billing-admission billing-authority billing-reserve-guard billing-money5-migration --maxWorkers=1 --reporter=default --reporter=json --outputFile=test-results/billing-admission-second-parent.json`
+passed **430 / 6 platform skips across 26 files**, 38.91 s. This is a different
+batch from T2W's 430/20 gate: **384 standalone B0 + 46 T3 checks**, not the earlier
+384 + 46 legacy-financial batch. All earlier parent anchor-bypass, migration,
+knowledge, funding, audit and provenance failures passed. It does not complete T3.
+
+To finish the remaining work in parallel, parent assigned exclusive lifecycle
+ownership (`packages/runtime/managed.ts` and `managed-recovery.ts`) to DeepSeek
+`ses_eb4b61be3ffeiIs8oCP7QwYo0Z`. The original executor owns retained preflight evidence,
+immutable reservation-generation binding, pre-send checks and bounded prefix/suffix
+verification; it must not edit those two lifecycle files concurrently. Both remain
+implementation executors; parent owns reviews and acceptance.
+
+Parent's two new `assertFundingForExecution` tests first failed at 00:46:02 because
+the method was missing, then passed at **00:47:50**: current marked calls authorize;
+expiry or a changed generation refuses before transport, leaves the marked row
+byte-identical, and permits known settlement. A warm real-SQL check also passed:
+reserve/mark performed no non-point journal history query inside their money TX.
+Parent added `billing-admission-preflight-review.test.ts`: its fifteen-minute expiry
+case passed, but actual retained-baseline payload was missing (**1 failed / 1 passed**
+at 00:48:32). This is being repaired; a retained digest alone is not retained evidence.
+No new full-suite/browser claim, migration on owner data or live activation occurred.
+
+### Writer execution and repair history — superseded by acceptance above
+
+Following the owner's request to proceed
+faster in safe order, parent resolved the contract at the top of
+`docs/superpowers/plans/2026-10-17-billing-authority-writer.md` and authorized
+DeepSeek to implement the complete standalone writer slice test-first, not another
+plan-only pass. Parent is independently testing alongside it. Existing uncommitted
+S1/S2 work and all accepted prerequisites remain preserved.
+
+The earlier non-executable proposal below the resolved contract remains history,
+not authority to skip checks. The executing slice consumes an already signed
+admission, reloads actual protected policy/key and root binding, correlates all
+provider references, privately persists authenticated receipts, and atomically
+materializes a grant plus its original central period. Actual clean-baseline
+admission/provisioning generation and low-level reserve/mark/audit integration
+are the **next coherent gate**, not fabricated by standalone tests. No production
+source/caller or global migration is authorized by this slice.
+
+Parent independently witnessed missing-writer RED at 23:30:55. A separate
+evidence-contract run at 23:31:40 reproduced **6 failed / 5 passed**: mutable
+provider response aliasing, an unpaid observation converted to a paid receipt,
+and four cross-binding receipt conversions. DeepSeek is repairing these within
+the executing slice. It must report the complete writer gate before acceptance;
+the current work-in-progress tree is not represented as passing. No owner key,
+money history, app/worker activation, provider connection or payment is enabled.
+
+To shorten safe verification, parent launched the **unchanged existing-runtime**
+regression suite in parallel with isolated B0 development:
+`npm test -- --maxWorkers=1 --exclude "tests/integration/billing-authority*.test.ts" --reporter=default --reporter=json --outputFile=test-results/billing-authority-existing-runtime-parent.json`
+(background `sh_14b097a3a0012O5wnSPYVtylGV`). All work-in-progress B0 tests are
+explicitly excluded; app/worker/current-money code is frozen during this run.
+This is not a passing full-B0 result or a completed gate until the command's
+completion notification and JSON are checked. Do not poll, restart or count an
+interrupted run as passing. DeepSeek remains the sole implementation executor;
+parent owns the independent tests and final gate.
+
+**Existing-runtime rerun completed:** the background command above passed
+**984 tests / 2 existing platform skips, 98 files**, 618.05 s (start 23:34:36).
+Parent read its JSON: `success:true`, 984 passed, zero failed, two pending. All B0
+tests were deliberately excluded; this is fresh S1/S2 runtime/recovery/financial
+regression evidence, not a completed billing result. No cleanup warning appeared.
+
+**Writer parent review is repairing real failures, not accepted:** first full
+B0 batch at 23:44:32 had **358 passed / 1 failed / 6 platform skips, 15 files**.
+Typecheck/lint/build passed separately after parent fixed its own test lint.
+The new actual two-Node-process race passed: one central period, term and grant
+under simultaneous paid-window publication. Parent then reproduced **11 failing
+assertions / 34 passing** in the stronger writer review at 23:47:22: null-source
+cached authority; expired annual evidence still writing a new month; revoked-term
+revival/incorrect new-term generation; unchecked receipt/observation bodies;
+period-ID substitution; cap changes hidden by a cached grant; changed control
+identity; epoch changes during source I/O; and an unchecked key commitment.
+DeepSeek is unifying those validations across read, renewal and publication paths.
+Repeated adverse polls must also be idempotent, and denial evidence must be retained
+and authenticated rather than just persisting an unresolvable digest. Any required
+normalized denial table is test-installed only; no B1 inbox or global migration.
+
+No further original-runtime edits or live actions occurred. The new writer remains
+isolated and unaccepted until parent verifies the repaired invariants and final
+focused batch. The raw passing-test count from its executor is not acceptance.
+
+**Next independent writer rerun (23:57:35): 372 passed / 6 platform skips,
+15 files**, 9.86 s; actual two-process race passed again. Machine report remains
+`test-results/billing-authority-writer-parent.json`. Parent then reviewed the
+new unified implementation and reproduced **7/7 new failing provenance tests**
+at 23:58:39 in `billing-authority-provenance-review.test.ts`: deleting denial
+projections plus resetting their counter erased a still-retained signed revocation;
+a rehashed receipt plus missing freshness bypassed the original journal payment
+reference; a receipt could point to an admission ordinal; foreign epochs were
+filtered out rather than rejected; an existing-window refresh reported granted
+against a revoked central period; a different transaction entered an annual term
+through a later month; and clock rollback accepted future evidence. These are
+verified failures, not hypothetical findings. DeepSeek is repairing the full
+journal-to-projection correspondence and shared positive-path validation. The
+372-pass run is **not acceptance of this writer**.
+
+Parent launched a fresh browser regression separately:
+`npm run test:e2e -- --output=test-results/billing-authority-browser-artifacts --reporter=line`
+(background `sh_14b2010ad001enS1QjLH44alAZ`). Its explicit output directory preserves
+the earlier machine reports. No browser result is claimed until completion.
+The original-runtime 984/2 gate is finished and is not being restarted.
+
+**Browser command completed: 24/24 passed**, 1.5 minutes, no provider configured
+(`.env not found`). Parent separately ran `npm run brain-eval`: **4/4 synthetic
+offline evaluations passed**; `npm audit --audit-level=high`: **zero vulnerabilities**.
+These finish their own regression gates and do not override the seven reproduced
+writer-provenance failures being repaired. Added one SQLite-authorizer failure
+check for a silently ignored freshness-frame update and a second actual-process
+adverse-versus-delayed-active race; neither is counted before the next completed run.
+
+After the 321-pass parent gate, `npm run brain-eval` passed **4/4 synthetic offline
+evaluations**, and `npm audit --audit-level=high` found **zero vulnerabilities**.
+No full-suite/browser/native-client/Paddle/provider/hosted result is inferred.
+
+### Retained B0 Task 1 and storage verification history
+
+The owner approved the written B0 renewal-safe financial-authority design with
+**"okay go ahead"**. DeepSeek implemented **only its pure-domain Task 1**;
+parent independently reviewed and verified it. B1 Paddle integration remains
+**DRAFT / UNAPPROVED**. B0 as a whole is not complete.
+
+- New `packages/domain/billing-authority.ts`: strict canonical UTC/calendar
+  windows, original-anchor annual month clamps, monthly provider-period windows,
+  policy/transaction-independent identities, freshness/expiry helpers and closed
+  structural paid-term lookup validation.
+- New `packages/domain/billing-seal.ts`: bounded purpose-specific data records,
+  canonical owned snapshots and fail-closed, length-safe HMAC verification. These
+  are integrity primitives, **not payment verification or spending permission**.
+- Parent reproduced and verified fixes for four invalid calendar-reference
+  cases, invalid UUID acceptance, a changing object getter and a changing source
+  iterator. Validation cannot serialize a different unvalidated source list.
+
+**Fresh parent evidence (Windows / Node 24.19.0, 22:21:56):**
+
+| Command | Actual result |
+| --- | --- |
+| `npx vitest run tests/integration/billing-authority-domain.test.ts tests/integration/billing-authority-domain-review.test.ts tests/integration/spend.test.ts tests/integration/managed-spending.test.ts tests/integration/managed-decision-advisory-question-review.test.ts --maxWorkers=1 --reporter=default --reporter=json --outputFile=test-results/billing-authority-task1-parent.json` | **162 passed, 5 files**, 4.94 s; zero failures/skips |
+| `npm run typecheck` | passed |
+| `npm run lint` | passed |
+| `npm run build` | passed |
+
+Parent read the JSON report: `success:true`, 162 passed, zero failed/pending.
+The batch contains **99 B0 tests** (32 executor + 67 parent) and 63 adjacent
+accounting/advisory regressions. The full 984-test suite, browser suite, offline
+evaluations and dependency audit were **not rerun** for this pure, unused slice;
+their earlier S2 results below retain their original scope. One source-list RED
+was witnessed before its repair; four supplemental array-shape assertions were
+added afterward, not independently represented as witnessed RED cases.
+
+**Next:** finish/review T2K, the standalone protected key-file helper, before
+schema or grant-writer work. The broad storage proposal still lacked a complete
+signed-frame representation and actual evidence-producer contracts, so it is
+not approved for execution. B1 DDL is deferred to its separately reviewed initial
+installation, requiring a fresh closed-schema digest/audit/enrollment. Task 3 runtime guards and Task 4 operational
+recovery follow. No central schema/version, owner data, actual key, activation,
+provider transport, payment, dependency or lockfile has changed in B0 Task 1.
+Existing S1/S2 changes remain preserved and uncommitted.
+
+**T2K in progress:** parent approved only `packages/storage/billing-key.ts` plus
+synthetic disposable-root tests. There is no production caller or key enrollment
+command. Parent reproduced the two-suite missing-module RED at 22:36:12 (exit 1,
+zero assertions executed) before authorizing implementation. File reads must not
+create/repair keys; explicit acknowledged enrollment must use exclusive creation,
+exact 32-byte binary data, readback and no overwrite. Keys, directories, links,
+hard links, malformed inputs and POSIX modes are tested independently. Parent
+rejected early-return "skips" and a serial Promise test masquerading as concurrency;
+unavailable link privileges must be actual reported skips. No cross-process race
+proof or Windows ACL assurance is claimed by T2K. No schema/version change occurs.
+
+**Continuation requested: "go ahead, fast".** Parent reproduced a final T2K
+lost-key regression at 22:43:32: **46 passed / 1 failed / 6 skipped**. Existing
+`.protected` with a missing enrolled key incorrectly allowed replacement; the
+approved standalone helper must refuse this ambiguous state, not regenerate it.
+DeepSeek is repairing only that helper. The next focused substage is T2L:
+complete-frame signed journal schema plus a bounded read-only verifier, explicit
+disposable SQLite fixtures, and a genuine frozen-v4 fixture. It adds no production
+consumer or migration and keeps central money at 4 until the complete financial
+storage contract is ready. B1 inbox/checkout DDL stays deferred. No safety guard,
+unknown hold or owner data is changed to accelerate this work.
+
+**T2K parent behavior gate passed (22:47:43):** independent focused run
+`npx vitest run tests/integration/billing-authority-key.test.ts tests/integration/billing-authority-key-review.test.ts tests/integration/billing-authority-domain.test.ts tests/integration/billing-authority-domain-review.test.ts tests/integration/managed-spending.test.ts --maxWorkers=1 --reporter=default --reporter=json --outputFile=test-results/billing-authority-key-parent.json`
+reported **169 passed / 6 explicit Windows-related skips, 5 files**, 5.49 s.
+Parent inspected the lost-key refusal and pre/open/post file-identity checks.
+The six skips are five POSIX mode checks and one actual Windows file-symlink
+privilege failure; directory-junction and hard-link checks ran and passed.
+Windows ACL and actual process-contention proof remain unverified. Final static
+checks will be repeated once the journal slice exists; missing-module journal
+RED tests are currently intentional, not a passing tree claim.
+
+T2L is now delegated test-first to DeepSeek. Parent independently witnessed its
+missing-module RED at 22:48:40 (exit 1, zero assertions). The complete canonical
+frame is retained; the journal verifies exact schema, root/policy/epoch/MAC/chain,
+head, row/byte bounds and transaction ownership. This is a read-only foundation
+with no public append or grant method, not a completed renewal/payment flow.
+
+**T2L parent review / repairs:** a fresh 8-file batch at 22:51:57 passed
+**210 tests / 6 platform skips**, with separate parent typecheck/lint/build.
+Parent then reproduced two real assertion failures at 22:53:08: a SQLite-denied
+COMMIT was swallowed while returning a verified snapshot, and the frozen-v4
+fixture digest excluded all future version markers instead of only additive v5
+bookkeeping. Both repairs were independently verified at 22:58:25: **43/43**
+journal/fixture checks. A failed owned COMMIT now refuses and rolls back without
+touching caller-owned transactions; a version-6 marker changes the history digest.
+The fixture's synthetic unknown hold and monetary block remain byte-identical
+when only the unused journal namespace is added. This is **not v4→v5 migration
+proof**. Parent's separate legacy financial-safety batch passed **25/25** at
+22:50:48 (audit, frozen-v3 migration, decision guards and accounting invariants).
+
+**T2P now in progress:** a closed pure operator-policy/catalog contract must
+precede the private financial writer. Configured ceilings default to no authority;
+provider facts cannot choose allowances or increase budgets. Parent witnessed its
+missing-module RED at 22:58:25. A successful narrow **GPT-6 Astra Medium** advice
+call confirmed the minimal seam: trusted source reads outside transactions,
+rechecks and normalized evidence inside the control transaction; production
+`EvidenceSource = null` until separately approved B1 exists. TypeScript privacy
+and HMAC possession are not proof of provider contact. Admission also requires
+rechecked provisioning/import generation, not a clean-baseline hash alone.
+
+## Retained acceptance — S2 advisory worker
+
+**All three approved S2 slices are now accepted locally:** bounded questions,
+tenant-v5 advisory/attempt lifecycle, and the default-off managed decision worker.
+DeepSeek implemented the bounded slices; parent tests and independent review
+reproduced and verified repairs before acceptance. The pause, failed checks and
+interrupted verification below are retained as history, not current blockers.
+
+**Final parent evidence (Windows / Node 24.19.0):**
+
+| Command | Actual result |
+| --- | --- |
+| `npm test -- --maxWorkers=1 --reporter=default --reporter=json --outputFile=test-results/decision-advisory-s2-final.json` | **984 passed, 2 existing POSIX-only skips, 98 files**, 720.54 s; zero failed files/tests; no cleanup warning |
+| `npm run test:e2e -- --workers=1 --output=test-results/decision-advisory-task3-parent` | **24/24 Chromium journeys** |
+| `npm run typecheck` / `npm run lint` / `npm run build` | passed separately; repeated after the final test-only cleanup repair |
+| `npm run brain-eval` | **4/4 synthetic offline evaluations** |
+| `npm audit --audit-level=high` | zero vulnerabilities |
+| `git diff --check` | passed; existing line-ending notices only |
+
+Parent read the final JSON report: `success:true`, 984 passed, 0 failed, 2 pending,
+98 files. The real worker-process suite passed all five cases in this final run:
+same-job D→R settlement/proposal, settled-D restart without resend, long-call
+heartbeats plus real expired-lease re-acquisition/no resend and unpaid account B
+continuity, decision-only bootstrap, and reasoning-only bootstrap. Parent's 19
+worker regressions and two real-launcher checks also passed within the full run.
+Known charges survive refusal; partial tenant settlement cannot publish; recovery
+checks the original job and both financial projections before loading a current
+advisory. No advisory choice grants permission or suppresses reasoning.
+
+Reference screenshots are restored and the lockfile is unchanged. All changes
+remain local and uncommitted. No agents or background verification commands are
+left running. Windows graceful SIGTERM marker removal, current-branch Linux/
+container CI, live-provider compatibility/quality/cost, native-client sessions,
+billing, chosen-host recovery/monitoring and human/legal release gates remain
+separate. The synthetic process proof is not a real provider call or deployment.
+
+**Next dependency:** separately scope the billing/subscription slice and obtain
+the remaining live/release inputs. A numeric live-test budget, host/domain,
+secure identity/payment/provider setup and owner license/privacy decisions have
+not been supplied. Do not activate an owner/provider, purchase infrastructure,
+publish or choose the owner's license on the strength of this acceptance.
+
+**Payment-provider preference:** the owner now prefers Paddle over Stripe if it
+is suitable for an India-based global seller. Parent checked Paddle's official
+country, pricing, payout/currency/fee, verification and acceptable-use pages:
+India is eligible in principle, but seller/domain/product/payout approval remains
+unverified. Paddle Billing is the next design target, **sandbox first**; this
+does not approve a billing architecture or customer price. The evidence and
+India-specific payout/tax caveats are recorded in `docs/BUSINESS.md`. No account,
+checkout, product/price, banking setup or payment was created or enabled.
+
+The owner specified **individual/sole proprietor** for Paddle onboarding. This
+is a design input, not completed KYC, domain approval or tax/bank verification.
+Billing remains a separate architectural design gate; no billing code or payment
+provider action has begun.
+
+In the subscription-model clarification, the owner selected **monthly and annual**
+for the first managed release. Design both cadences; exact prices, annual
+discount, allowance amounts and replenishment/lifecycle rules still require the
+billing design/economic gates. This does not authorize live checkout or payments.
+
+The owner has now explicitly approved the allowance rule: both monthly and annual
+plans renew their included processing allowance **monthly, with no rollover**;
+annual customers do not receive a year's usage upfront. Exact customer prices,
+discount/allowance amounts and the written billing architecture remain unapproved.
+Parent is researching Paddle Billing lifecycle/security and the existing monetary
+authority seams before presenting that design. No implementation has started.
+
+Design research identified a prerequisite: the existing activation audit binds
+every configured allowance period and account inventory. Naively adding renewal
+periods or subscribers would stale the global audit and stop paid processing.
+DeepSeek mapped the exact code seams; a narrow **GPT-6 Astra Medium** advisory
+call recommended a separately reviewed renewal-safe authority extension, not
+automatic offline re-auditing or simply deleting dynamic fields from fingerprints.
+Existing caps, held usage, legacy baselines, known settlement and restore blocks
+must survive that change.
+
+Two new documents are **DRAFT / UNAPPROVED**, under parent review:
+
+- `docs/superpowers/specs/2026-10-17-renewal-safe-financial-authority-design.md`
+- `docs/superpowers/specs/2026-10-17-paddle-billing-design.md`
+
+Parent review requires complete cross-document grant/admission interfaces, unique
+annual renewal windows, explicit authority-key/restore trust limits and correct
+Paddle paid-term/PII/currency handling before owner review. The owner-approved
+monthly no-rollover rule is recorded; proposed cancellation, failed-payment,
+freshness and technical-authority choices are not yet approved. There is no
+implementation plan, billing schema/code, dependency, payment account or live
+action created by these drafts. S2's accepted code and test evidence are unchanged.
+
+The two drafts have now been parent-refined: monthly provider-paid periods and
+annual UTC-clamped monthly windows; policy-independent renewal identities with
+non-overlap/no re-credit; explicit admission/paid-term lookup contracts; rare sealed
+authority changes separate from bounded fresh-state updates; backup/key/rollback
+limits; initial-checkout versus recurring-payment correlation; and localized
+currency/PII/portal handling. The proposed customer lifecycle is term-end
+cancellation and a pause on new paid model work when payment is uncertain, while
+saved knowledge remains accessible. Sandbox payments must never fund real model
+calls. Exact prices and monthly model budgets are still required before enabling.
+
+**Next gate: owner review/approval of the B0 written financial-authority draft
+first.** B1 is a separate draft consumer and needs its own approval after B0's
+contract is accepted. No implementation plan/code or live/sandbox payment account
+has been created; no test rerun is claimed for document-only changes. The current
+S2 acceptance remains the unchanged 984-test / 24-browser checkpoint.
+
+**B0 written-design approval:** after the parent asked to approve B0 before its
+implementation plan, the owner replied **"okay go ahead"**. B0 is now approved
+for planning and dependency-ordered implementation/synthetic verification. B1
+remains **DRAFT / UNAPPROVED**. Begin with a reviewed implementation plan, then
+test-first bounded slices and parent gates. No migration on owner data, key/account
+enrollment, live spending, customer prices, payment or deployment is authorized by
+this approval. Existing S1/S2 changes remain preserved and uncommitted.
+
+After a server restart, parent confirmed that no B0 plan file had been created
+and resumed **plan drafting only** with DeepSeek (`ses_eb5c94313ffejEKJcpSAbwC09l`).
+The sole delegated output is
+`docs/superpowers/plans/2026-10-17-renewal-safe-financial-authority.md`;
+the executor must stop for parent review before source/tests/migration work.
+Expected dependency order is pure contracts/calendar, sealed storage/migration,
+runtime admission/send guards, then operator enrollment/recovery/process proofs.
+No implementation, verification rerun or external payment action has begun.
+
+**B0 plan review in progress:** DeepSeek produced the four-task plan above. Parent
+found two material planning gaps: an unrestricted seal body contradicted the
+approved closed-record design, and later storage writer inputs were unspecified.
+DeepSeek is tightening the pure T1 schemas and writing/running its tests first;
+it must stop at RED before production modules. T2–T4 cannot execute until their
+typed storage/authority contracts and bounds are independently reviewed. No money
+schema/version, owner database, activation, key enrollment or provider has changed.
+
+**B0 T1 RED / parent gate:** parent reviewed the tightened contracts and corrected
+a contradictory test that accepted and rejected the same `window_end`. Parent
+reproduced the missing-module RED at 22:10:53 (exit 1, no assertions executed),
+then authorized only the two pure domain modules. Independent parent tests at
+22:14:29 reproduced four calendar-reference validation failures. A second run at
+22:15:31 had **60 passed / 6 failed**: the same four plus malformed UUID acceptance
+and a changing getter being validated at one value but serialized at another.
+DeepSeek is repairing those observed failures; T1 is **not yet accepted**. No
+schema/storage/runtime consumer or key enrollment has been implemented. T2–T4
+remain paused for concrete storage-contract review, not a new owner design vote.
+
+## Resume and verification history — superseded by acceptance above
+
+The owner has now said **"continue exactly from where we left"**. The pause is
+lifted for the approved remaining S2 Task 3 work, not live activation/deployment.
+Parent inspected the saved edits and independently reproduced the two reported
+parent-test issues: nullable piped-stream types and the daily receipt's wrong
+generation path. Only those test issues were corrected. DeepSeek has resumed the
+missing actual-worker process proof; parent owns independent review and acceptance.
+The following pause handoff remains history, not an instruction to stop again.
+
+**Resumed parent verification:** fresh typecheck reproduced the two nullable
+pipe errors, and the unknown-R worker check reproduced the generation-path
+`ENOENT`. After correcting those parent tests, the existing worker/launcher batch
+passed **15/15** at 14:59:22. No implementation behavior was changed for those
+test corrections.
+
+Parent review then recorded **3 actual failing cases** at 15:03:37: a source set
+changed before reserve still produced a dispatched hold, a source made private
+before mark failed to release the still-undispatched reservation, and recovery
+did not load a current published advisory using its original job's settled slot.
+DeepSeek is repairing these alongside the missing real-process coverage. The
+already-tested after-mark privacy case must still keep its hold; the early checks
+do not promise atomicity across I/O.
+
+Another real tenant-settlement SQL failure at 15:08:05 showed a known central
+charge with an unsettled tenant projection could still publish a judgment.
+Task 3 must verify both exact financial projections before publication/recovery;
+the known charge and reconciliation block stay retained. An overrun test in that
+same run was initially overstrict: an unavailable/null observation is allowed by
+the approved malformed-output rule. Parent corrected it to require no active
+judgment, rather than deleting valid unavailable history. The current parent
+worker suite contains **18 cases**, not yet a settled acceptance run.
+
+**Task 3 final gate in progress:** parent independently passed **21/21** across
+the worker (now 19 cases, including a real settlement+safety-marker failure that
+fail-stops `ManagedWorker`) and real-launcher environment suites at 15:27:57.
+The remaining parent fixture type error was corrected by typing its actual SQL
+entity row; fresh parent typecheck/lint/build passed. Parent Chromium regression
+passed **24/24**; reference screenshots were restored. Fresh **4/4 offline
+evaluations**, dependency audit (zero vulnerabilities) and whitespace checks also
+passed (Git printed only the existing line-ending notices).
+
+Independent source review confirmed the four execution/recovery repairs and
+found no further material defect. The executor strengthened its five actual-main
+process tests to require a non-seed/fresh restart boot identity, future readiness
+expiry, advanced job attempts/fence after real lease expiry, retained no-resend
+holds and account B's unpaid brief from the same actual worker. Decision-only and
+reasoning-only bootstrap/key cases are also covered. The child environment uses
+an explicit OS allowlist plus synthetic test values; tests do not load an operator
+environment or contact a provider. These are synthetic runtime proofs, not live
+semantic quality, pricing or a hosted release. Windows graceful signal cleanup
+remains separately limited.
+
+All executors/reviewers have stopped. Parent launched the settled full serial
+suite (`npm test -- --maxWorkers=1`, background `sh_149524ae5001DKPYMOJ2h57Ngu`).
+**Task 3/S2 remain unaccepted until its completion notification confirms the
+result.** No production code should change underneath this gate. No provider,
+owner account or target host has been activated.
+
+**Settled full-suite result:** `npm test -- --maxWorkers=1` passed **984 tests /
+2 existing POSIX-only skips, 98 files**, 554.20 s (start 15:34:54). Its output also
+reported **one process-fixture cleanup warning**. This is not silently being
+treated as a pristine gate: parent found the newest disposable hold-test root
+still retained, while a read-only process check found no live `node.exe` running
+`apps/worker/main.ts`. That check alone does not diagnose which file handle or
+permission prevented deletion.
+
+DeepSeek is investigating only the process-test cleanup/child-close lifecycle;
+production code is unchanged. Any exhausted cleanup must be an actual test
+failure, not a warning followed by a success claim. Parent will attach the
+focused cleanup proof and any required final rerun before marking S2 accepted.
+The complete browser/other-gate results above remain their recorded evidence;
+no live activation or deployment has occurred.
+
+Cleanup follow-up (test-only): the executor observed Windows `EPERM` on a retained
+fixture root; deletion later succeeded after its transient handles were gone.
+Vault Git grandchildren are a plausible holder, but the sole holder was not
+proved. The fixture now captures the real child `close` promise at spawn, closes
+provisioning resources in `finally`, yields during bounded cleanup retries and
+**fails** instead of warning if cleanup cannot finish. It reported two consecutive
+clean 5-process-test runs and no new leftovers. Parent inspected these changes;
+production execution/guard code is unchanged.
+
+Parent has launched a second settled full serial run with the stricter fixture
+(`sh_14972949f001fdCFTFpQ83prCu`). All agents are stopped; do not mark S2 complete
+or infer a cleanup-free full run before its completion result arrives. Earlier
+984/2/98 and 24-browser results retain their exact stated scope.
+
+The stricter-fixture rerun (`sh_14972949f001fdCFTFpQ83prCu`) was interrupted around
+a harness/server restart: exit code **4**, with only the Vitest start banner and
+no test summary. It is **not** passing evidence or a diagnosed application test
+failure. Parent checked its saved output and found no remaining Vitest/worker
+Node process. After the owner's explicit continuation, only the final gate was
+restarted, preserving all code and earlier verified results:
+
+`npm test -- --maxWorkers=1 --reporter=default --reporter=json --outputFile=test-results/decision-advisory-s2-final.json`
+
+The current run is `sh_149d7ad1a001r1djbAoo0xzVni`; its machine-readable report is
+to be read only after completion. All agents remain stopped. No source change,
+activation, live call, commit, push or deployment accompanies this rerun.
+
+### Saved owner pause and safe-stop handoff
+
+The owner requested **"hang on at safe point, will continue later"** during S2
+Task 3. Parent sent an immediate safe-stop instruction to the active DeepSeek
+executor (`ses_eb8b3dc93ffenap9iGKPlyiXuT`): finish only an in-flight atomic edit
+or test cleanup, preserve all work, record a partial handoff in the S2 plan and
+stop. No further implementation, tests, commits, pushing, activation or deployment
+should begin until the owner resumes. **The executor has now confirmed its safe
+stop: all its commands completed and no executor-launched process remains
+running.** This is the agent's handoff, not a new parent verification run.
+
+Last accepted checkpoint: S2 Tasks 1–2, **948 passed / 2 existing POSIX-only skips,
+94 files**, **24 Chromium journeys**, **4 offline evaluations**,
+typecheck/lint/build and dependency audit passed. Task 3 is partial and unaccepted;
+its current edits must be inspected against the executor's final plan handoff
+before resuming. Parent-owned worker tests contain 13 cases with recorded REDs,
+and the launcher probe has two recorded REDs; no final Task 3 verification exists.
+All local changes remain preserved and uncommitted. No live provider call,
+owner activation or deployment was performed by the parent.
+
+**Final paused Task 3 handoff (executor-reported, not parent-accepted):**
+
+- Partial worker/managed/bootstrap integration, goal-revision withdrawal,
+  known/unknown receipt rendering and worker-only decision-key forwarding are
+  implemented within the closed file list. See the S2 plan's partial execution
+  notes for commands and details.
+- Own worker suite **6/6**, parent worker suite **12/13**, launcher environment
+  **2/2**, affected batch **164 passed / 12 files** were reported. The remaining
+  worker test reportedly reads the wrong vault path: generated daily receipts
+  live under `generations/<generation>/dreams`, not directly under `vault.root`.
+  Verify that diagnosis before changing the parent test.
+- Typecheck reportedly has two nullable stdout/stderr errors in the new
+  parent-owned launcher test. These are new Task 3 test-file issues, not an
+  accepted-baseline defect. No clean final typecheck/lint/build/full/browser gate
+  is claimed for the partial integration.
+- The actual `main.ts` / ManagedWorker process proof and official-endpoint
+  injected transport fixture are still missing. Launcher environment probes are
+  not substitutes for this proof.
+- Resume only on the owner's request: inspect the saved edits and plan notes,
+  verify/correct the parent test issues, rerun focused checks, complete real-process
+  synthetic coverage, then run independent full/browser verification. Do not
+  restart the executor or any test now.
+
+## Owner direction — production delivery in safe order
+
+The owner now requests **"ship it to production with all the things we planned,
+continue back to where you were, make it in safe order"**. This extends the goal
+from local acceptance to production delivery; it does not make unfinished gates
+pass or authorize unbounded spending, infrastructure purchases, arbitrary host
+access, invented credentials or an agent-chosen software license.
+
+Resume the approved S1 Task 3 consent/status/UI checkpoint first, then complete
+the remaining managed-suite worker/policy, real-provider quality, billing,
+native-client and operational/release gates in dependency order. Keep synthetic,
+provider-live, native-client, target-host and public release evidence distinct.
+Use staging and disposable data before admitting owner/customer data. The chosen
+host/domain, secure identity/payment/provider configuration, a numeric live-test
+budget and owner license/privacy decisions remain required inputs. Never deploy
+the old single-owner Compose defaults as a complete managed subscription suite.
+No host, account or provider is activated by this status record.
+
+## Current checkpoint — decision accounting S1 accepted locally
+
+The owner approved the written stage-accounting design. DeepSeek implemented
+Task 1 (schema 4, separate default-off decision profile/mirror, strict CLI,
+coordinated global disable and recovery), then repaired the parent's reproduced
+enrollment/CLI/audit defects. **All three S1 tasks are now accepted locally**:
+profile/migration/recovery, stage-specific guarded accounting, and consent/status
+HTTP/UI. Parent verification and independent review include the repaired job
+principal/lease fences and blocked-consent wording. Earlier failures below are
+retained as repair history, not the current acceptance state.
+
+**Final S1 parent acceptance (Windows / Node 24.19.0):**
+
+| Command | Actual result |
+| --- | --- |
+| `npm test -- --maxWorkers=1` (repeat after final UI repair) | **829 passed, 2 existing POSIX-only skips, 88 files**, 302.88 s |
+| `npm run test:e2e -- --workers=1 --output=test-results/decision-accounting-s1-final-parent` | **24/24 Chromium journeys**, including **5** independent decision-consent journeys |
+| `npm run typecheck` / `npm run lint` / `npm run build` | passed separately; typecheck/lint repeated after the final browser-test addition |
+| `npm run brain-eval` | **4/4 synthetic offline evaluations** |
+| `npm audit --audit-level=high` | zero vulnerabilities |
+
+Consent stays raw/withdrawable while unavailable, unrelated saves omit unchanged
+consent, temporary usage accounting does not impersonate missing capability, and
+an unsaved opt-in cannot cross an account switch. Reference screenshots match
+their pre-run hashes; the lockfile is unchanged. This checkout remains local and
+uncommitted: no new Linux/container CI, merge, provider activation, real runtime
+call or public deployment is claimed. S1 contains no production decision worker.
+
+**Next gate:** S2 implementation under the now-approved separate advisory-worker
+design. The owner replied **"go ahead, proceed"** to its written-design approval
+request. Begin with a reviewed implementation plan and failing tests, then pure
+bounded questions, durable advisory lifecycle, and explicit worker coordinator
+pair/bootstrap in dependency order. Approval does not supply a host/domain,
+numeric live-test budget, live credentials, pricing verification or license.
+No live provider or target host is activated by this record.
+
+### S2 in progress — Tasks 1 and 2 accepted, worker integration next
+
+The reviewed plan is `docs/superpowers/plans/2026-10-17-system-one-advisory-worker.md`.
+Parent caught and corrected a plan defect before implementation: a question with
+only source hashes could not support a real relevance judgment. The transient
+question/adapter input now includes bounded selected source text; persisted
+advisories retain only source references/hashes and explicitly labeled judgments.
+Question identity, adapter request identity and financial configuration remain
+distinct. Source ordering is canonical, body hashes are recomputed, and the full
+canonical question is bounded to 16 KiB without trimming source bodies.
+
+Parent wrote an independent question suite before implementation. Its first
+`npm test -- tests/integration/managed-decision-advisory-question-review.test.ts --maxWorkers=1`
+observed a missing-module RED at 04:44:09: **one failed suite, zero test bodies**,
+not behavioral passing evidence. DeepSeek is implementing only the pure module
+and its own test-first suite; no tenant migration, advisory persistence or worker
+integration is authorized until its parent gate. A new plan-version-zero check
+reflects actual newly created goals, whose initial `plan_version` is 0.
+
+Read-only review of the upcoming persistence slice identified plan gaps before
+its authorization: shared local/managed restore must also clean advisory attempt
+references; goal edits need explicit withdrawal; the vault needs the observations
+directory initialized as well as mapped; publication must atomically consume a
+matching claimed attempt; and portable export must deliberately retain validated
+advisories even though ordinary entity/context readers hide them. Imported
+judgments remain unavailable/null and cannot recreate an execution claim. These
+are pre-implementation requirements, not reported bugs in a shipped S2 feature.
+
+The first pure-contract handoff passed parent/owned checks at **31/31**, but is
+not accepted. Parent then observed **5 failed / 22 passed** behavioral checks at
+04:49:51: direct validation/bridging accepted an oversized canonical question,
+accepted an empty source set and repeated source IDs at different versions, and
+the exported option objects were mutable. A real prepared adapter with injected
+transport also accepted rounded probabilities (sum 0.9999) that the advisory
+mapper incorrectly refused. DeepSeek is repairing the public validation seam and
+matching the existing adapter's sum tolerance without normalizing raw values.
+
+Parent also prepared the next migration gate before implementation: a frozen
+tenant-v4 schema (not a downgraded new runtime) with reserved, dispatched-unknown,
+settled and legacy money rows, original content and raw choices. Its initial
+`managed-decision-advisory-migration-review.test.ts` run observed **2 failed /
+1 passed** at 04:51:50: migration 5 and its failure-injection boundary are not
+implemented; future-schema refusal already passes. This does not authorize Task
+2 early or describe its full lifecycle/restore/claim proofs as complete.
+
+**S2 Task 1 accepted at its focused gate:** the five validator/immutability/
+rounding defects were repaired; parent independently ran **116/116** across six
+question/adapter/guard suites at 04:54:48, including **40/40** owned+parent question
+checks. Fresh parent typecheck/lint/build passed. The public validator and bridge
+now enforce the 16 KiB bound, nonempty distinct source IDs and fixed options;
+rounded probabilities retain their raw values under the existing adapter's 0.001
+sum tolerance. This is not a full S2 suite, provider-quality result or runtime
+consumer. The server restart did not change this checkpoint or start persistence.
+
+Task 2 is authorized under the reviewed plan: tenant migration 5, claimed-attempt
+publication and the complete withdrawal/purge/restore/export lifecycle. The plan
+now uses an explicit injected clock and exact job/owner/fence binding, a typed
+tombstone outcome with no fabricated attempt row, and hash-only tombstones that
+prevent a deleted mapping from causing the same paid question to be sent again.
+No Task 3 worker/bootstrap is authorized until the persistence gate passes.
+
+After the server restart, the working tree still contained the accepted pure
+module and no advisory storage implementation. Task 2 was handed to a fresh
+DeepSeek executor with the reviewed clock/lease/claim/tombstone interfaces and
+closed file ownership. Parent's independent persistence suite then recorded a
+missing-storage-module RED at 05:00:11 (**one failed suite, zero test bodies**).
+Its planned behaviors use actual accounts, audited configuration, synthetic
+readiness, SQLite/vault and source operations—not ready-boolean permission stubs.
+
+Read-only preparation for the later worker slice found implementation
+prerequisites, not delivered S2 results: the engine's retry decision must
+distinguish a settled decision from an existing reasoning slot without changing
+legacy `hasUnresolved`; the existing launcher must not forward the new decision
+key to its server (or dev frontend) child; boot readiness identity is distinct
+from per-job lease identity; and the optional decision provider should be a
+structural one-method interface so readiness fencing cannot be bypassed for test
+convenience. These will be resolved in the Task 3 plan after Task 2 acceptance.
+
+### S2 Task 2 review — repairs required, not accepted
+
+The first persistence handoff independently passed **27/27** parent migration and
+initial lifecycle checks at 05:23:18. Parent then exercised public mutation
+seams and the round-trip/withdrawal boundaries. The expanded 40-case run at
+05:30:12 had **16 failed / 24 passed**; one failure was a parent test error:
+ordinary exports already retain historical source versions. The corrected
+historical-version case passed alone at 05:33:33; no working full-version export
+behavior is being removed.
+
+The **15 confirmed failures** concern transactionless mutations, deriving a
+principal from a UUID-shaped path, publication after immutable claim metadata is
+changed, resuming a withdrawn judgment, and silently ignored tombstone/deletion
+writes reporting successful forgetting. Three additional cases at 05:34:51
+reproduced a real **scoped** historical export failure after a source moves out of
+the exported project, plus accepted mismatched available body hashes/project
+metadata. The current parent persistence suite therefore contains **43 cases**;
+18 failed-case observations require repairs, not a claimed settled result.
+
+DeepSeek is repairing these before any full/browser gate: explicit caller-owned
+transactions; trusted bound principals instead of path inference; immutable
+claim identity plus publish-time comparisons; active-only reads; checked purge
+writes; unavailable/null historical imports without invented missing bodies; and
+validation of available provenance. A narrow owner-checked claim method will
+re-derive the question inside the write transaction. Parent also removed its
+incorrect test expectation of a new vault `index_gone` field: file/Git erasure and
+the actual SQLite FTS check are separate evidence. The executor is to remove the
+unsupported production alias rather than fabricate a combined index proof.
+
+An external review recommendation to drop project-wide attempt tombstones was
+not adopted: existing source deletion conservatively purges all project-derived
+entities, and the reviewed plan explicitly preserves no-resend keys before that
+purge (including an excluded source). A previously claimed question was already
+non-reclaimable; a hash-only tombstone preserves that rule rather than newly
+withholding authority. Future worker changes remain unauthorized until Task 2
+passes its parent gate. No live call, activation or deployment has occurred.
+
+The repair handoff reports **119/119** focused checks (30 owned store, 3 owned
+migration, 43 parent persistence, 3 parent migration, 40 question checks), plus a
+**280-check / 22-file** affected batch. Parent inspected the repaired source;
+independent read-only re-review confirmed all known fixes and found no additional
+material difference. Principals now come from the trusted Brain, not a filename;
+the new owner-checked claim wrapper rebuilds the current question under the
+write lock; identity columns are immutable; active readers never revive archived
+judgments; and forgetting requires both tombstone and delete proof. Imports
+retain unavailable/null historical records without inventing missing sources and
+reject contradictory available provenance. The unsupported vault index alias is
+gone; the actual SQLite FTS proof is separate.
+
+Fresh parent typecheck/lint/build, **4/4 offline evaluations** and dependency
+audit (zero vulnerabilities) passed on the repaired checkpoint. Parent launched a
+new full serial suite; browser regression follows. **Task 2 is still unaccepted
+until those gates finish.** No Task 3 implementation is running. Its plan now
+records the launcher key isolation, distinct boot/job identities, exact-stage
+retry/receipt accounting and the goal-revision withdrawal hook needed by the real
+worker; this is planning, not executed worker evidence.
+
+**S2 Task 2 is now accepted locally.** Parent's settled
+`npm test -- --maxWorkers=1` passed **948 tests / 2 existing POSIX-only skips,
+94 files**, 672.60 s. Parent's
+`npm run test:e2e -- --workers=1 --output=test-results/decision-advisory-task2-parent`
+passed **24/24 Chromium journeys**. Browser tests used their own 4317 server;
+integration process tests use ephemeral ports and disposable roots. Fresh
+typecheck/lint/build, **4/4 offline evaluations** and dependency audit (zero
+vulnerabilities) also passed. Independent re-review confirmed the repaired
+transaction, identity, active-read, archive and erasure-write boundaries.
+
+Tenant schema 5 and the full advisory lifecycle have local synthetic evidence;
+central money schema 4 and all existing holds remain unchanged. No Linux/container
+CI, real model run, native-client proof or hosted result is inferred. Reference
+screenshots were restored from pre-run copies; the lockfile is unchanged.
+
+Task 3 is authorized next under the approved S2 design and reviewed plan: explicit
+decision/reasoning coordinator pair, default-off frozen bootstrap, independent
+own-worker readiness, no-resend recovery and truthful per-stage/job accounting.
+Parent will add independent launcher/worker checks and verify the full checkpoint.
+There is still no authorized live test cap or target host/domain; do not activate
+an owner/provider or deploy merely because implementation is authorized.
+
+### S2 Task 3 underway — worker/launcher REDs, not accepted
+
+DeepSeek is implementing the authorized explicit coordinator pair and frozen
+bootstrap in the existing worker. Parent owns separate regression tests. The
+real-launcher environment probe observed **2/2 failed behavioral checks** at
+06:06:32: the worker received its synthetic decision key as intended, but the API
+and dev frontend inherited it too. This test stops disposable children before
+their application entrypoints and reports booleans only; it is environment-flow
+evidence, not a real worker/bootstrap proof and contains no operator credential.
+
+Parent's independent actual-Worker suite observed **7/7 failed behavioral checks**
+at 06:12:12, with real audited profiles, account-bound central/tenant money,
+readiness and prepared adapters using injected HTTP transport. The missing D
+integration made **zero decision calls** while the baseline reasoning call still
+ran. These are REDs for same-job D→R across all three choices, retained known
+charges under consent withdrawal/malformed output, unknown-D shared pause and
+unknown-R total-cost rendering. Later assertions are not counted as proven just
+because the first call-count assertion failed. Additional parent cases now cover
+source privacy immediately after mark and during I/O, and master-consent refusal.
+No Task 3 gate, live provider call or hosted result is claimed.
+
+The parent worker suite now has **13 cases**. A seven-case extension run at
+06:14:47 had **5 failed / 2 passed**, with seven earlier cases filtered out;
+three were expected integration REDs (post-mark privacy, known-cost privacy
+withdrawal and cumulative cap). Two exposed parent fixture assumptions instead:
+the preference getter does not itself equal the API readiness flag, and the vault
+already rejects a scanner-matching goal before a worker can lease it. Parent
+removed the unexercised scanner case and checks the actual separate capability
+without imposing a new readiness policy on the unchanged legacy R coordinator.
+The production readiness-wrapper proof remains the actual-main process gate.
+These adjustments are test corrections, not production permission changes.
+
+**Task 2 parent acceptance (Windows/Node 24.19.0):**
+
+| Command | Actual result |
+| --- | --- |
+| `npm test -- --maxWorkers=1` | **819 passed, 2 existing POSIX-only skips, 87 files**, 359.97 s |
+| `npm run test:e2e -- --workers=1 --output=test-results/decision-accounting-task2-parent` | **19/19 Chromium journeys** |
+| `npm run typecheck` / `npm run lint` / `npm run build` | passed separately on settled source |
+| `npm run brain-eval` | **4/4 synthetic offline evaluations** |
+| `npm audit --audit-level=high` | zero vulnerabilities |
+
+Parent inspected and independently tested the repaired job/goal/principal and
+post-I/O lease fences; read-only review found no additional material defect.
+Both real prepared transports execute once on the same synthetic review job;
+known cost settles in both ledgers before output refusal. Shared-cap tests prove
+each stage alone fits but their combined charge/reservation does not. Cross-
+account unknown usage, reopened-handle no-adoption and extractive continuity are
+covered. These are coordinator/provider synthetic proofs, not scheduled worker
+execution, live quality or invoice pricing. Reference screenshots were restored
+with matching hashes; no dependency installation/lockfile change occurred.
+
+At the Task 2 checkpoint, Task 3 was authorized to wire own-account decision capability/raw/effective
+consent into HTTP/status and the existing Settings UI, with independent browser
+coverage for unavailable withdrawal and unrelated-save omission. No production
+decision bootstrap, paid call, owner activation, publish/deploy or S2 policy is
+authorized. Existing implementation changes remain local and uncommitted.
+
+Task 3 verification history: parent wrote three independent browser journeys over real
+services/SQLite/HTTP and a synthetic managed origin, with explicitly synthetic
+readiness (not a real decision worker). The first run against the prior built UI
+observed **3 failed journeys** because the new checkbox did not exist. They cover
+unavailable stored-true withdrawal, omission of both unchanged consent fields on
+unrelated saves, truthful unavailable defaults, and readiness loss while shared
+usage is pending. These are Task 3 REDs; they do not alter Task 2's accepted
+19-journey checkpoint and are not passing evidence yet.
+
+Task 3 executor handoff added the own-account decision status and deployment-only
+runtime metadata, a managed-only optional consent control, and independent PATCH
+omission/withdrawal state. Parent's first three browser journeys passed. A
+read-only review then found misleading copy under a durable paid-processing
+block: both consents could already be stored true, but the panel said master
+consent was required. Parent added a fourth real-service browser test, observed
+its failure before repair, and DeepSeek corrected only that message branch.
+No permission or financial gate changed in the repair.
+
+On the repaired UI, parent reran typecheck/lint/build successfully and the full
+Chromium suite passed **23/23**, including the new durable-block regression and
+withdrawal while blocked. The reference screenshots were restored from the
+pre-run copies with matching hashes. Four offline evaluations and dependency
+audit (zero vulnerabilities) passed. Full serial testing was launched before the
+copy repair, so its result alone is not described as final settled-tree evidence;
+final S1 acceptance still awaits the settled verification record.
+
+The pre-copy-repair full run finished **829 passed / 2 existing POSIX skips,
+88 files** (301.69 s). Parent launched a second full run after the copy repair.
+Parent also added an independent account-switch consent regression: an unsaved
+decision opt-in in A cannot survive the same SPA's switch to B or appear in B's
+PATCH. It passed against the existing account-reset behavior; no new RED is
+claimed for that added proof. The final browser command
+`npm run test:e2e -- --workers=1 --output=test-results/decision-accounting-s1-final-parent`
+passed **24/24**; the decision-specific suite passed **5/5**. Fresh typecheck and
+lint passed after that test addition. Read-only re-review confirmed the misleading
+copy was repaired without changing permission or monetary logic.
+
+In parallel, DeepSeek drafted the **unapproved** S2 worker design at
+`docs/superpowers/specs/2026-10-17-system-one-advisory-worker-design.md`.
+Only that new document was changed for S2. No worker bootstrap, advisory
+persistence/migration, real call or target-host action has been implemented by
+the draft; it requires separate written-design review before implementation.
+
+Parent independently ran 14 focused files: **165 passed, 1 existing POSIX-only
+skip**. This includes all 60 independent profile/persistence tests, valid CLI
+enrollment, configuration races, immutable/required event writes, atomic global
+stop and restore tests. Parent then added **2 passing migration tests** that
+actually start with frozen v3 DDL (not a freshly downgraded v4 runtime), preserving
+reserved, dispatched-unknown and settled financial rows byte-for-byte, plus
+transactional DDL rollback on a failed v4 marker write. Reopening is idempotent.
+
+Fresh parent `npm run typecheck`, `npm run lint`, and `npm run build` passed,
+including a repeat after the shutdown repairs. No full-suite, browser or final
+S1 acceptance is inferred from the focused run.
+An additional parent test reproduced one remaining absent-profile CAS defect:
+`disable(9)` incorrectly reported success at version 0. Only `disable(0)` may be
+an absent-profile no-op; a positive stale version must conflict. DeepSeek applied
+that repair. The first full run predated it and is not settled-tree verification.
+Another independent frozen-v3 test reproduced a backward-compatibility blocker:
+the global stop tried to append a new-schema event before migration and rolled
+back with `no such table: managed_decision_activation_events`, leaving legacy
+reasoning enabled. The repair migrates v3 roots before the stop transaction so
+both stages can be stopped atomically with event records. No subsequent task
+has been authorized to start.
+Independent read-only review also found two introduced defects, both reproduced
+by parent tests: a malformed decision row could roll back a valid reasoning
+global stop, and decision-only disable swallowed mirror failure while reporting
+complete success. Repairs now commit safe off-state before reporting corrupt
+configuration/mirror failures, without silently repairing bad profile data or
+weakening ordinary transactional failure behavior. Parent full-suite results
+from the pre-repair tree cannot establish acceptance of these changes.
+The pre-repair serial run finished at **723 passed, 3 failed, 2 POSIX-only skips,
+78 files** (256.89 s): the parent and executor absent-profile CAS tests and the
+parent v3 global-stop test failed. The two later corruption/mirror regressions
+were added after their file had run, so this full-run count does not include
+those assertions.
+
+Parent reran the settled profile/persistence/migration/CLI tests: **74/74 passed**,
+including all repaired shutdown cases. Independent read-only re-review found
+both of its defects resolved, ran **80/80** across five decision suites and
+reported no remaining material new defect. The corruption fallback preserves
+the bad configuration/fingerprint, flips raw decision `enabled` off, records
+`decision_activation_invalid` in the same transaction, then reports operator
+repair after the valid reasoning profile is safely off. This block has **no
+automated clear path** in S1; do not imply an automatic recovery procedure.
+Operator notes explicitly record the limitation.
+
+A fresh settled-tree `npm test -- --maxWorkers=1` passed: **728 passed, 2 existing
+POSIX-only skips, 78 files**, 243.94 s. Parent then ran
+`npm run test:e2e -- --workers=1 --output=test-results/decision-profile-task1-parent`:
+**19/19 Chromium journeys passed**. `npm run brain-eval` passed **4/4**; audit
+found zero vulnerabilities. Reference screenshots were restored from pre-run
+copies with matching hashes; the dependency lockfile and production worker/UI
+remain unchanged. Whitespace and scoped credential-pattern checks passed.
+
+Parent accepts Task 1's verified migration/profile/operator/recovery foundation,
+including the documented corruption-repair limitation. Task 2 is authorized
+under the already-approved S1 design: separate decision readiness, shared prepared
+hash derivation, closed stage-specific guards/accounting and raw-consent
+primitives, still without a production worker decision dispatcher. No decision
+guards, readiness or consent/UI are verified yet; no S2 dispatcher is authorized.
+No real key, runtime provider call, owner activation, new push or deployment.
+
+Task 2 parent review began with a new independent binding suite. Its first run
+observed **4 failed test bodies** because `expectedDecisionConfigHash` is not yet
+exported (not a missing-module/zero-body result). The tests compare the expected
+profile hash to actual prepared-adapter identities for both provider families,
+bind accepted-model ordering and execution bounds, exclude credentials, and keep
+enrollment metadata distinct. This is an in-progress RED, not an accepted result.
+
+The first Task 2 handoff implements **only shared hash/capability helpers and
+separate readiness**; the executor explicitly reports the guard/coordinator,
+raw-consent and slot-reader work incomplete. Parent's binding tests and helper
+suite passed **11/11**, but a new runtime review reproduced **4 failures**:
+the partial loader ignored root containment and exact SQL/mirror agreement.
+Missing/invalid mirrors could leave configured policy ready. These helpers have
+no production decision caller, and are not accepted for authorization. The
+executor is repairing them while completing the remaining approved Task 2 work.
+Three additional parent checks passed for profile-bound readiness comparison,
+finite/fresh timestamps, separate marker preservation and junction-root denial
+(4 unrelated cases filtered, not claimed passing). Task 2 is still unaccepted;
+no new full-suite/browser result applies to this partial code.
+
+The helper repair was independently rerun at **21/21 passed** (binding 4,
+runtime 7, executor helper 10). The original DeepSeek child then reported a
+context/time limit and stopped without adding the remaining 2A guard code.
+Parent preserved its tree and handed the bounded 2A task to a **fresh child using
+the same requested DeepSeek model**, not a different implementation/advisory
+model. No global configuration or user chat was changed.
+
+The fresh child is implementing closed stage-specific guard types, raw consent
+and the central stage-selected seam. A new independent raw-consent suite first
+observed **2 failed, 2 passed**: default false was missing and withdrawal was
+rejected as an unknown preference. Its historical-unavailability preservation
+cases already passed before implementation, so they are not claimed as new
+behavioral REDs. Coordinator/private-attempt lifecycle and shared-stage barrier
+proofs are deferred to the following 2B checkpoint, still within approved S1.
+
+An independent pure guard-schema suite also observed **2 failed, 4 passed**
+before 2A implementation: the legacy schema permits OpenAI-shaped guards to be
+labelled `decision` or `repair`. The existing storage seam still rejects those
+stages, so this is the expected tightening RED, **not a proven existing I/O
+bypass**. Valid reasoning shape compatibility and cross-provider rejection are
+retained as regressions. The fresh executor is
+`ses_eb98981f5ffezV1EULg0dCQT2y`; the old context-limited executor is stopped.
+
+The fresh executor delivered 2A's closed guard union, installed decision policy,
+stage-selected central seam and raw-consent primitives, reporting 19 owned stage
+tests and a 246-test focused batch passing. Parent source review then reproduced
+**2 failures / 4 passes**: substituting both guard hash fields plus the dispatch
+spec hash could pass central reserve without independently matching the live
+profile's expected prepared hash; and an optional `undefined` decision-consent
+field cleared a stored true choice. These are internal integrity regressions,
+not proof of a remotely reachable exploit. The executor is repairing both;
+independent 2A code review is running. 2A/2B and complete S1 remain unaccepted.
+The snapshot-only assertion helper must not be described as standalone I/O
+authority; 2B still needs the actual job/goal/lease/private-attempt/consent checks.
+
+Independent 2A review reports **54/54** across seven decision suites and no
+remaining material 2A authority defect after the targeted repairs. Parent still
+awaits the executor's settled handoff and rerun before accepting 2A. The review
+also reproduced a Task 3 client integration requirement: when stored decision
+consent is true but unavailable, echoing that true in a full preferences update
+is an explicit re-enable and is refused. Unrelated HTTP/UI saves must omit the
+unchanged field, just as for the existing master consent. This is not described
+as an authorization bypass or silently waived; the Task 3 tests must cover it.
+
+### 2A focused acceptance; 2B next
+
+The executor repaired both 2A REDs. The central writer now derives
+`expectedDecisionConfigHash` from the **live** decision profile under its write
+lock, using the same pure provider helper as the adapter/runtime (no duplicate
+formula or storage→runtime import). Both guard hash fields must match it.
+Explicit `undefined` consent now counts as omission; explicit false still
+withdraws and true still requires trusted capability/no durable block.
+
+Parent independently reran **157/157 tests across 12 files**, including the new
+central-substitution and consent regressions, all parent decision binding/runtime/
+schema checks, legacy activation/accounting and prepared decision behavior.
+Fresh parent typecheck/lint/build passed; whitespace check passed. **2A is
+accepted at this focused intermediate gate.** No new full-suite/browser result
+is inferred; the whole Task 2 and S1 remain incomplete.
+
+2B is now authorized under the approved design: integrate the account-bound
+coordinator with actual running job/goal/lease/consent checks, fresh own readiness,
+private attempt IDs, exact stage slots, known-charge-first settlement and shared
+barrier tests. Still no production dispatcher, S2 policy or Task 3 UI work.
+
+Parent wrote the independent 2B coordinator suite against real scoped goals,
+domain-generated review jobs, actual running lease rows, real profiles/readiness
+and an injected prepared transport (one synthetic known micro-USD, not real
+pricing). Its first four bodies **all failed** before implementation: the first
+three hit the existing reasoning-only coordinator path, while an uninstalled
+low-level coordinator still allowed a decision reservation. This is expected
+2B RED, not evidence of a reachable paid decision API. Additional cases now cover
+post-mark abort/no refund, raw-consent withdrawal, and actual lease re-reading;
+they have not yet been claimed passing. No full Task 2 acceptance is inferred.
+
+The first 2B implementation passed parent/owned coordinator tests at **27/27**,
+but remains unaccepted. Parent then reproduced two further publication fences:
+an actual lease expiring during I/O did not refuse output after settlement, and
+changing the actual job payload to a foreign owner after mark did not stop
+pre-I/O permission. Each added parent test failed before repair. The executor
+is fixing those while adding the missing same-job prepared decision→reasoning
+execution/cumulative-cap and cross-account unknown/reopen/extractive proofs.
+Independent 2B code review is running. User's additional **"continue"** keeps
+this approved S1 task active; it does not authorize live calls or publishing.
+
+Independent 2B review subsequently found no additional material new defect
+beyond those known repairs. Parent reran all **9/9 independent coordinator
+checks successfully**, including lease expiry during I/O (known cost retained)
+and actual job-principal mutation after mark (I/O denied). The executor still
+owes the settled handoff and complete same-job decision→reasoning/cap and
+cross-account unknown/reopen/extractive evidence before 2B acceptance. No full
+Task 2 or S1 completion is inferred from nine focused checks.
+
+The settled 2B handoff now includes both actual prepared provider calls on the
+**same** review job, with separate coordinator/financial rows and one injected
+fetch per stage. Parent read the fixtures and strengthened their proof: both
+outputs must validate, and each individual reservation bound must fit the shared
+cap while settled decision cost plus the reasoning bound exceeds it. This rules
+out a false-positive denial caused by the reasoning reservation exceeding the
+cap on its own. The strengthened tests passed against existing code; no new
+behavioral RED is claimed. The cross-account fixture provisions both accounts
+before auditing and records unknown-call denial separately from stale-audit
+errors, reopened-handle no-adoption, and the unpaid extractive path.
+
+Parent independently ran **43/43** coordinator/security/consent tests; the
+executor then reran **37/37** owned+parent coordinator checks after the final
+test strengthening. Parent's fresh typecheck/lint/build passed. A new full
+serial suite on this settled checkpoint is running, followed by browser
+regression; 2B remains unaccepted until those gates. Reopening a control handle
+is not represented as a real worker subprocess restart or scheduled dispatcher.
 
 ## Current checkpoint — prepared System 1 adapter accepted locally
 
@@ -54,6 +1293,60 @@ being inspected read-only before its design review; no new runtime permission
 or wider provider consent is inferred from the existing reasoning profile.
 
 ### Adapter published; next design isolated
+
+**PR #3 merge verified:** the owner reported merge/closure; GitHub read-back
+confirmed **MERGED** at `658565b364560fce65696b6d2edc6700f30aeff9`
+(2026-10-16T19:41:51Z). Parent fetched `origin/main`; its tree exactly matches
+published adapter commit `3e9d918`. Merged-main workflow **38956820008** subsequently
+**passed** at that exact merge: **647/647 Ubuntu tests, 19 Chromium journeys,
+4 offline evaluations**, install/typecheck/lint/build/audit, Docker build,
+non-root auth/worker/restart-persistence/origin/backup smoke, Compose and Caddy
+validation. Parent read back its completed status and logs, not just PR CI.
+At merge verification, the dependent branch differed from main only in the committed
+next-design document and its build record, so no redundant merge/rebase/reset
+was performed. Both branches and the unapproved design remain preserved.
+
+This merge acknowledgement is **not** written approval of the next schema,
+activation or consent changes. Stage-accounting implementation remains paused
+at its written-design gate; no live provider or account was activated.
+
+The owner subsequently explicitly said **"Approved"** to the written S1 design.
+This approves the synthetic-first schema 3→4 migration (including reasoning
+audit staleness), separate decision manifest/readiness, coordinated global stop,
+stage-bound accounting and default-false consent. Parent reviewed DeepSeek's
+three-checkpoint plan and authorized **Task 1 only**: migration, closed decision
+profile/mirror, audit/recovery and strict CLI/global-disable behavior. Plan
+corrections include actual schema-version ownership, existing disable/restore
+files, stage-guard/coordinator ownership and consent primitives before guarded
+accounting tests. DeepSeek is implementing Task 1 under a required test-first RED gate;
+no Task 1 completion or acceptance is claimed yet. Parent review precedes each
+following checkpoint. No S2 worker dispatcher, real price/key, account activation, paid
+runtime call, merge or deployment is included. The merge/approval record and
+design status are local changes on `feat/system-one-stage-accounting`.
+
+Task 1 parent tests were written independently before acceptance. The profile
+suite first observed a missing-module RED (one failed suite, zero test bodies),
+then exposed a canonical-endpoint digest convention mismatch after the module
+appeared (40 passed, 1 failed). The persistence suite currently has 3 passed /
+5 failed while global-disable and backup/restore integration are still being
+implemented. These are in-progress checks, **not a completed Task 1 result**;
+the executor has the exact expected atomic-stop and raw UTF-8 endpoint-hash
+contracts. No failure is hidden or replaced with simulated success.
+
+Task 1 executor handoff reported the first profile/store/migration/recovery
+implementation and passing initial focused checks. Parent reviewed the source
+and reproduced **8 failures / 49 passes** in the expanded independent suites:
+valid CLI enable flags were rejected; CLI status missed valid-but-different
+SQL/mirror profiles; enrollment checked account IDs but missed a configuration
+change before its final write lock; event rows could be updated; accepted-model
+reordering did not change the fingerprint; and whitespace-only model/price/
+accepted-model identifiers were admitted. Repairs and a genuine schema-3 upgrade
+test are required before acceptance. Task 2/3 have not begun.
+
+Parent also reproduced the legacy future-schema fixture's unique-key failure
+(1 failed, 5 passed): its hard-coded version 4 is now current. Only that fixture
+was changed to version 5; this preserves its future-schema rejection purpose,
+not a weakening of production validation. No historical v3 fixture was replaced.
 
 Parent reran the pre-commit serial suite: **645 passed, 2 existing POSIX-only
 skips, 72 files**, 230.49 s; fresh typecheck/lint/build and staged whitespace/

@@ -1,6 +1,6 @@
-# System 1 stage-specific decision activation & accounting — design (DRAFT)
+# System 1 stage-specific decision activation & accounting — design
 
-**Status: DRAFT for written human review before any implementation. No plan/code is authorized.**
+**Status: APPROVED — the owner explicitly said "Approved" after written design review.**
 Date: 2026-10-17. Branch: `feat/system-one-stage-accounting` (from published `3e9d918`). Scope: a bounded,
 **stage-specific decision activation + consent + central accounting** foundation, synthetic-first.
 No production decision dispatcher is added. The existing reasoning profile is preserved, but the
@@ -135,7 +135,7 @@ type DecisionActivationProfile = {
   schema: 1; version: number; enabled: boolean;
   provider: "typesafe" | "cloudflare";            // closed; official allowlist transport
   model: string; accepted_response_models: string[];
-   endpoint: string; endpoint_digest: string;      // protected canonical official URL + sha256; no key
+  endpoint: string; endpoint_digest: string;      // protected canonical official URL + sha256; no key
   price_version: string; input_micro_usd_per_million: number; output_micro_usd_per_million: number;
   timeout_ms: number; max_request_bytes: number; max_response_bytes: number; request_overhead_bytes: number;
   config_digest: string;                          // provider-params-only (domain); != prepared config_hash
@@ -222,8 +222,8 @@ evaluation always needs explicit authorization. Production decision activation s
 - Live provider evaluation, real per-decision cost/calibration, billing, native clients, hosting.
 - Any production owner activation, real key/paid call, deploy or merge; any new telemetry sink.
 
-## Human approval gate
+## Approved implementation boundary
 
-Requires written human approval before implementation: the schema 3→4 migration, the new decision
-provider/price/endpoint choice, restore/disable behavior, and the consent/UI semantics. No code, no
-owner activation, no real key/paid call, no deploy/merge in this design.
+Written approval covers S1's schema 3→4 migration, closed provider/endpoint configuration, coordinated
+restore/disable, stage-specific guards and consent/UI semantics. S2 worker execution remains separate.
+Approval does not select real prices or authorize an owner activation, real key/paid call, deploy or merge.

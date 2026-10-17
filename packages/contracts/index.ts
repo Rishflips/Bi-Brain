@@ -40,23 +40,30 @@ export const outputSchema = z
     unknowns: z.array(z.string().max(1000)).max(20),
   })
   .strict();
+const preferenceFields = {
+  enabled: z.boolean(),
+  time_zone: z.string().refine((v) => {
+    try {
+      new Intl.DateTimeFormat("en", { timeZone: v });
+      return true;
+    } catch {
+      return false;
+    }
+  }),
+  digest_hour: z.number().int().min(0).max(23),
+  quiet_start: z.number().int().min(0).max(23),
+  quiet_end: z.number().int().min(0).max(23),
+  daily_cap_micro_usd: z.number().int().min(0).max(100000000),
+  per_job_cap_micro_usd: z.number().int().min(0).max(10000000),
+  provider_enabled: z.boolean(),
+};
 export const preferencesSchema = z
   .object({
-    enabled: z.boolean(),
-    time_zone: z.string().refine((v) => {
-      try {
-        new Intl.DateTimeFormat("en", { timeZone: v });
-        return true;
-      } catch {
-        return false;
-      }
-    }),
-    digest_hour: z.number().int().min(0).max(23),
-    quiet_start: z.number().int().min(0).max(23),
-    quiet_end: z.number().int().min(0).max(23),
-    daily_cap_micro_usd: z.number().int().min(0).max(100000000),
-    per_job_cap_micro_usd: z.number().int().min(0).max(10000000),
-    provider_enabled: z.boolean(),
+    ...preferenceFields,
+    // Stored consent for the separate decision stage. It defaults to false and
+    // never derives from the master `provider_enabled` flag. A historical record
+    // without the field reads as false without rewriting the stored value.
+    decision_provider_enabled: z.boolean().default(false),
   })
   .strict();
 export type Evidence = z.infer<typeof evidenceSchema>;
@@ -65,13 +72,21 @@ export type Preferences = z.infer<typeof preferencesSchema>;
 
 /**
  * Managed write schema: identical to the full preferences schema EXCEPT
- * `provider_enabled` is optional. A client that omits it preserves the RAW stored
- * consent (the effective getter is never used to rewrite it); only an explicit
- * value is treated as a consent change.
+ * `provider_enabled` and `decision_provider_enabled` are optional. A client that
+ * omits either preserves the RAW stored consent (the effective getter is never
+ * used to rewrite it); only an explicit value is treated as a consent change.
+ *
+ * It is built WITHOUT a `.default()` on the decision field on purpose: an omitted
+ * key must stay absent so `Brain.prefs` can preserve the RAW stored choice rather
+ * than inserting `false`.
  */
-export const managedPreferencesPatchSchema = preferencesSchema.partial({
-  provider_enabled: true,
-});
+export const managedPreferencesPatchSchema = z
+  .object({
+    ...preferenceFields,
+    decision_provider_enabled: z.boolean(),
+  })
+  .partial({ provider_enabled: true, decision_provider_enabled: true })
+  .strict();
 export type Source = {
   id: string;
   project_id: string;

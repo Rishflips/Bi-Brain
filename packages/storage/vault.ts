@@ -168,6 +168,7 @@ export class Vault {
       "links",
       "handoff",
       "dreams",
+      "observations",
       "tombstones",
     ])
       mkdirSync(join(dir, name), { recursive: true });
@@ -218,7 +219,9 @@ export class Vault {
                 ? "handoff"
                 : e.kind === "link"
                   ? "links"
-                  : "wiki";
+                  : e.kind === "advisory"
+                    ? "observations"
+                    : "wiki";
       writeFileSync(
         join(dir, folder, `${e.id}.json`),
         JSON.stringify(e, null, 2),
@@ -249,7 +252,12 @@ export class Vault {
           `- Provider: ${data.provider ?? "offline"}`,
           `- Policy: ${data.policy_version ?? "unrecorded"}`,
           `- Usage: ${data.usage_status ?? "not_applicable"}`,
-          `- Cost (micro USD): ${data.cost_micro_usd ?? 0}`,
+          `- Cost (micro USD): ${
+            typeof data.cost_micro_usd === "number" &&
+            Number.isFinite(data.cost_micro_usd)
+              ? data.cost_micro_usd
+              : "unknown"
+          }`,
           `- Result: ${data.result_id ?? "none"}`,
           `- Evidence: ${(data.goal_evidence ?? data.evidence ?? []).map((ref: any) => `${ref.source_id} v${ref.source_version}`).join(", ") || "none"}`,
           "",
@@ -405,6 +413,8 @@ export class Vault {
       this.git("fsck", "--full", "--no-reflogs", "--unreachable").trim()
         .length > 0;
     return {
+      // This method has no SQLite index; it proves the raw bytes and every
+      // retained Git generation are gone. The SQLite index check is separate.
       file_gone:
         rawNames.length === 0 &&
         retainedRaw.length === 0 &&

@@ -11,7 +11,7 @@ import { BrainError, hash } from "../../packages/domain/logic.ts";
 import { Storage } from "../../packages/storage/index.ts";
 import type { Principal } from "../../packages/contracts/index.ts";
 import type { ManagedRuntime } from "../../packages/runtime/managed.ts";
-import { managedPaidReason } from "./startup-gates.ts";
+import { managedPaidReason, managedDecisionReason } from "./startup-gates.ts";
 import {
   OIDC_CORRELATION_TTL_MS,
   type ManagedLogin,
@@ -91,6 +91,13 @@ export async function createApp(
      * boolean + static reason only. Absent => false.
      */
     capability?: () => { available: boolean; reason: string };
+    /**
+     * Trusted, closed DECISION-stage capability accessor (a live decision profile
+     * plus a fresh decision worker lease), bound to the managed root/control and the
+     * deployment opt-in. Distinct from `capability`; returns a boolean + static
+     * reason only. Absent => false.
+     */
+    decisionCapability?: () => { available: boolean; reason: string };
   } = {},
 ) {
   const managed = options.managed;
@@ -347,6 +354,10 @@ export async function createApp(
   // the UI never shows a pairing form that cannot work or a button that lies.
   app.get("/api/v1/runtime", () => {
     const cap = options.capability?.() ?? { available: false, reason: "off" };
+    const decisionCap = options.decisionCapability?.() ?? {
+      available: false,
+      reason: "off",
+    };
     return {
       mode: managed ? "managed" : "local",
       sign_in_url: managed && login ? LOGIN_PATH : null,
@@ -360,6 +371,15 @@ export async function createApp(
         ? cap.available
           ? null
           : managedPaidReason(cap.reason)
+        : null,
+      // Separate DECISION-stage deployment availability (a live decision profile AND
+      // fresh decision readiness). It is server configuration only: it carries no
+      // account consent, money, model, key, endpoint or total.
+      decision_processing_available: managed ? decisionCap.available : false,
+      decision_paid_reason: managed
+        ? decisionCap.available
+          ? null
+          : managedDecisionReason(decisionCap.reason)
         : null,
     };
   });
@@ -691,15 +711,26 @@ export async function createApp(
     // (409). Capability never depends on this request.
     if (managed) {
       const cap = options.capability?.() ?? { available: false, reason: "off" };
-      if (
-        req.body !== null &&
-        typeof req.body === "object" &&
-        (req.body as { provider_enabled?: unknown }).provider_enabled === true &&
-        !cap.available
-      )
+      const decisionCap = options.decisionCapability?.() ?? {
+        available: false,
+        reason: "off",
+      };
+      const body = (
+        req.body !== null && typeof req.body === "object" ? req.body : {}
+      ) as { provider_enabled?: unknown; decision_provider_enabled?: unknown };
+      if (body.provider_enabled === true && !cap.available)
         throw new BrainError(
           "PROVIDER_UNAVAILABLE",
           "Connected model processing is not enabled for this deployment yet. Your saved work stays extractive.",
+          503,
+        );
+      // An explicit decision opt-in is denied unless the separate decision
+      // capability is really ready (a live profile + fresh readiness); a withdrawn
+      // false is always accepted and omission preserves the raw stored choice.
+      if (body.decision_provider_enabled === true && !decisionCap.available)
+        throw new BrainError(
+          "PROVIDER_UNAVAILABLE",
+          "Additional background checks are not available on this installation. Your saved work stays extractive.",
           503,
         );
     }

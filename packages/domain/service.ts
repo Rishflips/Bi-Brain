@@ -37,6 +37,22 @@ import {
 } from "../storage/spend.ts";
 import { safeAdd } from "./spend.ts";
 import type { ManagedSpendView } from "./managed-spend.ts";
+import {
+  advisorySourceBodyHash,
+  buildAdvisoryQuestion,
+  validateAdvisoryRecord,
+  type AdvisoryQuestionResult,
+  type AdvisoryRecord,
+} from "./decision-advisory.ts";
+import {
+  attemptReferencesSource,
+  claimDecisionAttempt,
+  decisionAdvisoryKey,
+  publishDecisionAttempt,
+  purgeDecisionAttempts,
+  readDecisionAttempt,
+  type AdvisoryClaimResult,
+} from "../storage/decision-advisory.ts";
 export const defaults: Preferences = {
   enabled: false,
   time_zone: "Asia/Calcutta",
@@ -46,6 +62,7 @@ export const defaults: Preferences = {
   daily_cap_micro_usd: 0,
   per_job_cap_micro_usd: 0,
   provider_enabled: false,
+  decision_provider_enabled: false,
 };
 
 /** Content-free, plain-language reason for a managed paid block. */
@@ -89,6 +106,12 @@ export class Brain {
     // It returns a boolean + a static reason only and never grants authority.
     // Absent => fail-closed false.
     private readonly capability?: () => { ready: boolean; reason: string },
+    // Runtime-supplied, closed DECISION-stage capability accessor (separate live
+    // decision profile + fresh `decision-worker-ready.json`). It is a distinct
+    // getter from the reasoning capability and never grants authority on its own.
+    // Absent => fail-closed false, so a local/self-hosted brain can never enable
+    // decision consent.
+    private readonly decisionCapability?: () => { ready: boolean; reason: string },
   ) {}
   /**
    * The owner principal for this brain. An unbound local brain yields an
@@ -297,6 +320,11 @@ export class Brain {
     );
     if (!row) throw new BrainError("NOT_FOUND", "Item unavailable.", 404);
     this.access(p, row.project_id);
+    // Advisory records are owner-internal. They are deliberately invisible to the
+    // generic entity readers (owner or agent); only the dedicated owner methods
+    // below expose them.
+    if (row.kind === "advisory")
+      throw new BrainError("NOT_FOUND", "Item unavailable.", 404);
     const e = { ...row, data: JSON.parse(row.data) };
     if (
       p.kind === "agent" &&
@@ -386,6 +414,14 @@ export class Brain {
       JSON.stringify(data),
       this.now(),
     );
+    // Any goal revision (including the reasoning worker's signature/notification
+    // bookkeeping) invalidates advisories bound to the PREVIOUS goal entity
+    // version. Withdraw them so a stale judgment is never actively readable or
+    // retagged as if the model judged the new version. The helper reads each
+    // record fresh, so a concurrent/conflicting withdrawal cannot turn a valid
+    // reasoning publication into a stale-version conflict. It is a no-op when no
+    // advisory exists and never recurses (advisories are not goals).
+    if (e.kind === "goal") this.withdrawAdvisoriesForGoal(e.id);
     return { ...e, version, data };
   }
   enqueue(project: string, kind: string, payload: unknown) {
@@ -717,6 +753,18 @@ export class Brain {
         row.id,
       );
     }
+    // Any source/capture change in this project makes every dependent advisory
+    // stale: withdraw each still-ACTIVE advisory with a real version history. An
+    // `unavailable` or already `withdrawn` record carries no live judgment and is
+    // left as is (reads fail closed regardless).
+    for (const row of this.store.all<Entity & { data: any }>(
+      "SELECT * FROM entities WHERE project_id=? AND kind='advisory'",
+      project,
+    )) {
+      const data = JSON.parse(row.data);
+      if (data.status !== "advisory") continue;
+      this.revise({ ...row, data }, { ...data, status: "withdrawn" });
+    }
   }
   evidenceCurrent(project: string, evidence: Evidence) {
     const source = this.store.get<Source>(
@@ -902,8 +950,19 @@ export class Brain {
             }
           }
           this.store.run("DELETE FROM source_versions WHERE source_id=?", id);
+          // Tombstone + delete the advisory attempt ledger for this project before
+          // the broad project purge below removes its advisory entities. The
+          // tombstone (hash only) means an identical selected question can never be
+          // re-paid even when the purged source was outside the first ten.
+          purgeDecisionAttempts(
+            this.store,
+            (row) =>
+              row.project_id === s.project_id ||
+              attemptReferencesSource(row, id),
+            this.clock,
+          );
           for (const row of this.store.all<Entity & { data: any }>(
-            "SELECT * FROM entities WHERE kind IN ('brief','proposal','receipt','claim','gate','intent','handoff','link','ping')",
+            "SELECT * FROM entities WHERE kind IN ('brief','proposal','receipt','claim','gate','intent','handoff','link','ping','advisory')",
           )) {
             const versions = this.store.all<{ data: string }>(
               "SELECT data FROM entity_versions WHERE entity_id=?",
@@ -1160,7 +1219,7 @@ export class Brain {
       if (e.kind !== "goal")
         throw new BrainError("NOT_FOUND", "Item unavailable.", 404);
       requireVersion(e.version, v.expected_version);
-      return this.revise(e, {
+      const revised = this.revise(e, {
         ...e.data,
         ...v,
         plan_private:
@@ -1173,6 +1232,10 @@ export class Brain {
             : e.data.plan_private,
         plan_version: e.data.plan_version + (v.plan !== undefined ? 1 : 0),
       });
+      // A goal revision does not itself call `invalidate`; withdraw this goal's
+      // advisories explicitly so no stale judgment stays actively readable.
+      this.withdrawAdvisoriesForGoal(id);
+      return revised;
     });
   }
   prepare(p: Principal, goalId: string) {
@@ -1242,6 +1305,9 @@ export class Brain {
             plan_stale: false,
             plan_version: goal.data.plan_version + 1,
           });
+          // An accepted plan revises the goal directly; withdraw its advisories so
+          // no advisory outlives the plan it was asked against.
+          this.withdrawAdvisoriesForGoal(goal.id);
           const receipt = this.createEntity(goal.project_id, "receipt", {
             proposal_id: id,
             goal_id: goal.id,
@@ -1357,8 +1423,11 @@ export class Brain {
       }
       const revertCommit = vault.git("rev-parse", "HEAD");
       this.store.rebuild();
-      const audit = this.store.transaction(() =>
-        this.createEntity(receipt.project_id, "receipt", {
+      const audit = this.store.transaction(() => {
+        // Rebuilding the projection from an earlier generation can resurrect an
+        // older advisory; withdraw this goal's advisories with real history.
+        this.withdrawAdvisoriesForGoal(goal.id);
+        return this.createEntity(receipt.project_id, "receipt", {
           outcome: "git_reverted",
           original_receipt_id: receipt.id,
           goal_id: goal.id,
@@ -1367,8 +1436,8 @@ export class Brain {
           reason:
             "Owner reverted the latest accepted vault change. The projection was rebuilt.",
           evidence: [],
-        }),
-      );
+        });
+      });
       return {
         reverted: true,
         revert_commit: revertCommit,
@@ -1399,6 +1468,7 @@ export class Brain {
         plan_evidence: r.data.previous_evidence ?? [],
         plan_version: g.data.plan_version + 1,
       });
+      this.withdrawAdvisoriesForGoal(g.id);
       this.revise(r, { ...r.data, reverted: true });
       const proposal = this.entity(p, r.data.proposal_id);
       this.revise(proposal, { ...proposal.data, status: "reverted" });
@@ -1428,6 +1498,9 @@ export class Brain {
         ? managedPreferencesPatchSchema.parse(input)
         : preferencesSchema.parse(input);
       const raw = this.store.setting("preferences", defaults);
+      const fields = (
+        typeof input === "object" && input !== null ? input : {}
+      ) as Record<string, unknown>;
       const explicit = patch.provider_enabled !== undefined;
       const providerEnabled = patch.provider_enabled ?? raw.provider_enabled;
       // An EXPLICIT true under a durable accounting block (never `usage_pending`)
@@ -1439,15 +1512,69 @@ export class Brain {
           "Paid processing is blocked until the recorded reason is reconciled.",
           409,
         );
-      this.store.set(
-        "preferences",
-        { ...raw, ...patch, provider_enabled: providerEnabled },
-      );
+      // The raw decision consent is independent of the master flag. An omitted
+      // value preserves the RAW stored choice (true or false); only an explicit
+      // value is a consent change. An explicit true is admitted ONLY when the
+      // trusted decision capability is actually ready (a live decision profile AND
+      // a fresh own decision worker lease) and no durable accounting block applies.
+      // A caller, browser or model flag can never self-grant it.
+      const rawDecision = raw.decision_provider_enabled === true;
+      // Present-and-undefined is OMISSION, not withdrawal: only an explicit boolean
+      // is a consent change. Presence is taken from the RAW input (never from the
+      // local full schema's `.default(false)`), so an omitted/undefined field always
+      // preserves the stored choice. An explicit false is always a withdrawal.
+      const explicitDecision =
+        Object.prototype.hasOwnProperty.call(fields, "decision_provider_enabled") &&
+        fields.decision_provider_enabled !== undefined;
+      const decisionEnabled = explicitDecision
+        ? patch.decision_provider_enabled === true
+        : rawDecision;
+      if (explicitDecision && decisionEnabled) {
+        const decisionReady = this.decisionCapability?.().ready === true;
+        if (!decisionReady || tenantBlocked || centrallyUnusable)
+          throw new BrainError(
+            "BUDGET_BLOCKED",
+            "Additional background checks are not available yet.",
+            409,
+          );
+      }
+      this.store.set("preferences", {
+        ...raw,
+        ...patch,
+        provider_enabled: providerEnabled,
+        decision_provider_enabled: decisionEnabled,
+      });
+      // Turning OFF background help or either paid consent withdraws every
+      // dependent advisory with real version history. Reads fail closed anyway;
+      // this keeps the stored lifecycle truthful.
+      const effective = this.store.setting("preferences", defaults);
+      if (
+        effective.enabled !== true ||
+        effective.provider_enabled !== true ||
+        effective.decision_provider_enabled !== true
+      )
+        this.store.transaction(() => this.withdrawAllAdvisories());
     }
     const stored = this.store.setting("preferences", defaults);
+    // A historical record without the decision field reads as false; the stored
+    // bytes are never rewritten on a read.
+    const normalized = {
+      ...stored,
+      decision_provider_enabled: stored.decision_provider_enabled === true,
+    };
     return tenantBlocked || centrallyUnusable
-      ? { ...stored, provider_enabled: false }
-      : stored;
+      ? { ...normalized, provider_enabled: false }
+      : normalized;
+  }
+  /**
+   * RAW stored DECISION-stage consent for this owner (never the effective getter,
+   * never derived from the master flag). Own account only. A read helper for the
+   * authenticated status/UI; it never grants admission and a raw true alone never
+   * permits a decision request.
+   */
+  decisionBackgroundConsent(p: Principal): boolean {
+    this.owner(p);
+    return this.store.setting("preferences", defaults).decision_provider_enabled === true;
   }
   /**
    * RAW stored paid consent for this owner (never the effective getter, never a
@@ -1457,6 +1584,392 @@ export class Brain {
   backgroundConsent(p: Principal): boolean {
     this.owner(p);
     return this.store.setting("preferences", defaults).provider_enabled === true;
+  }
+  /**
+   * Withdraw every advisory bound to one goal, with an explicit new version.
+   * Caller must own a transaction. Idempotent; preserves a prior judgment.
+   */
+  private withdrawAdvisoriesForGoal(goalId: string) {
+    for (const row of this.store.all<Entity & { data: any }>(
+      "SELECT * FROM entities WHERE kind='advisory'",
+    )) {
+      const data = typeof row.data === "string" ? JSON.parse(row.data) : row.data;
+      if (data.goal_id !== goalId || data.status !== "advisory") continue;
+      this.revise({ ...row, data }, { ...data, status: "withdrawn" });
+    }
+  }
+  /** Withdraw every advisory on this owner's account. Caller must own a transaction. */
+  private withdrawAllAdvisories() {
+    for (const row of this.store.all<Entity & { data: any }>(
+      "SELECT * FROM entities WHERE kind='advisory'",
+    )) {
+      const data = typeof row.data === "string" ? JSON.parse(row.data) : row.data;
+      if (data.status !== "advisory") continue;
+      this.revise({ ...row, data }, { ...data, status: "withdrawn" });
+    }
+  }
+  /**
+   * Re-reads the ACTUAL running review job for an advisory claim/publication.
+   * Ownership is never a caller boolean; the stored owner/fence and a strict
+   * future lease deadline are re-derived here.
+   */
+  private requireAdvisoryJob(
+    projectId: string,
+    goalId: string,
+    lease: { job_id: string; owner: string; fence: number },
+  ) {
+    const job = this.store.get<{
+      project_id: string;
+      kind: string;
+      payload: string;
+      status: string;
+      lease_owner: string | null;
+      lease_until: string | null;
+      fence: number;
+    }>(
+      "SELECT project_id,kind,payload,status,lease_owner,lease_until,fence FROM jobs WHERE id=?",
+      lease.job_id,
+    );
+    if (!job) throw new BrainError("NOT_FOUND", "Unknown job.", 404);
+    if (job.kind !== "review_changed_assumption" || job.project_id !== projectId)
+      throw new BrainError("FORBIDDEN", "This job is not an advisory review job.", 403);
+    if (
+      job.status !== "running" ||
+      job.lease_owner !== lease.owner ||
+      job.fence !== lease.fence
+    )
+      throw new BrainError("LEASE_LOST", "This worker no longer holds the job.", 409);
+    const expiry = job.lease_until ? Date.parse(job.lease_until) : Number.NaN;
+    if (!Number.isFinite(expiry) || expiry <= this.clock().getTime())
+      throw new BrainError("LEASE_EXPIRED", "The worker lease has expired.", 409);
+    let payload: { goal_id?: unknown; principal?: { kind?: unknown; tenantId?: unknown } } | undefined;
+    try {
+      payload = JSON.parse(job.payload);
+    } catch {
+      payload = undefined;
+    }
+    if (!payload || payload.goal_id !== goalId || payload.principal?.kind !== "owner")
+      throw new BrainError("FORBIDDEN", "The job is not bound to this goal.", 403);
+    if (
+      (payload.principal.tenantId ?? undefined) !== (this.tenantId ?? undefined)
+    )
+      throw new BrainError(
+        "FORBIDDEN",
+        "The job principal is not bound to this account.",
+        403,
+      );
+  }
+  /**
+   * Owner-only advisory question. Every authorization input is re-derived from
+   * actual state — the RAW master/decision/background consent, the goal's live
+   * entity and plan versions, and its project-visible, active, non-private
+   * sources — never from a caller boolean. The full goal secret scan stays in the
+   * worker's pre-send guard; the question itself omits all plan text.
+   */
+  decisionAdvisoryContext(p: Principal, goalId: string): AdvisoryQuestionResult {
+    this.owner(p);
+    const id = z.string().min(1).max(100).parse(goalId);
+    const raw = this.store.setting("preferences", defaults);
+    if (raw.enabled !== true) return { ok: false, skip: "background_off" };
+    if (raw.provider_enabled !== true || raw.decision_provider_enabled !== true)
+      return { ok: false, skip: "not_opted_in" };
+    const goal = this.store.get<Entity & { data: string }>(
+      "SELECT * FROM entities WHERE id=?",
+      id,
+    );
+    if (!goal || goal.kind !== "goal") return { ok: false, skip: "no_active_goal" };
+    this.access(p, goal.project_id);
+    let data: any;
+    try {
+      data = JSON.parse(goal.data);
+    } catch {
+      return { ok: false, skip: "no_active_goal" };
+    }
+    if (data.status !== "active" || data.preparation_enabled !== true)
+      return { ok: false, skip: "no_active_goal" };
+    const eligible = this.sources(p, goal.project_id).filter(
+      (s) => s.visibility === "project" && s.state === "active",
+    );
+    if (!eligible.length) return { ok: false, skip: "no_authorized_scope" };
+    return buildAdvisoryQuestion({
+      goal: {
+        goal_id: goal.id,
+        goal_entity_version: goal.version,
+        plan_version: Number(data.plan_version ?? 0),
+        project_id: goal.project_id,
+        title: String(data.title),
+        success_criteria: String(data.success_criteria ?? ""),
+        status: "active",
+        preparation_enabled: true,
+      },
+      sources: eligible.map((s) => ({
+        source_id: s.id,
+        source_version: s.version,
+        project_id: s.project_id,
+        body: s.body,
+      })),
+    });
+  }
+  /**
+   * Persist a settled advisory. It REQUIRES a matching OPEN claim whose key, whole
+   * question hash, exact goal/plan/project and source-version/hash refs equal the
+   * CURRENT service question, plus the ORIGINAL still-running job/owner/fence
+   * lease. The entity and the `claimed -> published` CAS commit in ONE tenant TX.
+   * The caller (T3) owns the known-settlement money check; this can never create
+   * an unclaimed advisory.
+   */
+  saveDecisionAdvisory(
+    p: Principal,
+    input: {
+      idempotency_key: string;
+      record: AdvisoryRecord;
+      lease: { job_id: string; owner: string; fence: number };
+    },
+  ): Entity {
+    this.owner(p);
+    const v = z
+      .object({
+        idempotency_key: z.string().regex(/^[0-9a-f]{64}$/),
+        record: z.unknown(),
+        lease: z
+          .object({
+            job_id: z.string().min(1).max(200),
+            owner: z.string().min(1).max(200),
+            fence: z.number().int().nonnegative(),
+          })
+          .strict(),
+      })
+      .strict()
+      .parse(input);
+    const record = validateAdvisoryRecord(v.record);
+    if (record.status === "withdrawn")
+      throw new BrainError(
+        "INVALID_INPUT",
+        "A producer cannot store a withdrawn advisory.",
+        400,
+      );
+    return this.store.transaction(() => {
+      const current = this.decisionAdvisoryContext(p, record.goal_id);
+      if (!current.ok)
+        throw new BrainError(
+          "SOURCE_STALE",
+          "Advisory context is no longer current.",
+          409,
+        );
+      const question = current.question;
+      if (question.question_hash !== record.question_hash)
+        throw new BrainError("SOURCE_STALE", "Advisory question changed.", 409);
+      if (decisionAdvisoryKey(question) !== v.idempotency_key)
+        throw new BrainError(
+          "VERSION_CONFLICT",
+          "Advisory claim does not match the current question.",
+          409,
+        );
+      const expectedRefs = canonical(
+        question.sources.map((s) => ({
+          source_id: s.source_id,
+          source_version: s.source_version,
+          body_hash: s.body_hash,
+        })),
+      );
+      const recordRefs = canonical(
+        record.sources.map((s) => ({
+          source_id: s.source_id,
+          source_version: s.source_version,
+          body_hash: s.body_hash,
+        })),
+      );
+      if (
+        recordRefs !== expectedRefs ||
+        record.goal_entity_version !== question.goal.goal_entity_version ||
+        record.plan_version !== question.goal.plan_version ||
+        record.project_id !== question.goal.project_id
+      )
+        throw new BrainError("SOURCE_STALE", "Advisory goal or sources changed.", 409);
+      const attempt = readDecisionAttempt(this.store, v.idempotency_key);
+      if (!attempt || attempt.state !== "claimed")
+        throw new BrainError(
+          "VERSION_CONFLICT",
+          "No open advisory claim for this question.",
+          409,
+        );
+      // The key alone is not enough: compare the FULL stored claim identity to
+      // the current question and the record under the write lock, so a corrupt or
+      // stale snapshot row can never be published.
+      if (
+        attempt.question_hash !== question.question_hash ||
+        attempt.goal_id !== question.goal.goal_id ||
+        attempt.goal_entity_version !== question.goal.goal_entity_version ||
+        attempt.plan_version !== question.goal.plan_version ||
+        attempt.project_id !== question.goal.project_id ||
+        attempt.source_refs_json !== expectedRefs ||
+        !/^[0-9a-f]{64}$/.test(attempt.request_hash) ||
+        !/^[0-9a-f]{64}$/.test(attempt.config_hash)
+      )
+        throw new BrainError(
+          "SOURCE_STALE",
+          "The advisory claim identity no longer matches this question.",
+          409,
+        );
+      if (attempt.job_id !== v.lease.job_id)
+        throw new BrainError(
+          "VERSION_CONFLICT",
+          "The advisory claim belongs to another job.",
+          409,
+        );
+      if (attempt.owner !== v.lease.owner || attempt.fence !== v.lease.fence)
+        throw new BrainError(
+          "LEASE_LOST",
+          "This worker no longer holds that advisory claim.",
+          409,
+        );
+      this.requireAdvisoryJob(record.project_id, record.goal_id, v.lease);
+      const entity = this.createEntity(record.project_id, "advisory", record);
+      publishDecisionAttempt(this.store, v.idempotency_key, entity.id, this.clock);
+      return entity;
+    });
+  }
+  /**
+   * Owner-checked claim wrapper for the future decision worker (no HTTP). In ONE
+   * tenant transaction it rebuilds the CURRENT bounded question, requires the
+   * caller's prepared `question_hash` to still match, revalidates the actual
+   * job/lease, and claims through the repository with this brain's trusted owner
+   * principal. It makes no provider or money call; T3 runs `prepareDecision`
+   * outside this transaction and must use this wrapper rather than passing a
+   * browser principal to the repository directly.
+   */
+  claimDecisionAdvisory(
+    p: Principal,
+    input: {
+      goal_id: string;
+      question_hash: string;
+      lease: { job_id: string; owner: string; fence: number };
+      request_hash: string;
+      config_hash: string;
+    },
+  ): AdvisoryClaimResult {
+    this.owner(p);
+    const v = z
+      .object({
+        goal_id: z.string().min(1).max(100),
+        question_hash: z.string().regex(/^[0-9a-f]{64}$/),
+        lease: z
+          .object({
+            job_id: z.string().min(1).max(200),
+            owner: z.string().min(1).max(200),
+            fence: z.number().int().nonnegative(),
+          })
+          .strict(),
+        request_hash: z.string().regex(/^[0-9a-f]{64}$/),
+        config_hash: z.string().regex(/^[0-9a-f]{64}$/),
+      })
+      .strict()
+      .parse(input);
+    return this.store.transaction(() => {
+      const current = this.decisionAdvisoryContext(p, v.goal_id);
+      if (!current.ok || current.question.question_hash !== v.question_hash)
+        throw new BrainError(
+          "SOURCE_STALE",
+          "The advisory question changed before it could be claimed.",
+          409,
+        );
+      return claimDecisionAttempt(
+        this.store,
+        {
+          question: current.question,
+          principal: this.ownerPrincipal(),
+          job_id: v.lease.job_id,
+          owner: v.lease.owner,
+          fence: v.lease.fence,
+          request_hash: v.request_hash,
+          config_hash: v.config_hash,
+        },
+        this.clock,
+      );
+    });
+  }
+  /**
+   * A record is only "active" when its full bound identity still matches the
+   * CURRENT service question: status `advisory`, the same goal entity/plan/project
+   * versions and the same ordered source refs. A `withdrawn` or `unavailable`
+   * archive record (and a forged question hash on a different identity) is never
+   * returned as current, so consent returning ON cannot revive a withdrawn
+   * judgment. This is the single re-check path shared by both owner readers.
+   */
+  private activeAdvisory(record: AdvisoryRecord): AdvisoryRecord | undefined {
+    if (record.status !== "advisory") return undefined;
+    const current = this.decisionAdvisoryContext(
+      this.ownerPrincipal(),
+      record.goal_id,
+    );
+    if (!current.ok) return undefined;
+    const goal = current.question.goal;
+    if (current.question.question_hash !== record.question_hash) return undefined;
+    if (
+      record.goal_entity_version !== goal.goal_entity_version ||
+      record.plan_version !== goal.plan_version ||
+      record.project_id !== goal.project_id
+    )
+      return undefined;
+    const expected = canonical(
+      current.question.sources.map((source) => ({
+        source_id: source.source_id,
+        source_version: source.source_version,
+        body_hash: source.body_hash,
+      })),
+    );
+    const actual = canonical(
+      record.sources.map((source) => ({
+        source_id: source.source_id,
+        source_version: source.source_version,
+        body_hash: source.body_hash,
+      })),
+    );
+    if (expected !== actual) return undefined;
+    return record;
+  }
+  /**
+   * Internal owner reader. It loads the store itself and re-checks the CURRENT
+   * goal/source/consent scope before returning; a stale, withdrawn or unauthorized
+   * record reads as absent. It is not a public entity kind.
+   */
+  private readAdvisory(id: string): AdvisoryRecord | undefined {
+    const row = this.store.get<{ data: string }>(
+      "SELECT data FROM entities WHERE id=? AND kind='advisory'",
+      id,
+    );
+    if (!row) return undefined;
+    let record: AdvisoryRecord;
+    try {
+      record = validateAdvisoryRecord(JSON.parse(row.data));
+    } catch {
+      return undefined;
+    }
+    return this.activeAdvisory(record);
+  }
+  decisionAdvisory(p: Principal, id: string): AdvisoryRecord | undefined {
+    this.owner(p);
+    const parsed = z.string().min(1).max(100).safeParse(id);
+    return parsed.success ? this.readAdvisory(parsed.data) : undefined;
+  }
+  decisionAdvisoriesForGoal(p: Principal, goalId: string): AdvisoryRecord[] {
+    this.owner(p);
+    const id = z.string().min(1).max(100).parse(goalId);
+    const found: AdvisoryRecord[] = [];
+    for (const row of this.store.all<{ data: string }>(
+      "SELECT data FROM entities WHERE kind='advisory'",
+    )) {
+      let record: AdvisoryRecord;
+      try {
+        record = validateAdvisoryRecord(JSON.parse(row.data));
+      } catch {
+        continue;
+      }
+      if (record.goal_id !== id) continue;
+      const active = this.activeAdvisory(record);
+      if (active) found.push(active);
+    }
+    return found;
   }
   connections(p: Principal) {
     this.owner(p);
@@ -2702,7 +3215,22 @@ export class Brain {
       )
       .filter((s) => ids.includes(s.project_id));
     const entities = this.entities(p).filter((e) => ids.includes(e.project_id));
-    const payload = { projects, sources, entities };
+    // Owner export explicitly retains validated advisories even though the generic
+    // entity reader hides them. A malformed stored record is skipped, never
+    // exported as if it were valid.
+    const advisories = this.store
+      .all<{ id: string; project_id: string; kind: string; version: number; data: string; created_at: string }>(
+        "SELECT * FROM entities WHERE kind='advisory' ORDER BY created_at DESC",
+      )
+      .filter((row) => ids.includes(row.project_id))
+      .flatMap((row) => {
+        try {
+          return [{ ...row, data: validateAdvisoryRecord(JSON.parse(row.data)) }];
+        } catch {
+          return [];
+        }
+      });
+    const payload = { projects, sources, entities: [...entities, ...advisories] };
     return { format_version: 1, payload, checksum: hash(canonical(payload)) };
   }
   preview(p: Principal, input: unknown) {
@@ -2735,7 +3263,7 @@ export class Brain {
             z.object({
               id: z.string().max(100),
               project_id: z.string().max(100),
-              kind: z.enum(["brief", "goal", "proposal", "receipt"]),
+              kind: z.enum(["brief", "goal", "proposal", "receipt", "advisory"]),
               version: z.number().int().positive(),
               data: z.record(z.string(), z.unknown()),
               created_at: z.iso.datetime(),
@@ -2975,6 +3503,46 @@ export class Brain {
               : data.status,
             imported: true,
           };
+        } else if (e.kind === "advisory") {
+          const parsed = validateAdvisoryRecord(e.data);
+          // Verify declared/available provenance: the record's project must agree
+          // with the entity row, and a locally present goal must be a goal in the
+          // same project.
+          if (parsed.project_id !== e.project_id)
+            throw new BrainError(
+              "INVALID_INPUT",
+              "Imported advisory project is inconsistent.",
+            );
+          const goalRow = this.store.get<{ project_id: string; kind: string }>(
+            "SELECT project_id,kind FROM entities WHERE id=?",
+            parsed.goal_id,
+          );
+          if (
+            goalRow &&
+            (goalRow.kind !== "goal" || goalRow.project_id !== parsed.project_id)
+          )
+            throw new BrainError(
+              "INVALID_INPUT",
+              "Imported advisory goal is inconsistent.",
+            );
+          // Any source version this archive actually carries must match the declared
+          // body hash. A historical move absent from a scoped export is retained as an
+          // opaque ref; no missing body is copied or invented.
+          for (const ref of parsed.sources) {
+            const version = this.store.get<{ body: string }>(
+              "SELECT body FROM source_versions WHERE source_id=? AND version=?",
+              ref.source_id,
+              ref.source_version,
+            );
+            if (version && advisorySourceBodyHash(version.body) !== ref.body_hash)
+              throw new BrainError(
+                "INVALID_INPUT",
+                "Imported advisory source hash does not match.",
+              );
+          }
+          // Always an unavailable, judgment-free archive record: a producer can
+          // never import a judgment, an execution claim or revived consent.
+          data = { ...parsed, status: "unavailable", judgment: null };
         } else {
           data = {
             outcome: "imported_history",
@@ -3058,6 +3626,12 @@ export class Brain {
         central.blocked_reason === "disputed_usage";
       const rawConsent = this.backgroundConsent(p);
       const capabilityReady = this.capability?.().ready ?? false;
+      // The DECISION-stage consent is a SEPARATE raw choice with its own trusted
+      // capability (a live decision profile + fresh decision readiness). It never
+      // derives from the master flag; the master flag and background help still
+      // gate effective permission.
+      const rawDecision = this.decisionBackgroundConsent(p);
+      const decisionReady = this.decisionCapability?.().ready ?? false;
       const dayRemaining = Math.max(0, dailyLimit - Math.min(dailyLimit, committed));
       // Real admission usability for THIS owner: capability AND raw consent AND a
       // configured account AND no durable block AND service/allowance/day/per-job
@@ -3119,6 +3693,18 @@ export class Brain {
           stored_consent_active: rawConsent,
           consent_effective:
             rawConsent && capabilityReady && central.configured && !durable,
+          // Separate DECISION-stage consent. `stored` is the RAW choice (visible
+          // even with the master off or no capability); `effective` additionally
+          // needs the master RAW consent and the decision capability. It is NOT an
+          // admission claim (an own `usage_pending` never clears either).
+          decision_capability_ready: decisionReady,
+          decision_stored_consent_active: rawDecision,
+          decision_consent_effective:
+            rawDecision &&
+            rawConsent &&
+            decisionReady &&
+            central.configured &&
+            !durable,
           allowance: central.allowance,
         },
         jobs: this.store.all(
@@ -3174,6 +3760,9 @@ export class Brain {
         capability_ready: false,
         stored_consent_active: this.backgroundConsent(p),
         consent_effective: this.backgroundConsent(p) && block === null,
+        decision_capability_ready: false,
+        decision_stored_consent_active: this.decisionBackgroundConsent(p),
+        decision_consent_effective: false,
         allowance: null,
       },
       jobs: this.store.all(

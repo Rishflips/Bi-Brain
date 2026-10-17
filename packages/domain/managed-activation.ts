@@ -1,7 +1,6 @@
 import { createHash } from "node:crypto";
 import { z } from "zod";
 import { BrainError, canonical } from "./logic.ts";
-import type { DispatchStage } from "./spend.ts";
 
 /**
  * Pure vocabulary for the shared managed provider activation policy.
@@ -80,16 +79,27 @@ export type SendGuardPhase =
  * `after_reserve`/`before_mark`/`after_mark` carry the exact central AND tenant
  * call ids of THIS attempt.
  */
-export interface ActivationGuard {
+/**
+ * The closed purpose a decision guard is bound to. It is a single fixed
+ * goal-relevance question on a running changed-assumption review; it is not a
+ * general provider registry and carries no model output.
+ */
+export const DECISION_GUARD_PURPOSE = "goal_relevance";
+export const DECISION_GUARD_JOB_KIND = "review_changed_assumption";
+
+/**
+ * Fields shared by every stage guard. They are the immutable frozen-policy
+ * binding plus the exact current attempt slot; none of them is authority on its
+ * own.
+ */
+export interface SendGuardCommon {
   phase: SendGuardPhase;
   account_id: string;
   job_id: string;
   dispatch_key: string;
-  stage: DispatchStage;
   lease_owner: string;
   lease_fence: number;
   lease_expires_at: string;
-  provider: string;
   model: string;
   price_version: string;
   request_hash: string;
@@ -110,44 +120,104 @@ export interface ActivationGuard {
   tenant_call_id: string | null;
 }
 
+/** The unchanged reasoning-stage binding over the OpenAI Responses profile. */
+export interface ReasoningActivationGuard extends SendGuardCommon {
+  stage: "reasoning";
+  provider: "openai";
+}
+
+/** The separate decision-stage binding over the closed official transport. */
+export interface DecisionActivationGuard extends SendGuardCommon {
+  stage: "decision";
+  provider: "typesafe" | "cloudflare";
+  purpose: typeof DECISION_GUARD_PURPOSE;
+  job_kind: typeof DECISION_GUARD_JOB_KIND;
+}
+
+/**
+ * A precomputed, non-secret frozen-policy binding for one paid attempt. It is
+ * derived only from a trusted installed policy plus the current lease/spec; the
+ * storage seam rechecks it inside its own transaction and it never grants
+ * authority on its own. The stage is a closed discriminant: an OpenAI reasoning
+ * profile can never present itself as a decision guard, and a coincident hash
+ * cannot cross stages.
+ *
+ * `before_reserve` carries null attempt ids and permits NO nonterminal tolerance.
+ * `after_reserve`/`before_mark`/`after_mark` carry the exact central AND tenant
+ * call ids of THIS attempt.
+ */
+export type ActivationGuard = ReasoningActivationGuard | DecisionActivationGuard;
+
 const HEX = /^[0-9a-f]{64}$/;
-const guardSchema = z
+const MAX_INT = Number.MAX_SAFE_INTEGER;
+const guardCommonSchema = {
+  phase: z.enum(["before_reserve", "after_reserve", "before_mark", "after_mark"]),
+  account_id: z.string().uuid(),
+  job_id: z.string().min(1).max(200),
+  dispatch_key: z.string().min(1).max(200),
+  lease_owner: z.string().min(1).max(200),
+  lease_fence: z.number().int().min(0).max(MAX_INT),
+  lease_expires_at: z.string().datetime({ offset: true }),
+  model: z.string().min(1).max(100),
+  price_version: z.string().min(1).max(64),
+  request_hash: z.string().regex(HEX),
+  config_hash: z.string().regex(HEX),
+  reserved_micro_usd: z.number().int().min(0).max(MAX_INT),
+  profile_version: z.number().int().min(1).max(MAX_INT),
+  fingerprint: z.string().regex(HEX),
+  config_digest: z.string().regex(HEX),
+  epoch: z.number().int().min(1).max(MAX_INT),
+  root_nonce: z.string().regex(HEX),
+  schema_version: z.number().int().min(1).max(MAX_INT),
+  schema_digest: z.string().regex(HEX),
+  audit_id: z.string().uuid(),
+  audit_digest: z.string().regex(HEX),
+  expected_prepared_config_hash: z.string().regex(HEX),
+  central_inventory_digest: z.string().regex(HEX),
+  central_call_id: z.string().uuid().nullable(),
+  tenant_call_id: z.string().min(1).max(200).nullable(),
+};
+const reasoningGuardSchema = z
+  .object({ ...guardCommonSchema, stage: z.literal("reasoning"), provider: z.literal("openai") })
+  .strict();
+const decisionGuardSchema = z
   .object({
-    phase: z.enum(["before_reserve", "after_reserve", "before_mark", "after_mark"]),
-    account_id: z.string().uuid(),
-    job_id: z.string().min(1).max(200),
-    dispatch_key: z.string().min(1).max(200),
-    stage: z.enum(["decision", "reasoning", "repair"]),
-    lease_owner: z.string().min(1).max(200),
-    lease_fence: z.number().int().min(0).max(Number.MAX_SAFE_INTEGER),
-    lease_expires_at: z.string().datetime({ offset: true }),
-    provider: z.literal("openai"),
-    model: z.string().min(1).max(100),
-    price_version: z.string().min(1).max(64),
-    request_hash: z.string().regex(HEX),
-    config_hash: z.string().regex(HEX),
-    reserved_micro_usd: z.number().int().min(0).max(Number.MAX_SAFE_INTEGER),
-    profile_version: z.number().int().min(1).max(Number.MAX_SAFE_INTEGER),
-    fingerprint: z.string().regex(HEX),
-    config_digest: z.string().regex(HEX),
-    epoch: z.number().int().min(1).max(Number.MAX_SAFE_INTEGER),
-    root_nonce: z.string().regex(HEX),
-    schema_version: z.number().int().min(1).max(Number.MAX_SAFE_INTEGER),
-    schema_digest: z.string().regex(HEX),
-    audit_id: z.string().uuid(),
-    audit_digest: z.string().regex(HEX),
-    expected_prepared_config_hash: z.string().regex(HEX),
-    central_inventory_digest: z.string().regex(HEX),
-    central_call_id: z.string().uuid().nullable(),
-    tenant_call_id: z.string().min(1).max(200).nullable(),
+    ...guardCommonSchema,
+    stage: z.literal("decision"),
+    // The provider stays a closed literal union; a malformed/unknown value denies
+    // rather than being widened to an arbitrary string.
+    provider: z.enum(["typesafe", "cloudflare"]),
+    purpose: z.literal(DECISION_GUARD_PURPOSE),
+    job_kind: z.literal(DECISION_GUARD_JOB_KIND),
   })
   .strict();
+const guardSchema = z.discriminatedUnion("stage", [
+  reasoningGuardSchema,
+  decisionGuardSchema,
+]);
 
 /** Strict, closed validation of one derived guard. It never authorizes; it only
- * rejects a malformed/caller-shaped object. */
+ * rejects a malformed/caller-shaped object. A repair stage, a loosened provider
+ * or a cross-stage relabel denies. */
 export function validateActivationGuard(input: unknown): ActivationGuard {
   const parsed = guardSchema.safeParse(input);
   if (!parsed.success) throw invalid("Invalid activation guard.");
+  return parsed.data;
+}
+
+/** Closed validation narrowed to the reasoning stage discriminant. */
+export function validateReasoningActivationGuard(input: unknown): ReasoningActivationGuard {
+  const parsed = guardSchema.safeParse(input);
+  if (!parsed.success || parsed.data.stage !== "reasoning")
+    throw invalid("Invalid activation guard.");
+  return parsed.data;
+}
+
+/** Closed validation narrowed to the decision stage discriminant. */
+export function validateDecisionActivationGuard(input: unknown): DecisionActivationGuard {
+  const parsed = guardSchema.safeParse(input);
+  if (!parsed.success || parsed.data.stage !== "decision")
+    throw invalid("Invalid activation guard.");
   return parsed.data;
 }
 

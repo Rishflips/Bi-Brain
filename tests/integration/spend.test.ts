@@ -214,7 +214,7 @@ describe("per-dispatch accounting", () => {
     store.close();
   });
 
-  it("upgrades a schema-3-equivalent database to migration 4 once and preserves legacy reservations", () => {
+  it("upgrades a schema-3-equivalent database through migration 4 once and preserves legacy reservations", () => {
     const dir = tempDir();
     const path = join(dir, "brain.sqlite");
     try {
@@ -228,15 +228,18 @@ describe("per-dispatch accounting", () => {
         0,
         "held",
       );
-      // Reduce to a schema-3-equivalent database: no table, no version-4 row.
+      // This older equivalent-schema test is not the genuine frozen-v4 proof.
+      // Remove later advisory tables too, rather than leave a v5 marker behind.
       store.transaction(() => {
+        store.run("DROP TABLE IF EXISTS advisory_tombstones");
+        store.run("DROP TABLE IF EXISTS advisory_attempts");
         store.run("DROP TABLE provider_dispatches");
-        store.run("DELETE FROM migrations WHERE version=4");
+        store.run("DELETE FROM migrations WHERE version>=4");
       });
       store.close();
 
       store = new Storage(path);
-      expect(Number(store.get("SELECT max(version) AS v FROM migrations")!.v)).toBe(4);
+      expect(Number(store.get("SELECT max(version) AS v FROM migrations")!.v)).toBe(5);
       expect(Number(store.get("SELECT count(*) AS n FROM migrations WHERE version=4")!.n)).toBe(
         1,
       );
@@ -534,7 +537,7 @@ describe("per-dispatch accounting", () => {
 
       const reopened = new Storage(backup);
       const reopenedLedger = new DispatchLedger(reopened, clock.now);
-      expect(Number(reopened.get("SELECT max(version) AS v FROM migrations")!.v)).toBe(4);
+      expect(Number(reopened.get("SELECT max(version) AS v FROM migrations")!.v)).toBe(5);
       expect(reopened.get("SELECT count(*) AS n FROM provider_dispatches")!.n).toBe(1);
       expect(reopenedLedger.get(call.call_id)!.state).toBe("settled");
       expect(reopenedLedger.jobSpend(job.id)).toBe(6);

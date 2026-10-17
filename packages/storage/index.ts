@@ -10,7 +10,7 @@ import {
 } from "node:fs";
 import { Vault, type PortableState } from "./vault.ts";
 import { detectSecrets } from "./secrets.ts";
-import { applyRestoreSafetyBarrier } from "./restore-policy.ts";
+import { applyRestoreSafetyBarrier, withdrawAllAdvisories } from "./restore-policy.ts";
 export class Storage {
   readonly db: DatabaseSync;
   vault?: Vault;
@@ -31,7 +31,7 @@ export class Storage {
       Number(
         this.db.prepare("SELECT max(version) AS version FROM migrations").get()
           ?.version,
-      ) > 4
+      ) > 5
     ) {
       this.db.close();
       throw new Error(
@@ -106,6 +106,44 @@ export class Storage {
     CREATE INDEX IF NOT EXISTS provider_dispatches_job ON provider_dispatches(job_id,state);
     CREATE INDEX IF NOT EXISTS provider_dispatches_day ON provider_dispatches(budget_day,state);
     INSERT OR IGNORE INTO migrations VALUES(4,strftime('%Y-%m-%dT%H:%M:%fZ','now'));`);
+    });
+    // Tenant migration 5: the advisory decision attempt ledger and its hash-only
+    // tombstones. The DDL and the version marker commit in ONE transaction, so a
+    // failed marker rolls the whole new schema back and never leaves a half
+    // migrated tenant. Operational only — never exported by `portableState()`.
+    this.transaction(() => {
+      this.db
+        .exec(`CREATE TABLE IF NOT EXISTS advisory_attempts(
+      idempotency_key TEXT PRIMARY KEY CHECK(length(idempotency_key)=64),
+      job_id TEXT NOT NULL,
+      dispatch_key TEXT NOT NULL CHECK(dispatch_key='decision'),
+      project_id TEXT NOT NULL,
+      goal_id TEXT NOT NULL,
+      goal_entity_version INTEGER NOT NULL CHECK(goal_entity_version>=1),
+      plan_version INTEGER NOT NULL CHECK(plan_version>=0),
+      source_refs_json TEXT NOT NULL,
+      request_hash TEXT NOT NULL CHECK(length(request_hash)=64),
+      config_hash TEXT NOT NULL CHECK(length(config_hash)=64),
+      question_hash TEXT NOT NULL CHECK(length(question_hash)=64),
+      owner TEXT NOT NULL,
+      fence INTEGER NOT NULL CHECK(fence>=0),
+      state TEXT NOT NULL CHECK(state IN ('claimed','published','unavailable')),
+      advisory_id TEXT,
+      claimed_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL);
+    CREATE TABLE IF NOT EXISTS advisory_tombstones(
+      idempotency_key TEXT PRIMARY KEY,
+      question_hash TEXT NOT NULL,
+      created_at TEXT NOT NULL);
+    CREATE INDEX IF NOT EXISTS advisory_attempts_goal ON advisory_attempts(goal_id,state);
+    CREATE TRIGGER IF NOT EXISTS advisory_attempts_identity_immutable BEFORE UPDATE ON advisory_attempts
+    WHEN NEW.idempotency_key<>OLD.idempotency_key OR NEW.job_id<>OLD.job_id OR NEW.dispatch_key<>OLD.dispatch_key
+      OR NEW.project_id<>OLD.project_id OR NEW.goal_id<>OLD.goal_id OR NEW.goal_entity_version<>OLD.goal_entity_version
+      OR NEW.plan_version<>OLD.plan_version OR NEW.source_refs_json<>OLD.source_refs_json OR NEW.request_hash<>OLD.request_hash
+      OR NEW.config_hash<>OLD.config_hash OR NEW.question_hash<>OLD.question_hash OR NEW.owner<>OLD.owner
+      OR NEW.fence<>OLD.fence OR NEW.claimed_at<>OLD.claimed_at
+    BEGIN SELECT RAISE(ABORT,'advisory attempt identity is immutable'); END;
+    INSERT OR IGNORE INTO migrations VALUES(5,strftime('%Y-%m-%dT%H:%M:%fZ','now'));`);
     });
     const vaultRoot =
       options.vault ??
@@ -205,6 +243,12 @@ export class Storage {
         )
           this.rebuild();
       });
+      // A snapshot rebuilt from an existing vault must not leave restored
+      // advisories actively readable. Withdraw them AFTER the rebuild, in one
+      // transaction so the operational database and the vault stay consistent
+      // (a later reopen cannot silently rebuild the withdrawn state away).
+      if (recoveringFromExistingVault)
+        this.transaction(() => withdrawAllAdvisories(this, () => new Date()));
     }
   }
   sanitizeMigrationBackup() {

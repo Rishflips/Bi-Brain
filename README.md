@@ -54,6 +54,13 @@ The owner-approved release target is a browser-first managed personal suite with
 
 The owner requested Ollama DeepSeek V4.1 Flash as the primary implementation executor, parent-agent review/verification, and GPT-6 Astra **Medium only for advice**. Those development roles do not select Bi Brain's runtime providers.
 
+The default-off managed advisory worker is locally verified with injected
+provider transport, including actual-process readiness and restart/no-resend
+checks. Final Windows evidence: **984 tests passed, 2 platform skips, 24 browser
+journeys and 4 offline evaluations**. Its internal judgments never authorize or
+suppress reasoning. This is not live-provider quality, billing or hosted-release
+evidence; see BUILD_STATE for the remaining gates.
+
 Licensing is deliberately unresolved; no permissive license has been granted by this build pack. See the business decision document before public release.
 # Current harness build
 

@@ -1,8 +1,9 @@
 import { randomUUID } from "node:crypto";
 import type { DatabaseSync } from "node:sqlite";
+import { DatabaseSync as Sqlite } from "node:sqlite";
 import { dirname, resolve } from "node:path";
 import { ControlStore } from "./control.ts";
-import { BrainError } from "../domain/logic.ts";
+import { BrainError, canonical } from "../domain/logic.ts";
 import type { ActivationGuard } from "../domain/managed-activation.ts";
 import { validateActivationGuard } from "../domain/managed-activation.ts";
 import {
@@ -10,12 +11,17 @@ import {
   managedControlSchemaVersion,
   readGuardSnapshot,
 } from "./managed-activation-state.ts";
+import { readDecisionGuardSnapshot, type DecisionGuardSnapshot } from "./managed-decision-activation-state.ts";
+import { billingSchemaVariant } from "./billing-schema.ts";
+import { BillingEnforcement } from "./billing-enforcement.ts";
+import { expectedDecisionConfigHash } from "../providers/prepared-decision.ts";
 import { accountingDay, checkedSum, safeAdd, validateActualMicroUsd } from "../domain/spend.ts";
 import {
   MANAGED_SERVICE_ID,
   managedContentHash,
   managedIdentityHash,
   managedMoneySchemaVersion,
+  managedMoneyBillingVersion,
   utcDay,
   validateAccountPolicyInput,
   validateAllowancePeriodInput,
@@ -84,7 +90,8 @@ export class AccountingPersistenceError extends Error {
   }
 }
 
-const MONEY_DDL = `
+/** The frozen legacy (v4) money DDL. Exported for the explicit money-5 installer. */
+export const MONEY_LEGACY_DDL = `
 CREATE TABLE IF NOT EXISTS managed_account_periods(
   period_id TEXT PRIMARY KEY, account_id TEXT NOT NULL REFERENCES managed_accounts(id),
   starts_at TEXT NOT NULL, ends_at TEXT NOT NULL,
@@ -172,19 +179,112 @@ CREATE TABLE IF NOT EXISTS managed_activation(
   endpoint_class TEXT NOT NULL CHECK(endpoint_class='openai_responses'),
   config_digest TEXT NOT NULL, audit_digest TEXT NOT NULL, audit_id TEXT NOT NULL, epoch INTEGER NOT NULL,
   root_nonce TEXT NOT NULL, fingerprint TEXT NOT NULL, updated_at TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS managed_decision_activation(
+  singleton INTEGER PRIMARY KEY CHECK(singleton=1),
+  schema INTEGER NOT NULL, version INTEGER NOT NULL, enabled INTEGER NOT NULL CHECK(enabled IN (0,1)),
+  provider TEXT NOT NULL CHECK(provider IN ('typesafe','cloudflare')),
+  model TEXT NOT NULL, accepted_response_models TEXT NOT NULL,
+  endpoint TEXT NOT NULL, endpoint_digest TEXT NOT NULL,
+  price_version TEXT NOT NULL,
+  input_micro_usd_per_million INTEGER NOT NULL CHECK(input_micro_usd_per_million>=0),
+  output_micro_usd_per_million INTEGER NOT NULL CHECK(output_micro_usd_per_million=0),
+  timeout_ms INTEGER NOT NULL, max_request_bytes INTEGER NOT NULL, max_response_bytes INTEGER NOT NULL,
+  request_overhead_bytes INTEGER NOT NULL,
+  config_digest TEXT NOT NULL, audit_digest TEXT NOT NULL, audit_id TEXT NOT NULL, epoch INTEGER NOT NULL,
+  root_nonce TEXT NOT NULL, fingerprint TEXT NOT NULL, updated_at TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS managed_decision_activation_events(
+  event_id TEXT PRIMARY KEY,
+  stage TEXT NOT NULL CHECK(stage IN ('reasoning','decision')),
+  action TEXT NOT NULL CHECK(action IN ('enabled','disabled','restored_disabled')),
+  version INTEGER NOT NULL CHECK(version>=1),
+  fingerprint TEXT NOT NULL, epoch INTEGER NOT NULL CHECK(epoch>=1), at TEXT NOT NULL);
+CREATE TRIGGER IF NOT EXISTS managed_decision_activation_events_no_update
+  BEFORE UPDATE ON managed_decision_activation_events
+  BEGIN SELECT RAISE(ABORT,'managed decision activation events are immutable'); END;
+CREATE TRIGGER IF NOT EXISTS managed_decision_activation_events_no_delete
+  BEFORE DELETE ON managed_decision_activation_events
+  BEGIN SELECT RAISE(ABORT,'managed decision activation events are immutable'); END;
 `;
 
 const budget = (message: string) =>
   new BrainError("BUDGET_EXHAUSTED", message, 409);
 
+const LEGACY_MONEY_TABLES = [
+  "managed_account_periods",
+  "managed_service_policy",
+  "managed_account_policy",
+  "managed_reservations",
+  "managed_service_blocks",
+  "managed_money_blocks",
+  "managed_resolutions",
+  "managed_control_epoch",
+  "managed_audits",
+  "managed_audit_accounts",
+  "managed_audit_rows",
+  "managed_activation",
+  "managed_decision_activation",
+  "managed_decision_activation_events",
+] as const;
+
+/** Complete frozen catalog of a legacy money table set (columns, FKs, triggers). */
+function moneyCatalog(db: DatabaseSync): string {
+  const placeholders = LEGACY_MONEY_TABLES.map(() => "?").join(",");
+  return canonical({
+    tables: LEGACY_MONEY_TABLES.map((name) => ({
+      name,
+      columns: db.prepare(`PRAGMA table_info(${name})`).all(),
+      foreign_keys: db.prepare(`PRAGMA foreign_key_list(${name})`).all(),
+    })),
+    triggers: db
+      .prepare(
+        `SELECT name,tbl_name,sql FROM sqlite_master WHERE type='trigger' AND tbl_name IN (${placeholders}) ORDER BY name`,
+      )
+      .all(...LEGACY_MONEY_TABLES),
+  });
+}
+
+/**
+ * On a v5 reopen the retained legacy money tables must match the frozen v4 shape exactly
+ * (columns, FKs, immutable triggers). A dropped trigger or an added column refuses, with
+ * no auto-heal. The reference is the frozen DDL in an in-memory database.
+ */
+function assertRetainedMoneyCatalog(db: DatabaseSync): void {
+  for (const table of LEGACY_MONEY_TABLES)
+    if (
+      !db
+        .prepare("SELECT 1 AS present FROM sqlite_master WHERE type='table' AND name=?")
+        .get(table)
+    )
+      throw new BrainError(
+        "UNAVAILABLE",
+        "A retained managed money table is missing; refusing to heal it.",
+        503,
+      );
+  const reference = new Sqlite(":memory:");
+  try {
+    reference.exec(MONEY_LEGACY_DDL);
+    if (moneyCatalog(db) !== moneyCatalog(reference))
+      throw new BrainError(
+        "UNAVAILABLE",
+        "The retained managed money tables do not match the frozen v4 shape; refusing to heal them.",
+        503,
+      );
+  } finally {
+    reference.close();
+  }
+}
+
 export class ManagedSpendingStore {
   readonly db: DatabaseSync;
+  /** Discovered, mandatory billing enforcement. Never an optional caller guard. */
+  readonly billing: BillingEnforcement;
   constructor(
     readonly control: ControlStore,
     readonly clock: () => Date = control.clock,
   ) {
     this.db = control.db;
     this.migrate();
+    this.billing = BillingEnforcement.forControl(control, clock);
   }
 
   /** Future-version guard runs inside the transaction before any money DDL. */
@@ -196,31 +296,52 @@ export class ManagedSpendingStore {
           "SELECT name FROM sqlite_master WHERE type='table' AND name='managed_money_schema'",
         )
         .get();
-      if (meta) {
-        const version = Number(
-          (
-            this.db
-              .prepare("SELECT max(version) AS version FROM managed_money_schema")
-              .get() as { version: number | null } | undefined
-          )?.version ?? 0,
+      const version = meta
+        ? Number(
+            (
+              this.db
+                .prepare("SELECT max(version) AS version FROM managed_money_schema")
+                .get() as { version: number | null } | undefined
+            )?.version ?? 0,
+          )
+        : 0;
+      // A future version refuses BEFORE any DDL.
+      if (version > managedMoneyBillingVersion)
+        throw new BrainError(
+          "UNAVAILABLE",
+          "Managed spending schema is from a newer version.",
+          503,
         );
-        if (version > managedMoneySchemaVersion)
+      if (version === managedMoneyBillingVersion) {
+        // Strict verify of the explicit v5 install: never CREATE and never heal a
+        // missing authority table. A dropped object makes the variant "unknown".
+        if (billingSchemaVariant(this.db) !== "integrated")
           throw new BrainError(
             "UNAVAILABLE",
-            "Managed spending schema is from a newer version.",
+            "The managed billing schema is incomplete or unexpected; refusing to heal it.",
             503,
           );
+        assertRetainedMoneyCatalog(this.db);
+      } else {
+        // Legacy path (fresh or v<=4): the normal constructor installs/accepts v4
+        // only and never auto-promotes a genuine legacy database.
+        this.db.exec(
+          `CREATE TABLE IF NOT EXISTS managed_money_schema(version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL);`,
+        );
+        this.db.exec(MONEY_LEGACY_DDL);
+        this.db
+          .prepare("INSERT OR IGNORE INTO managed_money_schema VALUES(?,?)")
+          .run(managedMoneySchemaVersion, this.clock().toISOString());
       }
-      this.db.exec(
-        `CREATE TABLE IF NOT EXISTS managed_money_schema(version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL);`,
-      );
-      this.db.exec(MONEY_DDL);
-      this.db
-        .prepare("INSERT OR IGNORE INTO managed_money_schema VALUES(?,?)")
-        .run(managedMoneySchemaVersion, this.clock().toISOString());
       this.db.exec("COMMIT");
+      if (this.db.isTransaction)
+        throw new BrainError(
+          "UNAVAILABLE",
+          "The managed money commit was not applied.",
+          503,
+        );
     } catch (error) {
-      this.db.exec("ROLLBACK");
+      if (this.db.isTransaction) this.db.exec("ROLLBACK");
       throw error;
     }
   }
@@ -265,7 +386,6 @@ export class ManagedSpendingStore {
       );
     // Strict shape and phase/ids relation. A malformed or widened guard denies.
     const valid = validateActivationGuard(guard);
-    if (valid.stage !== "reasoning") throw deny();
     // The frozen guard's two hashes must agree (the preflight derives the expected
     // hash from the installed profile; a forged config_hash cannot be accepted).
     if (valid.config_hash !== valid.expected_prepared_config_hash) throw deny();
@@ -282,24 +402,78 @@ export class ManagedSpendingStore {
     // must still be in the future for THIS transaction's clock.
     if (!(Date.parse(valid.lease_expires_at) > this.clock().getTime())) throw deny();
     const root = dirname(resolve(this.control.path));
-    const snapshot = readGuardSnapshot({ db: this.db, path: this.control.path }, root);
-    if (snapshot.state !== "active") throw deny();
-    const live = snapshot.profile;
-    const profileOk =
-      live.enabled &&
-      live.version === valid.profile_version &&
-      live.fingerprint === valid.fingerprint &&
-      live.config_digest === valid.config_digest &&
-      live.epoch === valid.epoch &&
-      live.root_nonce === valid.root_nonce &&
-      live.audit_id === valid.audit_id;
-    const epochOk =
-      snapshot.epoch.epoch === valid.epoch && snapshot.epoch.nonce === valid.root_nonce;
-    const schemaOk =
-      managedControlSchemaVersion(this.db) === valid.schema_version &&
-      centralSchemaDigest(this.db) === valid.schema_digest;
-    const auditOk = snapshot.audit_digest === valid.audit_digest;
-    const inventoryOk = snapshot.central_inventory_digest === valid.central_inventory_digest;
+    // The stage discriminant selects the matching manifest snapshot: a reasoning
+    // guard re-reads the OpenAI profile, a decision guard the closed decision
+    // profile. Neither profile can satisfy the other stage.
+    const live =
+      valid.stage === "reasoning"
+        ? (() => {
+            const snapshot = readGuardSnapshot(
+              { db: this.db, path: this.control.path },
+              root,
+            );
+            if (snapshot.state !== "active") throw deny();
+            const profile = snapshot.profile;
+            return {
+              profileOk:
+                profile.enabled &&
+                profile.version === valid.profile_version &&
+                profile.fingerprint === valid.fingerprint &&
+                profile.config_digest === valid.config_digest &&
+                profile.epoch === valid.epoch &&
+                profile.root_nonce === valid.root_nonce &&
+                profile.audit_id === valid.audit_id,
+              epochOk:
+                snapshot.epoch.epoch === valid.epoch &&
+                snapshot.epoch.nonce === valid.root_nonce,
+              schemaOk:
+                managedControlSchemaVersion(this.db) === valid.schema_version &&
+                centralSchemaDigest(this.db) === valid.schema_digest,
+              auditOk: snapshot.audit_digest === valid.audit_digest,
+              inventoryOk:
+                snapshot.central_inventory_digest === valid.central_inventory_digest,
+              // The reasoning branch keeps its existing guard-field trust for the
+              // frozen prepared hash; its call KIND is not serialized centrally.
+              expectedOk: true,
+            };
+          })()
+        : (() => {
+            const snapshot: DecisionGuardSnapshot =
+              readDecisionGuardSnapshot({ db: this.db, path: this.control.path }, root);
+            if (snapshot.state !== "active") throw deny();
+            const profile = snapshot.profile;
+            // Independently derive the EXACT expected prepared-config hash from the
+            // LIVE decision profile with the same pure helper the adapter uses. A
+            // caller guard whose two hash fields agree on a substituted value, but
+            // not on the real profile-implied hash, must deny. `config_digest` is a
+            // different digest and is never the prepared `config_hash`.
+            const liveExpected = expectedDecisionConfigHash(profile);
+            return {
+              profileOk:
+                profile.enabled &&
+                profile.provider === valid.provider &&
+                profile.model === valid.model &&
+                profile.price_version === valid.price_version &&
+                profile.version === valid.profile_version &&
+                profile.fingerprint === valid.fingerprint &&
+                profile.config_digest === valid.config_digest &&
+                profile.epoch === valid.epoch &&
+                profile.root_nonce === valid.root_nonce &&
+                profile.audit_id === valid.audit_id,
+              epochOk:
+                snapshot.epoch.epoch === valid.epoch &&
+                snapshot.epoch.nonce === valid.root_nonce,
+              schemaOk:
+                managedControlSchemaVersion(this.db) === valid.schema_version &&
+                centralSchemaDigest(this.db) === valid.schema_digest,
+              auditOk: snapshot.audit_digest === valid.audit_digest,
+              inventoryOk:
+                snapshot.central_inventory_digest === valid.central_inventory_digest,
+              expectedOk:
+                valid.expected_prepared_config_hash === liveExpected &&
+                valid.config_hash === liveExpected,
+            };
+          })();
     let bindingOk = false;
     if (isReserve && spec) {
       bindingOk =
@@ -335,7 +509,17 @@ export class ManagedSpendingStore {
         row.call_id === valid.central_call_id &&
         row.projection_call_id === valid.tenant_call_id;
     }
-    if (!(profileOk && epochOk && schemaOk && auditOk && inventoryOk && bindingOk))
+    if (
+      !(
+        live.profileOk &&
+        live.epochOk &&
+        live.schemaOk &&
+        live.auditOk &&
+        live.inventoryOk &&
+        live.expectedOk &&
+        bindingOk
+      )
+    )
       throw deny();
   }
 
@@ -356,9 +540,24 @@ export class ManagedSpendingStore {
           400,
         );
       this.db.exec("COMMIT");
+      // A silently ignored COMMIT (e.g. a SQLite authorizer returning SQLITE_IGNORE)
+      // must never be reported as durable success: the transaction is still open and
+      // no row persisted. The caller-owned transaction is never touched here.
+      if (this.db.isTransaction)
+        throw new BrainError(
+          "UNAVAILABLE",
+          "The managed transaction commit was not applied.",
+          503,
+        );
       return result;
     } catch (error) {
-      this.db.exec("ROLLBACK");
+      if (this.db.isTransaction) {
+        try {
+          this.db.exec("ROLLBACK");
+        } catch {
+          /* a denied rollback cannot turn a refused commit into success */
+        }
+      }
       throw error;
     } finally {
       this.inOwnedTx = prior;
@@ -490,6 +689,9 @@ export class ManagedSpendingStore {
   reserve(spec: ManagedDispatchSpec, guard?: ActivationGuard): ManagedReservation {
     this.assertNotPaused();
     const valid = validateManagedDispatchSpec(spec);
+    // Bounded journal verification happens OUTSIDE the money transaction, so a
+    // changed head is refreshed before the write lock and never scanned inside it.
+    this.billing.prepareForSend(this.db);
     return this.tx(() => {
       this.assertActivationSeam(guard, valid);
       const now = this.clock();
@@ -547,6 +749,15 @@ export class ManagedSpendingStore {
         );
       const period = this.activePeriod(valid.account_id, now);
       if (!period) throw budget("No managed allowance period is active.");
+      // Mandatory discovered billing enforcement: a legacy/manual account is
+      // unchanged; an installed-but-unenrolled root or an unadmitted account is
+      // refused, and a billing account must fund its exact authenticated grant.
+      this.billing.assertNewFundingWithinTx(this.db, {
+        account_id: valid.account_id,
+        period_id: period.period_id,
+        now,
+        stage: valid.stage,
+      });
       const serviceDaily = this.servicePolicyRow()?.daily_micro_usd ?? 0;
       const effectivePerJob = Math.min(
         valid.limits.per_job_micro_usd,
@@ -634,6 +845,14 @@ export class ManagedSpendingStore {
           valid.config_hash,
           now.toISOString(),
         );
+      // Immutable billing binding: written in the SAME transaction as the base hold. A
+      // failed/refused proof insert rolls the base reservation and any zone freeze back.
+      this.billing.bindReservationWithinTx(this.db, {
+        call_id: callId,
+        account_id: valid.account_id,
+        period_id: period.period_id,
+        created_at: now.toISOString(),
+      });
       // Freeze the accounting zone only on a successful admission.
       if (policy.accounting_tz === null)
         this.db
@@ -657,6 +876,7 @@ export class ManagedSpendingStore {
   ): ManagedReservation {
     this.assertNotPaused();
     const limits = validateManagedLimits(currentLimits);
+    this.billing.prepareForSend(this.db);
     return this.tx(() => {
       this.assertActivationSeam(guard, undefined, callId);
       const now = this.clock();
@@ -714,6 +934,22 @@ export class ManagedSpendingStore {
           "This managed admission period is no longer current; it will not be sent.",
           409,
         );
+      // Mandatory discovered billing enforcement, re-checked under the write lock
+      // before the reserved->dispatched CAS that authorizes real I/O.
+      this.billing.assertNewFundingWithinTx(this.db, {
+        account_id: row.account_id,
+        period_id: row.account_period_id,
+        now,
+        stage: row.stage,
+      });
+      // Re-load the exact retained call -> admission proof and refuse a changed
+      // generation/admission, so a stale worker cannot be re-authorized after a restore.
+      this.billing.verifyReservationWithinTx(this.db, {
+        call_id: callId,
+        account_id: row.account_id,
+        period_id: row.account_period_id,
+        now,
+      });
       const policy = this.accountPolicyRow(row.account_id);
       const serviceDaily = this.servicePolicyRow()?.daily_micro_usd ?? 0;
       const effectivePerJob = Math.min(
@@ -756,6 +992,32 @@ export class ManagedSpendingStore {
           409,
         );
       return toReservation(this.reservationRow(callId)!);
+    });
+  }
+
+  /**
+   * Pre-I/O authorization re-check for an already-marked call. It loads the exact
+   * central reservation row and requires it to be `dispatched` (an undispatched
+   * `reserved` call is never authorized to execute), then re-authenticates the current
+   * billing grant/binding/freshness/generation. It is read-only: the marked hold and a
+   * later known settlement are untouched. A legacy root keeps today's behaviour.
+   */
+  assertFundingForExecution(callId: string): void {
+    if (typeof callId !== "string" || callId.length === 0)
+      throw new BrainError("INVALID_INPUT", "Invalid managed dispatch.", 400);
+    const row = this.reservationRow(callId);
+    if (!row) throw new BrainError("NOT_FOUND", "Unknown managed dispatch.", 404);
+    if (row.state !== "dispatched")
+      throw new BrainError(
+        "BUDGET_BLOCKED",
+        "The managed paid call is not dispatched.",
+        409,
+      );
+    this.billing.verifyReservationWithinTx(this.db, {
+      call_id: callId,
+      account_id: row.account_id,
+      period_id: row.account_period_id,
+      now: this.clock(),
     });
   }
 

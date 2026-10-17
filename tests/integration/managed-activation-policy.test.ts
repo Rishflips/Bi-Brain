@@ -271,7 +271,8 @@ it("an unknown future schema fails before activation DDL and preserves identity"
   const session = runtime.control.issueSession(account.id);
   new ManagedSpendingStore(runtime.control, clock);
   runtime.control.db.exec(
-    "INSERT INTO managed_money_schema(version,applied_at) VALUES(4,'2026-10-16T00:00:00Z')",
+    // Version 5 is now the explicit billing version; a genuinely future schema is 6.
+    "INSERT INTO managed_money_schema(version,applied_at) VALUES(6,'2026-10-17T00:00:00Z')",
   );
   expect(() => new ManagedSpendingStore(runtime.control, clock)).toThrow("newer version");
   expect(runtime.control.account(account.id)?.id).toBe(account.id);
