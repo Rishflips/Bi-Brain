@@ -46,6 +46,24 @@ export type ManagedAccount = Account;
 export type ManagedHandle = { brain: Brain; release: () => void };
 
 /**
+ * Trusted time source for a capability probe: a fixed instant for deterministic
+ * callers, or a live clock sampled at the moment the worker lease is read. At
+ * least one is required; the resolved instant is never trusted from a request.
+ */
+export type CapabilityClock = { now?: Date; clock?: () => Date };
+
+function resolveCapabilityClock(input: CapabilityClock): Date | (() => Date) {
+  const sample = input.clock ?? input.now;
+  if (!sample)
+    throw new BrainError(
+      "INVALID_INPUT",
+      "A capability probe requires a fixed instant or a trusted clock.",
+      400,
+    );
+  return sample;
+}
+
+/**
  * Trusted DECISION-stage runtime capability helper. It is the exact decision
  * analogue of `managedCapability`, using only the separate decision manifest and
  * the separate `decision-worker-ready.json` lease. It never reads the reasoning
@@ -54,19 +72,19 @@ export type ManagedHandle = { brain: Brain; release: () => void };
 export function managedDecisionCapability(input: {
   control: { db: DatabaseSync; path: string };
   root: string;
-  now: Date;
   optIn: boolean;
-}): { available: boolean; reason: ActivationReason } {
+} & CapabilityClock): { available: boolean; reason: ActivationReason } {
+  const instant = resolveCapabilityClock(input);
   const configured = evaluateConfiguredDecisionPolicy({
     control: input.control,
     root: input.root,
-    now: input.now,
+    now: instant,
     optIn: input.optIn,
   });
   if (!configured.ready) return { available: false, reason: configured.reason };
   const profile = readDecisionActivation(input.control, input.root);
   if (!profile) return { available: false, reason: "profile_invalid" };
-  const readiness = readDecisionReadiness(input.root, input.now);
+  const readiness = readDecisionReadiness(input.root, instant);
   const cap = decisionServerCapability({ configured, readiness, profile });
   return { available: cap.ready, reason: cap.reason };
 }
@@ -76,23 +94,27 @@ export function managedDecisionCapability(input: {
  * policy plus the fresh worker readiness lease for this exact root/control and
  * returns a boolean + static reason. It never reads a caller field, an audit row,
  * another account or a global total, and never grants admission.
+ *
+ * The lease instant is supplied as a trusted clock and sampled AFTER the lease is
+ * read, so a heartbeat an independent worker publishes during the same request is
+ * never misread as a future heartbeat. A fixed `now` keeps the strict rule intact.
  */
 export function managedCapability(input: {
   control: { db: DatabaseSync; path: string };
   root: string;
-  now: Date;
   optIn: boolean;
-}): { available: boolean; reason: ActivationReason } {
+} & CapabilityClock): { available: boolean; reason: ActivationReason } {
+  const instant = resolveCapabilityClock(input);
   const configured = evaluateConfiguredPolicy({
     control: input.control,
     root: input.root,
-    now: input.now,
+    now: instant,
     optIn: input.optIn,
   });
   if (!configured.ready) return { available: false, reason: configured.reason };
   const profile = readActivation(input.control, input.root);
   if (!profile) return { available: false, reason: "profile_invalid" };
-  const readiness = readWorkerReadiness(input.root, input.now);
+  const readiness = readWorkerReadiness(input.root, instant);
   const cap = serverCapability({ configured, readiness, profile });
   return { available: cap.ready, reason: cap.reason };
 }

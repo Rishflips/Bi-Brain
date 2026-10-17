@@ -88,6 +88,24 @@ describe("worker readiness lease", () => {
     expect(readWorkerReadiness(root, NOW).state).toBe("stale");
   });
 
+  it("samples a trusted clock after the lease is read while a fixed instant stays strict", () => {
+    const root = managedRoot();
+    const base = Date.parse("2026-10-16T09:00:00.000Z");
+    // An independent worker refreshed the lease 50ms after the caller would have
+    // sampled the clock eagerly, but before the lease is actually read back.
+    writeWorkerReadiness(
+      root,
+      record({
+        heartbeat_at: new Date(base + 50).toISOString(),
+        expires_at: new Date(base + 15_050).toISOString(),
+      }),
+    );
+    // A trusted clock is invoked at lease-read time, so the refresh is not "future".
+    expect(readWorkerReadiness(root, () => new Date(base + 50)).state).toBe("ready");
+    // A fixed instant keeps the strict `heartbeat <= now` rule unchanged.
+    expect(readWorkerReadiness(root, new Date(base)).state).toBe("stale");
+  });
+
   it("rejects an invalid worker id or a non-ISO timestamp on write", () => {
     const root = managedRoot();
     expect(() => writeWorkerReadiness(root, record({ worker_id: "not-a-uuid" }))).toThrow();

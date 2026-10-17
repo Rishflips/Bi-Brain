@@ -15,6 +15,38 @@ Gate: a clean checkout installs and starts using documented commands; production
 
 ## M1 — Save → Continue
 
+### Approved visible delivery follow-up — 2026-10-18
+
+- [x] Read completed baseline full regression: 1,447 passed / 8 skipped / zero failed,
+  132 files at b5610f4. Exact baseline Ubuntu/container CI run 39065046637 succeeded;
+  this is not target-host or future UI-revision evidence.
+- [x] Reconcile remote baseline: externally merged PR #4 placed equivalent baseline
+  content on main at 1fe33bd5. This session performed no merge/reset/rebase; the
+  upcoming UI follow-up remains subject to separate review and no merge authority.
+- [x] Deliver calm inline first-note composer using real capture persistence.
+- [x] Separate known durable save from follow-up read/preparation failures; show only
+  returned retained content, truthful duplicate/quarantine/offline states.
+- [x] Verify find/reopen after reload, failure draft retention, account-switch fencing,
+  keyboard and 320px layout with independent browser checks.
+- [x] Run changed-frontend typecheck/lint/build and browser regression: **41/41 Chromium
+  journeys**, including source-attribution and delayed-removal/correction regressions.
+- [x] Publish reviewed feature branch and safely sync Desktop while retaining the
+  owner's personal note: source commit `92a69b2`, matching remote/Desktop SHA,
+  personal note SHA-256 unchanged; [draft PR #5](https://github.com/Rishflips/Bi-Brain/pull/5)
+  opened, not merged. A documentation-only checkpoint follows this source commit.
+- [x] Verify the final source-frozen serial full regression using explicit filesystem
+  module cache: **1,450 passed / 8 platform skips, zero failed, 132 files**, 637.12 s;
+  source hashes unchanged. Whole-tree typecheck/lint/build passed separately.
+- [x] Repair reproduced reasoning/decision readiness clock sampling without relaxing
+  future-heartbeat/TTL rules, actual job-lease checks or monetary authority. Deterministic
+  regressions and original actual-process heartbeat assertions passed in the full gate.
+- [ ] Verify the exact published follow-up commit in Linux/container CI and record its
+  run URL; local green and historical baseline CI are not that result.
+
+See BUILD_STATE.md for actual commands and results. This slice improves the existing
+capture/search experience; it does not newly implement those underlying services or
+close managed subscriptions, live-provider, hosted operations or legal gates.
+
 - [x] Paste text and import text/Markdown within limits.
 - [x] Save original source and enqueue derivation transactionally.
 - [x] Implement truthful extractive preview without provider credentials.

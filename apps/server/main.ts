@@ -49,7 +49,7 @@ if (config.mode === "managed") {
     const c = managedCapability({
       control: runtime.control,
       root: runtime.root,
-      now: runtime.control.clock(),
+      clock: runtime.control.clock,
       optIn: managedAllowPaidFlag(),
     });
     return { available: c.available, reason: c.reason };
@@ -58,7 +58,7 @@ if (config.mode === "managed") {
     const c = managedDecisionCapability({
       control: runtime.control,
       root: runtime.root,
-      now: runtime.control.clock(),
+      clock: runtime.control.clock,
       optIn: managedAllowPaidFlag(),
     });
     return { available: c.available, reason: c.reason };

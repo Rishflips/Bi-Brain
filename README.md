@@ -10,6 +10,13 @@ The user experience is **Save → Continue → Get ahead**. The intended harness
 
 This repository contains a working single-owner local application with persistent capture, source revisions, source-linked previews, reviewed preparation, export/import, and scoped stdio agent access. An in-progress managed foundation adds isolated accounts, standards-based sign-in and extractive workers, verified locally with a signed synthetic issuer and browser/process tests; it is not a public hosted release. See [managed operator notes](docs/MANAGED_RUN.md). Live model quality, native-client binding, billing and human release gates remain open. See [BUILD_STATE.md](BUILD_STATE.md) for verified results and limitations.
 
+The latest local product improvement puts capture directly on Today: save a note,
+see its actual retained original and source-linked preview, then find and reopen it
+in Your brain. Save acknowledgement is independent of preparation; failed reads
+remain recoverable, failed writes retain the draft, and corrections/removal/account
+changes invalidate the saved receipt. This is functional refinement of the existing
+storage/retrieval workflow, not a new live AI or subscription release.
+
 Run with Node 24.19+ in the 24 LTS line: `npm ci`, `npm run db:migrate`, `npm run build`, then `npm start`. Open http://127.0.0.1:4317 and pair using the installation code in `data/owner-secret`. No account or provider key is required. The API and separate worker run together; data lives in `data/brain.sqlite`. See [local operation instructions](docs/LOCAL_RUN.md) for development, optional provider setup, scoped agent configuration, and backup/restore.
 
 The original build specification starts with [START_HERE.md](START_HERE.md). The implementation handoff is [prompts/BUILD_WITH_SOL.md](prompts/BUILD_WITH_SOL.md). Official repository: [Rishflips/Bi-Brain](https://github.com/Rishflips/Bi-Brain).

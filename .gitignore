@@ -3,6 +3,7 @@ node_modules/
 data/
 dist/
 playwright-report/
+.playwright-mcp/
 test-results/
 .env
 *.log

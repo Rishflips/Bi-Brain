@@ -689,7 +689,7 @@ it(
         headers: { Cookie: cookie, "x-brain-csrf": on.csrf, Origin: ORIGIN },
         body: JSON.stringify({ project_id: "inbox", title: "longio", body: `${MARKER} longio` }),
       });
-      expect(capture.status).toBe(201);
+      expect(capture.status, capture.body).toBe(201);
       const sourceId = parseJson(capture).source_id as string;
       const jobId = parseJson(capture).job?.id;
       expect(typeof jobId).toBe("string");
@@ -726,11 +726,14 @@ it(
         const beat = readWorkerReadiness(root, new Date()).readiness?.heartbeat_at;
         if (beat) beats.add(beat);
         const meta = parseJson(await requestOnce(port, { path: "/api/v1/runtime" }));
-        expect(meta.connected_processing_available).toBe(true);
+        expect(
+          meta.connected_processing_available,
+          `runtime meta: ${JSON.stringify(meta)}`,
+        ).toBe(true);
         const spend = parseJson(
           await requestOnce(port, { path: "/api/v1/today", headers: { Cookie: cookie } }),
         ).status.spend;
-        expect(spend).toMatchObject({
+        expect(spend, `spend status: ${JSON.stringify(spend)}`).toMatchObject({
           stored_consent_active: true,
           consent_effective: true,
           capability_ready: true,

@@ -154,3 +154,28 @@ it("suspension still denies withdrawal and raw-consent reads on an already pinne
     expect(() => f.brain.backgroundConsent(f.owner)).toThrow();
   } finally { await f.close(); }
 });
+
+it("samples the trusted capability clock after reading the lease, never as a false future heartbeat", async () => {
+  const f = await fixture();
+  try {
+    const base = Date.parse("2026-10-16T09:00:00.000Z");
+    const sampled = new Date(base);
+    // An independent worker refreshes its lease AFTER `sampled` is captured but
+    // BEFORE the capability probe reads it during the same request.
+    writeWorkerReadiness(f.root, {
+      schema: 1, worker_id: randomUUID(), epoch: f.profile.epoch, root_nonce: f.profile.root_nonce,
+      activation_fingerprint: f.profile.fingerprint, config_digest: f.profile.config_digest,
+      provider: f.profile.provider, model: f.profile.model, price_version: f.profile.price_version, endpoint_class: f.profile.endpoint_class,
+      booted_at: new Date(base).toISOString(), heartbeat_at: new Date(base + 50).toISOString(), expires_at: new Date(base + 15_050).toISOString(),
+    });
+    // Production supplies the trusted clock: it is sampled after the lease read, so
+    // the fresh lease is accepted and a real hold still keeps admission blocked.
+    const live = managedCapability({ control: f.runtime.control, root: f.root, now: sampled, clock: () => new Date(base + 50), optIn: true });
+    expect(live.available, JSON.stringify(live)).toBe(true);
+    // A fixed instant keeps the strict `heartbeat <= now` rule: the same observed
+    // future heartbeat is still refused. No skew grace was introduced.
+    const strict = managedCapability({ control: f.runtime.control, root: f.root, now: sampled, optIn: true });
+    expect(strict.available, JSON.stringify(strict)).toBe(false);
+    expect(strict.reason).toBe("worker_stale");
+  } finally { await f.close(); }
+});

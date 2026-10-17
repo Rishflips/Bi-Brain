@@ -2,7 +2,133 @@
 
 Updated: 2026-10-18
 
-## Current checkpoint — B0 standalone writer accepted locally; admission integration next
+## Current checkpoint — functional follow-up published; exact-revision CI pending
+
+The owner approved the bounded inline first-note composer → durable saved result →
+find/reopen in Your brain flow, then prioritized calm functionality over visual
+redesign. DeepSeek Flash implemented the source; controller/parent review and
+independent browser tests reproduced and closed material defects. **The changed
+frontend passed typecheck, lint, build and all 41 Chromium journeys**, including
+17 added journeys and the 24 preexisting regressions. This improves the existing
+capture/search services; those underlying capabilities are not newly implemented.
+
+The source now confirms durable capture before follow-up reads, displays only the
+retained safe original, filters preview items by every exact source/version citation,
+supports Save another and find/reopen after reload, and fences stale reads across
+correction/removal/account changes. Failure drafts remain editable; oversized input
+is rejected explicitly before capture. 320px light/dark, long evidence, keyboard,
+quarantine, committed-save read failure, delayed-purge read and committed-correction
+refresh-failure paths have behavioral evidence. Synthetic stored model fixtures are
+not live model output; the separate preview test runs the actual unpaid worker.
+
+Final frontend command: `npm run test:e2e -- --workers=1 --output=test-results/visible-product-closure-parent --reporter=line`
+→ **41/41 passed, 2.0 minutes**. Parent inspected the long-original dark mobile
+screenshot and restored only the two baseline images overwritten by browser tests.
+`git diff --check` passed (line-ending notices only). The authenticated local preview
+opened at **http://127.0.0.1:4318/#today**, with no pairing/session secret printed.
+The controller's subsequent HTTP check returned `previewLive:true` and
+`servesCurrentBuild:true` by comparing the served index with `dist/web/index.html`.
+
+**Final parent regression passed:** `npm test -- --maxWorkers=1 --fsModuleCache
+--fsModuleCachePath=node_modules/.cache/product-release-parent --reporter=default
+--reporter=json --outputFile=test-results/vitest/product-release-settled-parent.json`
+reported **1,450 passed / 8 explicit platform skips, zero failed across 132 files**,
+637.12 s, start 02:22:46. Parent read `success:true` and verified all 24 frozen
+source/test/config hashes unchanged. Short process-local TEMP/TMP and the explicit
+module cache avoid the observed temporary-transform loss; no assertions were disabled.
+
+The reproduced readiness race is repaired in both capability readers and the direct
+decision send guard: a trusted clock is sampled after reading the lease. Fixed-time
+callers, future-heartbeat/expiry/TTL denial, actual job-lease checks and monetary
+authority remain strict. Independent source review found no material regression;
+parent separately verified 19 readiness/consent/process checks with one platform skip,
+including the original long-call heartbeat assertion. Fresh whole-tree typecheck,
+lint and build passed before the settled regression.
+
+The failed earlier run is retained below, not counted as passing. Functional source
+was committed/pushed as **`92a69b2684b6d852b16e7be6214f629f0245655c`** and Desktop
+`review/latest-build` fast-forwarded to the same SHA. Parent checked the remote SHA
+and the personal licensing note's unchanged SHA-256. Follow-up
+[draft PR #5](https://github.com/Rishflips/Bi-Brain/pull/5) is open; nothing was merged.
+This documentation-only delivery checkpoint follows that source commit.
+
+The exact final PR-head Linux/container result must be read from PR #5's checks;
+the first source-revision run is [39069371589](https://github.com/Rishflips/Bi-Brain/actions/runs/39069371589).
+An automated completion watcher is running; no CI success is claimed before its
+terminal result. This documentation checkpoint does not change the verified source.
+Payments, runtime providers and public deployment stay off; no merge of this
+follow-up is authorized.
+
+**Latest parent continuation:** the UI's **41/41** browser acceptance is retained.
+Parent independently verified the readiness repair with **19 passed / 1 explicit
+skip**, including the actual long-I/O process case. The final decision-clock
+direct-caller closure is still active; the settled full regression must wait for
+its source freeze. No commit or duplicate full test run is authorized yet.
+
+The earlier preview supervisor became unavailable (`Shell.NotFoundError` and port
+4318 unavailable). Parent restarted the **same existing**
+`data/local-preview/brain.sqlite` dataset under supervisor
+`sh_14ba0c897001t3r1pzOZiZqGhY`, without `.env`, with provider/billing variables
+stripped and paid processing off. Parent owns the fresh health check; the earlier
+`previewLive:true` check below is historical evidence, not proof this restart is
+healthy. No preview data or pairing credential was replaced or printed here.
+
+**Settled release gate now running — source frozen:** the decision-readiness
+closure executor has stopped editing. Parent independently reran current-tree
+`npm run typecheck`, `npm run lint`, and `npm run build`: **all passed**. The
+assets remain `index-Dh_t__5W.js` and `index-CLNTm5Lr.css`. Parent confirmed the
+restarted preview is healthy and serves the exact current index bytes (SHA-256
+`74846533cbff6de9a7c49eab3c6193c51073e26376a1fa56387abffce45d915b`);
+the earlier PowerShell string mismatch was encoding-only.
+
+Parent launched the settled full suite with approved `TEMP`/`TMP` and persistent
+filesystem module cache:
+`npm test -- --maxWorkers=1 --fsModuleCache --fsModuleCachePath=node_modules/.cache/product-release-parent --reporter=default --reporter=json --outputFile=test-results/vitest/product-release-settled-parent.json`
+(background `sh_14ba36ff7001jkcd4uTUXM3zL2`). **Its result is pending**, not green.
+No source edits, builds, browser journeys or duplicate Vitest runs may occur during
+this gate. Parent owns completion/result and final clock review. Publication remains
+on hold; the explicit staging manifest includes README and excludes generated
+screenshots, runtime data and tool artifacts.
+
+### Verified handoff baseline (b5610f4)
+
+**Remote reconciliation:** PR [#4](https://github.com/Rishflips/Bi-Brain/pull/4)
+was externally merged on 2026-10-17 at 20:19:22Z. `origin/main` is now
+`1fe33bd530e924deb4de81b470b8416ccfbb2fd8`; the content diff from baseline
+`b5610f4` is empty (merge commits only). This session performed no merge, reset
+or rebase. The visible follow-up remains uncommitted/unmerged pending verification;
+the earlier not-merged descriptions below are historical, not current remote state.
+
+Parent read `test-results/prepublication-full-parent.json`: **success true,
+1,447 passed, 8 skipped, zero failed across 132 files**. This completed baseline
+supersedes the old running-full-suite status below; it is not verification of
+future UI edits. GitHub Actions [39065046637](https://github.com/Rishflips/Bi-Brain/actions/runs/39065046637)
+at exact commit `b5610f411e02584842d2e655a49bf28a781f00f3` completed successfully,
+including Ubuntu install/audit/static checks/full tests/build/offline evaluations,
+24 Chromium journeys, Docker build/container smoke, Compose and Caddy validation.
+This closes that revision's Linux/container gate, not target-host release.
+
+Fresh parent checks during visible-slice implementation:
+
+- The first consolidated browser run (`test-results/visible-product-final-parent`) finished **38 passed / 2 failed across 40 journeys**. The new long-unbroken-passage receipt overflow was a real CSS defect; source wrapping was fixed rather than hiding content. The existing context-correction journey hit the unchanged pairing throttle; its trace confirms **HTTP 429**. Added shared-server login cases were moved to isolated real managed fixtures, with actual unpaid `Worker.tick()` for extractive-preview verification. No production authentication/CSRF/rate limit was relaxed.
+- A separate correction/read-failure test reproduced a known committed correction leaving the earlier receipt body after `/today` failed (`test-results/visible-correction-refresh-red`, **1 expected failure**). Receipt invalidation now occurs immediately after the edit response, before workspace refresh, and incomplete-erasure responses also clear retained receipt content. Explicit input-limit validation had its own missing-helper RED (`test-results/visible-limit-red`).
+- Final frontend closure: fresh `npm run typecheck`, `npm run lint`, `npm run build` **passed**. Full Chromium run in `test-results/visible-product-closure-parent` completed **41/41 passed**. Source changes remain uncommitted pending parent review and the separate backend release-regression repair.
+- The parent's new `npm test -- --maxWorkers=2 --reporter=default --reporter=json --outputFile=test-results/product-release-full-parent.json` **failed**: 123 failed files / 9 passed, with 122 import failures involving missing Vitest transform-cache files under a shared temporary `ssr` path, and one process-readiness assertion failure (`managed-activation-process.test.ts:729`). Parent owns cache-loss diagnosis and isolated readiness follow-up. This is not a passing release regression and is not being hidden by the historical baseline. No production guard/assertion is changed to force green.
+- Following executor handoff and the local Unicode-aware 100,000-character / 1 MiB input-limit closure, parent ran `npm run typecheck`, `npm run lint`, and `npm run build`: **all passed** before the first consolidated browser result above. The parent's separate full Vitest result is reported above; no duplicate full suite was launched here.
+- `npm run test:e2e -- tests/e2e/first-note-layout-review.spec.ts --workers=1 --output=test-results/visible-layout-first-parent --reporter=line`: **2/2 passed**, actual keyboard capture and retained Unicode/multiline originals at 320px in light and dark appearance. Parent inspected synthetic-only screenshots `test-results/visible-inline-light-320.png` and `visible-inline-dark-320.png`; no horizontal overflow. This is supplementary first-draft evidence, not lifecycle acceptance.
+- First-draft `npm run test:e2e -- tests/e2e/capture-release-review.spec.ts tests/e2e/capture-boundaries-review.spec.ts --workers=1 --output=test-results/visible-capture-first-parent --reporter=line`: **4 passed / 3 failed**. Known durable save after read failure, quarantine no-echo, Unicode reload and account-switch fencing passed. Save another, stale receipt after purge, and returning-user composer failed; these require repair, not acceptance. Preview attribution/provider-copy review also remains open.
+- `npm run test:e2e -- tests/e2e/capture-boundaries-review.spec.ts --workers=1 --output=test-results/visible-boundaries-red --reporter=line`: **2 failed as expected against baseline assets**, both at the missing inline `main textarea` visibility assertion. This witnesses the missing-composer RED; it does not yet exercise the later save/read/quarantine assertions.
+- `npm run typecheck` and `npm run lint`: passed before UI source changes; final changed-tree gates remain required.
+- `npx vitest run tests/integration/brain.test.ts tests/integration/safety.test.ts tests/integration/restart.test.ts tests/integration/managed-http-login.test.ts tests/integration/managed-review.test.ts tests/integration/runtime-config-review.test.ts --maxWorkers=1 --reporter=default --reporter=json --outputFile=test-results/visible-core-parent.json`: **38 passed, 6 files**.
+- `npx vitest run tests/integration/deployment.test.ts tests/integration/operations.test.ts tests/integration/runtime-config.test.ts tests/integration/managed-login.test.ts --maxWorkers=1 --reporter=default --reporter=json --outputFile=test-results/visible-release-parent.json`: **30 passed, 4 files**.
+- `npm run brain-eval`: **4/4 synthetic offline evaluations**.
+- `npm audit --audit-level=high`: **zero vulnerabilities**.
+
+The integration checks include real API/worker restart, retained original and preview,
+managed synthetic-issuer login/session isolation, backup/restore and deployment
+guards. They do not establish live-provider quality or public hosted identity.
+
+## Retained checkpoint — B0 standalone writer / admission history
 
 ### Repository delivery / local preview — current owner request
 
@@ -12,9 +138,9 @@ passed **488 checks / 6 platform skips, 36 files**, including billing and both o
 worker activation-guard suites (`test-results/billing-precommit-parent.json`). Separate
 typecheck/lint/build passed; fresh browser run passed **24/24**; offline evaluations
 **4/4**, audit zero vulnerabilities. All implementation executors are stopped and
-the source is frozen. A fresh full regression is running in background
-`sh_14b70b5e3001LOpelqA7ITNz5q`, report `test-results/prepublication-full-parent.json`;
-do not represent it as passing before completion.
+the source was frozen. The fresh full regression subsequently completed:
+`test-results/prepublication-full-parent.json` records **1,447 passed / 8 skipped,
+132 files, zero failed, success true**. See the current checkpoint above.
 
 The isolated local supervisor is running on **http://127.0.0.1:4318**, with
 `data/local-preview/brain.sqlite` and its private `owner-secret`, no `.env` load and

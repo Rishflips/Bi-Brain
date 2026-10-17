@@ -59,7 +59,7 @@ if (config.mode === "managed") {
       const c = managedCapability({
         control: runtime.control,
         root: runtime.root,
-        now: runtime.control.clock(),
+        clock: runtime.control.clock,
         optIn,
       });
       return { ready: c.available, reason: c.reason };
@@ -68,7 +68,7 @@ if (config.mode === "managed") {
       const c = managedDecisionCapability({
         control: runtime.control,
         root: runtime.root,
-        now: runtime.control.clock(),
+        clock: runtime.control.clock,
         optIn,
       });
       return { ready: c.available, reason: c.reason };
@@ -202,7 +202,7 @@ if (config.mode === "managed") {
   // `execute` (a post-mark failure retains the hold). It never re-checks during the
   // await, so an already-running call still settles a known charge.
   const ownReadinessFresh = () => {
-    const r = readWorkerReadiness(runtime.root, control.clock());
+    const r = readWorkerReadiness(runtime.root, control.clock);
     // Reuse the pure capability comparison so EVERY frozen field is checked
     // (FP/epoch/root_nonce/config/provider/model/price/endpoint) against the
     // installed profile — not just our own worker id on a tampered wrong-FP lease.
@@ -247,7 +247,7 @@ if (config.mode === "managed") {
   // immediately before `execute`. It never re-checks during the await, so an
   // already-running call still settles a known charge.
   const ownDecisionReadinessFresh = () => {
-    const r = readDecisionReadiness(runtime.root, control.clock());
+    const r = readDecisionReadiness(runtime.root, control.clock);
     const matches =
       !!installedDecision &&
       decisionServerCapability({

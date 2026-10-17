@@ -657,3 +657,67 @@ code {
     transition: none !important;
   }
 }
+.first-note {
+  border-left: 3px solid var(--green);
+  padding: 30px 32px;
+  max-width: 720px;
+}
+.first-note h2 {
+  font-size: 25px;
+  letter-spacing: -0.4px;
+}
+.first-note > p {
+  max-width: 620px;
+}
+.first-note form {
+  margin-top: 6px;
+}
+.first-note .actions {
+  margin-top: 14px;
+}
+.first-note .muted {
+  margin-bottom: 0;
+}
+.saved-note {
+  border-left: 3px solid var(--green);
+  padding: 28px 30px;
+  max-width: 760px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.saved-note h3 {
+  margin-top: 18px;
+}
+.saved-note .status.saved {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 15px;
+  font-weight: 550;
+  margin: 0 0 4px;
+}
+.saved-note .tick {
+  color: var(--green);
+  font-weight: 700;
+}
+.saved-note details {
+  margin-top: 6px;
+}
+.saved-note pre {
+  max-height: 260px;
+}
+.saved-note .pill {
+  margin-bottom: 6px;
+}
+.saved-note .evidence {
+  margin-bottom: 10px;
+}
+@media (max-width: 560px) {
+  .first-note,
+  .saved-note {
+    padding: 22px 20px;
+  }
+  .first-note h2 {
+    font-size: 22px;
+  }
+}
