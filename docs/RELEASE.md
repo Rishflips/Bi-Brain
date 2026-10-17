@@ -15,6 +15,59 @@ ChatGPT Sites is canceled as a deployment path. Use [SELF_HOSTING.md](SELF_HOSTI
 
 No owner host has been deployed. The previous private Sites probe was permanently deleted following the owner's explicit request and final confirmation on 2026-10-07. The owner list, connector project lookup and former URL verify removal/offline status. GitHub and local application data remain intact.
 
+## Current baseline checkpoint — 2026-10-18 (read this before the historical sections)
+
+Baseline commit **`b5610f411e02584842d2e655a49bf28a781f00f3`** on branch
+`feat/system-one-stage-accounting` was verified clean and **pushed** before the
+current UI work began. A subsequent remote check found
+[PR #4](https://github.com/Rishflips/Bi-Brain/pull/4) already merged externally at
+`2026-10-17T20:19:22Z`; `origin/main` is now
+`1fe33bd530e924deb4de81b470b8416ccfbb2fd8`, with the same tree as `b5610f4`.
+The agent performed no merge. Desktop was verified at `b5610f4` before the current
+UI work. Two independent passes at that baseline SHA:
+
+| Evidence | Result |
+| --- | --- |
+| Windows full regression `test-results/prepublication-full-parent.json` | `success:true` — **1,447 passed / 8 skipped / 0 failed across 132 files** |
+| GitHub Actions [run 39065046637](https://github.com/Rishflips/Bi-Brain/actions/runs/39065046637) | **success** at `headSha b5610f411e02584842d2e655a49bf28a781f00f3` |
+
+The Linux job (Ubuntu, Node 24.19) ran `npm ci`, audit, typecheck, lint, the full
+132-file suite, build, 4 offline evaluations, 24 Chromium journeys, Docker build,
+non-root container restart/persistence/auth/worker/Git-backup smoke, and Compose and
+Caddy configuration validation. The Docker CLI is absent on the local Windows host,
+so this packaging proof is Linux-CI only.
+
+**This closes the baseline "current-branch Linux/container CI missing" gap. It does
+not verify** the in-progress UI revision in this worktree, chosen target-host
+TLS/DNS/reboot/monitoring/recovery, live model quality, real identity/payment, or a
+hosted release. The functional follow-up now has **41/41 local Chromium journeys**,
+typecheck/lint/build evidence, covering inline capture through real persistence,
+truthful source-linked receipt, error recovery, deletion, account switching and
+find/reopen. These are improvements to existing services, not live intelligence or
+a commercial launch. The owner prioritized reliability over a flashy redesign.
+
+Final local whole-tree verification passed after the reproduced readiness timing repair.
+Parent independently passed **19 readiness/consent/process checks / 1 platform skip**,
+including the unchanged real long-call heartbeat assertion. The decision send-time
+callsite is also repaired, with strict lease/monetary checks unchanged and independent
+source review finding no material security regression. Fresh whole-tree typecheck,
+lint and build passed. The settled full run used one worker and Vitest's persistent
+module cache: **1,450 passed / 8 platform skips / zero failed, 132 files**, 637.12 s;
+parent read `success:true` and verified the frozen source/test/config hashes unchanged.
+Report: `test-results/vitest/product-release-settled-parent.json`. Publication is now
+proceeding under explicit user authorization; exact-revision Linux/container CI is
+pending, not inferred from this local result.
+The earlier full release run
+failed (missing Vitest temporary transform files plus the actual readiness failure)
+and remains retained, not counted as passing. See BUILD_STATE for the exact reports.
+Payments and paid providers stay off; B1 (Paddle) is DRAFT/UNAPPROVED; B0 operational
+enrollment, key recovery and Windows ACL verification remain open. See
+[PRODUCTION_READINESS_2026-10-18.md](PRODUCTION_READINESS_2026-10-18.md) for the
+still-blocked launch gates.
+
+Historical sections below retain their original scope and dates; where an older
+section says the branch was uncommitted, the pushed baseline above supersedes it.
+
 ## Release levels
 
 The 2026-10-16 merged-main Linux/container checkpoint passed 479 tests, 17
@@ -55,10 +108,11 @@ evaluations**, plus typecheck/lint/build and dependency audit. Separate default-
 decision configuration, guarded accounting and withdrawable account consent are
 implemented. No production decision consumer or readiness writer is installed by
 S1. The separate S2 worker is now locally accepted with synthetic transport as
-recorded below, not live-provider quality evidence. This branch is uncommitted;
-no new Linux/container CI or public deployment is claimed. Billing, capped live
-quality/cost, native clients, target-host drills and owner release/legal decisions
-remain gates, not outcomes implied by passing tests.
+recorded below, not live-provider quality evidence. *(Superseded 2026-10-18: this
+branch is now committed and pushed at `b5610f4` with the Linux/container CI run
+recorded in the current baseline checkpoint above; it is still not a public
+deployment. PR #4's later external merge is recorded above. Billing, capped live quality/cost, native
+clients, target-host drills and owner release/legal decisions remain gates.)*
 
 ### Advisory worker S2 — all three tasks accepted locally, not deployed
 

@@ -90,14 +90,22 @@ export function writeDecisionReadiness(
   return value;
 }
 
+/** A fixed instant (deterministic callers) or a trusted clock sampled at read time. */
+export type DecisionReadinessInstant = Date | (() => Date);
+
 /**
  * Readonly. A missing/malformed/linked/oversized file is `absent`/`stale`, never a
  * throw. A lease is `ready` only when `booted_at <= heartbeat_at <= now < expires_at`,
  * `0 < expires_at - heartbeat_at <= 15s`, and `expires_at <= now + 15s`.
+ *
+ * `now` may be a trusted clock function. It is then invoked AFTER the lease has
+ * been read, so a heartbeat an independent decision worker publishes during the
+ * same request can never look like a future heartbeat. The strict `heartbeat <=
+ * now` rule and the TTL bounds are unchanged; only the sampling instant moves.
  */
 export function readDecisionReadiness(
   root: string,
-  now: Date,
+  now: DecisionReadinessInstant,
 ): { state: "ready" | "stale" | "absent"; readiness?: DecisionWorkerReadiness } {
   try {
     assertNonLinkedPathChain(root);
@@ -126,7 +134,8 @@ export function readDecisionReadiness(
   const booted = Date.parse(r.booted_at);
   const heartbeat = Date.parse(r.heartbeat_at);
   const expires = Date.parse(r.expires_at);
-  const t = now.getTime();
+  // Sample the trusted clock only now, after the lease content was read.
+  const t = (typeof now === "function" ? now() : now).getTime();
   const ttl = expires - heartbeat;
   const ok =
     booted <= heartbeat &&

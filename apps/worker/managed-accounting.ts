@@ -308,6 +308,7 @@ export class ManagedDispatchAccounting implements DispatchAccounting {
       centralCallId,
       tenantCallId,
       now: this.clock(),
+      clock: this.clock,
       spec: {
         provider: spec.provider,
         model: spec.model,

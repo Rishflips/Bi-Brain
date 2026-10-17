@@ -313,6 +313,35 @@ it("denies absent, stale and foreign decision readiness", () => {
   }
 });
 
+it("samples the trusted decision-readiness clock after the snapshot, never as a false future heartbeat", () => {
+  const f = decisionFixture();
+  try {
+    const phase = { phase: "before_reserve" as const, centralCallId: null, tenantCallId: null };
+    const base = Date.parse("2026-10-17T12:00:00.000Z");
+    // The independent decision worker refreshes its lease AFTER the caller sampled
+    // its eager wall clock but BEFORE the guard reads readiness.
+    writeDecisionReadiness(
+      f.root,
+      {
+        schema: 1, worker_id: WORKER_ID, stage_scope: "decision",
+        provider_family: f.profile.provider, endpoint_digest: f.profile.endpoint_digest,
+        epoch: f.profile.epoch, root_nonce: f.profile.root_nonce,
+        activation_fingerprint: f.profile.fingerprint, config_digest: f.profile.config_digest,
+        model: f.profile.model, price_version: f.profile.price_version,
+        booted_at: new Date(base).toISOString(), heartbeat_at: new Date(base + 50).toISOString(), expires_at: new Date(base + 15_050).toISOString(),
+      },
+      CLOCK,
+    );
+    // Production supplies the trusted clock: sampled at the readiness read, so the
+    // fresh lease derives a guard. The fixed instant keeps the strict rule and denies.
+    const guard = readDecisionActivationGuardContext({ ...f.base, clock: () => new Date(base + 50), ...phase });
+    expect(guard.stage).toBe("decision");
+    expect(() => readDecisionActivationGuardContext({ ...f.base, ...phase })).toThrow();
+  } finally {
+    f.runtime.close();
+  }
+});
+
 it("denies opt-out, wrong-phase call ids and an expired lease", () => {
   const f = decisionFixture();
   try {

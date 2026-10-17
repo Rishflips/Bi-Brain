@@ -9,6 +9,11 @@ import type {
 import sample from "../../fixtures/beta-launch.json" with { type: "json" };
 import { EvidenceList, ProposalCard, CurrentKnowledge } from "./components.tsx";
 import {
+  FirstNoteComposer,
+  FirstNoteSaved,
+  type FirstNote,
+} from "./first-note.tsx";
+import {
   SignIn,
   ConnectionUnavailable,
   type RuntimeMode,
@@ -207,8 +212,17 @@ function App() {
     [expiration, setExpiration] = useState(""),
     [preview, setPreview] = useState<any>(null),
     [snooze, setSnooze] = useState(""),
-    [confirmation, setConfirmation] = useState("");
+    [confirmation, setConfirmation] = useState(""),
+    [firstNote, setFirstNote] = useState<FirstNote | null>(null);
   const preferencesDirty = useRef(false);
+  /**
+   * Monotonic receipt-read sequence. Every read captures the current value and
+   * may only apply its result if it is still the latest read AND the receipt has
+   * not been mutated. `remove`/`edit`/new-capture/account-change advance it, so a
+   * delayed pre-mutation GET can never restore old text or resurrect a removed
+   * original.
+   */
+  const firstNoteReadSeq = useRef(0);
   const [consentOverride, setConsentOverride] = useState<boolean | null>(null);
   // An INDEPENDENT override for the separate decision-stage consent. It is never
   // derived from the master override; an omitted field preserves the RAW stored
@@ -323,6 +337,7 @@ function App() {
     setIdentityDisclosure(null);
     setDialog(null);
     setConfirmation("");
+    setFirstNote(null);
     setPreview(null);
     setAdapterSelection(null);
     setAdapterPreview(null);
@@ -356,6 +371,7 @@ function App() {
     setClaimQuote("");
     setBusy(false);
     preferencesDirty.current = false;
+    firstNoteReadSeq.current += 1;
     setConsentOverride(null);
     setDecisionConsentOverride(null);
   }, []);
@@ -673,6 +689,182 @@ function App() {
     setVisibility("project");
     setSeparate(false);
   }
+  /**
+   * Applies a fresh read of the receipt's source. An explicit NOT_FOUND (404) or
+   * an inactive/withdrawn state removes the retained body immediately; any other
+   * failure keeps the known saved acknowledgement but is marked as a stale view,
+   * so the last loaded text is never presented as the current original.
+   */
+  function applyFirstNoteRead(
+    id: string,
+    loaded: Source | null,
+    failure?: unknown,
+  ) {
+    setFirstNote((current) => {
+      if (!current || current.sourceId !== id) return current;
+      // A terminal removal is never undone by a late read.
+      if (current.removed) return current;
+      if (loaded && loaded.state === "active")
+        return { ...current, source: loaded, sourceError: null, removed: false };
+      // A non-active state is a real removal.
+      if (loaded)
+        return { ...current, source: null, sourceError: null, removed: true };
+      const gone =
+        failure instanceof ApiError && failure.code === "NOT_FOUND";
+      // An explicit access refusal is treated as removal: the retained body must
+      // never survive a FORBIDDEN/UNAUTHORIZED answer.
+      const denied =
+        failure instanceof ApiError &&
+        (failure.code === "FORBIDDEN" || failure.code === "UNAUTHORIZED");
+      if (gone || denied)
+        return { ...current, source: null, sourceError: null, removed: true };
+      return {
+        ...current,
+        sourceError:
+          failure instanceof Error
+            ? failure.message
+            : "That note could not be opened.",
+      };
+    });
+  }
+  async function loadFirstNoteSource(id: string, generation: number) {
+    const seq = ++firstNoteReadSeq.current;
+    try {
+      const loaded = await api<Source>(`/sources/${id}`);
+      if (generation !== authGeneration || seq !== firstNoteReadSeq.current)
+        return;
+      applyFirstNoteRead(id, loaded);
+    } catch (e) {
+      if (generation !== authGeneration || seq !== firstNoteReadSeq.current)
+        return;
+      applyFirstNoteRead(id, null, e);
+    }
+  }
+  /** Drops the retained body immediately after an edit/withdraw/delete. */
+  function removeFirstNote(id: string) {
+    // Invalidate every in-flight read before clearing the body.
+    firstNoteReadSeq.current += 1;
+    setFirstNote((current) =>
+      current && current.sourceId === id
+        ? { ...current, source: null, sourceError: null, removed: true }
+        : current,
+    );
+  }
+  /** Clears the retained body immediately after an edit, then reloads it. */
+  function resetFirstNoteBody(id: string) {
+    // An older read must not repopulate the pre-edit text.
+    firstNoteReadSeq.current += 1;
+    setFirstNote((current) =>
+      current && current.sourceId === id
+        ? { ...current, source: null, sourceError: null, removed: false }
+        : current,
+    );
+  }
+  async function saveFirstNote(draft: { body: string }) {
+    const generation = authGeneration;
+    const title =
+      draft.body.trim().split("\n")[0].slice(0, 80) || "Untitled note";
+    const saved = await api<{
+      source_id: string;
+      duplicate?: boolean;
+      quarantined?: boolean;
+      warning?: string;
+    }>("/sources", {
+      title,
+      body: draft.body,
+      project_id: "inbox",
+      visibility: "project",
+      separate: false,
+    });
+    if (generation !== authGeneration) return;
+    // A 201 response carries the real persisted `source_id`: acknowledge the
+    // durable save immediately, before any read or refresh can fail.
+    firstNoteReadSeq.current += 1;
+    setFirstNote({
+      sourceId: saved.source_id,
+      duplicate: !!saved.duplicate,
+      quarantined: !!saved.quarantined,
+      warning: saved.warning,
+      source: null,
+      sourceError: null,
+      removed: false,
+    });
+    void loadFirstNoteSource(saved.source_id, generation);
+    // A refresh failure (or a queued/failed worker) must never change the
+    // saved acknowledgement; the background poll retries on its own.
+    void refresh().catch(() => {});
+  }
+  function retryFirstNoteSource() {
+    if (!firstNote) return;
+    setFirstNote((current) =>
+      current ? { ...current, sourceError: null } : current,
+    );
+    void loadFirstNoteSource(firstNote.sourceId, authGeneration);
+  }
+  function findFirstNote() {
+    const loaded = firstNote?.source;
+    // Inline capture always writes to Inbox. Even when the source read failed,
+    // the known trusted scope is Inbox: clear any older project/search selection
+    // so the view is never an unrelated project or a stale query. The raw draft
+    // is never used as a fallback.
+    setScope(loaded ? loaded.project_id : "inbox");
+    setSearch(loaded ? loaded.title : "");
+    setQueryPage(0);
+    setNav("Your brain");
+  }
+  function openFirstNote() {
+    if (!firstNote?.source) return;
+    void openSource(firstNote.source.id);
+  }
+  /**
+   * Revalidates the receipt's original on every refresh (including another tab
+   * or a correction/withdrawal made elsewhere). It clears the retained body on a
+   * 404/inactive source and marks a transient failure as a stale view rather
+   * than claiming it is current.
+   */
+  useEffect(() => {
+    if (!paired || demo) return;
+    const id = firstNote?.sourceId;
+    if (!id || firstNote?.removed) return;
+    void loadFirstNoteSource(id, authGeneration);
+    // Revalidated whenever the fetched workspace changes; the note id/removal
+    // gate the effect so a removed original is never resurrected. The read
+    // sequence fence discards any late pre-mutation response.
+  }, [paired, demo, firstNote?.sourceId, firstNote?.removed, today]);
+  /**
+   * The preview must be genuinely source-bound. Items are kept only when ALL of
+   * their evidence points at this exact source id and version, so a project-wide
+   * brief that cites other notes can never have its clauses shown as this note's
+   * preview. A stale (non-current) brief is never shown.
+   */
+  const firstNoteBrief =
+    firstNote?.source != null
+      ? (today.briefs.find(
+          (b: Entity) =>
+            b.project_id === firstNote.source!.project_id &&
+            b.data.status === "current",
+        ) ?? null)
+      : null;
+  const firstNotePreviewItems =
+    firstNote?.source && !firstNote.sourceError && !firstNote.removed
+      ? (firstNoteBrief?.data.items ?? []).filter((item: any) => {
+          const evidence = item.evidence ?? [];
+          // Keep the item ONLY when all of its citations are this exact saved
+          // source/version. A mixed-source clause is suppressed rather than
+          // stripped of its inconvenient citations.
+          return (
+            evidence.length > 0 &&
+            evidence.every(
+              (e: any) =>
+                e.source_id === firstNote!.source!.id &&
+                e.source_version === firstNote!.source!.version,
+            )
+          );
+        })
+      : [];
+  const firstNotePreviewMode = firstNotePreviewItems.length
+    ? (firstNoteBrief?.data.mode ?? null)
+    : null;
   async function openSource(id: string) {
     await act(async () => {
       setSource(await api(`/sources/${id}`));
@@ -862,63 +1054,83 @@ function App() {
                   ? "Your saved work is ready when you are."
                   : "Start with something you’re working on. A useful first step, before connecting anything."}
               </p>
-              {!notes.length ? (
-                <article className="capture-entry">
-                  <span className="small-mark">↗</span>
-                  <h2>Keep the context. Continue the work.</h2>
-                  <p>
-                    Paste a conversation or import a text file. Your original
-                    stays intact, with a source-linked preview alongside it.
-                  </p>
-                  <button className="primary" onClick={saveDialog}>
-                    Save to my brain
-                  </button>
-                  <button onClick={() => setDemo(true)}>Try an example</button>
-                  <p className="muted">
-                    Local extractive preview · no content sent to a provider
-                  </p>
-                </article>
-              ) : ready.length ? (
-                <>
-                  {today.pings?.some(
-                    (ping: Entity) => ping.data.proposal_id === ready[0].id,
-                  ) ? (
-                    <p className="status">
-                      One prepared step from a chosen intention is ready to
-                      review.
+              {firstNote ? (
+                <FirstNoteSaved
+                  note={firstNote}
+                  projectName={projectName}
+                  previewMode={firstNotePreviewMode}
+                  previewItems={firstNotePreviewItems}
+                  workerOnline={!!today.status.worker_online}
+                  onRetryOpen={retryFirstNoteSource}
+                  onFind={findFirstNote}
+                  onOpen={openFirstNote}
+                  onOpenEvidence={(id) => void openSource(id)}
+                  onSaveAnother={() => setFirstNote(null)}
+                />
+              ) : !notes.length ? (
+                <FirstNoteComposer
+                  providerEnabled={!!prefs?.provider_enabled}
+                  onSave={saveFirstNote}
+                  onTryExample={() => setDemo(true)}
+                />
+              ) : null}
+              {notes.length ? (
+                ready.length ? (
+                  <>
+                    {today.pings?.some(
+                      (ping: Entity) => ping.data.proposal_id === ready[0].id,
+                    ) ? (
+                      <p className="status">
+                        One prepared step from a chosen intention is ready to
+                        review.
+                      </p>
+                    ) : null}
+                    <ProposalCard
+                      item={ready[0]}
+                      project={projectName(ready[0].project_id)}
+                      onReview={reviewProposal}
+                      onSnooze={snoozeProposal}
+                    />
+                    {ready.length > 1 ? (
+                      <details>
+                        <summary>
+                          More prepared work ({ready.length - 1})
+                        </summary>
+                        {ready.slice(1, 3).map((p: Entity) => (
+                          <ProposalCard
+                            key={p.id}
+                            item={p}
+                            project={projectName(p.project_id)}
+                            onReview={reviewProposal}
+                            onSnooze={snoozeProposal}
+                          />
+                        ))}
+                      </details>
+                    ) : null}
+                  </>
+                ) : (
+                  <article className="quiet">
+                    <span className="small-mark">✓</span>
+                    <h2>Nothing needs your attention.</h2>
+                    <p>
+                      Your notes are here when you need them. Preparation stays
+                      quiet until you choose a goal.
                     </p>
-                  ) : null}
-                  <ProposalCard
-                    item={ready[0]}
-                    project={projectName(ready[0].project_id)}
-                    onReview={reviewProposal}
-                    onSnooze={snoozeProposal}
+                  </article>
+                )
+              ) : null}
+              {notes.length && !firstNote ? (
+                <>
+                  <div className="section-heading">
+                    <p className="eyebrow">ADD TO YOUR BRAIN</p>
+                  </div>
+                  <FirstNoteComposer
+                    providerEnabled={!!prefs?.provider_enabled}
+                    onSave={saveFirstNote}
+                    onTryExample={() => setDemo(true)}
                   />
-                  {ready.length > 1 ? (
-                    <details>
-                      <summary>More prepared work ({ready.length - 1})</summary>
-                      {ready.slice(1, 3).map((p: Entity) => (
-                        <ProposalCard
-                          key={p.id}
-                          item={p}
-                          project={projectName(p.project_id)}
-                          onReview={reviewProposal}
-                          onSnooze={snoozeProposal}
-                        />
-                      ))}
-                    </details>
-                  ) : null}
                 </>
-              ) : (
-                <article className="quiet">
-                  <span className="small-mark">✓</span>
-                  <h2>Nothing needs your attention.</h2>
-                  <p>
-                    Your notes are here when you need them. Preparation stays
-                    quiet until you choose a goal.
-                  </p>
-                </article>
-              )}
+              ) : null}
               {notes.length ? (
                 <>
                   <div className="section-heading">
@@ -2355,6 +2567,10 @@ function App() {
                     visibility,
                   }),
                 );
+                if (source.id === firstNote?.sourceId) {
+                  resetFirstNoteBody(source.id);
+                  void loadFirstNoteSource(source.id, authGeneration);
+                }
                 await refresh();
                 setDialog("source");
                 setNotice(
@@ -2503,6 +2719,7 @@ function App() {
                 await api(`/sources/${source.id}/withdraw`, {
                   expected_version: source.version,
                 });
+                removeFirstNote(source.id);
                 await refresh();
                 close();
                 setNotice("Source withdrawn from active retrieval.");
@@ -2531,13 +2748,16 @@ function App() {
                   if (
                     failure instanceof ApiError &&
                     failure.code === "FORGET_INCOMPLETE"
-                  )
+                  ) {
                     setForgetNeedsRetry(source.id);
+                    removeFirstNote(source.id);
+                  }
                   throw failure;
                 });
                 setForgetNeedsRetry(null);
                 setForgetProof(result.proof ?? null);
                 setSource(null);
+                removeFirstNote(source.id);
                 await refresh();
                 close();
                 setNotice(
@@ -2567,6 +2787,7 @@ function App() {
                   setForgetProof(proof);
                   setForgetNeedsRetry(null);
                   setSource(null);
+                  removeFirstNote(source.id);
                   await refresh();
                   close();
                   setNotice(

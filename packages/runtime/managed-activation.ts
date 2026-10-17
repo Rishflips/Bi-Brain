@@ -128,7 +128,8 @@ function readLiveEpoch(
 export function evaluateConfiguredPolicy(input: {
   control: AuditControl;
   root: string;
-  now: Date;
+  /** Advisory: this probe reads live state only and never samples or trusts it. */
+  now: Date | (() => Date);
   optIn: boolean;
   /** Advisory context only; never used to grant authority. Shape compatibility. */
   schemaOk?: boolean;
@@ -414,7 +415,8 @@ export function readDecisionActivation(
 export function evaluateConfiguredDecisionPolicy(input: {
   control: AuditControl;
   root: string;
-  now: Date;
+  /** Advisory: this probe reads live state only and never samples or trusts it. */
+  now: Date | (() => Date);
   optIn: boolean;
   profile?: DecisionActivationProfile;
 }): { ready: boolean; reason: ActivationReason } {
@@ -528,7 +530,15 @@ export function readDecisionActivationGuardContext(input: {
   lease: JobLease;
   centralCallId: string | null;
   tenantCallId: string | null;
+  /** Current wall instant for the actual job-lease / monetary checks (unchanged). */
   now: Date;
+  /**
+   * Trusted clock for the worker-lease freshness read ONLY. It is sampled after
+   * the live snapshot has been read, so a decision worker heartbeat published
+   * during the same call is never misread as a future heartbeat. Falls back to the
+   * fixed `now` for deterministic callers; it never relaxes the lease or TTL rules.
+   */
+  clock?: () => Date;
   spec: {
     provider: string;
     model: string;
@@ -589,7 +599,7 @@ export function readDecisionActivationGuardContext(input: {
   if (snapshot.audit_digest !== frozen.audit_digest)
     throw blocked("The chosen decision activation audit is not current.");
 
-  const ready = readDecisionReadiness(installed.root, input.now);
+  const ready = readDecisionReadiness(installed.root, input.clock ?? input.now);
   if (ready.state !== "ready" || !ready.readiness)
     throw blocked("No current decision worker is installed for this root.");
   const rd = ready.readiness;
