@@ -14,6 +14,7 @@ import { resolve, join } from "node:path";
 import { createHash, randomUUID } from "node:crypto";
 import { execFileSync } from "node:child_process";
 import { detectSecrets, scannerVersion } from "./secrets.ts";
+const GIT_OPERATION_TIMEOUT_MS = 60_000;
 export type PortableState = {
   projects: any[];
   sources: any[];
@@ -52,22 +53,36 @@ export class Vault {
     });
   }
   git(...args: string[]) {
-    return execFileSync(
-      "git",
-      [
-        "-c",
-        "user.name=Bi Brain Vault",
-        "-c",
-        "user.email=vault@localhost",
-        ...args,
-      ],
-      {
-        cwd: this.root,
-        encoding: "utf8",
-        windowsHide: true,
-        stdio: ["ignore", "pipe", "pipe"],
-      },
-    ).trim();
+    try {
+      return execFileSync(
+        "git",
+        [
+          "-c",
+          "user.name=Bi Brain Vault",
+          "-c",
+          "user.email=vault@localhost",
+          ...args,
+        ],
+        {
+          cwd: this.root,
+          encoding: "utf8",
+          windowsHide: true,
+          stdio: ["ignore", "pipe", "pipe"],
+          timeout: GIT_OPERATION_TIMEOUT_MS,
+          killSignal: "SIGKILL",
+        },
+      ).trim();
+    } catch (error: any) {
+      if (
+        error?.code === "ETIMEDOUT" ||
+        (error?.killed === true && error?.signal === "SIGKILL")
+      )
+        throw new Error(
+          "Vault storage operation timed out; retry after storage becomes available.",
+          { cause: error },
+        );
+      throw error;
+    }
   }
   withLock<T>(fn: () => T): T {
     if (this.lockDepth) return fn();

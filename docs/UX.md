@@ -1,5 +1,21 @@
 # UX and interaction specification
 
+## Experience promise
+
+BiBrain should feel calmly alive: the user's work has continuity, visible state,
+and momentum without becoming a noisy feed or a technical dashboard. A new user
+should understand the product by using it, not by learning a “second brain” method.
+
+The first five-minute journey is: sign in or pair locally, drop in something
+meaningful, see the durable original and what BiBrain remembers, find it again,
+and use it with a supported agent. Projects, organization, preparation, and
+advanced controls appear progressively after that first value.
+
+A small state-driven pulse may communicate one of a bounded set of real states:
+ready, organizing, keeping current, ready for review, caught up, paused, or
+offline. Motion is allowed only when it represents a real state, respects reduced
+motion, and never implies that queued or unavailable work completed.
+
 ## Navigation
 
 Primary: Today, Your brain, Connections.
@@ -39,6 +55,10 @@ Stale state: Last checked on [date]. Connected sources may have changed since th
 Failed state: Your note is saved. I couldn't prepare the brief. Retry or view original.
 
 Never show success while a job is only queued.
+
+Today may include a direct “Find something in your brain” action. It navigates to
+real scoped search; it must not masquerade as semantic answering until that
+capability is implemented and verified.
 
 ## Prepared item
 

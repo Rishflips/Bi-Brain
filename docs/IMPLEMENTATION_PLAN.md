@@ -17,31 +17,68 @@ Gate: a clean checkout installs and starts using documented commands; production
 
 ### Approved visible delivery follow-up — 2026-10-18
 
+- [x] Record the approved product charter: BiBrain is the user-owned central memory
+      and continuity layer behind verified connected agents, with zero-method first use
+      and calmly alive, truthful state.
+- [x] Add a real state-driven Today pulse for ready, attention, organizing,
+      refreshing, waiting/offline, intentionally quiet and caught-up states; disable
+      motion under reduced-motion preferences.
+- [x] Add direct Today → scoped Your brain search without presenting keyword search
+      as semantic answering.
+- [x] Replace the visually plain first-use and Today presentation with a responsive
+      cognitive field, state-driven neural surface and prominent real capture action;
+      preserve quiet states and do not invent activity, connections or history.
+- [x] Preserve semantic controls, keyboard focus/skip navigation, reduced-motion
+      behavior and 320px light/dark usability in the redesigned shell.
+- [x] Replace primary-flow technical language with remember, continue, stay ahead,
+      what changed and use with an agent while retaining evidence inspection.
+- [x] Verify the new slice: typecheck/lint/build, **2/2** focused living-brain
+      journeys and **6/6** existing first-note/layout journeys passed; the final
+      combined gate subsequently passed **1,488 tests / 8 platform skips across
+      141 files and 44/44 Chromium journeys**. Native-client, live-provider and
+      public-release gates remain separate.
+- [x] Verify the visual follow-up against production assets: typecheck/lint/build and
+      **6/6 focused Chromium journeys** passed, including a full real capture lifecycle,
+      truthful pulse/search and 320px light/dark layouts. After visual mobile-overlay
+      repair, the exact final tree passed the complete **44/44 Chromium** gate; remote
+      PR CI remains the separate publication check.
+
 - [x] Read completed baseline full regression: 1,447 passed / 8 skipped / zero failed,
-  132 files at b5610f4. Exact baseline Ubuntu/container CI run 39065046637 succeeded;
-  this is not target-host or future UI-revision evidence.
+      132 files at b5610f4. Exact baseline Ubuntu/container CI run 39065046637 succeeded;
+      this is not target-host or future UI-revision evidence.
 - [x] Reconcile remote baseline: externally merged PR #4 placed equivalent baseline
-  content on main at 1fe33bd5. This session performed no merge/reset/rebase; the
-  upcoming UI follow-up remains subject to separate review and no merge authority.
+      content on main at 1fe33bd5. This session performed no merge/reset/rebase; the
+      upcoming UI follow-up remains subject to separate review and no merge authority.
 - [x] Deliver calm inline first-note composer using real capture persistence.
 - [x] Separate known durable save from follow-up read/preparation failures; show only
-  returned retained content, truthful duplicate/quarantine/offline states.
+      returned retained content, truthful duplicate/quarantine/offline states.
 - [x] Verify find/reopen after reload, failure draft retention, account-switch fencing,
-  keyboard and 320px layout with independent browser checks.
+      keyboard and 320px layout with independent browser checks.
 - [x] Run changed-frontend typecheck/lint/build and browser regression: **41/41 Chromium
-  journeys**, including source-attribution and delayed-removal/correction regressions.
+      journeys**, including source-attribution and delayed-removal/correction regressions.
 - [x] Publish reviewed feature branch and safely sync Desktop while retaining the
-  owner's personal note: source commit `92a69b2`, matching remote/Desktop SHA,
-  personal note SHA-256 unchanged; [draft PR #5](https://github.com/Rishflips/Bi-Brain/pull/5)
-  opened, not merged. A documentation-only checkpoint follows this source commit.
+      owner's personal note: source `92a69b2`, final PR head `99598a7`; owner subsequently
+      reviewed/merged [PR #5](https://github.com/Rishflips/Bi-Brain/pull/5). Desktop and
+      GitHub main now match `a702a93`, with equivalent verified source tree.
 - [x] Verify the final source-frozen serial full regression using explicit filesystem
-  module cache: **1,450 passed / 8 platform skips, zero failed, 132 files**, 637.12 s;
-  source hashes unchanged. Whole-tree typecheck/lint/build passed separately.
+      module cache: **1,450 passed / 8 platform skips, zero failed, 132 files**, 637.12 s;
+      source hashes unchanged. Whole-tree typecheck/lint/build passed separately.
 - [x] Repair reproduced reasoning/decision readiness clock sampling without relaxing
-  future-heartbeat/TTL rules, actual job-lease checks or monetary authority. Deterministic
-  regressions and original actual-process heartbeat assertions passed in the full gate.
-- [ ] Verify the exact published follow-up commit in Linux/container CI and record its
-  run URL; local green and historical baseline CI are not that result.
+      future-heartbeat/TTL rules, actual job-lease checks or monetary authority. Deterministic
+      regressions and original actual-process heartbeat assertions passed in the full gate.
+- [x] Verify the exact published follow-up commit in Linux/container CI:
+      [push run 39069418518](https://github.com/Rishflips/Bi-Brain/actions/runs/39069418518)
+      and [PR run 39069422614](https://github.com/Rishflips/Bi-Brain/actions/runs/39069422614)
+      passed at `99598a7`: **1,458 tests, 41 Chromium journeys, 4 offline evaluations**,
+      Docker/container restart-persistence/auth/worker/backup, Compose/Caddy validation.
+- [x] Consolidate into Desktop as sole working copy, preserve original brain/personal
+      note, migrate separate preview and archive evidence with hash/integrity checks;
+      fresh Desktop install/typecheck/build and **23/23 brain/restart tests** passed.
+- [x] Write root `NEXT_AGENT_HANDOFF.md` with current state and next gates. The new
+      handoff/checkpoint corrections are local documentation changes, not yet published.
+- [x] Read the separate merged-main run
+      [39071223934](https://github.com/Rishflips/Bi-Brain/actions/runs/39071223934) to terminal
+      completion: **success** at `a702a93`; every listed release-candidate job passed.
 
 See BUILD_STATE.md for actual commands and results. This slice improves the existing
 capture/search experience; it does not newly implement those underlying services or
@@ -148,18 +185,20 @@ The 2026-10-16 owner direction brings managed personal delivery into the primary
 - [ ] G6: Two named native integrations with fresh-session correction/privacy/revocation evidence.
 - [ ] G7: Subscription/webhook reconciliation, allowances, cancellation and payment-independent export/deletion.
   - [x] Owner selected Paddle Billing for an India-based individual/sole proprietor, monthly+annual plans and monthly no-rollover allowance without automatic overages. No customer price or allowance amount selected.
-  - [x] B0 renewal-safe financial-authority written design approved by the owner's "okay go ahead"; no implementation/live proof implied.
-  - [ ] B0 implementation plan, pure contracts/calendar, sealed storage/migration, guarded admission and recovery, with independent gates.
+  - [x] B0 renewal-safe financial-authority written design approved by the owner's "okay go ahead".
+  - [x] B0 implementation plan, pure contracts/calendar, sealed storage/migration, guarded admission and recovery, with independent local gates. No live-provider proof is implied.
     - [x] Task 1 pure calendar/window/reference/seal contracts: parent 162/162 focused checks across 5 files, including 99 B0 checks; typecheck/lint/build passed. No storage consumer, schema migration, key enrollment or payment enabled.
-    - [ ] Task 2 exact storage-plan review, frozen-v4 preservation, schema/key/log and immutable grant projections.
+    - [x] Task 2 exact storage-plan review, frozen-v4 preservation, schema/key/log and immutable grant projections.
       - [x] T2K standalone protected key helper: lost-key replacement regression repaired; covered in final 321-pass / 6-platform-skip parent gate. No production caller, actual key enrollment or Windows ACL assurance.
       - [x] T2L complete-frame journal schema/read-only verification and frozen-v4 fixture: failed COMMIT, head corruption and future-version digest regressions verified. No global migration applied.
       - [x] T2P closed frozen operator-policy/catalog contract: both cadences share monthly caps, zero caps deny selection, sandbox/live binding and canonical policy digest verified.
       - [x] T2W standalone private writer/paid-evidence persistence: parent **430 passed / 6 platform skips, 20 files**, including 384 B0 and 46 existing financial checks; typecheck/lint/build passed. Both actual-process races passed. Default-null source, no app consumer, synthetic sealed admission fixtures only; real admission and money-5 remain below. See BUILD_STATE.
-      - [ ] Owned clean-baseline admission/generation, full storage contract and money-5 migration with genuine frozen-v4 preservation proof. [Integration plan](superpowers/plans/2026-10-18-billing-admission-integration.md) is draft pending parent review, not migration authorization.
-    - [ ] Task 3 financial admission/freshness and reserve/mark/audit integration.
-    - [ ] Task 4 offline enrollment, key backup/restore and actual-process synthetic verification, followed by full parent regression gates.
-  - [ ] Separate B1 Paddle integration design approval, implementation and actual Sandbox proof. B1 remains a draft; no live checkout/payment enabled.
+      - [x] Owned clean-baseline admission/generation, full storage contract and money-5 migration with genuine frozen-v4 preservation proof. Accepted in the merged 1,450-pass Windows / 1,458-pass Linux baseline; the [integration plan](superpowers/plans/2026-10-18-billing-admission-integration.md) records the executed contract and closures.
+    - [x] Task 3 financial admission/freshness and reserve/mark/audit integration. Accepted in the merged baseline; current local work did not weaken the authority path.
+    - [x] Task 4 offline enrollment, positive Windows ACL readback, encrypted key backup/restore, managed backup integration and actual-process synthetic verification. Final local gate: **1,488 passed / 8 platform skips, 141 files; all 44 Chromium journeys; 4/4 offline evaluations; typecheck/lint/build/audit green**. No real financial key or payment was enrolled.
+  - [ ] B1 Paddle integration and actual Sandbox proof. The owner authorized complete default-off local implementation; live execution still has separate business and release gates.
+    - [x] Closed server adapter/config, charged-currency allowlist, account-bound checkout intent, pre-I/O ambiguity lock with signed-event recovery and known-transaction resume, authenticated status/portal routes, raw signed webhook inbox, fenced replay/conflict/orphan handling, hard-timeout bounded transport, worker correlation/current-provider reconciliation, backup participation and plain-language Settings UI. Local synthetic authority/evidence/provider/store/HTTP/browser checks pass; no external provider was contacted.
+    - [ ] Actual Paddle Sandbox checkout, out-of-order/replay, current-term allowance, renewal, cancellation, refund, portal, export and deletion proof with real sandbox credentials and selected prices/allowances.
 - [ ] G8: Supported packaging, hosted TLS/operations/recovery and human usability/license/privacy/security release gates.
 
 Keep each checkbox synchronized with actual evidence in BUILD_STATE.md. Finish independent implementation when a live credential or external service blocks its narrow gate; never substitute synthetic evidence for a live result.
@@ -170,9 +209,6 @@ No request to create accounts, spend money, or publish is implied by this build 
 
 Prioritize M0 and M1. Once verified, continue the next unblocked milestone under the user's build request. Update state at coherent checkpoints and after context compaction. Do not repeatedly redesign the product or stop solely because one milestone passed.
 
-
-
-
 ## Review follow-up — 2026-09-28
 
 Cross-project purge, dependency-based suggestion invalidation, and per-goal daily scheduling are repaired with regressions. M4 remains an extractive workflow; model-backed goal reasoning is unfinished product work and is not completed by configuring the brief provider. See BUILD_STATE.md and VERIFICATION_REVIEW_2026-09-28.md.
@@ -182,6 +218,9 @@ Cross-project purge, dependency-based suggestion invalidation, and per-goal dail
 - [x] Existing capture/review/claim/pack services carry a source-cited explicit decision comparison from save through owner rejection or approval, immutable history, guarded undo and fresh scoped agent retrieval.
 - [x] Regression checks cover stale/private/moved/withdrawn evidence, version conflicts, duplicate suppression, read-only/revoked/cross-project grants, opted-in scheduling and vault rebuild/restart/managed forgetting.
 - [x] Typecheck/lint/build, 76/76 tests (13 files), 4/4 synthetic offline evals and diff whitespace check passed in the existing isolated Node 24 image.
-- [ ] Browser interaction and native Claude/Codex verification for this slice. No deployment or live-provider claim.
+- [x] Browser correction interaction: approve/compare/reject/version-safe undo is
+      included in the final **44/44 Chromium** gate.
+- [ ] Native Claude/Codex verification for this slice. No deployment or
+      live-provider claim.
 
 This does not close the broader historical M4 semantic-reasoning, native-client or full-harness gates. See [CONTEXT_CONFLICTS](CONTEXT_CONFLICTS.md) and the appended current BUILD_STATE checkpoint for exact syntax, recorded RED→GREEN evidence and limitations.

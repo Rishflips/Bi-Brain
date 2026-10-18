@@ -1,7 +1,11 @@
 import type { DatabaseSync } from "node:sqlite";
 import { randomBytes } from "node:crypto";
 import { BrainError } from "../domain/logic.ts";
-import { mintIncarnation, type Incarnation, type IncarnationSource } from "../domain/billing-admission.ts";
+import {
+  mintIncarnation,
+  type Incarnation,
+  type IncarnationSource,
+} from "../domain/billing-admission.ts";
 
 /**
  * Trusted per-account provisioning incarnation + durable fence over the control
@@ -9,7 +13,8 @@ import { mintIncarnation, type Incarnation, type IncarnationSource } from "../do
  * check the schema first. Nothing here opens a tenant database or a nested writer.
  */
 
-const invalid = (message: string) => new BrainError("INVALID_INPUT", message, 400);
+const invalid = (message: string) =>
+  new BrainError("INVALID_INPUT", message, 400);
 const conflict = (message: string) => new BrainError("CONFLICT", message, 409);
 
 function accountIdentity(
@@ -32,7 +37,12 @@ export function readAccountIncarnation(
       "SELECT incarnation,provisioning_generation,source,minted_at FROM managed_account_incarnation WHERE account_id=?",
     )
     .get(accountId) as
-    | { incarnation: string; provisioning_generation: number; source: IncarnationSource; minted_at: string }
+    | {
+        incarnation: string;
+        provisioning_generation: number;
+        source: IncarnationSource;
+        minted_at: string;
+      }
     | undefined;
   if (!row) return undefined;
   return {
@@ -49,7 +59,13 @@ export function readAccountIncarnation(
  */
 export function mintAccountIncarnation(
   db: DatabaseSync,
-  args: { account_id: string; issuer: string; subject: string; now: string; nonce: string },
+  args: {
+    account_id: string;
+    issuer: string;
+    subject: string;
+    now: string;
+    nonce: string;
+  },
 ): Incarnation {
   const existing = readAccountIncarnation(db, args.account_id);
   if (existing) return existing;
@@ -65,9 +81,47 @@ export function mintAccountIncarnation(
     .prepare(
       "INSERT INTO managed_account_incarnation(account_id,incarnation,provisioning_generation,source,minted_at) VALUES(?,?,?,?,?) ON CONFLICT(account_id) DO NOTHING",
     )
-    .run(args.account_id, minted.incarnation, minted.provisioning_generation, "provision", minted.minted_at);
+    .run(
+      args.account_id,
+      minted.incarnation,
+      minted.provisioning_generation,
+      "provision",
+      minted.minted_at,
+    );
   void inserted;
   return readAccountIncarnation(db, args.account_id)!;
+}
+
+/**
+ * Offline money-5 enrollment backfill. Existing pre-enrollment tenants receive
+ * generation 1 exactly once and are labeled `enroll`, never `provision`. A replay
+ * accepts only that exact enrollment row; any other existing generation is left
+ * to the normal lifecycle rules.
+ */
+export function enrollAccountIncarnation(
+  db: DatabaseSync,
+  args: {
+    account_id: string;
+    issuer: string;
+    subject: string;
+    now: string;
+    nonce: string;
+  },
+): Incarnation {
+  const existing = readAccountIncarnation(db, args.account_id);
+  if (existing) return existing;
+  const minted = mintIncarnation({
+    account_id: args.account_id,
+    issuer: args.issuer,
+    subject: args.subject,
+    provisioning_generation: 1,
+    minted_at: args.now,
+    nonce: args.nonce,
+  });
+  db.prepare(
+    "INSERT INTO managed_account_incarnation(account_id,incarnation,provisioning_generation,source,minted_at) VALUES(?,?,?,?,?)",
+  ).run(args.account_id, minted.incarnation, 1, "enroll", minted.minted_at);
+  return { ...minted, source: "enroll" };
 }
 
 /**
@@ -77,10 +131,15 @@ export function mintAccountIncarnation(
 export function rotateAccountIncarnation(
   db: DatabaseSync,
   accountId: string,
-  args: { source: Exclude<IncarnationSource, "provision" | "enroll">; now: string; nonce: string },
+  args: {
+    source: Exclude<IncarnationSource, "provision" | "enroll">;
+    now: string;
+    nonce: string;
+  },
 ): Incarnation {
   const existing = readAccountIncarnation(db, accountId);
-  if (!existing) throw conflict("No provisioning incarnation exists to advance.");
+  if (!existing)
+    throw conflict("No provisioning incarnation exists to advance.");
   const next = existing.provisioning_generation + 1;
   const identity = accountIdentity(db, accountId);
   const minted = mintIncarnation({
@@ -95,7 +154,14 @@ export function rotateAccountIncarnation(
     .prepare(
       "UPDATE managed_account_incarnation SET incarnation=?,provisioning_generation=?,source=?,minted_at=? WHERE account_id=? AND provisioning_generation=?",
     )
-    .run(minted.incarnation, next, args.source, minted.minted_at, accountId, existing.provisioning_generation);
+    .run(
+      minted.incarnation,
+      next,
+      args.source,
+      minted.minted_at,
+      accountId,
+      existing.provisioning_generation,
+    );
   if (Number(updated.changes) !== 1)
     throw conflict("The provisioning incarnation changed concurrently.");
   return readAccountIncarnation(db, accountId)!;
@@ -110,7 +176,9 @@ export function activeFence(
       "SELECT generation,reason FROM managed_account_fence WHERE account_id=? AND cleared_at IS NULL",
     )
     .get(accountId) as { generation: number; reason: string } | undefined;
-  return row ? { generation: Number(row.generation), reason: row.reason } : undefined;
+  return row
+    ? { generation: Number(row.generation), reason: row.reason }
+    : undefined;
 }
 
 /**
@@ -143,7 +211,11 @@ export function fenceAccount(
   return { generation };
 }
 
-export function clearFence(db: DatabaseSync, accountId: string, now: string): void {
+export function clearFence(
+  db: DatabaseSync,
+  accountId: string,
+  now: string,
+): void {
   db.prepare(
     "UPDATE managed_account_fence SET cleared_at=? WHERE account_id=? AND cleared_at IS NULL",
   ).run(now, accountId);

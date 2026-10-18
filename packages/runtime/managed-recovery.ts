@@ -52,6 +52,7 @@ import {
   readAccountIncarnation,
 } from "../storage/managed-incarnation.ts";
 import type { Incarnation } from "../domain/billing-admission.ts";
+import { loadBillingKey } from "../storage/billing-key.ts";
 
 /**
  * Conservative cold/offline managed backup and restore.
@@ -66,7 +67,12 @@ import type { Incarnation } from "../domain/billing-admission.ts";
 export const managedBundleSchemaVersion = 1;
 
 const MARKER = "provisioned.json";
-const TENANT_ENTRIES = ["provisioned.json", "brain.sqlite", "vault", "vault-protected"] as const;
+const TENANT_ENTRIES = [
+  "provisioned.json",
+  "brain.sqlite",
+  "vault",
+  "vault-protected",
+] as const;
 const TENANT_DIRS = new Set(["vault", "vault-protected"]);
 const HASH_SKIP = new Set(["manifest.json"]);
 
@@ -92,6 +98,18 @@ const manifestSchema = z
     accounts: z.array(accountSchema).max(10000),
     files: z.array(fileSchema).max(1_000_000),
     root_marker: z.string().min(1).max(4096).nullable().optional(),
+    paddle_store: z.literal("paddle.sqlite").nullable().optional(),
+    billing_authority: z
+      .object({
+        key_path: z.literal(".protected/billing-authority.key"),
+        key_commitment: z.string().regex(/^[0-9a-f]{64}$/),
+        key_size: z.literal(32),
+        included: z.literal(false),
+        restore_requires_offline_key_and_reenrollment: z.literal(true),
+      })
+      .strict()
+      .nullable()
+      .optional(),
   })
   .strict();
 
@@ -102,6 +120,14 @@ export interface ManagedBundleManifest {
   accounts: ManagedBundleAccount[];
   files: { path: string; sha256: string; size: number }[];
   root_marker?: string | null;
+  paddle_store?: "paddle.sqlite" | null;
+  billing_authority?: {
+    key_path: ".protected/billing-authority.key";
+    key_commitment: string;
+    key_size: 32;
+    included: false;
+    restore_requires_offline_key_and_reenrollment: true;
+  } | null;
 }
 
 const recoveryError = (message: string) =>
@@ -126,7 +152,7 @@ function assertAbsolute(path: string, label: string): string {
  */
 function assertNoLinks(path: string): void {
   const chain: string[] = [];
-  for (let dir = resolve(path); ; ) {
+  for (let dir = resolve(path); ;) {
     chain.unshift(dir);
     const parent = dirname(dir);
     if (parent === dir) break;
@@ -178,7 +204,9 @@ function assertDisjoint(a: string, b: string): void {
     return rel === "" || (!rel.startsWith("..") && !isAbsolute(rel));
   };
   if (contains(a, b) || contains(b, a))
-    throw recoveryError("Source, destination and current root must not overlap or nest.");
+    throw recoveryError(
+      "Source, destination and current root must not overlap or nest.",
+    );
 }
 
 function sha256File(path: string): string {
@@ -211,7 +239,8 @@ function copyTree(src: string, dst: string): void {
     throw recoveryError("Refusing to copy a link or junction.");
   if (stat.isDirectory()) {
     mkdirSync(dst, { recursive: true, mode: 0o700 });
-    for (const name of readdirSync(src)) copyTree(join(src, name), join(dst, name));
+    for (const name of readdirSync(src))
+      copyTree(join(src, name), join(dst, name));
     return;
   }
   if (stat.isFile()) {
@@ -222,7 +251,10 @@ function copyTree(src: string, dst: string): void {
   throw recoveryError("Unsupported file type in the managed root.");
 }
 
-async function snapshotSqlite(source: string, destination: string): Promise<void> {
+async function snapshotSqlite(
+  source: string,
+  destination: string,
+): Promise<void> {
   assertRealFile(source, "A managed database");
   const db = new DatabaseSync(source, { readOnly: true });
   try {
@@ -246,12 +278,15 @@ function assertSqliteHealthy(path: string): void {
   const db = new DatabaseSync(path, { readOnly: true });
   try {
     const integrity = db.prepare("PRAGMA integrity_check").get() as
-      | { integrity_check?: string }
-      | undefined;
+      { integrity_check?: string } | undefined;
     if (!integrity || integrity.integrity_check !== "ok")
-      throw recoveryError("A managed database snapshot failed its integrity check.");
+      throw recoveryError(
+        "A managed database snapshot failed its integrity check.",
+      );
     if ((db.prepare("PRAGMA foreign_key_check").all() as unknown[]).length > 0)
-      throw recoveryError("A managed database snapshot failed its foreign-key check.");
+      throw recoveryError(
+        "A managed database snapshot failed its foreign-key check.",
+      );
   } finally {
     db.close();
   }
@@ -262,7 +297,9 @@ function controlInventory(path: string): ManagedBundleAccount[] {
   const db = new DatabaseSync(path, { readOnly: true });
   try {
     const has = db
-      .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='managed_accounts'")
+      .prepare(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name='managed_accounts'",
+      )
       .get();
     if (!has) throw recoveryError("Not a Bi Brain control database.");
     return db
@@ -287,8 +324,11 @@ function readControlEpoch(
       .get();
     if (!has) return undefined;
     const row = db
-      .prepare("SELECT epoch,nonce,rotated_at FROM managed_control_epoch WHERE singleton=1")
-      .get() as { epoch: number; nonce: string; rotated_at: string } | undefined;
+      .prepare(
+        "SELECT epoch,nonce,rotated_at FROM managed_control_epoch WHERE singleton=1",
+      )
+      .get() as
+      { epoch: number; nonce: string; rotated_at: string } | undefined;
     if (!row) return undefined;
     return {
       epoch: Number(row.epoch),
@@ -375,7 +415,8 @@ function replaceStagedMarker(
     existing.issuer !== account.issuer ||
     existing.subject !== account.subject ||
     existing.incarnation !== previous.incarnation ||
-    Number(existing.provisioning_generation) !== previous.provisioning_generation
+    Number(existing.provisioning_generation) !==
+      previous.provisioning_generation
   )
     throw recoveryError(
       "A staged account marker does not match its provisioning incarnation.",
@@ -428,7 +469,9 @@ function rotateStagedEpoch(
   control.db.exec("BEGIN IMMEDIATE");
   try {
     control.db
-      .prepare("UPDATE managed_control_epoch SET epoch=?,nonce=?,rotated_at=? WHERE singleton=1")
+      .prepare(
+        "UPDATE managed_control_epoch SET epoch=?,nonce=?,rotated_at=? WHERE singleton=1",
+      )
       .run(next, nonce, rotated_at);
     control.db.exec("COMMIT");
   } catch (error) {
@@ -441,7 +484,8 @@ function rotateStagedEpoch(
 
 function readManifest(bundle: string): ManagedBundleManifest {
   const path = join(bundle, "manifest.json");
-  if (!existsSync(path)) throw recoveryError("The bundle has no manifest.json.");
+  if (!existsSync(path))
+    throw recoveryError("The bundle has no manifest.json.");
   let parsed: unknown;
   try {
     parsed = JSON.parse(readFileSync(path, "utf8"));
@@ -450,7 +494,9 @@ function readManifest(bundle: string): ManagedBundleManifest {
   }
   const result = manifestSchema.safeParse(parsed);
   if (!result.success)
-    throw recoveryError("The bundle manifest has an unsupported schema, version or shape.");
+    throw recoveryError(
+      "The bundle manifest has an unsupported schema, version or shape.",
+    );
   const manifest = result.data as ManagedBundleManifest;
   const accountIds = new Set(manifest.accounts.map((a) => a.account_id));
   if (accountIds.size !== manifest.accounts.length)
@@ -464,38 +510,58 @@ function readManifest(bundle: string): ManagedBundleManifest {
 function verifyBundle(bundle: string, manifest: ManagedBundleManifest): void {
   for (const file of manifest.files) {
     const segments = file.path.split(/[\\/]/);
-    if (isAbsolute(file.path) || segments.includes("..") || file.path.includes("\u0000"))
+    if (
+      isAbsolute(file.path) ||
+      segments.includes("..") ||
+      file.path.includes("\u0000")
+    )
       throw recoveryError("The bundle manifest lists an unsafe path.");
     const full = join(bundle, file.path);
-    const stat = lstatRequired(full, "A file recorded in the manifest is missing.");
+    const stat = lstatRequired(
+      full,
+      "A file recorded in the manifest is missing.",
+    );
     if (stat.isSymbolicLink())
       throw recoveryError("The bundle contains a link.");
     const size = readFileSync(full).length;
-    if (stat.size !== file.size || size !== file.size || sha256File(full) !== file.sha256)
+    if (
+      stat.size !== file.size ||
+      size !== file.size ||
+      sha256File(full) !== file.sha256
+    )
       throw recoveryError("A bundle file does not match its recorded hash.");
   }
   const recorded = new Set(manifest.files.map((f) => f.path));
   for (const rel of walkFiles(bundle)) {
     if (HASH_SKIP.has(rel)) continue;
     if (!recorded.has(rel))
-      throw recoveryError("The bundle contains files that are not in the manifest.");
+      throw recoveryError(
+        "The bundle contains files that are not in the manifest.",
+      );
   }
 }
 
-function assertBundleTopLevel(bundle: string, manifest: ManagedBundleManifest): void {
+function assertBundleTopLevel(
+  bundle: string,
+  manifest: ManagedBundleManifest,
+): void {
   const allowed = new Set<string>([
     "manifest.json",
     "control.sqlite",
     MANAGED_ROOT_MARKER,
     "activation.json",
     "decision-activation.json",
+    "paddle.sqlite",
   ]);
   for (const account of manifest.accounts) allowed.add(account.account_id);
   for (const name of readdirSync(bundle)) {
     if (!allowed.has(name))
-      throw recoveryError(`The bundle contains an unexpected top-level entry: ${name}`);
+      throw recoveryError(
+        `The bundle contains an unexpected top-level entry: ${name}`,
+      );
     const stat = lstatSync(join(bundle, name));
-    if (stat.isSymbolicLink()) throw recoveryError("The bundle contains a link.");
+    if (stat.isSymbolicLink())
+      throw recoveryError("The bundle contains a link.");
   }
 }
 
@@ -545,7 +611,9 @@ function assertActivationConsistent(
       throw recoveryError("The activation mirror is invalid.");
     }
     if (!mirror || canonical(mirror) !== canonical(row))
-      throw recoveryError("The activation mirror does not match its stored profile.");
+      throw recoveryError(
+        "The activation mirror does not match its stored profile.",
+      );
   }
   return { present: !!row };
 }
@@ -583,7 +651,9 @@ function assertDecisionConsistent(
       throw recoveryError("The decision activation mirror is invalid.");
     }
     if (!mirror || canonical(mirror) !== canonical(row))
-      throw recoveryError("The decision activation mirror does not match its stored profile.");
+      throw recoveryError(
+        "The decision activation mirror does not match its stored profile.",
+      );
   }
   return { present: !!row };
 }
@@ -592,7 +662,8 @@ function assertInventoryMatches(
   manifestAccounts: ManagedBundleAccount[],
   controlAccounts: ManagedBundleAccount[],
 ): void {
-  const key = (a: ManagedBundleAccount) => `${a.account_id}|${a.issuer}|${a.subject}|${a.state}`;
+  const key = (a: ManagedBundleAccount) =>
+    `${a.account_id}|${a.issuer}|${a.subject}|${a.state}`;
   const a = [...manifestAccounts].map(key).sort();
   const b = [...controlAccounts].map(key).sort();
   if (a.length !== b.length || a.some((value, i) => value !== b[i]))
@@ -711,7 +782,10 @@ export async function writeManagedBackup(
   // never capture a marker from a different (or half-initialized) root.
   const rootMarker = readRootMarker(root);
   const controlEpoch = readControlEpoch(join(root, "control.sqlite"));
-  if (rootMarker && (!controlEpoch || !rootEpochMatches(rootMarker, controlEpoch)))
+  if (
+    rootMarker &&
+    (!controlEpoch || !rootEpochMatches(rootMarker, controlEpoch))
+  )
     throw recoveryError(
       "The managed root marker does not match its control generation; refusing to back it up.",
     );
@@ -723,27 +797,57 @@ export async function writeManagedBackup(
   const staging = newStaging(destination, clock);
   mkdirSync(staging, { recursive: true, mode: 0o700 });
   try {
-    await snapshotSqlite(join(root, "control.sqlite"), join(staging, "control.sqlite"));
+    await snapshotSqlite(
+      join(root, "control.sqlite"),
+      join(staging, "control.sqlite"),
+    );
+    const paddleStorePresent = existsSync(join(root, "paddle.sqlite"));
+    if (paddleStorePresent)
+      await snapshotSqlite(
+        join(root, "paddle.sqlite"),
+        join(staging, "paddle.sqlite"),
+      );
     if (rootMarker)
-      copyTree(join(root, MANAGED_ROOT_MARKER), join(staging, MANAGED_ROOT_MARKER));
-    const activation = assertActivationConsistent(join(staging, "control.sqlite"), root);
+      copyTree(
+        join(root, MANAGED_ROOT_MARKER),
+        join(staging, MANAGED_ROOT_MARKER),
+      );
+    const activation = assertActivationConsistent(
+      join(staging, "control.sqlite"),
+      root,
+    );
     if (activation.present)
       copyTree(activationMirrorPath(root), join(staging, "activation.json"));
-    const decision = assertDecisionConsistent(join(staging, "control.sqlite"), root);
+    const decision = assertDecisionConsistent(
+      join(staging, "control.sqlite"),
+      root,
+    );
     if (decision.present)
-      copyTree(decisionActivationMirrorPath(root), join(staging, "decision-activation.json"));
+      copyTree(
+        decisionActivationMirrorPath(root),
+        join(staging, "decision-activation.json"),
+      );
     const rootIncarnations = readIncarnations(join(root, "control.sqlite"));
     for (const account of inventory) {
       const dir = join(root, account.account_id);
-      assertTenantMarker(dir, account, rootIncarnations.get(account.account_id));
+      assertTenantMarker(
+        dir,
+        account,
+        rootIncarnations.get(account.account_id),
+      );
       const staged = join(staging, account.account_id);
       mkdirSync(staged, { recursive: true, mode: 0o700 });
       copyTree(join(dir, MARKER), join(staged, MARKER));
-      await snapshotSqlite(join(dir, "brain.sqlite"), join(staged, "brain.sqlite"));
+      await snapshotSqlite(
+        join(dir, "brain.sqlite"),
+        join(staged, "brain.sqlite"),
+      );
       copyTree(join(dir, "vault"), join(staged, "vault"));
       copyTree(join(dir, "vault-protected"), join(staged, "vault-protected"));
     }
     assertSqliteHealthy(join(staging, "control.sqlite"));
+    if (paddleStorePresent)
+      assertSqliteHealthy(join(staging, "paddle.sqlite"));
     for (const account of inventory)
       assertSqliteHealthy(join(staging, account.account_id, "brain.sqlite"));
     const files = walkFiles(staging)
@@ -759,6 +863,19 @@ export async function writeManagedBackup(
       accounts: inventory,
       files,
       root_marker: rootMarker ? MANAGED_ROOT_MARKER : null,
+      paddle_store: paddleStorePresent ? "paddle.sqlite" : null,
+      billing_authority: (() => {
+        const keyPath = join(root, ".protected", "billing-authority.key");
+        if (!existsSync(keyPath)) return null;
+        const key = loadBillingKey(root);
+        return {
+          key_path: ".protected/billing-authority.key" as const,
+          key_commitment: key.commitment,
+          key_size: 32 as const,
+          included: false as const,
+          restore_requires_offline_key_and_reenrollment: true as const,
+        };
+      })(),
     };
     writeFileSync(join(staging, "manifest.json"), JSON.stringify(manifest), {
       mode: 0o600,
@@ -814,6 +931,25 @@ export async function restoreManagedBackup(
   // refused rather than silently dropped or half-reactivated.
   const bundleActivation = assertActivationConsistent(bundleControl, bundle);
   const bundleDecision = assertDecisionConsistent(bundleControl, bundle);
+  const bundledPaddlePath = join(bundle, "paddle.sqlite");
+  const bundledPaddlePresent = existsSync(bundledPaddlePath);
+  if (bundledPaddlePresent !== (manifest.paddle_store === "paddle.sqlite"))
+    throw recoveryError(
+      "The Paddle store presence does not match its manifest declaration.",
+    );
+  if (bundledPaddlePresent) assertSqliteHealthy(bundledPaddlePath);
+
+  // The portable bundle never carries the authority key. If it declares a key,
+  // prove the current operator still possesses that exact protected key before
+  // staging the financial history. The destination remains paid-blocked until the
+  // separately encrypted key is restored and a fresh offline enrollment is made.
+  if (manifest.billing_authority) {
+    const currentKey = loadBillingKey(currentRoot);
+    if (currentKey.commitment !== manifest.billing_authority.key_commitment)
+      throw recoveryError(
+        "The current billing authority key does not match the backed financial history.",
+      );
+  }
 
   // A marker in the bundle must bind the bundled control generation exactly. The
   // presence of the marker file must EQUAL the manifest declaration: a bundle can
@@ -831,7 +967,10 @@ export async function restoreManagedBackup(
     }
   })();
   const markerFilePresent = !!bundledMarkerStat;
-  if (bundledMarkerStat && (bundledMarkerStat.isSymbolicLink() || !bundledMarkerStat.isFile()))
+  if (
+    bundledMarkerStat &&
+    (bundledMarkerStat.isSymbolicLink() || !bundledMarkerStat.isFile())
+  )
     throw recoveryError("The bundle marker is not a regular file.");
   const declaredMarker = manifest.root_marker != null;
   if (markerFilePresent !== declaredMarker)
@@ -839,7 +978,9 @@ export async function restoreManagedBackup(
       "The bundle marker presence does not match its manifest declaration.",
     );
   if (declaredMarker && manifest.root_marker !== MANAGED_ROOT_MARKER)
-    throw recoveryError("The bundle marker name is not the supported root marker.");
+    throw recoveryError(
+      "The bundle marker name is not the supported root marker.",
+    );
   if (markerFilePresent) {
     let rawMarker: unknown;
     try {
@@ -853,7 +994,9 @@ export async function restoreManagedBackup(
       !bundledEpoch ||
       !rootEpochMatches(parsedMarker.data, bundledEpoch)
     )
-      throw recoveryError("The bundle marker does not match its control generation.");
+      throw recoveryError(
+        "The bundle marker does not match its control generation.",
+      );
   }
 
   // Bind backed accounts to the CURRENT trusted identities and require a
@@ -869,9 +1012,18 @@ export async function restoreManagedBackup(
       throw recoveryError(
         "A backed account no longer exists in the current root; it must not be resurrected.",
       );
-    if (current.issuer !== account.issuer || current.subject !== account.subject)
-      throw recoveryError("A backed account identity does not match the current root.");
-    assertTenantDir(join(currentRoot, account.account_id), currentRoot, "The current tenant");
+    if (
+      current.issuer !== account.issuer ||
+      current.subject !== account.subject
+    )
+      throw recoveryError(
+        "A backed account identity does not match the current root.",
+      );
+    assertTenantDir(
+      join(currentRoot, account.account_id),
+      currentRoot,
+      "The current tenant",
+    );
     assertSqliteHealthy(join(currentRoot, account.account_id, "brain.sqlite"));
   }
 
@@ -879,19 +1031,35 @@ export async function restoreManagedBackup(
 
   const staged = newStaging(destination, clock);
   mkdirSync(staged, { recursive: true, mode: 0o700 });
-  writeFileSync(join(staged, MANAGED_RESTORE_INCOMPLETE), clock().toISOString(), {
-    mode: 0o600,
-  });
+  writeFileSync(
+    join(staged, MANAGED_RESTORE_INCOMPLETE),
+    clock().toISOString(),
+    {
+      mode: 0o600,
+    },
+  );
   let replayed = 0;
   try {
     copyTree(bundleControl, join(staged, "control.sqlite"));
+    if (bundledPaddlePresent)
+      copyTree(bundledPaddlePath, join(staged, "paddle.sqlite"));
     if (bundleActivation.present)
-      copyTree(join(bundle, "activation.json"), join(staged, "activation.json"));
+      copyTree(
+        join(bundle, "activation.json"),
+        join(staged, "activation.json"),
+      );
     if (bundleDecision.present)
-      copyTree(join(bundle, "decision-activation.json"), join(staged, "decision-activation.json"));
+      copyTree(
+        join(bundle, "decision-activation.json"),
+        join(staged, "decision-activation.json"),
+      );
     for (const account of manifest.accounts) {
       const from = join(bundle, account.account_id);
-      assertTenantMarker(from, account, bundleIncarnations.get(account.account_id));
+      assertTenantMarker(
+        from,
+        account,
+        bundleIncarnations.get(account.account_id),
+      );
       const to = join(staged, account.account_id);
       mkdirSync(to, { recursive: true, mode: 0o700 });
       copyTree(join(from, MARKER), join(to, MARKER));
@@ -904,7 +1072,10 @@ export async function restoreManagedBackup(
     // staging `MANAGED_RESTORE_INCOMPLETE` marker protects the whole bundle until
     // publish. Every supported v5 account is fenced and advanced BEFORE its staged
     // tenant is opened, and the fence stays active until the root is published.
-    const stagingControl = new ControlStore(join(staged, "control.sqlite"), clock);
+    const stagingControl = new ControlStore(
+      join(staged, "control.sqlite"),
+      clock,
+    );
     const fenced: string[] = [];
     let stagedIncarnations = new Map<
       string,
@@ -912,6 +1083,36 @@ export async function restoreManagedBackup(
     >();
     try {
       applyControlRestoreBarrier(stagingControl, clock);
+      if (bundledPaddlePresent) {
+        const paddle = new DatabaseSync(join(staged, "paddle.sqlite"));
+        try {
+          const restoredAt = clock().toISOString();
+          paddle.exec("BEGIN IMMEDIATE");
+          try {
+            paddle
+              .prepare(
+                "UPDATE paddle_checkout_intents SET state='expired',version=version+1,updated_at=? WHERE state IN ('pending','created')",
+              )
+              .run(restoredAt);
+            paddle
+              .prepare(
+                "UPDATE paddle_events SET state='pending',lease_owner=NULL,lease_expires_at=NULL WHERE state='processing'",
+              )
+              .run();
+            paddle
+              .prepare(
+                "UPDATE paddle_bindings SET status='restore_blocked',adverse_generation=adverse_generation+1,version=version+1,updated_at=?",
+              )
+              .run(restoredAt);
+            paddle.exec("COMMIT");
+          } catch (error) {
+            if (paddle.isTransaction) paddle.exec("ROLLBACK");
+            throw error;
+          }
+        } finally {
+          paddle.close();
+        }
+      }
       for (const account of manifest.accounts) {
         const current = currentById.get(account.account_id)!;
         if (account.state === "suspended" || current.state === "suspended")
@@ -925,15 +1126,25 @@ export async function restoreManagedBackup(
       const rotated = rotateStagedEpoch(stagingControl, staged, clock);
       if (rotated) {
         const epochRow = stagingControl.db
-          .prepare("SELECT epoch,nonce FROM managed_control_epoch WHERE singleton=1")
+          .prepare(
+            "SELECT epoch,nonce FROM managed_control_epoch WHERE singleton=1",
+          )
           .get() as { epoch: number; nonce: string } | undefined;
         if (epochRow)
-          new ManagedActivationStore(stagingControl, staged, clock).disableForRestore({
+          new ManagedActivationStore(
+            stagingControl,
+            staged,
+            clock,
+          ).disableForRestore({
             epoch: Number(epochRow.epoch),
             nonce: String(epochRow.nonce),
           });
         if (epochRow)
-          new ManagedDecisionActivationStore(stagingControl, staged, clock).disableForRestore({
+          new ManagedDecisionActivationStore(
+            stagingControl,
+            staged,
+            clock,
+          ).disableForRestore({
             epoch: Number(epochRow.epoch),
             nonce: String(epochRow.nonce),
           });
@@ -965,9 +1176,12 @@ export async function restoreManagedBackup(
       }
 
       for (const account of manifest.accounts) {
-        const store = new Storage(join(staged, account.account_id, "brain.sqlite"), {
-          vault: join(staged, account.account_id, "vault"),
-        });
+        const store = new Storage(
+          join(staged, account.account_id, "brain.sqlite"),
+          {
+            vault: join(staged, account.account_id, "vault"),
+          },
+        );
         try {
           applyTenantRestoreBarrier(store, clock);
           // A missing or unreadable current tenant must reject the whole restore,
@@ -1019,7 +1233,10 @@ export async function restoreManagedBackup(
     // actually in place. A failure to clear leaves the accounts fenced (fail closed).
     renameSync(staged, destination);
     if (fenced.length) {
-      const published = new ControlStore(join(destination, "control.sqlite"), clock);
+      const published = new ControlStore(
+        join(destination, "control.sqlite"),
+        clock,
+      );
       try {
         for (const accountId of fenced)
           clearFence(published.db, accountId, clock().toISOString());
@@ -1046,12 +1263,16 @@ function replayCurrentDeletions(
   try {
     current = new DatabaseSync(currentTenantPath, { readOnly: true });
   } catch {
-    throw recoveryError("The current tenant database is missing or unreadable.");
+    throw recoveryError(
+      "The current tenant database is missing or unreadable.",
+    );
   }
   let tombstones: { id: string; state: string }[] = [];
   try {
     tombstones = current
-      .prepare("SELECT id,state FROM sources WHERE state IN ('deleted','withdrawn')")
+      .prepare(
+        "SELECT id,state FROM sources WHERE state IN ('deleted','withdrawn')",
+      )
       .all() as { id: string; state: string }[];
   } catch {
     throw recoveryError("The current tenant database is unreadable.");
@@ -1069,7 +1290,12 @@ function replayCurrentDeletions(
     if (tomb.state === "deleted" && retained.state === "deleted") {
       purgeRetainedDeletedSource(restored, tomb.id);
     } else if (retained.state !== "deleted") {
-      brain.removeSource({ kind: "owner" }, tomb.id, retained.version, tomb.state === "deleted");
+      brain.removeSource(
+        { kind: "owner" },
+        tomb.id,
+        retained.version,
+        tomb.state === "deleted",
+      );
     }
     applied += 1;
   }

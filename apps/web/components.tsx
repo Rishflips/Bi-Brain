@@ -1,4 +1,156 @@
+import { useState } from "react";
 import type { Entity, Evidence } from "../../packages/contracts/index.ts";
+
+type BrainPulseState =
+  | "ready"
+  | "attention"
+  | "organizing"
+  | "refreshing"
+  | "offline"
+  | "resting"
+  | "caught-up";
+
+export function BrainPulse({
+  hasSavedWork,
+  readyCount,
+  hasActiveJobs,
+  hasStaleUnderstanding,
+  preparationEnabled,
+  workerOnline,
+}: {
+  hasSavedWork: boolean;
+  readyCount: number;
+  hasActiveJobs: boolean;
+  hasStaleUnderstanding: boolean;
+  preparationEnabled: boolean;
+  workerOnline: boolean;
+}) {
+  let state: BrainPulseState;
+  let label: string;
+  let title: string;
+  let detail: string;
+
+  if (!hasSavedWork) {
+    state = "ready";
+    label = "Ready when you are";
+    title = "Your brain is ready.";
+    detail =
+      "Drop in anything worth carrying forward. You can organize it later.";
+  } else if (readyCount > 0) {
+    state = "attention";
+    label = "Ready for you";
+    title = `${readyCount} next step${readyCount === 1 ? " is" : "s are"} ready.`;
+    detail =
+      "Prepared from goals you chose. Nothing changes until you review it.";
+  } else if (hasActiveJobs && workerOnline) {
+    state = "organizing";
+    label = "In progress";
+    title = "Organizing selected work.";
+    detail =
+      "Your originals are already safe. Useful preparation will appear here when it is ready.";
+  } else if (hasActiveJobs) {
+    state = "offline";
+    label = "Waiting safely";
+    title = "Preparation is waiting.";
+    detail =
+      "Your originals are safe. Preparation will continue when the worker is available.";
+  } else if (hasStaleUnderstanding) {
+    state = "refreshing";
+    label = "Keeping current";
+    title = "Refreshing what changed.";
+    detail =
+      "Earlier context stays visible as stale until the updated understanding is ready.";
+  } else if (preparationEnabled && !workerOnline) {
+    state = "offline";
+    label = "Preparation offline";
+    title = "Your saved work is safe.";
+    detail =
+      "You can still find and use everything. Stay ahead will resume when preparation is available.";
+  } else if (!preparationEnabled) {
+    state = "resting";
+    label = "Quiet by choice";
+    title = "Nothing needs your attention.";
+    detail =
+      "Everything you saved is ready. Stay ahead is paused until you turn it on.";
+  } else {
+    state = "caught-up";
+    label = "Caught up";
+    title = "Your brain is caught up.";
+    detail =
+      "Your saved work is current. BiBrain will stay quiet until something useful changes.";
+  }
+
+  return (
+    <section
+      className="brain-pulse"
+      data-brain-state={state}
+      aria-labelledby="brain-pulse-title"
+      aria-live="polite"
+    >
+      <div className="brain-pulse-visual" aria-hidden="true">
+        <span className="brain-pulse-glow" />
+        <svg className="brain-network" viewBox="0 0 220 220">
+          <path className="network-path path-one" d="M31 112C48 70 72 47 108 40c37-8 75 10 86 42 13 38-8 79-45 97-42 20-90 3-111-31-9-15-11-25-7-36Z" />
+          <path className="network-path path-two" d="M60 164c-1-35 12-75 45-103 26-22 58-27 81-9M38 91c29 1 59 16 82 43 19 22 44 30 69 24" />
+          <path className="network-path path-three" d="M71 53c7 27 25 48 50 62 25 15 41 38 43 70M42 135c31-17 68-20 103-10 26 8 43 3 56-13" />
+          <circle className="network-node node-one" cx="38" cy="91" r="5" />
+          <circle className="network-node node-two" cx="71" cy="53" r="5" />
+          <circle className="network-node node-three" cx="145" cy="125" r="6" />
+          <circle className="network-node node-four" cx="189" cy="158" r="5" />
+          <circle className="network-node node-five" cx="164" cy="185" r="4" />
+        </svg>
+        <span className="brain-pulse-core"><span>b.</span></span>
+      </div>
+      <div className="brain-pulse-copy">
+        <p className="brain-pulse-label">{label}</p>
+        <h2 id="brain-pulse-title">{title}</h2>
+        <p>{detail}</p>
+        <div className="brain-signal" aria-hidden="true">
+          <span />
+          <span />
+          <span />
+          <span />
+          <span />
+        </div>
+      </div>
+    </section>
+  );
+}
+
+export function BrainQuickFind({
+  onFind,
+}: {
+  onFind: (query: string) => void;
+}) {
+  const [query, setQuery] = useState("");
+  const canFind = query.trim().length > 0;
+
+  return (
+    <form
+      className="brain-quick-find"
+      role="search"
+      onSubmit={(event) => {
+        event.preventDefault();
+        if (canFind) onFind(query.trim());
+      }}
+    >
+      <label htmlFor="brain-quick-find">Find something in your brain</label>
+      <div>
+        <input
+          id="brain-quick-find"
+          type="search"
+          value={query}
+          onChange={(event) => setQuery(event.target.value)}
+          placeholder="A decision, note, person, or project…"
+        />
+        <button type="submit" disabled={!canFind}>
+          Find
+        </button>
+      </div>
+    </form>
+  );
+}
+
 export function CurrentKnowledge({
   pages,
   gates,
@@ -17,7 +169,7 @@ export function CurrentKnowledge({
   return (
     <div className="knowledge-workspace">
       <div className="section-heading">
-        <h2>Current understanding</h2>
+        <h2>What BiBrain remembers</h2>
         <span className="muted">Accepted facts first · originals below</span>
       </div>
       {pages.length ? (
@@ -57,7 +209,7 @@ export function CurrentKnowledge({
               </p>
             ) : null}
             <details>
-              <summary>History and provenance</summary>
+              <summary>Earlier versions and sources</summary>
               {page.history.length ? (
                 page.history.map((c: Entity) => (
                   <p key={c.id}>
@@ -210,9 +362,8 @@ export function EvidenceList({
         <blockquote key={`${e.source_id}-${i}`}>
           <p>{e.quote}</p>
           <button className="link" onClick={() => onOpen(e.source_id)}>
-            See original · version {e.source_version} · characters {e.start}–
+            See original · version {e.source_version} · passage {e.start}–
             {e.end}
-            <span className="muted"> · source {e.source_id}</span>
           </button>
         </blockquote>
       ))}

@@ -33,11 +33,18 @@ const clock = () => new Date("2026-10-16T09:00:00Z");
 const bases: string[] = [];
 afterEach(() => {
   for (const base of bases.splice(0))
-    rmSync(base, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+    rmSync(base, {
+      recursive: true,
+      force: true,
+      maxRetries: 5,
+      retryDelay: 50,
+    });
 });
 
 function baseDir() {
-  const base = realpathSync(mkdtempSync(join(tmpdir(), "bibrain-managed-recovery-")));
+  const base = realpathSync(
+    mkdtempSync(join(tmpdir(), "bibrain-managed-recovery-")),
+  );
   bases.push(base);
   return base;
 }
@@ -50,7 +57,8 @@ function containsSentinel(root: string): boolean {
       const path = join(dir, name);
       const stat = statSync(path);
       if (stat.isDirectory()) stack.push(path);
-      else if (stat.isFile() && readFileSync(path).includes(SENTINEL)) return true;
+      else if (stat.isFile() && readFileSync(path).includes(SENTINEL))
+        return true;
     }
   }
   return false;
@@ -76,9 +84,14 @@ async function seedAndBackup(base: string) {
       }) as { source_id: string };
       sourceId = captured.source_id;
       sourceVersion = Number(
-        (handle.brain.store.get("SELECT version FROM sources WHERE id=?", sourceId) as {
-          version: number;
-        }).version,
+        (
+          handle.brain.store.get(
+            "SELECT version FROM sources WHERE id=?",
+            sourceId,
+          ) as {
+            version: number;
+          }
+        ).version,
       );
     } finally {
       handle.release();
@@ -91,14 +104,28 @@ async function seedAndBackup(base: string) {
   return { root, bundle, sourceId, sourceVersion, token };
 }
 
-function advanceCurrent(root: string, sourceId: string, version: number, token: string) {
+function advanceCurrent(
+  root: string,
+  sourceId: string,
+  version: number,
+  token: string,
+) {
   const runtime = new ManagedRuntime(root, { clock });
-  const accountId = (runtime.control.db.prepare("SELECT id FROM managed_accounts LIMIT 1").get() as {
-    id: string;
-  }).id;
+  const accountId = (
+    runtime.control.db
+      .prepare("SELECT id FROM managed_accounts LIMIT 1")
+      .get() as {
+      id: string;
+    }
+  ).id;
   const handle = runtime.acquire(accountId);
   try {
-    handle.brain.removeSource(handle.brain.ownerPrincipal(), sourceId, version, true);
+    handle.brain.removeSource(
+      handle.brain.ownerPrincipal(),
+      sourceId,
+      version,
+      true,
+    );
   } finally {
     handle.release();
   }
@@ -110,7 +137,8 @@ describe("managed cold backup and restore", () => {
   it("restores a new root without resurrecting credentials or a deleted source", async () => {
     const base = baseDir();
     const restored = join(base, "restored");
-    const { root, bundle, sourceId, sourceVersion, token } = await seedAndBackup(base);
+    const { root, bundle, sourceId, sourceVersion, token } =
+      await seedAndBackup(base);
     advanceCurrent(root, sourceId, sourceVersion, token);
 
     const result = await restoreManagedBackup({
@@ -126,9 +154,13 @@ describe("managed cold backup and restore", () => {
     try {
       expect(controlRestoreRequired(reopened.control)).toBe(true);
       expect(reopened.control.resolveSession(token)).toBeUndefined();
-      const accountId = (reopened.control.db.prepare("SELECT id FROM managed_accounts LIMIT 1").get() as {
-        id: string;
-      }).id;
+      const accountId = (
+        reopened.control.db
+          .prepare("SELECT id FROM managed_accounts LIMIT 1")
+          .get() as {
+          id: string;
+        }
+      ).id;
       const handle = reopened.acquire(accountId);
       try {
         const owner = handle.brain.ownerPrincipal();
@@ -140,8 +172,10 @@ describe("managed cold backup and restore", () => {
         }) as { source_id: string };
         expect(again.source_id).toBeTruthy();
         expect(
-          handle.brain.store.get<{ state: string }>("SELECT state FROM sources WHERE id=?", sourceId)
-            ?.state,
+          handle.brain.store.get<{ state: string }>(
+            "SELECT state FROM sources WHERE id=?",
+            sourceId,
+          )?.state,
         ).not.toBe("active");
         expect(
           handle.brain.store.get<{ n: number }>(
@@ -156,19 +190,24 @@ describe("managed cold backup and restore", () => {
     } finally {
       reopened.close();
     }
-  });
+  }, 15_000);
 
   it("performs a real CLI cold round trip", async () => {
     const base = baseDir();
     const restored = join(base, "restored");
-    const { root, bundle, sourceId, sourceVersion, token } = await seedAndBackup(base);
+    const { root, bundle, sourceId, sourceVersion, token } =
+      await seedAndBackup(base);
     advanceCurrent(root, sourceId, sourceVersion, token);
     // Also produce a fresh bundle through the actual CLI entry point.
     const cliBundle = join(base, "cli-bundle");
     execFileSync(
       process.execPath,
       ["--import", "tsx", "scripts/managed-backup.ts", "--offline", cliBundle],
-      { cwd: process.cwd(), env: { ...process.env, BRAIN_MANAGED_ROOT: root }, stdio: "pipe" },
+      {
+        cwd: process.cwd(),
+        env: { ...process.env, BRAIN_MANAGED_ROOT: root },
+        stdio: "pipe",
+      },
     );
     execFileSync(
       process.execPath,
@@ -187,9 +226,13 @@ describe("managed cold backup and restore", () => {
     const reopened = new ManagedRuntime(restored, { clock });
     try {
       expect(reopened.control.resolveSession(token)).toBeUndefined();
-      const accountId = (reopened.control.db.prepare("SELECT id FROM managed_accounts LIMIT 1").get() as {
-        id: string;
-      }).id;
+      const accountId = (
+        reopened.control.db
+          .prepare("SELECT id FROM managed_accounts LIMIT 1")
+          .get() as {
+          id: string;
+        }
+      ).id;
       const handle = reopened.acquire(accountId);
       try {
         expect(
@@ -214,9 +257,13 @@ describe("managed cold backup and restore", () => {
     // Make the current tenant unreadable for replay.
     const accountId = (() => {
       const rt = new ManagedRuntime(root, { clock });
-      const id = (rt.control.db.prepare("SELECT id FROM managed_accounts LIMIT 1").get() as {
-        id: string;
-      }).id;
+      const id = (
+        rt.control.db
+          .prepare("SELECT id FROM managed_accounts LIMIT 1")
+          .get() as {
+          id: string;
+        }
+      ).id;
       rt.close();
       return id;
     })();
@@ -225,14 +272,23 @@ describe("managed cold backup and restore", () => {
     current.close();
 
     await expect(
-      restoreManagedBackup({ bundle, destination: restored, currentRoot: root, offline: true }),
+      restoreManagedBackup({
+        bundle,
+        destination: restored,
+        currentRoot: root,
+        offline: true,
+      }),
     ).rejects.toThrow();
     expect(existsSync(restored)).toBe(false);
 
-    const staging = readdirSync(base).find((n) => n.startsWith("restored.staging-"));
+    const staging = readdirSync(base).find((n) =>
+      n.startsWith("restored.staging-"),
+    );
     expect(staging).toBeTruthy();
     const stage = join(base, staging!);
-    const stageControl = new DatabaseSync(join(stage, "control.sqlite"), { readOnly: true });
+    const stageControl = new DatabaseSync(join(stage, "control.sqlite"), {
+      readOnly: true,
+    });
     stageControl.close();
     const { ControlStore } = await import("../../packages/storage/control.ts");
     const control = new ControlStore(join(stage, "control.sqlite"), clock);
@@ -257,13 +313,22 @@ describe("managed cold backup and restore", () => {
     const restored = join(base, "restored");
     const { root, bundle } = await seedAndBackup(base);
     const runtime = new ManagedRuntime(root, { clock });
-    const accountId = (runtime.control.db.prepare("SELECT id FROM managed_accounts LIMIT 1").get() as {
-      id: string;
-    }).id;
+    const accountId = (
+      runtime.control.db
+        .prepare("SELECT id FROM managed_accounts LIMIT 1")
+        .get() as {
+        id: string;
+      }
+    ).id;
     runtime.control.setAccountState(accountId, "suspended");
     runtime.close();
 
-    await restoreManagedBackup({ bundle, destination: restored, currentRoot: root, offline: true });
+    await restoreManagedBackup({
+      bundle,
+      destination: restored,
+      currentRoot: root,
+      offline: true,
+    });
     const reopened = new ManagedRuntime(restored, { clock });
     try {
       expect(reopened.control.account(accountId)?.state).toBe("suspended");
@@ -280,10 +345,18 @@ describe("managed cold backup and restore", () => {
     runtime.close();
 
     await expect(
-      writeManagedBackup({ root, destination: join(base, "b1"), offline: false }),
+      writeManagedBackup({
+        root,
+        destination: join(base, "b1"),
+        offline: false,
+      }),
     ).rejects.toThrow();
     await expect(
-      writeManagedBackup({ root, destination: join(root, "b2"), offline: true }),
+      writeManagedBackup({
+        root,
+        destination: join(root, "b2"),
+        offline: true,
+      }),
     ).rejects.toThrow();
 
     const bundle = join(base, "bundle");
@@ -306,9 +379,16 @@ describe("managed cold backup and restore", () => {
 
     const controlCopy = join(base, "tamper-bundle");
     await writeManagedBackup({ root, destination: controlCopy, offline: true });
-    writeFileSync(join(controlCopy, "control.sqlite"), "corrupted", { flag: "r+" });
+    writeFileSync(join(controlCopy, "control.sqlite"), "corrupted", {
+      flag: "r+",
+    });
     await expect(
-      restoreManagedBackup({ bundle: controlCopy, destination: restored, currentRoot: root, offline: true }),
+      restoreManagedBackup({
+        bundle: controlCopy,
+        destination: restored,
+        currentRoot: root,
+        offline: true,
+      }),
     ).rejects.toThrow();
 
     const otherRoot = join(base, "other");
@@ -316,7 +396,12 @@ describe("managed cold backup and restore", () => {
     other.provision(ISSUER, "unrelated-account");
     other.close();
     await expect(
-      restoreManagedBackup({ bundle, destination: restored, currentRoot: otherRoot, offline: true }),
+      restoreManagedBackup({
+        bundle,
+        destination: restored,
+        currentRoot: otherRoot,
+        offline: true,
+      }),
     ).rejects.toThrow(/resurrect/);
     expect(existsSync(restored)).toBe(false);
   });

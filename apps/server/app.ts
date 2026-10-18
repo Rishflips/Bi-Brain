@@ -17,6 +17,8 @@ import {
   type ManagedLogin,
 } from "../../packages/identity/managed-login.ts";
 import { deploymentPolicy } from "./deployment.ts";
+import type { PaddleBillingService } from "../../packages/runtime/paddle-billing.ts";
+import { registerBillingRoutes } from "./billing-routes.ts";
 
 const LOGIN_PATH = "/auth/login";
 const CORRELATION_COOKIE = "brain_login";
@@ -98,6 +100,8 @@ export async function createApp(
      * reason only. Absent => false.
      */
     decisionCapability?: () => { available: boolean; reason: string };
+    /** Closed, managed-only Paddle orchestration. Absent means billing is off. */
+    billing?: PaddleBillingService;
   } = {},
 ) {
   const managed = options.managed;
@@ -274,13 +278,16 @@ export async function createApp(
     if (process.env.NODE_ENV === "production")
       reply.header(
         "Content-Security-Policy",
-        "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; object-src 'none'; form-action 'self'",
+        options.billing
+          ? "default-src 'self'; script-src 'self' https://cdn.paddle.com; style-src 'self'; img-src 'self' data: https://*.paddle.com; connect-src 'self' https://*.paddle.com; frame-src https://*.paddle.com; frame-ancestors 'none'; base-uri 'none'; object-src 'none'; form-action 'self' https://*.paddle.com"
+          : "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; object-src 'none'; form-action 'self'",
       );
     if (
       !req.url.startsWith("/api/v1/") ||
       req.url === "/api/v1/health/live" ||
       req.url === "/api/v1/runtime" ||
-      req.url === "/api/v1/session/pair"
+      req.url === "/api/v1/session/pair" ||
+      requestPath(req.url) === "/api/v1/billing/webhook"
     )
       return;
     const requiresCsrf = !["GET", "HEAD"].includes(req.method);
@@ -331,7 +338,9 @@ export async function createApp(
             throw new BrainError("UNAUTHORIZED", "Access unavailable.", 401);
           req.principal = localBrain!.authenticateAgent(m[1]);
         } else {
-          const session = localBrain!.ownerSession(req.cookies.brain_session ?? "");
+          const session = localBrain!.ownerSession(
+            req.cookies.brain_session ?? "",
+          );
           req.principal = localBrain!.ownerPrincipal();
           req.csrf = session.csrf;
           localBrain!.store.set("owner_activity", localBrain!.now());
@@ -600,7 +609,12 @@ export async function createApp(
     req.brain.proposeSourceClaim(req.principal, params(req), req.body),
   );
   app.post("/api/v1/sources/:id/withdraw", (req) =>
-    req.brain.removeSource(req.principal, params(req), expected(req.body), false),
+    req.brain.removeSource(
+      req.principal,
+      params(req),
+      expected(req.body),
+      false,
+    ),
   );
   app.delete("/api/v1/sources/:id", (req) => {
     const v = z
@@ -736,9 +750,7 @@ export async function createApp(
     }
     return req.brain.prefs(req.principal, req.body);
   });
-  app.get("/api/v1/connections", (req) =>
-    req.brain.connections(req.principal),
-  );
+  app.get("/api/v1/connections", (req) => req.brain.connections(req.principal));
   app.post("/api/v1/proposals/gate", (req) =>
     req.brain.propose(
       req.principal,
@@ -984,6 +996,7 @@ export async function createApp(
   app.post("/api/v1/imports/:id/apply", (req) =>
     req.brain.applyImport(req.principal, params(req)),
   );
+  await registerBillingRoutes(app, options.billing);
   if (options.static !== false && existsSync(resolve("dist/web/index.html"))) {
     await app.register(staticPlugin, { root: resolve("dist/web") });
     app.setNotFoundHandler((req, reply) => {

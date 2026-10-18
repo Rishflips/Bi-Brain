@@ -25,11 +25,18 @@ afterEach(async () => {
   for (const child of children.splice(0))
     if (child.exitCode === null && child.signalCode === null) child.kill();
   for (const root of roots.splice(0))
-    rmSync(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+    rmSync(root, {
+      recursive: true,
+      force: true,
+      maxRetries: 5,
+      retryDelay: 50,
+    });
 });
 
 function tempRoot(): string {
-  const root = realpathSync(mkdtempSync(join(tmpdir(), "bibrain-managed-activation-")));
+  const root = realpathSync(
+    mkdtempSync(join(tmpdir(), "bibrain-managed-activation-")),
+  );
   roots.push(root);
   return root;
 }
@@ -92,18 +99,23 @@ it("the operator CLI writes only validated policy for a known account", () => {
     runtime.close();
   }
 
-  expect(runCli({ BRAIN_MANAGED_ROOT: root }, ["set-service", "30"]).status).toBe(0);
+  expect(
+    runCli({ BRAIN_MANAGED_ROOT: root }, ["set-service", "30"]).status,
+  ).toBe(0);
+  const startsAt = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+  const endsAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
   const period = runCli({ BRAIN_MANAGED_ROOT: root }, [
     "configure-period",
     accountId,
-    "2026-10-16T00:00:00Z",
-    "2026-10-18T00:00:00Z",
+    startsAt,
+    endsAt,
     "100",
   ]);
   expect(period.status).toBe(0);
   expect(JSON.parse(period.stdout).period_id).toMatch(/[0-9a-f-]{36}/);
   expect(
-    runCli({ BRAIN_MANAGED_ROOT: root }, ["set-account", accountId, "10", "10"]).status,
+    runCli({ BRAIN_MANAGED_ROOT: root }, ["set-account", accountId, "10", "10"])
+      .status,
   ).toBe(0);
 
   const runtime = new ManagedRuntime(root);
@@ -155,15 +167,28 @@ function freePort(): Promise<number> {
   });
 }
 
-function requestOnce(port: number, path: string): Promise<{ status: number; body: string }> {
+function requestOnce(
+  port: number,
+  path: string,
+): Promise<{ status: number; body: string }> {
   return new Promise((resolve, reject) => {
     const req = httpRequest(
-      { host: "127.0.0.1", port, method: "GET", path, headers: { Host: AUTHORITY }, timeout: 5000 },
+      {
+        host: "127.0.0.1",
+        port,
+        method: "GET",
+        path,
+        headers: { Host: AUTHORITY },
+        timeout: 5000,
+      },
       (res) => {
         const chunks: Buffer[] = [];
         res.on("data", (c: Buffer) => chunks.push(c));
         res.on("end", () =>
-          resolve({ status: res.statusCode ?? 0, body: Buffer.concat(chunks).toString("utf8") }),
+          resolve({
+            status: res.statusCode ?? 0,
+            body: Buffer.concat(chunks).toString("utf8"),
+          }),
         );
       },
     );
@@ -189,61 +214,70 @@ async function waitReady(port: number, child: ChildProcess): Promise<void> {
 }
 
 async function startServer(port: number, root: string): Promise<ChildProcess> {
-  const child = spawn(process.execPath, ["--import", "tsx", "apps/server/main.ts"], {
-    cwd: process.cwd(),
-    env: {
-      ...process.env,
-      BRAIN_MODE: "managed",
-      BRAIN_MANAGED_ROOT: root,
-      BRAIN_PUBLIC_ORIGIN: ORIGIN,
-      BRAIN_OIDC_ISSUER: ISSUER,
-      BRAIN_OIDC_CLIENT_ID: "synthetic-client",
-      BRAIN_OIDC_CLIENT_SECRET: "synthetic-client-secret",
-      BRAIN_MANAGED_ALLOW_PAID: "1",
-      BRAIN_PORT: String(port),
+  const child = spawn(
+    process.execPath,
+    ["--import", "tsx", "apps/server/main.ts"],
+    {
+      cwd: process.cwd(),
+      env: {
+        ...process.env,
+        BRAIN_MODE: "managed",
+        BRAIN_MANAGED_ROOT: root,
+        BRAIN_PUBLIC_ORIGIN: ORIGIN,
+        BRAIN_OIDC_ISSUER: ISSUER,
+        BRAIN_OIDC_CLIENT_ID: "synthetic-client",
+        BRAIN_OIDC_CLIENT_SECRET: "synthetic-client-secret",
+        BRAIN_MANAGED_ALLOW_PAID: "1",
+        BRAIN_PORT: String(port),
+      },
+      stdio: ["ignore", "pipe", "pipe"],
+      windowsHide: true,
     },
-    stdio: ["ignore", "pipe", "pipe"],
-    windowsHide: true,
-  });
+  );
   children.push(child);
   return child;
 }
 
-it(
-  "reports paid processing unavailable with a positive policy and ALLOW flag, across restart",
-  async () => {
-    const root = tempRoot();
-    let accountId = "";
-    {
-      const runtime = new ManagedRuntime(root);
-      accountId = runtime.provision(ISSUER, "activation-account").id;
-      runtime.close();
-    }
-    expect(runCli({ BRAIN_MANAGED_ROOT: root }, ["set-service", "30"]).status).toBe(0);
-    expect(
-      runCli({ BRAIN_MANAGED_ROOT: root }, [
-        "configure-period",
-        accountId,
-        "2026-10-16T00:00:00Z",
-        "2026-10-18T00:00:00Z",
-        "1000",
-      ]).status,
-    ).toBe(0);
-    expect(
-      runCli({ BRAIN_MANAGED_ROOT: root }, ["set-account", accountId, "100", "100"]).status,
-    ).toBe(0);
+it("reports paid processing unavailable with a positive policy and ALLOW flag, across restart", async () => {
+  const root = tempRoot();
+  let accountId = "";
+  {
+    const runtime = new ManagedRuntime(root);
+    accountId = runtime.provision(ISSUER, "activation-account").id;
+    runtime.close();
+  }
+  expect(
+    runCli({ BRAIN_MANAGED_ROOT: root }, ["set-service", "30"]).status,
+  ).toBe(0);
+  expect(
+    runCli({ BRAIN_MANAGED_ROOT: root }, [
+      "configure-period",
+      accountId,
+      "2026-10-16T00:00:00Z",
+      "2026-10-18T00:00:00Z",
+      "1000",
+    ]).status,
+  ).toBe(0);
+  expect(
+    runCli({ BRAIN_MANAGED_ROOT: root }, [
+      "set-account",
+      accountId,
+      "100",
+      "100",
+    ]).status,
+  ).toBe(0);
 
-    for (let attempt = 0; attempt < 2; attempt++) {
-      const port = await freePort();
-      const server = await startServer(port, root);
-      await waitReady(port, server);
-      const metadata = JSON.parse((await requestOnce(port, "/api/v1/runtime")).body);
-      expect(metadata.mode).toBe("managed");
-      expect(metadata.connected_processing_available).toBe(false);
-      expect(metadata.managed_paid_reason).toContain("not enabled");
-      server.kill();
-      await new Promise<void>((resolve) => server.once("exit", () => resolve()));
-    }
-  },
-  60_000,
-);
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const port = await freePort();
+    const server = await startServer(port, root);
+    await waitReady(port, server);
+    const metadata = JSON.parse(
+      (await requestOnce(port, "/api/v1/runtime")).body,
+    );
+    expect(metadata.mode).toBe("managed");
+    expect(metadata.connected_processing_available).toBe(false);
+    expect(metadata.managed_paid_reason).toContain("not enabled");
+    server.kill();
+    await new Promise<void>((resolve) => server.once("exit", () => resolve()));
+  }
+}, 60_000);

@@ -7,17 +7,19 @@ import type {
   Evidence,
 } from "../../packages/contracts/index.ts";
 import sample from "../../fixtures/beta-launch.json" with { type: "json" };
-import { EvidenceList, ProposalCard, CurrentKnowledge } from "./components.tsx";
+import {
+  BrainPulse,
+  BrainQuickFind,
+  EvidenceList,
+  ProposalCard,
+  CurrentKnowledge,
+} from "./components.tsx";
 import {
   FirstNoteComposer,
   FirstNoteSaved,
   type FirstNote,
 } from "./first-note.tsx";
-import {
-  SignIn,
-  ConnectionUnavailable,
-  type RuntimeMode,
-} from "./sign-in.tsx";
+import { SignIn, ConnectionUnavailable, type RuntimeMode } from "./sign-in.tsx";
 import "./style.css";
 let csrf = "";
 /**
@@ -77,7 +79,10 @@ async function api<T = any>(
       value?.error?.code ?? "UNAVAILABLE",
     );
   if (value === null)
-    throw new ApiError("Your brain sent an unexpected response.", "UNAVAILABLE");
+    throw new ApiError(
+      "Your brain sent an unexpected response.",
+      "UNAVAILABLE",
+    );
   return value;
 }
 type RuntimeMeta = {
@@ -87,12 +92,86 @@ type RuntimeMeta = {
   pairing_available: boolean;
 };
 type SessionInfo = { csrf: string; account_id: string | null };
+type BillingStatus =
+  | {
+      available: true;
+      mode: "sandbox" | "live";
+      client_token: string;
+      state: "not_started" | "confirming" | "active" | "attention";
+      cadence: "monthly" | "annual" | null;
+      subscription_status: string | null;
+      transaction_ref: string | null;
+      management_available: boolean;
+    }
+  | { available: false; state: "unavailable"; reason: string };
 const isRuntimeMeta = (value: any): value is RuntimeMeta =>
   !!value &&
   typeof value === "object" &&
   (value.mode === "local" || value.mode === "managed");
 const isSessionInfo = (value: any): value is SessionInfo =>
   !!value && typeof value === "object" && typeof value.csrf === "string";
+type PaddleBrowser = {
+  Environment: { set(mode: "sandbox"): void };
+  Initialize(input: { token: string }): void;
+  Checkout: {
+    open(input: {
+      transactionId: string;
+      settings: { successUrl: string; theme: "light" | "dark" };
+    }): void;
+  };
+};
+let paddleLoad: Promise<PaddleBrowser> | null = null;
+let paddleToken = "";
+function paddleBrowser(status: Extract<BillingStatus, { available: true }>) {
+  if (!paddleLoad) {
+    const installed = (window as unknown as { Paddle?: PaddleBrowser }).Paddle;
+    paddleLoad = installed
+      ? Promise.resolve(installed)
+      : new Promise<PaddleBrowser>((resolve, reject) => {
+          const script = document.createElement("script");
+          script.src = "https://cdn.paddle.com/paddle/v2/paddle.js";
+          script.async = true;
+          script.crossOrigin = "anonymous";
+          script.onload = () => {
+            const paddle = (window as unknown as { Paddle?: PaddleBrowser })
+              .Paddle;
+            if (!paddle)
+              return reject(new Error("Secure checkout could not be opened."));
+            resolve(paddle);
+          };
+          script.onerror = () =>
+            reject(new Error("Secure checkout could not be opened."));
+          document.head.appendChild(script);
+        });
+  }
+  return paddleLoad.then((paddle) => {
+    if (!paddleToken) {
+      if (status.mode === "sandbox") paddle.Environment.set("sandbox");
+      paddle.Initialize({ token: status.client_token });
+      paddleToken = status.client_token;
+    } else if (paddleToken !== status.client_token) {
+      throw new Error(
+        "Checkout configuration changed. Reload BiBrain and try again.",
+      );
+    }
+    return paddle;
+  });
+}
+
+async function openBillingCheckout(
+  status: Extract<BillingStatus, { available: true }>,
+  transactionRef: string,
+  dark: boolean,
+) {
+  const paddle = await paddleBrowser(status);
+  paddle.Checkout.open({
+    transactionId: transactionRef,
+    settings: {
+      successUrl: new URL("/?billing_return=1", location.origin).toString(),
+      theme: dark ? "dark" : "light",
+    },
+  });
+}
 function download(name: string, value: string, type = "text/markdown") {
   const url = URL.createObjectURL(new Blob([value], { type }));
   const a = document.createElement("a");
@@ -162,8 +241,8 @@ function App() {
   // reachable once a real `/api/v1/runtime` response has been validated; a
   // failed runtime fetch never falls back to local pairing.
   const [phase, setPhase] = useState<"loading" | "unknown" | "ready">(
-    "loading",
-  ),
+      "loading",
+    ),
     [retryNonce, setRetryNonce] = useState(0),
     [paired, setPaired] = useState(false),
     [runtime, setRuntime] = useState<RuntimeMeta | null>(null),
@@ -185,6 +264,7 @@ function App() {
     }),
     [prefs, setPrefs] = useState<Preferences | null>(null),
     [grants, setGrants] = useState<any[]>([]),
+    [billing, setBilling] = useState<BillingStatus | null>(null),
     [scope, setScope] = useState(
       () => localStorage.getItem("brain-project") ?? "",
     ),
@@ -295,12 +375,13 @@ function App() {
   }, [dark]);
   const refresh = useCallback(async () => {
     const generation = authGeneration;
-    const [p, n, t, settings, g] = await Promise.all([
+    const [p, n, t, settings, g, paidPlan] = await Promise.all([
       api("/projects"),
       api("/search"),
       api("/today"),
       api("/preferences/background"),
       api("/connections"),
+      api<BillingStatus>("/billing/status"),
     ]);
     // A response that arrives after sign-out or an account change must not
     // restore the previous account's data.
@@ -310,6 +391,7 @@ function App() {
     setToday(t);
     if (!preferencesDirty.current) setPrefs(settings);
     setGrants(g);
+    setBilling(paidPlan);
   }, []);
   /**
    * Clears every piece of per-account UI state: fetched data, chosen scope,
@@ -328,6 +410,7 @@ function App() {
     });
     setPrefs(null);
     setGrants([]);
+    setBilling(null);
     setScope("");
     setSearch("");
     setSearchResults([]);
@@ -493,6 +576,17 @@ function App() {
     }, 2500);
     return () => clearInterval(timer);
   }, [paired, demo, refresh, runtime?.mode, accountId, invalidateSession]);
+  useEffect(() => {
+    if (!paired || demo) return;
+    const url = new URL(location.href);
+    if (url.searchParams.get("billing_return") !== "1") return;
+    url.searchParams.delete("billing_return");
+    history.replaceState(null, "", `${url.pathname}${url.search}${url.hash}`);
+    setNotice(
+      "Payment was submitted. BiBrain is confirming it with the billing provider before enabling the plan.",
+    );
+    void refresh().catch(() => {});
+  }, [paired, demo, refresh]);
   useEffect(() => {
     if (!paired || demo) return;
     let current = true;
@@ -705,12 +799,16 @@ function App() {
       // A terminal removal is never undone by a late read.
       if (current.removed) return current;
       if (loaded && loaded.state === "active")
-        return { ...current, source: loaded, sourceError: null, removed: false };
+        return {
+          ...current,
+          source: loaded,
+          sourceError: null,
+          removed: false,
+        };
       // A non-active state is a real removal.
       if (loaded)
         return { ...current, source: null, sourceError: null, removed: true };
-      const gone =
-        failure instanceof ApiError && failure.code === "NOT_FOUND";
+      const gone = failure instanceof ApiError && failure.code === "NOT_FOUND";
       // An explicit access refusal is treated as removal: the retained body must
       // never survive a FORBIDDEN/UNAUTHORIZED answer.
       const denied =
@@ -880,6 +978,12 @@ function App() {
   const ready = today.proposals.filter(
     (p: Entity) => p.data.status === "ready",
   );
+  const hasActiveJobs = today.status.jobs.some((job: any) =>
+    ["queued", "leased"].includes(job.status),
+  );
+  const hasStaleUnderstanding = today.briefs.some(
+    (item: Entity) => item.data.status !== "current",
+  );
   const target = scope || "inbox";
   const field = (label: string, child: React.ReactNode) => (
     <label className="field">
@@ -914,6 +1018,9 @@ function App() {
   }
   return (
     <>
+      <a className="skip-link" href="#main-content">
+        Skip to content
+      </a>
       <header className="masthead">
         <a
           className="brand"
@@ -923,8 +1030,8 @@ function App() {
             setNav("Today");
           }}
         >
-          <span className="mark">b.</span>Bi Brain{" "}
-          <span className="tagline">A little ahead of you.</span>
+          <span className="mark">b.</span>BiBrain{" "}
+          <span className="tagline">One brain. Every agent.</span>
         </a>
         <button
           className="primary"
@@ -948,9 +1055,9 @@ function App() {
             ))}
           </nav>
           <p className="rail-copy">
-            Your knowledge.
+            Agents change.
             <br />
-            Your choice of agent.
+            Your brain stays yours.
           </p>
           <button
             className="link settings"
@@ -967,7 +1074,7 @@ function App() {
                 : "Stored on this computer"}
           </small>
         </aside>
-        <main>
+        <main id="main-content">
           {demo ? (
             <div className="banner">
               <strong>Synthetic sample · nothing is saved</strong>
@@ -1037,23 +1144,44 @@ function App() {
               </article>
             </section>
           ) : nav === "Today" ? (
-            <section>
-              <p className="eyebrow">
-                {new Intl.DateTimeFormat("en", { weekday: "long" })
-                  .format(new Date())
-                  .toUpperCase()}{" "}
-                · YOUR PRIVATE SPACE
-              </p>
-              <h1>
-                {notes.length
-                  ? "Welcome back."
-                  : "What do you want to pick up later?"}
-              </h1>
-              <p className="lede">
-                {notes.length
-                  ? "Your saved work is ready when you are."
-                  : "Start with something you’re working on. A useful first step, before connecting anything."}
-              </p>
+            <section className="today-view">
+              <div className="today-hero">
+                <div className="today-intro">
+                  <p className="eyebrow">
+                    {new Intl.DateTimeFormat("en", { weekday: "long" })
+                      .format(new Date())
+                      .toUpperCase()}{" "}
+                    · YOUR PRIVATE SPACE
+                  </p>
+                  <h1>
+                    {notes.length
+                      ? "Welcome back."
+                      : "What do you want to pick up later?"}
+                  </h1>
+                  <p className="lede">
+                    {notes.length
+                      ? "Everything you saved is ready to continue—here or with a connected agent."
+                      : "Drop in anything worth keeping. BiBrain will hold the thread."}
+                  </p>
+                </div>
+              <BrainPulse
+                hasSavedWork={notes.length > 0}
+                readyCount={ready.length}
+                hasActiveJobs={hasActiveJobs}
+                hasStaleUnderstanding={hasStaleUnderstanding}
+                preparationEnabled={!!prefs?.enabled}
+                workerOnline={!!today.status.worker_online}
+              />
+              </div>
+              {notes.length ? (
+                <BrainQuickFind
+                  onFind={(query) => {
+                    setSearch(query);
+                    setQueryPage(0);
+                    setNav("Your brain");
+                  }}
+                />
+              ) : null}
               {firstNote ? (
                 <FirstNoteSaved
                   note={firstNote}
@@ -1074,50 +1202,36 @@ function App() {
                   onTryExample={() => setDemo(true)}
                 />
               ) : null}
-              {notes.length ? (
-                ready.length ? (
-                  <>
-                    {today.pings?.some(
-                      (ping: Entity) => ping.data.proposal_id === ready[0].id,
-                    ) ? (
-                      <p className="status">
-                        One prepared step from a chosen intention is ready to
-                        review.
-                      </p>
-                    ) : null}
-                    <ProposalCard
-                      item={ready[0]}
-                      project={projectName(ready[0].project_id)}
-                      onReview={reviewProposal}
-                      onSnooze={snoozeProposal}
-                    />
-                    {ready.length > 1 ? (
-                      <details>
-                        <summary>
-                          More prepared work ({ready.length - 1})
-                        </summary>
-                        {ready.slice(1, 3).map((p: Entity) => (
-                          <ProposalCard
-                            key={p.id}
-                            item={p}
-                            project={projectName(p.project_id)}
-                            onReview={reviewProposal}
-                            onSnooze={snoozeProposal}
-                          />
-                        ))}
-                      </details>
-                    ) : null}
-                  </>
-                ) : (
-                  <article className="quiet">
-                    <span className="small-mark">✓</span>
-                    <h2>Nothing needs your attention.</h2>
-                    <p>
-                      Your notes are here when you need them. Preparation stays
-                      quiet until you choose a goal.
+              {notes.length && ready.length ? (
+                <>
+                  {today.pings?.some(
+                    (ping: Entity) => ping.data.proposal_id === ready[0].id,
+                  ) ? (
+                    <p className="status">
+                      One next step from a goal you chose is ready to review.
                     </p>
-                  </article>
-                )
+                  ) : null}
+                  <ProposalCard
+                    item={ready[0]}
+                    project={projectName(ready[0].project_id)}
+                    onReview={reviewProposal}
+                    onSnooze={snoozeProposal}
+                  />
+                  {ready.length > 1 ? (
+                    <details>
+                      <summary>More ready for you ({ready.length - 1})</summary>
+                      {ready.slice(1, 3).map((p: Entity) => (
+                        <ProposalCard
+                          key={p.id}
+                          item={p}
+                          project={projectName(p.project_id)}
+                          onReview={reviewProposal}
+                          onSnooze={snoozeProposal}
+                        />
+                      ))}
+                    </details>
+                  ) : null}
+                </>
               ) : null}
               {notes.length && !firstNote ? (
                 <>
@@ -1162,7 +1276,7 @@ function App() {
                           setDialog("continue");
                         }}
                       >
-                        Get context
+                        Use with an agent
                       </button>
                     </article>
                   ))}
@@ -1245,7 +1359,7 @@ function App() {
                 (r: Entity) => r.data.outcome !== "accepted",
               ) ? (
                 <details>
-                  <summary>Recent checks</summary>
+                  <summary>What changed</summary>
                   {today.receipts
                     .filter((r: Entity) => r.data.outcome !== "accepted")
                     .slice(0, 20)
@@ -1265,7 +1379,7 @@ function App() {
               ) : null}
               <div className="background row">
                 <div>
-                  <h3>Background help is {prefs?.enabled ? "on" : "paused"}</h3>
+                  <h3>Stay ahead is {prefs?.enabled ? "on" : "paused"}</h3>
                   <p>
                     {today.status.worker_online
                       ? "This computer is ready to prepare selected work."
@@ -1290,7 +1404,7 @@ function App() {
                     })
                   }
                 >
-                  {prefs?.enabled ? "Pause" : "Enable"}
+                  {prefs?.enabled ? "Pause" : "Turn on"}
                 </button>
               </div>
             </section>
@@ -1765,6 +1879,151 @@ function App() {
                   Dark appearance
                 </label>
               </article>
+              {runtime?.mode === "managed" ? (
+                <article className="billing-card">
+                  <p className="eyebrow">YOUR BIBRAIN PLAN</p>
+                  <h2>
+                    {billing?.available && billing.state === "active"
+                      ? "Your plan is active"
+                      : billing?.available && billing.state === "confirming"
+                        ? "Confirming your plan"
+                        : billing?.available && billing.state === "attention"
+                          ? "Your plan needs attention"
+                          : "Keep one brain across every agent"}
+                  </h2>
+                  {!billing ? (
+                    <p className="muted">Checking your plan…</p>
+                  ) : !billing.available ? (
+                    <p className="muted">
+                      {billing.reason} Your saved work, export, and connected
+                      agents remain available.
+                    </p>
+                  ) : billing.state === "active" ? (
+                    <>
+                      <p>
+                        Your {billing.cadence ?? "current"} plan is connected.
+                        Billing never controls access to your saved work.
+                      </p>
+                      <button
+                        disabled={busy}
+                        onClick={() =>
+                          void act(async () => {
+                            const session = await api<{ url: string }>(
+                              "/billing/portal-session",
+                              {},
+                            );
+                            location.assign(session.url);
+                          })
+                        }
+                      >
+                        Manage billing
+                      </button>
+                    </>
+                  ) : billing.state === "confirming" ? (
+                    <>
+                      <p role="status">
+                        BiBrain is checking the payment directly with the
+                        billing provider. No paid allowance is enabled from a
+                        return page or browser message.
+                      </p>
+                      {billing.transaction_ref ? (
+                        <button
+                          disabled={busy}
+                          onClick={() =>
+                            void act(async () => {
+                              const generation = authGeneration;
+                              await openBillingCheckout(
+                                billing,
+                                billing.transaction_ref!,
+                                dark,
+                              );
+                              if (generation !== authGeneration) return;
+                            })
+                          }
+                        >
+                          Continue secure checkout
+                        </button>
+                      ) : null}
+                    </>
+                  ) : billing.state === "attention" ? (
+                    <>
+                      <p role="status">
+                        New paid processing is paused. Your notes, memory,
+                        connected agents, export, and corrections still work.
+                      </p>
+                      {billing.management_available ? (
+                        <button
+                          disabled={busy}
+                          onClick={() =>
+                            void act(async () => {
+                              const session = await api<{ url: string }>(
+                                "/billing/portal-session",
+                                {},
+                              );
+                              location.assign(session.url);
+                            })
+                          }
+                        >
+                          Review billing
+                        </button>
+                      ) : (
+                        <p className="muted">
+                          A checkout request may still be processing. BiBrain
+                          won&apos;t start another one until it is resolved.
+                        </p>
+                      )}
+                    </>
+                  ) : (
+                    <>
+                      <p>
+                        Choose how often to renew. The secure checkout shows the
+                        current price, taxes, and currency before you pay.
+                      </p>
+                      {billing.mode === "sandbox" ? (
+                        <p className="status" role="status">
+                          Test checkout · no real payment
+                        </p>
+                      ) : null}
+                      <div className="plan-actions">
+                        {(["monthly", "annual"] as const).map((cadence) => (
+                          <button
+                            key={cadence}
+                            disabled={busy}
+                            onClick={() =>
+                              void act(async () => {
+                                const generation = authGeneration;
+                                const checkout = await api<{
+                                  transaction_ref: string;
+                                  status: "confirming";
+                                }>("/billing/checkout-intent", { cadence });
+                                if (generation !== authGeneration) return;
+                                setBilling({
+                                  ...billing,
+                                  state: "confirming",
+                                  cadence,
+                                  transaction_ref: checkout.transaction_ref,
+                                });
+                                await openBillingCheckout(
+                                  billing,
+                                  checkout.transaction_ref,
+                                  dark,
+                                );
+                                if (generation !== authGeneration) return;
+                              })
+                            }
+                          >
+                            Choose {cadence}
+                          </button>
+                        ))}
+                      </div>
+                      <small className="muted">
+                        No automatic overages. Cancelling never locks your
+                        memory or export.
+                      </small>
+                    </>
+                  )}
+                </article>
+              ) : null}
               {forgetProof ? (
                 <article>
                   <h2>Last deletion check</h2>
@@ -1988,13 +2247,15 @@ function App() {
                             type="checkbox"
                             checked={
                               decisionConsentOverride ??
-                              today.status.spend?.decision_stored_consent_active ??
+                              today.status.spend
+                                ?.decision_stored_consent_active ??
                               false
                             }
                             disabled={
                               !(
                                 decisionConsentOverride ??
-                                today.status.spend?.decision_stored_consent_active ??
+                                today.status.spend
+                                  ?.decision_stored_consent_active ??
                                 false
                               ) &&
                               !(
@@ -2018,8 +2279,8 @@ function App() {
                           Additional background checks
                         </label>
                         <small className="muted">
-                          Allow selected goal context to be sent to an additional
-                          configured service for background checks.
+                          Allow selected goal context to be sent to an
+                          additional configured service for background checks.
                         </small>
                         <p className="muted" role="status">
                           {today.status.spend?.decision_stored_consent_active
@@ -2067,8 +2328,9 @@ function App() {
                             ? "configured"
                             : "not configured"
                         }`}{" "}
-                    · settled {formatUsd(today.status.spend?.settled_micro_usd ?? 0)}{" "}
-                    · unresolved (usage unknown){" "}
+                    · settled{" "}
+                    {formatUsd(today.status.spend?.settled_micro_usd ?? 0)} ·
+                    unresolved (usage unknown){" "}
                     {formatUsd(today.status.spend?.unresolved_micro_usd ?? 0)}
                     {today.status.spend?.time_zone
                       ? ` · ${today.status.spend.budget_day} ${today.status.spend.time_zone}`
@@ -2180,14 +2442,14 @@ function App() {
             </section>
           )}
           <footer>
-            One brain for the agents you use.
+            One brain. Every agent. Always caught up. A little ahead.
             <span>
               {phase !== "ready"
                 ? "Not connected"
                 : demo
                   ? "Synthetic sample · nothing is saved"
                   : runtime?.mode === "managed"
-                    ? "Your account · your choice of agent"
+                    ? "Your account · your brain · your choice of agent"
                     : "Local preview · your data stays under your control"}
             </span>
           </footer>
@@ -2196,1145 +2458,1172 @@ function App() {
       {paired && !demo ? (
         <>
           {dialog === "save" ? (
-        <Modal error={error} title="Save something" close={close}>
-          <p>
-            Text or Markdown · up to 100,000 characters and 1 MiB. Your original
-            is retained before preparation.
-          </p>
-          <form
-            onSubmit={(e) => {
-              e.preventDefault();
-              void act(async () => {
-                const saved = await api("/sources", {
-                  title:
-                    newTitle ||
-                    body.trim().split("\n")[0].slice(0, 80) ||
-                    "Untitled note",
-                  body,
-                  project_id: captureScope,
-                  visibility,
-                  separate,
-                });
-                setSource(await api(`/sources/${saved.source_id}`));
-                await refresh();
-                setDialog("source");
-                setNotice(
-                  saved.quarantined
-                    ? saved.warning
-                    : saved.duplicate
-                      ? "This exact text is already saved. Opened the original."
-                      : "Saved to your brain. Preparation follows separately.",
-                );
-              });
-            }}
-          >
-            {field(
-              "Title",
-              <input
-                maxLength={200}
-                value={newTitle}
-                onChange={(e) => setNewTitle(e.target.value)}
-                placeholder="Give it a familiar name"
-              />,
-            )}
-            {field(
-              "Paste something you are working on",
-              <textarea
-                required
-                rows={9}
-                value={body}
-                onChange={(e) => setBody(e.target.value)}
-                maxLength={200000}
-                placeholder="A conversation, a decision, a note…"
-              />,
-            )}
-            {field(
-              "Or import a text file",
-              <input
-                type="file"
-                accept=".txt,.md,text/plain,text/markdown"
-                onChange={(e) =>
-                  void act(async () => {
-                    const file = e.target.files?.[0];
-                    if (!file) return;
-                    if (!/\.(txt|md)$/i.test(file.name) || file.size > 1048576)
-                      throw new Error(
-                        "Choose a .txt or .md file no larger than 1 MiB.",
-                      );
-                    const generation = authGeneration;
-                    const text = await file.text();
-                    if (generation !== authGeneration) return;
-                    setBody(text);
-                    setNewTitle(file.name.replace(/\.(txt|md)$/i, ""));
-                  })
-                }
-              />,
-            )}
-            <div className="grid">
-              {field(
-                "Project",
-                <select
-                  value={captureScope}
-                  onChange={(e) => setCaptureScope(e.target.value)}
-                >
-                  {projects.map((p) => (
-                    <option key={p.id} value={p.id}>
-                      {p.title}
-                    </option>
-                  ))}
-                </select>,
-              )}
-              {field(
-                "Who can use it?",
-                <select
-                  value={visibility}
-                  onChange={(e) => setVisibility(e.target.value)}
-                >
-                  <option value="project">
-                    Agents with this project’s access
-                  </option>
-                  <option value="private">Only me — keep private</option>
-                </select>,
-              )}
-            </div>
-            <label>
-              <input
-                type="checkbox"
-                checked={separate}
-                onChange={(e) => setSeparate(e.target.checked)}
-              />{" "}
-              Keep a separately dated occurrence if already saved
-            </label>
-            <div className="actions">
-              <button className="primary" disabled={busy}>
-                Save to my brain
-              </button>
-              <button type="button" onClick={close}>
-                Cancel
-              </button>
-            </div>
-          </form>
-        </Modal>
-      ) : null}
-      {dialog === "source" && source ? (
-        <Modal
-          error={error}
-          title={source.title}
-          close={close}
-          variant="inspector"
-        >
-          <p className="muted">
-            {projectName(source.project_id)} · Original version {source.version}{" "}
-            · {source.visibility} · {source.state}
-          </p>
-          <details open>
-            <summary>Retained original</summary>
-            <pre data-testid="original">{source.body}</pre>
-          </details>
-          <div className="actions">
-            <button
-              onClick={() => {
-                setBody(source.body);
-                setNewTitle(source.title);
-                setCaptureScope(source.project_id);
-                setVisibility(source.visibility);
-                setDialog("edit-source");
-              }}
-            >
-              Correct or move source
-            </button>
-            <button
-              onClick={() => {
-                setClaimEntity("");
-                setClaimStatus("active");
-                setClaimQuote(source.body.slice(0, 300));
-                setDialog("propose-claim");
-              }}
-            >
-              Add a fact for review
-            </button>
-            <button
-              onClick={() => {
-                setConfirmation("");
-                setDialog("delete");
-              }}
-            >
-              Delete / withdraw
-            </button>
-            {source.version > 1 ? (
-              <button
-                onClick={() =>
-                  void act(async () => {
-                    setSource(
-                      await api(
-                        `/sources/${source.id}?version=${source.version - 1}`,
-                      ),
-                    );
-                    setDialog("history");
-                  })
-                }
-              >
-                Earlier version
-              </button>
-            ) : null}
-          </div>
-          <hr />
-          <h3>Current understanding</h3>
-          {currentBrief?.data.status !== "current" &&
-          today.status.jobs.find(
-            (job: any) => job.project_id === source.project_id && job.error,
-          ) ? (
-            <p className="alert" role="status">
-              Your original is saved.{" "}
-              {
-                today.status.jobs.find(
-                  (job: any) =>
-                    job.project_id === source.project_id && job.error,
-                ).error
-              }{" "}
-              Rebuild the preview after resolving this.
-            </p>
-          ) : null}
-          {currentBrief ? (
-            <>
-              <p className="pill">
-                {currentBrief.data.status === "current"
-                  ? currentBrief.data.mode
-                  : "Updating · earlier understanding is stale"}
+            <Modal error={error} title="Save something" close={close}>
+              <p>
+                Text or Markdown · up to 100,000 characters and 1 MiB. Your
+                original is retained before preparation.
               </p>
-              {currentBrief.data.status === "current" ? (
-                <>
-                  {currentBrief.data.items.map((i: any, n: number) => (
-                    <div key={n}>
-                      <p>
-                        {i.epistemic_status === "user_assertion" ? (
-                          <strong>Your understanding: </strong>
-                        ) : i.epistemic_status === "hypothesis" ? (
-                          <strong>Hypothesis: </strong>
-                        ) : null}
-                        {i.text}
-                      </p>
-                      <EvidenceList
-                        items={i.evidence}
-                        onOpen={(id) => void openSource(id)}
-                      />
-                    </div>
-                  ))}
-                  <div className="actions">
-                    <button
-                      onClick={() => {
-                        setBrief(currentBrief);
-                        setBriefText(
-                          currentBrief.data.items
-                            .map((i: any) => i.text)
-                            .join("\n\n"),
+              <form
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  void act(async () => {
+                    const saved = await api("/sources", {
+                      title:
+                        newTitle ||
+                        body.trim().split("\n")[0].slice(0, 80) ||
+                        "Untitled note",
+                      body,
+                      project_id: captureScope,
+                      visibility,
+                      separate,
+                    });
+                    setSource(await api(`/sources/${saved.source_id}`));
+                    await refresh();
+                    setDialog("source");
+                    setNotice(
+                      saved.quarantined
+                        ? saved.warning
+                        : saved.duplicate
+                          ? "This exact text is already saved. Opened the original."
+                          : "Saved to your brain. Preparation follows separately.",
+                    );
+                  });
+                }}
+              >
+                {field(
+                  "Title",
+                  <input
+                    maxLength={200}
+                    value={newTitle}
+                    onChange={(e) => setNewTitle(e.target.value)}
+                    placeholder="Give it a familiar name"
+                  />,
+                )}
+                {field(
+                  "Paste something you are working on",
+                  <textarea
+                    required
+                    rows={9}
+                    value={body}
+                    onChange={(e) => setBody(e.target.value)}
+                    maxLength={200000}
+                    placeholder="A conversation, a decision, a note…"
+                  />,
+                )}
+                {field(
+                  "Or import a text file",
+                  <input
+                    type="file"
+                    accept=".txt,.md,text/plain,text/markdown"
+                    onChange={(e) =>
+                      void act(async () => {
+                        const file = e.target.files?.[0];
+                        if (!file) return;
+                        if (
+                          !/\.(txt|md)$/i.test(file.name) ||
+                          file.size > 1048576
+                        )
+                          throw new Error(
+                            "Choose a .txt or .md file no larger than 1 MiB.",
+                          );
+                        const generation = authGeneration;
+                        const text = await file.text();
+                        if (generation !== authGeneration) return;
+                        setBody(text);
+                        setNewTitle(file.name.replace(/\.(txt|md)$/i, ""));
+                      })
+                    }
+                  />,
+                )}
+                <div className="grid">
+                  {field(
+                    "Project",
+                    <select
+                      value={captureScope}
+                      onChange={(e) => setCaptureScope(e.target.value)}
+                    >
+                      {projects.map((p) => (
+                        <option key={p.id} value={p.id}>
+                          {p.title}
+                        </option>
+                      ))}
+                    </select>,
+                  )}
+                  {field(
+                    "Who can use it?",
+                    <select
+                      value={visibility}
+                      onChange={(e) => setVisibility(e.target.value)}
+                    >
+                      <option value="project">
+                        Agents with this project’s access
+                      </option>
+                      <option value="private">Only me — keep private</option>
+                    </select>,
+                  )}
+                </div>
+                <label>
+                  <input
+                    type="checkbox"
+                    checked={separate}
+                    onChange={(e) => setSeparate(e.target.checked)}
+                  />{" "}
+                  Keep a separately dated occurrence if already saved
+                </label>
+                <div className="actions">
+                  <button className="primary" disabled={busy}>
+                    Save to my brain
+                  </button>
+                  <button type="button" onClick={close}>
+                    Cancel
+                  </button>
+                </div>
+              </form>
+            </Modal>
+          ) : null}
+          {dialog === "source" && source ? (
+            <Modal
+              error={error}
+              title={source.title}
+              close={close}
+              variant="inspector"
+            >
+              <p className="muted">
+                {projectName(source.project_id)} · Original version{" "}
+                {source.version} · {source.visibility} · {source.state}
+              </p>
+              <details open>
+                <summary>Retained original</summary>
+                <pre data-testid="original">{source.body}</pre>
+              </details>
+              <div className="actions">
+                <button
+                  onClick={() => {
+                    setBody(source.body);
+                    setNewTitle(source.title);
+                    setCaptureScope(source.project_id);
+                    setVisibility(source.visibility);
+                    setDialog("edit-source");
+                  }}
+                >
+                  Correct or move source
+                </button>
+                <button
+                  onClick={() => {
+                    setClaimEntity("");
+                    setClaimStatus("active");
+                    setClaimQuote(source.body.slice(0, 300));
+                    setDialog("propose-claim");
+                  }}
+                >
+                  Add a fact for review
+                </button>
+                <button
+                  onClick={() => {
+                    setConfirmation("");
+                    setDialog("delete");
+                  }}
+                >
+                  Delete / withdraw
+                </button>
+                {source.version > 1 ? (
+                  <button
+                    onClick={() =>
+                      void act(async () => {
+                        setSource(
+                          await api(
+                            `/sources/${source.id}?version=${source.version - 1}`,
+                          ),
                         );
-                        setDialog("edit-brief");
-                      }}
-                    >
-                      Edit understanding
-                    </button>
-                    <button
-                      className="primary"
-                      onClick={() => {
-                        setBrief(currentBrief);
-                        setDialog("continue");
-                      }}
-                    >
-                      Continue in another agent
-                    </button>
-                  </div>
+                        setDialog("history");
+                      })
+                    }
+                  >
+                    Earlier version
+                  </button>
+                ) : null}
+              </div>
+              <hr />
+              <h3>Current understanding</h3>
+              {currentBrief?.data.status !== "current" &&
+              today.status.jobs.find(
+                (job: any) => job.project_id === source.project_id && job.error,
+              ) ? (
+                <p className="alert" role="status">
+                  Your original is saved.{" "}
+                  {
+                    today.status.jobs.find(
+                      (job: any) =>
+                        job.project_id === source.project_id && job.error,
+                    ).error
+                  }{" "}
+                  Rebuild the preview after resolving this.
+                </p>
+              ) : null}
+              {currentBrief ? (
+                <>
+                  <p className="pill">
+                    {currentBrief.data.status === "current"
+                      ? currentBrief.data.mode
+                      : "Updating · earlier understanding is stale"}
+                  </p>
+                  {currentBrief.data.status === "current" ? (
+                    <>
+                      {currentBrief.data.items.map((i: any, n: number) => (
+                        <div key={n}>
+                          <p>
+                            {i.epistemic_status === "user_assertion" ? (
+                              <strong>Your understanding: </strong>
+                            ) : i.epistemic_status === "hypothesis" ? (
+                              <strong>Hypothesis: </strong>
+                            ) : null}
+                            {i.text}
+                          </p>
+                          <EvidenceList
+                            items={i.evidence}
+                            onOpen={(id) => void openSource(id)}
+                          />
+                        </div>
+                      ))}
+                      <div className="actions">
+                        <button
+                          onClick={() => {
+                            setBrief(currentBrief);
+                            setBriefText(
+                              currentBrief.data.items
+                                .map((i: any) => i.text)
+                                .join("\n\n"),
+                            );
+                            setDialog("edit-brief");
+                          }}
+                        >
+                          Edit understanding
+                        </button>
+                        <button
+                          className="primary"
+                          onClick={() => {
+                            setBrief(currentBrief);
+                            setDialog("continue");
+                          }}
+                        >
+                          Continue in another agent
+                        </button>
+                      </div>
+                    </>
+                  ) : (
+                    <p>
+                      Your original is saved. Waiting for an updated preview.
+                    </p>
+                  )}
                 </>
               ) : (
-                <p>Your original is saved. Waiting for an updated preview.</p>
+                <p>Your original is saved. Preparation has not finished.</p>
               )}
-            </>
-          ) : (
-            <p>Your original is saved. Preparation has not finished.</p>
-          )}
-          <button
-            className="link"
-            onClick={() =>
-              void act(async () => {
-                await api("/briefs", { project_id: source.project_id });
-                setNotice("Preview preparation requested.");
-              })
-            }
-          >
-            Rebuild preview
-          </button>
-        </Modal>
-      ) : null}
-      {dialog === "propose-claim" && source ? (
-        <Modal
-          error={error}
-          title="Add a fact from this original"
-          close={close}
-        >
-          <p>
-            Select an exact passage, then review the proposed fact in Your
-            brain. The original stays intact.
-          </p>
-          <form
-            onSubmit={(event) => {
-              event.preventDefault();
-              void act(async () => {
-                await api(`/sources/${source.id}/claim-proposals`, {
-                  expected_version: source.version,
-                  entity: claimEntity,
-                  field: { aspect: "status", value: claimStatus },
-                  quote: claimQuote,
-                });
-                setScope(source.project_id);
-                setNav("Your brain");
-                close();
-                await refresh();
-                setNotice(
-                  "Fact proposed. Review it before it becomes current understanding.",
-                );
-              });
-            }}
-          >
-            <label className="field">
-              Topic or entity
-              <input
-                required
-                maxLength={200}
-                value={claimEntity}
-                onChange={(event) => setClaimEntity(event.target.value)}
-              />
-            </label>
-            <label className="field">
-              Status
-              <select
-                value={claimStatus}
-                onChange={(event) => setClaimStatus(event.target.value)}
-              >
-                {(
-                  ["planned", "active", "paused", "done", "cancelled"] as const
-                ).map((value) => (
-                  <option key={value} value={value}>
-                    {value}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label className="field">
-              Exact passage from original
-              <textarea
-                required
-                maxLength={10000}
-                value={claimQuote}
-                onChange={(event) => setClaimQuote(event.target.value)}
-              />
-            </label>
-            <button className="primary" type="submit">
-              Send for review
-            </button>
-          </form>
-        </Modal>
-      ) : null}
-      {dialog === "history" && source ? (
-        <Modal
-          error={error}
-          title={`Earlier source · v${source.version}`}
-          close={close}
-          variant="inspector"
-        >
-          <p>Historical provenance. Active context uses the latest version.</p>
-          <pre>{source.body}</pre>
-          <button onClick={() => void openSource(source.id)}>
-            Return to current original
-          </button>
-        </Modal>
-      ) : null}
-      {dialog === "edit-source" && source ? (
-        <Modal error={error} title="Correct saved material" close={close}>
-          <p>
-            Your edit creates a new version. Earlier text stays in source
-            history until permanent deletion.
-          </p>
-          <form
-            onSubmit={(e) => {
-              e.preventDefault();
-              void act(async () => {
-                setSource(
-                  await api(`/sources/${source.id}/versions`, {
-                    expected_version: source.version,
-                    title: newTitle,
-                    body,
-                    project_id: captureScope,
-                    visibility,
-                  }),
-                );
-                if (source.id === firstNote?.sourceId) {
-                  resetFirstNoteBody(source.id);
-                  void loadFirstNoteSource(source.id, authGeneration);
-                }
-                await refresh();
-                setDialog("source");
-                setNotice(
-                  "Correction saved. Earlier understanding is updating.",
-                );
-              });
-            }}
-          >
-            {field(
-              "Title",
-              <input
-                required
-                value={newTitle}
-                onChange={(e) => setNewTitle(e.target.value)}
-              />,
-            )}
-            {field(
-              "Source text",
-              <textarea
-                required
-                rows={10}
-                value={body}
-                onChange={(e) => setBody(e.target.value)}
-              />,
-            )}
-            {field(
-              "Project",
-              <select
-                value={captureScope}
-                onChange={(e) => setCaptureScope(e.target.value)}
-              >
-                {projects.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.title}
-                  </option>
-                ))}
-              </select>,
-            )}
-            {field(
-              "Visibility",
-              <select
-                value={visibility}
-                onChange={(e) => setVisibility(e.target.value)}
-              >
-                <option value="project">Project</option>
-                <option value="private">Private</option>
-              </select>,
-            )}
-            <button className="primary" disabled={busy}>
-              Save correction
-            </button>
-          </form>
-        </Modal>
-      ) : null}
-      {dialog === "edit-brief" && brief ? (
-        <Modal error={error} title="Edit understanding" close={close}>
-          <p>
-            Your edited text is labeled as your understanding, alongside
-            preserved source references. It does not alter originals.
-          </p>
-          <form
-            onSubmit={(e) => {
-              e.preventDefault();
-              void act(async () => {
-                await api(
-                  `/briefs/${brief.id}`,
-                  {
-                    expected_version: brief.version,
-                    items: [
-                      {
-                        text: briefText,
-                        epistemic_status: "user_assertion",
-                        evidence: brief.data.items.flatMap(
-                          (i: any) => i.evidence,
-                        ),
-                      },
-                    ],
-                    unknowns: brief.data.unknowns,
-                  },
-                  "PATCH",
-                );
-                await refresh();
-                setDialog("source");
-                setNotice("Your understanding saved.");
-              });
-            }}
-          >
-            {field(
-              "Your understanding",
-              <textarea
-                required
-                maxLength={10000}
-                rows={10}
-                value={briefText}
-                onChange={(e) => setBriefText(e.target.value)}
-              />,
-            )}
-            <button className="primary" disabled={busy}>
-              Save understanding
-            </button>
-          </form>
-        </Modal>
-      ) : null}
-      {dialog === "continue" && brief ? (
-        <Modal error={error} title="Continue in another agent" close={close}>
-          <p>
-            This is the exact brief you’ll share. It includes only{" "}
-            {projectName(brief.project_id)}. Review private details before
-            copying.
-          </p>
-          <pre>{markdown(brief)}</pre>
-          <div className="actions">
-            <button
-              className="primary"
-              onClick={() =>
-                void act(async () => {
-                  await navigator.clipboard.writeText(markdown(brief));
-                  setNotice("Brief copied to clipboard.");
-                })
-              }
-            >
-              Copy brief
-            </button>
-            <button
-              onClick={() => download("bi-brain-brief.md", markdown(brief))}
-            >
-              Download Markdown
-            </button>
-          </div>
-          <p className="muted">
-            Manual transfer · paste this in your chosen agent. No external agent
-            is opened automatically.
-          </p>
-        </Modal>
-      ) : null}
-      {dialog === "delete" && source ? (
-        <Modal error={error} title="Remove saved material" close={close}>
-          <p>
-            Withdrawal excludes this source from retrieval immediately.
-            Permanent deletion purges all versions and affected understanding.
-            Earlier backups may retain it.
-          </p>
-          <button
-            onClick={() =>
-              void act(async () => {
-                await api(`/sources/${source.id}/withdraw`, {
-                  expected_version: source.version,
-                });
-                removeFirstNote(source.id);
-                await refresh();
-                close();
-                setNotice("Source withdrawn from active retrieval.");
-              })
-            }
-          >
-            Withdraw from active use
-          </button>
-          {field(
-            "Type DELETE to permanently purge",
-            <input
-              value={confirmation}
-              onChange={(e) => setConfirmation(e.target.value)}
-            />,
-          )}
-          <button
-            className="danger"
-            disabled={confirmation !== "DELETE" || busy}
-            onClick={() =>
-              void act(async () => {
-                const result = await api(
-                  `/sources/${source.id}`,
-                  { expected_version: source.version, confirmation },
-                  "DELETE",
-                ).catch((failure) => {
-                  if (
-                    failure instanceof ApiError &&
-                    failure.code === "FORGET_INCOMPLETE"
-                  ) {
-                    setForgetNeedsRetry(source.id);
-                    removeFirstNote(source.id);
-                  }
-                  throw failure;
-                });
-                setForgetNeedsRetry(null);
-                setForgetProof(result.proof ?? null);
-                setSource(null);
-                removeFirstNote(source.id);
-                await refresh();
-                close();
-                setNotice(
-                  result.proof &&
-                    ![
-                      result.proof.file_gone,
-                      result.proof.index_gone,
-                      result.proof.embedding_gone,
-                      result.proof.graph_edge_gone,
-                    ].every(Boolean)
-                    ? "Source removed from active use, but a managed deletion check is incomplete. Open Settings for details."
-                    : "Source history and affected understanding deleted from managed local stores. Open Settings for verification details.",
-                );
-              })
-            }
-          >
-            Permanently delete
-          </button>
-          {forgetNeedsRetry === source.id ? (
-            <button
-              onClick={() =>
-                void act(async () => {
-                  const proof = await api(
-                    `/sources/${source.id}/finalize-forget`,
-                    {},
-                  );
-                  setForgetProof(proof);
-                  setForgetNeedsRetry(null);
-                  setSource(null);
-                  removeFirstNote(source.id);
-                  await refresh();
-                  close();
-                  setNotice(
-                    "Managed deletion checks completed. Open Settings for details.",
-                  );
-                })
-              }
-            >
-              Retry managed erasure
-            </button>
-          ) : null}
-        </Modal>
-      ) : null}
-      {dialog === "project" ? (
-        <Modal error={error} title="Create a project" close={close}>
-          <form
-            onSubmit={(e) => {
-              e.preventDefault();
-              void act(async () => {
-                const p = await api("/projects", { title: projectTitle });
-                setScope(p.id);
-                setProjectTitle("");
-                await refresh();
-                close();
-              });
-            }}
-          >
-            {field(
-              "Project name",
-              <input
-                required
-                maxLength={200}
-                value={projectTitle}
-                onChange={(e) => setProjectTitle(e.target.value)}
-              />,
-            )}
-            <button className="primary" disabled={busy}>
-              Create project
-            </button>
-          </form>
-        </Modal>
-      ) : null}
-      {dialog === "goal" ? (
-        <Modal error={error} title="Choose a goal" close={close}>
-          <form
-            onSubmit={(e) => {
-              e.preventDefault();
-              void act(async () => {
-                await api("/goals", {
-                  project_id: captureScope,
-                  title: goalTitle,
-                  success_criteria: criteria,
-                  ...(goalDue
-                    ? { due_at: new Date(goalDue).toISOString() }
-                    : {}),
-                  ...(goalReview
-                    ? { review_at: new Date(goalReview).toISOString() }
-                    : {}),
-                });
-                await refresh();
-                close();
-                setGoalTitle("");
-                setCriteria("");
-                setGoalDue("");
-                setGoalReview("");
-                setNotice("Goal saved. Enable preparation when you’re ready.");
-              });
-            }}
-          >
-            {field(
-              "Project",
-              <select
-                value={captureScope}
-                onChange={(e) => setCaptureScope(e.target.value)}
-              >
-                {projects.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.title}
-                  </option>
-                ))}
-              </select>,
-            )}
-            {field(
-              "What do you want to accomplish?",
-              <input
-                required
-                maxLength={200}
-                value={goalTitle}
-                onChange={(e) => setGoalTitle(e.target.value)}
-              />,
-            )}
-            {field(
-              "What would success look like?",
-              <textarea
-                rows={4}
-                maxLength={2000}
-                value={criteria}
-                onChange={(e) => setCriteria(e.target.value)}
-              />,
-            )}
-            {field(
-              "Due (optional, this computer's time zone)",
-              <input
-                type="datetime-local"
-                value={goalDue}
-                onChange={(e) => setGoalDue(e.target.value)}
-              />,
-            )}
-            {field(
-              "Begin reviewing (optional, this computer's time zone)",
-              <input
-                type="datetime-local"
-                value={goalReview}
-                onChange={(e) => setGoalReview(e.target.value)}
-              />,
-            )}
-            <button className="primary" disabled={busy}>
-              Save goal
-            </button>
-          </form>
-        </Modal>
-      ) : null}
-      {dialog === "review" && proposal ? (
-        <Modal error={error} title={proposal.data.title} close={close}>
-          <span className="pill">Hypothesis · Prepared, not applied</span>
-          <p>{proposal.data.reason}</p>
-          <h3>Earlier plan</h3>
-          <pre>
-            {today.goals.find((g: Entity) => g.id === proposal.data.goal_id)
-              ?.data.plan || "No accepted plan yet."}
-          </pre>
-          <h3>Saved evidence</h3>
-          <EvidenceList
-            items={proposal.data.evidence}
-            onOpen={(id) => void openSource(id)}
-          />
-          {field(
-            "Proposed plan — edit before accepting",
-            <textarea
-              rows={9}
-              value={artifact}
-              onChange={(e) => setArtifact(e.target.value)}
-              maxLength={20000}
-            />,
-          )}
-          <div className="actions">
-            <button
-              className="primary"
-              disabled={busy || !artifact.trim()}
-              onClick={() =>
-                void act(async () => {
-                  await api(`/proposals/${proposal.id}/accept`, {
-                    expected_version: proposal.version,
-                    edited_artifact: artifact,
-                  });
-                  await refresh();
-                  close();
-                  setNotice(
-                    "Plan accepted. You can undo it unless a later edit changes the plan.",
-                  );
-                })
-              }
-            >
-              Keep this plan
-            </button>
-            <button
-              onClick={() => {
-                setSnooze("");
-                setDialog("snooze");
-              }}
-            >
-              Later
-            </button>
-            <button
-              onClick={() =>
-                void act(async () => {
-                  await api(`/proposals/${proposal.id}/dismiss`, {
-                    expected_version: proposal.version,
-                  });
-                  await refresh();
-                  close();
-                  setNotice(
-                    "Dismissed. The same evidence will not prompt you again.",
-                  );
-                })
-              }
-            >
-              Not useful
-            </button>
-          </div>
-        </Modal>
-      ) : null}
-      {dialog === "snooze" && proposal ? (
-        <Modal error={error} title="Review later" close={close}>
-          <form
-            onSubmit={(e) => {
-              e.preventDefault();
-              void act(async () => {
-                await api(`/proposals/${proposal.id}/snooze`, {
-                  expected_version: proposal.version,
-                  until: new Date(snooze).toISOString(),
-                });
-                await refresh();
-                close();
-                setNotice(
-                  "Snoozed until " + new Date(snooze).toLocaleString() + ".",
-                );
-              });
-            }}
-          >
-            {field(
-              "Remind me in Today at",
-              <input
-                type="datetime-local"
-                required
-                value={snooze}
-                onChange={(e) => setSnooze(e.target.value)}
-              />,
-            )}
-            <button className="primary" disabled={busy}>
-              Snooze
-            </button>
-          </form>
-        </Modal>
-      ) : null}
-      {dialog === "compare" && comparison ? (
-        <Modal
-          error={error}
-          title="Your plan changed after acceptance"
-          close={close}
-        >
-          <p>
-            Undo cannot replace a later edit. Compare your plans before making a
-            new revision.
-          </p>
-          <h3>Before acceptance</h3>
-          <pre>
-            {comparison.receipt.data.previous_plan || "No previous plan."}
-          </pre>
-          <h3>Current plan</h3>
-          <pre>{comparison.goal.data.plan || "No current plan."}</pre>
-          <div className="row">
-            <button onClick={close}>Keep current plan</button>
-            <button
-              className="primary"
-              onClick={() => {
-                setProposal(comparison.goal);
-                setArtifact(comparison.goal.data.plan ?? "");
-                setDialog("plan");
-              }}
-            >
-              Edit current plan
-            </button>
-          </div>
-        </Modal>
-      ) : null}
-      {dialog === "handoff" && handoff ? (
-        <Modal error={error} title="Project handoff" close={close}>
-          <p>
-            Accepted evidence and open intentions from{" "}
-            {projectName(handoff.project_id)}. This preview does not open an
-            external agent.
-          </p>
-          <pre>{handoff.data.text}</pre>
-          <div className="actions">
-            <button
-              onClick={() =>
-                void act(async () => {
-                  await navigator.clipboard.writeText(handoff.data.text);
-                  setNotice("Handoff copied.");
-                })
-              }
-            >
-              Copy handoff
-            </button>
-            <button
-              onClick={() => download("bi-brain-handoff.md", handoff.data.text)}
-            >
-              Download Markdown
-            </button>
-          </div>
-        </Modal>
-      ) : null}
-      {dialog === "adapter-import" && adapterPreview && adapterSelection ? (
-        <Modal error={error} title="Review import" close={close}>
-          <p>
-            {adapterPreview.items.length} text items ready for{" "}
-            {projectName(adapterSelection.project_id)}. Imported conversation
-            messages are saved as evidence, not instructions.
-          </p>
-          <ul>
-            {adapterPreview.items.slice(0, 50).map((item: any) => (
-              <li key={item.path}>{item.title}</li>
-            ))}
-          </ul>
-          {adapterPreview.warnings.length ? (
-            <details>
-              <summary>
-                {adapterPreview.warnings.length} skipped or limited
-              </summary>
-              <ul>
-                {adapterPreview.warnings.map((warning: string) => (
-                  <li key={warning}>{warning}</li>
-                ))}
-              </ul>
-            </details>
-          ) : null}
-          <button
-            className="primary"
-            disabled={busy || !adapterPreview.items.length}
-            onClick={() =>
-              void act(async () => {
-                const result = await api("/import-adapters/apply", {
-                  selection: adapterSelection,
-                  checkpoint: adapterPreview.checkpoint,
-                });
-                await refresh();
-                close();
-                setNotice(
-                  `${result.imported} saved, ${result.duplicates} already present. Review current understanding when preparation finishes.`,
-                );
-              })
-            }
-          >
-            Save selected items
-          </button>
-        </Modal>
-      ) : null}
-      {dialog === "forget-proof" && forgetProof ? (
-        <Modal error={error} title="Managed deletion checks" close={close}>
-          <ul>
-            <li>
-              Vault files and managed history:{" "}
-              {forgetProof.file_gone ? "gone" : "incomplete"}
-            </li>
-            <li>
-              Search and retained records:{" "}
-              {forgetProof.index_gone ? "gone" : "incomplete"}
-            </li>
-            <li>
-              Embeddings:{" "}
-              {forgetProof.per_store.embeddings.configured
-                ? "configured; check incomplete"
-                : "not configured; no active store"}
-            </li>
-            <li>
-              Graph edges:{" "}
-              {forgetProof.per_store.graph.configured
-                ? "configured; check incomplete"
-                : "not configured; no active store"}
-            </li>
-          </ul>
-          <p>
-            Verified {new Date(forgetProof.verified_at).toLocaleString()}.
-            Unmanaged backups and copies already sent to a client or provider
-            cannot be verified here.
-          </p>
-          <details>
-            <summary>Proof details</summary>
-            <pre>{JSON.stringify(forgetProof, null, 2)}</pre>
-          </details>
-        </Modal>
-      ) : null}
-      {dialog === "plan" && proposal ? (
-        <Modal error={error} title="Edit your plan" close={close}>
-          <form
-            onSubmit={(e) => {
-              e.preventDefault();
-              void act(async () => {
-                await api(
-                  `/goals/${proposal.id}`,
-                  { expected_version: proposal.version, plan: artifact },
-                  "PATCH",
-                );
-                await refresh();
-                close();
-              });
-            }}
-          >
-            {field(
-              "Plan",
-              <textarea
-                rows={10}
-                maxLength={20000}
-                value={artifact}
-                onChange={(e) => setArtifact(e.target.value)}
-              />,
-            )}
-            <button className="primary" disabled={busy}>
-              Save plan revision
-            </button>
-          </form>
-        </Modal>
-      ) : null}
-      {dialog === "grant" ? (
-        <Modal
-          error={error}
-          title="Give an agent selected access"
-          close={close}
-        >
-          {token ? (
-            <>
-              <p>
-                Copy this token now. It is shown once and stored as a hash.
-                Configure it as BRAIN_AGENT_TOKEN for the stdio adapter. A
-                configured token is not proof of a connection.
-              </p>
-              <pre>{token}</pre>
               <button
+                className="link"
                 onClick={() =>
                   void act(async () => {
-                    await navigator.clipboard.writeText(token);
-                    setNotice("Agent token copied.");
+                    await api("/briefs", { project_id: source.project_id });
+                    setNotice("Preview preparation requested.");
                   })
                 }
               >
-                Copy token
+                Rebuild preview
               </button>
-              <p>
-                Run:{" "}
-                <code>node node_modules/tsx/dist/cli.mjs apps/mcp/main.ts</code>{" "}
-                with the workspace as the working directory. See
-                docs/LOCAL_RUN.md for client configuration.
-              </p>
-            </>
-          ) : (
-            <form
-              onSubmit={(e) => {
-                e.preventDefault();
-                void act(async () => {
-                  const result = await api("/agent-grants", {
-                    projects: grantProjects,
-                    operations: canWrite
-                      ? ["read", "propose_memory"]
-                      : ["read"],
-                    expires_at: new Date(expiration).toISOString(),
-                  });
-                  setToken(result.token);
-                  await refresh();
-                });
-              }}
+            </Modal>
+          ) : null}
+          {dialog === "propose-claim" && source ? (
+            <Modal
+              error={error}
+              title="Add a fact from this original"
+              close={close}
             >
-              <fieldset>
-                <legend>Readable projects</legend>
-                {projects.map((p) => (
-                  <label className="check" key={p.id}>
-                    <input
-                      type="checkbox"
-                      checked={grantProjects.includes(p.id)}
-                      onChange={(e) =>
-                        setGrantProjects(
-                          e.target.checked
-                            ? [...grantProjects, p.id]
-                            : grantProjects.filter((id) => id !== p.id),
-                        )
-                      }
-                    />
-                    {p.title}
-                  </label>
-                ))}
-              </fieldset>
-              <p>Private sources are always excluded.</p>
-              <label>
-                <input
-                  type="checkbox"
-                  checked={canWrite}
-                  onChange={(e) => setCanWrite(e.target.checked)}
-                />{" "}
-                Allow proposed memories (cannot overwrite your decisions)
-              </label>
+              <p>
+                Select an exact passage, then review the proposed fact in Your
+                brain. The original stays intact.
+              </p>
+              <form
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  void act(async () => {
+                    await api(`/sources/${source.id}/claim-proposals`, {
+                      expected_version: source.version,
+                      entity: claimEntity,
+                      field: { aspect: "status", value: claimStatus },
+                      quote: claimQuote,
+                    });
+                    setScope(source.project_id);
+                    setNav("Your brain");
+                    close();
+                    await refresh();
+                    setNotice(
+                      "Fact proposed. Review it before it becomes current understanding.",
+                    );
+                  });
+                }}
+              >
+                <label className="field">
+                  Topic or entity
+                  <input
+                    required
+                    maxLength={200}
+                    value={claimEntity}
+                    onChange={(event) => setClaimEntity(event.target.value)}
+                  />
+                </label>
+                <label className="field">
+                  Status
+                  <select
+                    value={claimStatus}
+                    onChange={(event) => setClaimStatus(event.target.value)}
+                  >
+                    {(
+                      [
+                        "planned",
+                        "active",
+                        "paused",
+                        "done",
+                        "cancelled",
+                      ] as const
+                    ).map((value) => (
+                      <option key={value} value={value}>
+                        {value}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="field">
+                  Exact passage from original
+                  <textarea
+                    required
+                    maxLength={10000}
+                    value={claimQuote}
+                    onChange={(event) => setClaimQuote(event.target.value)}
+                  />
+                </label>
+                <button className="primary" type="submit">
+                  Send for review
+                </button>
+              </form>
+            </Modal>
+          ) : null}
+          {dialog === "history" && source ? (
+            <Modal
+              error={error}
+              title={`Earlier source · v${source.version}`}
+              close={close}
+              variant="inspector"
+            >
+              <p>
+                Historical provenance. Active context uses the latest version.
+              </p>
+              <pre>{source.body}</pre>
+              <button onClick={() => void openSource(source.id)}>
+                Return to current original
+              </button>
+            </Modal>
+          ) : null}
+          {dialog === "edit-source" && source ? (
+            <Modal error={error} title="Correct saved material" close={close}>
+              <p>
+                Your edit creates a new version. Earlier text stays in source
+                history until permanent deletion.
+              </p>
+              <form
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  void act(async () => {
+                    setSource(
+                      await api(`/sources/${source.id}/versions`, {
+                        expected_version: source.version,
+                        title: newTitle,
+                        body,
+                        project_id: captureScope,
+                        visibility,
+                      }),
+                    );
+                    if (source.id === firstNote?.sourceId) {
+                      resetFirstNoteBody(source.id);
+                      void loadFirstNoteSource(source.id, authGeneration);
+                    }
+                    await refresh();
+                    setDialog("source");
+                    setNotice(
+                      "Correction saved. Earlier understanding is updating.",
+                    );
+                  });
+                }}
+              >
+                {field(
+                  "Title",
+                  <input
+                    required
+                    value={newTitle}
+                    onChange={(e) => setNewTitle(e.target.value)}
+                  />,
+                )}
+                {field(
+                  "Source text",
+                  <textarea
+                    required
+                    rows={10}
+                    value={body}
+                    onChange={(e) => setBody(e.target.value)}
+                  />,
+                )}
+                {field(
+                  "Project",
+                  <select
+                    value={captureScope}
+                    onChange={(e) => setCaptureScope(e.target.value)}
+                  >
+                    {projects.map((p) => (
+                      <option key={p.id} value={p.id}>
+                        {p.title}
+                      </option>
+                    ))}
+                  </select>,
+                )}
+                {field(
+                  "Visibility",
+                  <select
+                    value={visibility}
+                    onChange={(e) => setVisibility(e.target.value)}
+                  >
+                    <option value="project">Project</option>
+                    <option value="private">Private</option>
+                  </select>,
+                )}
+                <button className="primary" disabled={busy}>
+                  Save correction
+                </button>
+              </form>
+            </Modal>
+          ) : null}
+          {dialog === "edit-brief" && brief ? (
+            <Modal error={error} title="Edit understanding" close={close}>
+              <p>
+                Your edited text is labeled as your understanding, alongside
+                preserved source references. It does not alter originals.
+              </p>
+              <form
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  void act(async () => {
+                    await api(
+                      `/briefs/${brief.id}`,
+                      {
+                        expected_version: brief.version,
+                        items: [
+                          {
+                            text: briefText,
+                            epistemic_status: "user_assertion",
+                            evidence: brief.data.items.flatMap(
+                              (i: any) => i.evidence,
+                            ),
+                          },
+                        ],
+                        unknowns: brief.data.unknowns,
+                      },
+                      "PATCH",
+                    );
+                    await refresh();
+                    setDialog("source");
+                    setNotice("Your understanding saved.");
+                  });
+                }}
+              >
+                {field(
+                  "Your understanding",
+                  <textarea
+                    required
+                    maxLength={10000}
+                    rows={10}
+                    value={briefText}
+                    onChange={(e) => setBriefText(e.target.value)}
+                  />,
+                )}
+                <button className="primary" disabled={busy}>
+                  Save understanding
+                </button>
+              </form>
+            </Modal>
+          ) : null}
+          {dialog === "continue" && brief ? (
+            <Modal
+              error={error}
+              title="Continue in another agent"
+              close={close}
+            >
+              <p>
+                This is the exact brief you’ll share. It includes only{" "}
+                {projectName(brief.project_id)}. Review private details before
+                copying.
+              </p>
+              <pre>{markdown(brief)}</pre>
+              <div className="actions">
+                <button
+                  className="primary"
+                  onClick={() =>
+                    void act(async () => {
+                      await navigator.clipboard.writeText(markdown(brief));
+                      setNotice("Brief copied to clipboard.");
+                    })
+                  }
+                >
+                  Copy brief
+                </button>
+                <button
+                  onClick={() => download("bi-brain-brief.md", markdown(brief))}
+                >
+                  Download Markdown
+                </button>
+              </div>
+              <p className="muted">
+                Manual transfer · paste this in your chosen agent. No external
+                agent is opened automatically.
+              </p>
+            </Modal>
+          ) : null}
+          {dialog === "delete" && source ? (
+            <Modal error={error} title="Remove saved material" close={close}>
+              <p>
+                Withdrawal excludes this source from retrieval immediately.
+                Permanent deletion purges all versions and affected
+                understanding. Earlier backups may retain it.
+              </p>
+              <button
+                onClick={() =>
+                  void act(async () => {
+                    await api(`/sources/${source.id}/withdraw`, {
+                      expected_version: source.version,
+                    });
+                    removeFirstNote(source.id);
+                    await refresh();
+                    close();
+                    setNotice("Source withdrawn from active retrieval.");
+                  })
+                }
+              >
+                Withdraw from active use
+              </button>
               {field(
-                "Expires at",
+                "Type DELETE to permanently purge",
                 <input
-                  type="datetime-local"
-                  required
-                  value={expiration}
-                  onChange={(e) => setExpiration(e.target.value)}
+                  value={confirmation}
+                  onChange={(e) => setConfirmation(e.target.value)}
                 />,
               )}
               <button
-                className="primary"
-                disabled={busy || !grantProjects.length}
-              >
-                Create grant
-              </button>
-            </form>
-          )}
-        </Modal>
-      ) : null}
-      {dialog === "import" ? (
-        <Modal error={error} title="Import your brain" close={close}>
-          <p>
-            Choose a Bi Brain JSON export. Preview before applying. Conflicting
-            originals block the entire import.
-          </p>
-          {field(
-            "Export file",
-            <input
-              type="file"
-              accept=".json,application/json"
-              onChange={(e) => void act(() => importFile(e.target.files?.[0]))}
-            />,
-          )}
-          {preview ? (
-            <>
-              <p>
-                {preview.projects} projects · {preview.sources} source versions
-                · {preview.conflicts.length} conflicts
-              </p>
-              <p>{preview.policy}</p>
-              <details>
-                <summary>Review material before importing</summary>
-                {preview.source_preview.map((s: any, index: number) => (
-                  <article key={index}>
-                    <h3>
-                      {s.title} · v{s.version} · {s.visibility}
-                    </h3>
-                    <pre>{s.body}</pre>
-                  </article>
-                ))}
-                {preview.plan_preview.map((g: any, index: number) => (
-                  <article key={index}>
-                    <h3>{g.title}</h3>
-                    <pre>{g.plan || "No accepted plan"}</pre>
-                  </article>
-                ))}
-              </details>
-              <button
-                className="primary"
-                disabled={busy || preview.conflicts.length > 0}
+                className="danger"
+                disabled={confirmation !== "DELETE" || busy}
                 onClick={() =>
                   void act(async () => {
-                    await api(`/imports/${preview.id}/apply`, {});
+                    const result = await api(
+                      `/sources/${source.id}`,
+                      { expected_version: source.version, confirmation },
+                      "DELETE",
+                    ).catch((failure) => {
+                      if (
+                        failure instanceof ApiError &&
+                        failure.code === "FORGET_INCOMPLETE"
+                      ) {
+                        setForgetNeedsRetry(source.id);
+                        removeFirstNote(source.id);
+                      }
+                      throw failure;
+                    });
+                    setForgetNeedsRetry(null);
+                    setForgetProof(result.proof ?? null);
+                    setSource(null);
+                    removeFirstNote(source.id);
                     await refresh();
                     close();
                     setNotice(
-                      "Import applied. Understanding is rebuilding from originals.",
+                      result.proof &&
+                        ![
+                          result.proof.file_gone,
+                          result.proof.index_gone,
+                          result.proof.embedding_gone,
+                          result.proof.graph_edge_gone,
+                        ].every(Boolean)
+                        ? "Source removed from active use, but a managed deletion check is incomplete. Open Settings for details."
+                        : "Source history and affected understanding deleted from managed local stores. Open Settings for verification details.",
                     );
                   })
                 }
               >
-                Apply reviewed import
+                Permanently delete
               </button>
-            </>
+              {forgetNeedsRetry === source.id ? (
+                <button
+                  onClick={() =>
+                    void act(async () => {
+                      const proof = await api(
+                        `/sources/${source.id}/finalize-forget`,
+                        {},
+                      );
+                      setForgetProof(proof);
+                      setForgetNeedsRetry(null);
+                      setSource(null);
+                      removeFirstNote(source.id);
+                      await refresh();
+                      close();
+                      setNotice(
+                        "Managed deletion checks completed. Open Settings for details.",
+                      );
+                    })
+                  }
+                >
+                  Retry managed erasure
+                </button>
+              ) : null}
+            </Modal>
           ) : null}
-        </Modal>
-      ) : null}
+          {dialog === "project" ? (
+            <Modal error={error} title="Create a project" close={close}>
+              <form
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  void act(async () => {
+                    const p = await api("/projects", { title: projectTitle });
+                    setScope(p.id);
+                    setProjectTitle("");
+                    await refresh();
+                    close();
+                  });
+                }}
+              >
+                {field(
+                  "Project name",
+                  <input
+                    required
+                    maxLength={200}
+                    value={projectTitle}
+                    onChange={(e) => setProjectTitle(e.target.value)}
+                  />,
+                )}
+                <button className="primary" disabled={busy}>
+                  Create project
+                </button>
+              </form>
+            </Modal>
+          ) : null}
+          {dialog === "goal" ? (
+            <Modal error={error} title="Choose a goal" close={close}>
+              <form
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  void act(async () => {
+                    await api("/goals", {
+                      project_id: captureScope,
+                      title: goalTitle,
+                      success_criteria: criteria,
+                      ...(goalDue
+                        ? { due_at: new Date(goalDue).toISOString() }
+                        : {}),
+                      ...(goalReview
+                        ? { review_at: new Date(goalReview).toISOString() }
+                        : {}),
+                    });
+                    await refresh();
+                    close();
+                    setGoalTitle("");
+                    setCriteria("");
+                    setGoalDue("");
+                    setGoalReview("");
+                    setNotice(
+                      "Goal saved. Enable preparation when you’re ready.",
+                    );
+                  });
+                }}
+              >
+                {field(
+                  "Project",
+                  <select
+                    value={captureScope}
+                    onChange={(e) => setCaptureScope(e.target.value)}
+                  >
+                    {projects.map((p) => (
+                      <option key={p.id} value={p.id}>
+                        {p.title}
+                      </option>
+                    ))}
+                  </select>,
+                )}
+                {field(
+                  "What do you want to accomplish?",
+                  <input
+                    required
+                    maxLength={200}
+                    value={goalTitle}
+                    onChange={(e) => setGoalTitle(e.target.value)}
+                  />,
+                )}
+                {field(
+                  "What would success look like?",
+                  <textarea
+                    rows={4}
+                    maxLength={2000}
+                    value={criteria}
+                    onChange={(e) => setCriteria(e.target.value)}
+                  />,
+                )}
+                {field(
+                  "Due (optional, this computer's time zone)",
+                  <input
+                    type="datetime-local"
+                    value={goalDue}
+                    onChange={(e) => setGoalDue(e.target.value)}
+                  />,
+                )}
+                {field(
+                  "Begin reviewing (optional, this computer's time zone)",
+                  <input
+                    type="datetime-local"
+                    value={goalReview}
+                    onChange={(e) => setGoalReview(e.target.value)}
+                  />,
+                )}
+                <button className="primary" disabled={busy}>
+                  Save goal
+                </button>
+              </form>
+            </Modal>
+          ) : null}
+          {dialog === "review" && proposal ? (
+            <Modal error={error} title={proposal.data.title} close={close}>
+              <span className="pill">Hypothesis · Prepared, not applied</span>
+              <p>{proposal.data.reason}</p>
+              <h3>Earlier plan</h3>
+              <pre>
+                {today.goals.find((g: Entity) => g.id === proposal.data.goal_id)
+                  ?.data.plan || "No accepted plan yet."}
+              </pre>
+              <h3>Saved evidence</h3>
+              <EvidenceList
+                items={proposal.data.evidence}
+                onOpen={(id) => void openSource(id)}
+              />
+              {field(
+                "Proposed plan — edit before accepting",
+                <textarea
+                  rows={9}
+                  value={artifact}
+                  onChange={(e) => setArtifact(e.target.value)}
+                  maxLength={20000}
+                />,
+              )}
+              <div className="actions">
+                <button
+                  className="primary"
+                  disabled={busy || !artifact.trim()}
+                  onClick={() =>
+                    void act(async () => {
+                      await api(`/proposals/${proposal.id}/accept`, {
+                        expected_version: proposal.version,
+                        edited_artifact: artifact,
+                      });
+                      await refresh();
+                      close();
+                      setNotice(
+                        "Plan accepted. You can undo it unless a later edit changes the plan.",
+                      );
+                    })
+                  }
+                >
+                  Keep this plan
+                </button>
+                <button
+                  onClick={() => {
+                    setSnooze("");
+                    setDialog("snooze");
+                  }}
+                >
+                  Later
+                </button>
+                <button
+                  onClick={() =>
+                    void act(async () => {
+                      await api(`/proposals/${proposal.id}/dismiss`, {
+                        expected_version: proposal.version,
+                      });
+                      await refresh();
+                      close();
+                      setNotice(
+                        "Dismissed. The same evidence will not prompt you again.",
+                      );
+                    })
+                  }
+                >
+                  Not useful
+                </button>
+              </div>
+            </Modal>
+          ) : null}
+          {dialog === "snooze" && proposal ? (
+            <Modal error={error} title="Review later" close={close}>
+              <form
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  void act(async () => {
+                    await api(`/proposals/${proposal.id}/snooze`, {
+                      expected_version: proposal.version,
+                      until: new Date(snooze).toISOString(),
+                    });
+                    await refresh();
+                    close();
+                    setNotice(
+                      "Snoozed until " +
+                        new Date(snooze).toLocaleString() +
+                        ".",
+                    );
+                  });
+                }}
+              >
+                {field(
+                  "Remind me in Today at",
+                  <input
+                    type="datetime-local"
+                    required
+                    value={snooze}
+                    onChange={(e) => setSnooze(e.target.value)}
+                  />,
+                )}
+                <button className="primary" disabled={busy}>
+                  Snooze
+                </button>
+              </form>
+            </Modal>
+          ) : null}
+          {dialog === "compare" && comparison ? (
+            <Modal
+              error={error}
+              title="Your plan changed after acceptance"
+              close={close}
+            >
+              <p>
+                Undo cannot replace a later edit. Compare your plans before
+                making a new revision.
+              </p>
+              <h3>Before acceptance</h3>
+              <pre>
+                {comparison.receipt.data.previous_plan || "No previous plan."}
+              </pre>
+              <h3>Current plan</h3>
+              <pre>{comparison.goal.data.plan || "No current plan."}</pre>
+              <div className="row">
+                <button onClick={close}>Keep current plan</button>
+                <button
+                  className="primary"
+                  onClick={() => {
+                    setProposal(comparison.goal);
+                    setArtifact(comparison.goal.data.plan ?? "");
+                    setDialog("plan");
+                  }}
+                >
+                  Edit current plan
+                </button>
+              </div>
+            </Modal>
+          ) : null}
+          {dialog === "handoff" && handoff ? (
+            <Modal error={error} title="Project handoff" close={close}>
+              <p>
+                Accepted evidence and open intentions from{" "}
+                {projectName(handoff.project_id)}. This preview does not open an
+                external agent.
+              </p>
+              <pre>{handoff.data.text}</pre>
+              <div className="actions">
+                <button
+                  onClick={() =>
+                    void act(async () => {
+                      await navigator.clipboard.writeText(handoff.data.text);
+                      setNotice("Handoff copied.");
+                    })
+                  }
+                >
+                  Copy handoff
+                </button>
+                <button
+                  onClick={() =>
+                    download("bi-brain-handoff.md", handoff.data.text)
+                  }
+                >
+                  Download Markdown
+                </button>
+              </div>
+            </Modal>
+          ) : null}
+          {dialog === "adapter-import" && adapterPreview && adapterSelection ? (
+            <Modal error={error} title="Review import" close={close}>
+              <p>
+                {adapterPreview.items.length} text items ready for{" "}
+                {projectName(adapterSelection.project_id)}. Imported
+                conversation messages are saved as evidence, not instructions.
+              </p>
+              <ul>
+                {adapterPreview.items.slice(0, 50).map((item: any) => (
+                  <li key={item.path}>{item.title}</li>
+                ))}
+              </ul>
+              {adapterPreview.warnings.length ? (
+                <details>
+                  <summary>
+                    {adapterPreview.warnings.length} skipped or limited
+                  </summary>
+                  <ul>
+                    {adapterPreview.warnings.map((warning: string) => (
+                      <li key={warning}>{warning}</li>
+                    ))}
+                  </ul>
+                </details>
+              ) : null}
+              <button
+                className="primary"
+                disabled={busy || !adapterPreview.items.length}
+                onClick={() =>
+                  void act(async () => {
+                    const result = await api("/import-adapters/apply", {
+                      selection: adapterSelection,
+                      checkpoint: adapterPreview.checkpoint,
+                    });
+                    await refresh();
+                    close();
+                    setNotice(
+                      `${result.imported} saved, ${result.duplicates} already present. Review current understanding when preparation finishes.`,
+                    );
+                  })
+                }
+              >
+                Save selected items
+              </button>
+            </Modal>
+          ) : null}
+          {dialog === "forget-proof" && forgetProof ? (
+            <Modal error={error} title="Managed deletion checks" close={close}>
+              <ul>
+                <li>
+                  Vault files and managed history:{" "}
+                  {forgetProof.file_gone ? "gone" : "incomplete"}
+                </li>
+                <li>
+                  Search and retained records:{" "}
+                  {forgetProof.index_gone ? "gone" : "incomplete"}
+                </li>
+                <li>
+                  Embeddings:{" "}
+                  {forgetProof.per_store.embeddings.configured
+                    ? "configured; check incomplete"
+                    : "not configured; no active store"}
+                </li>
+                <li>
+                  Graph edges:{" "}
+                  {forgetProof.per_store.graph.configured
+                    ? "configured; check incomplete"
+                    : "not configured; no active store"}
+                </li>
+              </ul>
+              <p>
+                Verified {new Date(forgetProof.verified_at).toLocaleString()}.
+                Unmanaged backups and copies already sent to a client or
+                provider cannot be verified here.
+              </p>
+              <details>
+                <summary>Proof details</summary>
+                <pre>{JSON.stringify(forgetProof, null, 2)}</pre>
+              </details>
+            </Modal>
+          ) : null}
+          {dialog === "plan" && proposal ? (
+            <Modal error={error} title="Edit your plan" close={close}>
+              <form
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  void act(async () => {
+                    await api(
+                      `/goals/${proposal.id}`,
+                      { expected_version: proposal.version, plan: artifact },
+                      "PATCH",
+                    );
+                    await refresh();
+                    close();
+                  });
+                }}
+              >
+                {field(
+                  "Plan",
+                  <textarea
+                    rows={10}
+                    maxLength={20000}
+                    value={artifact}
+                    onChange={(e) => setArtifact(e.target.value)}
+                  />,
+                )}
+                <button className="primary" disabled={busy}>
+                  Save plan revision
+                </button>
+              </form>
+            </Modal>
+          ) : null}
+          {dialog === "grant" ? (
+            <Modal
+              error={error}
+              title="Give an agent selected access"
+              close={close}
+            >
+              {token ? (
+                <>
+                  <p>
+                    Copy this token now. It is shown once and stored as a hash.
+                    Configure it as BRAIN_AGENT_TOKEN for the stdio adapter. A
+                    configured token is not proof of a connection.
+                  </p>
+                  <pre>{token}</pre>
+                  <button
+                    onClick={() =>
+                      void act(async () => {
+                        await navigator.clipboard.writeText(token);
+                        setNotice("Agent token copied.");
+                      })
+                    }
+                  >
+                    Copy token
+                  </button>
+                  <p>
+                    Run:{" "}
+                    <code>
+                      node node_modules/tsx/dist/cli.mjs apps/mcp/main.ts
+                    </code>{" "}
+                    with the workspace as the working directory. See
+                    docs/LOCAL_RUN.md for client configuration.
+                  </p>
+                </>
+              ) : (
+                <form
+                  onSubmit={(e) => {
+                    e.preventDefault();
+                    void act(async () => {
+                      const result = await api("/agent-grants", {
+                        projects: grantProjects,
+                        operations: canWrite
+                          ? ["read", "propose_memory"]
+                          : ["read"],
+                        expires_at: new Date(expiration).toISOString(),
+                      });
+                      setToken(result.token);
+                      await refresh();
+                    });
+                  }}
+                >
+                  <fieldset>
+                    <legend>Readable projects</legend>
+                    {projects.map((p) => (
+                      <label className="check" key={p.id}>
+                        <input
+                          type="checkbox"
+                          checked={grantProjects.includes(p.id)}
+                          onChange={(e) =>
+                            setGrantProjects(
+                              e.target.checked
+                                ? [...grantProjects, p.id]
+                                : grantProjects.filter((id) => id !== p.id),
+                            )
+                          }
+                        />
+                        {p.title}
+                      </label>
+                    ))}
+                  </fieldset>
+                  <p>Private sources are always excluded.</p>
+                  <label>
+                    <input
+                      type="checkbox"
+                      checked={canWrite}
+                      onChange={(e) => setCanWrite(e.target.checked)}
+                    />{" "}
+                    Allow proposed memories (cannot overwrite your decisions)
+                  </label>
+                  {field(
+                    "Expires at",
+                    <input
+                      type="datetime-local"
+                      required
+                      value={expiration}
+                      onChange={(e) => setExpiration(e.target.value)}
+                    />,
+                  )}
+                  <button
+                    className="primary"
+                    disabled={busy || !grantProjects.length}
+                  >
+                    Create grant
+                  </button>
+                </form>
+              )}
+            </Modal>
+          ) : null}
+          {dialog === "import" ? (
+            <Modal error={error} title="Import your brain" close={close}>
+              <p>
+                Choose a Bi Brain JSON export. Preview before applying.
+                Conflicting originals block the entire import.
+              </p>
+              {field(
+                "Export file",
+                <input
+                  type="file"
+                  accept=".json,application/json"
+                  onChange={(e) =>
+                    void act(() => importFile(e.target.files?.[0]))
+                  }
+                />,
+              )}
+              {preview ? (
+                <>
+                  <p>
+                    {preview.projects} projects · {preview.sources} source
+                    versions · {preview.conflicts.length} conflicts
+                  </p>
+                  <p>{preview.policy}</p>
+                  <details>
+                    <summary>Review material before importing</summary>
+                    {preview.source_preview.map((s: any, index: number) => (
+                      <article key={index}>
+                        <h3>
+                          {s.title} · v{s.version} · {s.visibility}
+                        </h3>
+                        <pre>{s.body}</pre>
+                      </article>
+                    ))}
+                    {preview.plan_preview.map((g: any, index: number) => (
+                      <article key={index}>
+                        <h3>{g.title}</h3>
+                        <pre>{g.plan || "No accepted plan"}</pre>
+                      </article>
+                    ))}
+                  </details>
+                  <button
+                    className="primary"
+                    disabled={busy || preview.conflicts.length > 0}
+                    onClick={() =>
+                      void act(async () => {
+                        await api(`/imports/${preview.id}/apply`, {});
+                        await refresh();
+                        close();
+                        setNotice(
+                          "Import applied. Understanding is rebuilding from originals.",
+                        );
+                      })
+                    }
+                  >
+                    Apply reviewed import
+                  </button>
+                </>
+              ) : null}
+            </Modal>
+          ) : null}
         </>
       ) : null}
     </>

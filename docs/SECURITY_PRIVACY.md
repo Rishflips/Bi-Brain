@@ -10,19 +10,23 @@ Browser sessions, agent clients, imported content, model responses, provider net
 
 ## Required controls
 
-| Threat | Required behavior |
-|---|---|
-| Imported prompt injection | Source text remains data; it cannot grant tools or override policy |
-| Cross-project recall | Filter before retrieval and at response assembly; scope evidence and caches |
-| Revoked access | Recheck grants on every operation and before job result delivery |
-| Private-derived leakage | Derived visibility is at least as restrictive as all dependencies |
-| Deleted material returns | Tombstone, invalidate caches, fence in-flight jobs, purge derivatives |
-| Duplicate execution | Idempotency plus fenced commits; explicitly acknowledge external-call ambiguity |
-| Unbounded model spend | Atomic reservations, bounded outputs/calls, cancellation, hard caps |
-| Malicious file/import | Size/type limits, traversal protection, no arbitrary archive extraction |
-| Cross-origin local API access | Loopback bind, Host/Origin validation, session auth, CSRF protection |
-| Credential leakage | Backend-only secrets, redacted logs, hashed agent tokens |
-| Unsafe rendered content | Sanitize Markdown/HTML; no script execution or dangerous URL schemes |
+| Threat                         | Required behavior                                                                                                                                               |
+| ------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Imported prompt injection      | Source text remains data; it cannot grant tools or override policy                                                                                              |
+| Cross-project recall           | Filter before retrieval and at response assembly; scope evidence and caches                                                                                     |
+| Revoked access                 | Recheck grants on every operation and before job result delivery                                                                                                |
+| Private-derived leakage        | Derived visibility is at least as restrictive as all dependencies                                                                                               |
+| Deleted material returns       | Tombstone, invalidate caches, fence in-flight jobs, purge derivatives                                                                                           |
+| Duplicate execution            | Idempotency plus fenced commits; explicitly acknowledge external-call ambiguity                                                                                 |
+| Unbounded model spend          | Atomic reservations, bounded outputs/calls, cancellation, hard caps                                                                                             |
+| Malicious file/import          | Size/type limits, traversal protection, no arbitrary archive extraction                                                                                         |
+| Cross-origin local API access  | Loopback bind, Host/Origin validation, session auth, CSRF protection                                                                                            |
+| Credential leakage             | Backend-only secrets, redacted logs, hashed agent tokens                                                                                                        |
+| Unsafe rendered content        | Sanitize Markdown/HTML; no script execution or dangerous URL schemes                                                                                            |
+| Forged/replayed payment signal | Verify exact raw bytes and bounded timestamp/HMAC; deduplicate by environment + endpoint + event; webhook and return URL never grant allowance                  |
+| Provider redirect/SSRF         | Backend adapter exposes fixed Paddle operations and origins only; redirects fail; portal and checkout URLs are validated against configured origins/paths       |
+| Billing data leakage           | Persist only opaque provider IDs and normalized status; no raw webhook, email, card data, portal bearer URL, API key or webhook secret in exports/logs/frontend |
+| Stale or refunded entitlement  | Fresh current-provider reads plus sealed authority checks; adverse events trigger recheck; paid failures never block knowledge access/export/deletion           |
 
 ## Local assumptions
 
@@ -42,6 +46,9 @@ Permanent deletion: purge retained bodies, chunks, caches, unsupported derived c
 Deletion UI explains its effect on derived briefs and restored backups.
 Backups have explicit retention and are sensitive. Restoring a backup must apply later deletion tombstones when available; never claim deletion from inaccessible external copies.
 Do not use append-only audit history as an excuse to retain all deleted personal content.
+Portable brain exports intentionally exclude merchant billing records. A managed operator
+backup may retain legally or operationally required opaque billing history; the product must
+not describe a knowledge export as a complete merchant-data or statutory-erasure export.
 
 ## Logs and telemetry
 
