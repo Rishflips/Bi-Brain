@@ -66,7 +66,7 @@ export function SignIn({
       <section className="welcome entry-experience">
         <div className="entry-story">
           <p className="eyebrow">YOUR PRIVATE SPACE</p>
-          <h1>Your work, <em>remembered.</em></h1>
+          <h1>Your work, remembered.</h1>
           <p className="entry-lede">
             One calm place that carries your context between every agent you
             choose to use.

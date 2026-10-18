@@ -23,7 +23,7 @@ skip link and the existing semantic controls remain available.
 Fresh verification on this visual follow-up:
 
 - `npm run typecheck`, `npm run lint`, `npm run build`: passed. Current production
-  assets are `index-BbOi7aAm.css` and `index-DUP2tHEQ.js`.
+  assets are `index-BbOi7aAm.css` and `index-CA2_ZJuA.js`.
 - Focused production-build browser acceptance: **6/6 passed**. This includes the
   real capture/evidence/edit/correction/delete/reload journey, truthful living-state
   transition and search, oversized-draft retention, plus 320px light and dark layouts.
@@ -39,6 +39,15 @@ rerun. Visual inspection then caught and removed mobile sticky-overlay behavior.
 The fresh complete rerun on the exact final tree passed **44/44 in 2.7 minutes**.
 Native clients, live Paddle Sandbox, live model, hosted identity/TLS and
 public-release authority remain external gates.
+
+The first PR #6 CI run on `ecd74e6` correctly failed during the full Vitest gate:
+the managed sign-in heading's visual emphasis inserted markup inside an established
+server-rendered text contract. No authorization, storage or browser assertion failed.
+The heading was restored to one uninterrupted accessible string without weakening
+the regression. The exact runtime-config file then passed **10/10** outside the
+socket/filesystem-restricted sandbox; its first sandboxed attempt had 8 passing
+assertions and two Windows temporary-directory cleanup `EPERM` failures. Final
+typecheck, lint and production build also passed; a new CI head follows.
 
 ## Current local continuation — B0 operator lifecycle and default-off B1 boundary
 
