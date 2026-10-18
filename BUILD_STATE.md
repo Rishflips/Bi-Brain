@@ -2,6 +2,32 @@
 
 Updated: 2026-10-19
 
+## Current merged baseline — PR #6
+
+The owner merged [PR #6](https://github.com/Rishflips/Bi-Brain/pull/6), **Ship
+the living BiBrain release candidate**, on 2026-10-19 local time. GitHub `main`
+and the Desktop `main` branch now match merge commit
+`7cc5bf2f656b282d5261069eccec707f4fd0ebc0`. The merge contains the living
+first-use/Today interface, B0 operator lifecycle, and default-off B1 Paddle
+boundary described below.
+
+The corrected PR head was `a9c8523f40966b227734949f8ff053fbefdca0fa`.
+Its predecessor CI run correctly rejected a managed heading copy regression; the
+unchanged regression passed 10/10 after repair. The corrected GitHub workflow
+[39172307962](https://github.com/Rishflips/Bi-Brain/actions/runs/39172307962)
+completed successfully in 9m32s. It passed install, high-severity audit,
+typecheck, lint, the full Vitest suite, production build, offline evaluation,
+all Chromium journeys, Docker build, container restart/persistence smoke, Compose
+validation, and Caddy validation. This is exact corrected-head Linux/container
+evidence; it is not target-host, live-provider, or real-payment proof.
+
+This documentation refresh starts from the clean merged tree on branch
+`codex/bibrain-docs-refresh`. The untracked personal licensing note and concurrent
+`design/logo-concepts/` work remain outside Git and untouched. The private GitHub
+repository About description now reads: “A user-owned second brain that keeps
+memory, context, and continuity across AI agents.” No homepage or public release
+was created.
+
 ## Current delivery — living first-use and Today interface
 
 The first-use and Today surfaces now meet the approved product framing visibly,
@@ -47,13 +73,15 @@ The heading was restored to one uninterrupted accessible string without weakenin
 the regression. The exact runtime-config file then passed **10/10** outside the
 socket/filesystem-restricted sandbox; its first sandboxed attempt had 8 passing
 assertions and two Windows temporary-directory cleanup `EPERM` failures. Final
-typecheck, lint and production build also passed; a new CI head follows.
+typecheck, lint and production build also passed; the corrected head was merged in
+PR #6 and its exact workflow is identified in the current baseline above.
 
-## Current local continuation — B0 operator lifecycle and default-off B1 boundary
+## Merged release foundation — B0 operator lifecycle and default-off B1 boundary
 
 The owner's instruction to ship the complete product without slice-by-slice
-approval authorized the remaining reversible local implementation. No credential,
-account, catalog, payment, deployment, commit, or push was created. The managed
+approval authorized the reversible implementation now merged through PR #6. No
+real credential, account, catalog, payment, deployment, or provider request was
+created. The managed
 financial authority now has offline one-time enrollment, Windows ACL verification,
 encrypted key archive/restore, backup key metadata, and Paddle-store restore
 barriers. A new default-off Paddle boundary adds all-or-none boot configuration,
@@ -116,10 +144,10 @@ public host/domain/TLS, two native clients, legal/license/privacy/support decisi
 and public-release authority remain external gates. Live billing additionally
 requires `BRAIN_PADDLE_ALLOW_LIVE=1`; it is off by default.
 
-Final read-only loopback verification found no listener at the preserved preview
-address `127.0.0.1:4318`. The preview is stopped, not reported unhealthy; it was
-not restarted because doing so would attach a worker to preserved owner preview
-data. The isolated Playwright server used disposable test data and passed 44/44.
+The rebuilt isolated preview was subsequently restarted at `127.0.0.1:4318` with
+paid-provider variables absent; its liveness response was `{"live":true}` and it
+served the exact merged production assets. This local preview is not a public
+deployment. The Playwright server used disposable test data and passed 44/44.
 
 ## Current checkpoint — PR #5 merged; Desktop main consolidated; next-agent handoff
 
@@ -241,9 +269,9 @@ lint and build passed before the settled regression.
 The failed earlier run is retained below, not counted as passing. Functional source
 was committed/pushed as **`92a69b2684b6d852b16e7be6214f629f0245655c`** and Desktop
 `review/latest-build` fast-forwarded to the same SHA. Parent checked the remote SHA
-and the personal licensing note's unchanged SHA-256. Follow-up
-[draft PR #5](https://github.com/Rishflips/Bi-Brain/pull/5) is open; nothing was merged.
-This documentation-only delivery checkpoint follows that source commit.
+and the personal licensing note's unchanged SHA-256. At this historical checkpoint,
+[PR #5](https://github.com/Rishflips/Bi-Brain/pull/5) was still open; it was merged
+later. This documentation-only delivery checkpoint followed that source commit.
 
 The exact final PR-head Linux/container result must be read from PR #5's checks;
 the first source-revision run is [39069371589](https://github.com/Rishflips/Bi-Brain/actions/runs/39069371589).

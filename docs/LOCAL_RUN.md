@@ -1,6 +1,12 @@
 # Run Bi Brain locally
 
-**Harness work in progress:** See [BUILD_STATE.md](../BUILD_STATE.md) and [bi-brain-vault.md](bi-brain-vault.md) before upgrading existing data. The newer portable vault is transitional; do not assume its full migration/deletion release gates are complete. Vault CLI commands are `npm run vault:dry-run`, `npm run vault:migrate`, `npm run vault:rebuild`, and `npm run vault:rollback`. Independent HTTPS deployment is documented in [SELF_HOSTING.md](SELF_HOSTING.md).
+**Current supported local path:** See [BUILD_STATE.md](../BUILD_STATE.md) and
+[bi-brain-vault.md](bi-brain-vault.md) before upgrading existing data. The portable
+vault is supported by the tested local workflow, but production-host migration,
+recovery, and deletion gates remain separate. Vault CLI commands are
+`npm run vault:dry-run`, `npm run vault:migrate`, `npm run vault:rebuild`, and
+`npm run vault:rollback`. Independent HTTPS deployment is documented in
+[SELF_HOSTING.md](SELF_HOSTING.md).
 
 The implemented delivery is a single-owner local application. It does not publish a site, sell plans, or connect accounts. Official source repository: https://github.com/Rishflips/Bi-Brain.
 
@@ -90,7 +96,11 @@ Tests use temporary databases, deterministic clocks and clearly synthetic materi
 
 Dockerfile and compose.yaml provide a pinned Node image, Git, and supervised API/worker with a persistent named volume. Run `docker compose up --build`, then retrieve the owner pairing file from the mounted volume without publishing it. This root compose file maps the host port to loopback only. The container bind is explicit via BRAIN_CONTAINER; default native execution binds loopback. For independent HTTPS hosting use `deploy/compose.yaml` and [SELF_HOSTING.md](SELF_HOSTING.md), which configure one exact public origin, Secure cookies and a persistent TLS proxy. Check BUILD_STATE for actual container and hosted evidence; a supplied compose file is not runtime proof.
 
-The local application does not create a public hosted release. License/commercial distribution remains unresolved. Billing, managed OAuth connectors, notifications outside Today, and automatic external actions are deferred.
+The local application does not create a public hosted release. License and
+commercial distribution remain unresolved. A default-off Paddle boundary exists,
+but real Sandbox acceptance and activation remain external gates. Managed OAuth
+connectors, notifications outside Today, and automatic external actions are not
+part of the current release.
 
 # Harness commands added in the SOL6 build
 

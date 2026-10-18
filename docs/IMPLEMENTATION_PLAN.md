@@ -41,7 +41,15 @@ Gate: a clean checkout installs and starts using documented commands; production
       **6/6 focused Chromium journeys** passed, including a full real capture lifecycle,
       truthful pulse/search and 320px light/dark layouts. After visual mobile-overlay
       repair, the exact final tree passed the complete **44/44 Chromium** gate; remote
-      PR CI remains the separate publication check.
+      PR CI subsequently passed the full Linux/container publication check.
+- [x] Merge the complete living-interface, B0 operator-lifecycle and default-off B1
+      boundary through [PR #6](https://github.com/Rishflips/Bi-Brain/pull/6).
+      Desktop and GitHub `main` matched merge commit `7cc5bf2` before the
+      documentation-only follow-up branch was created.
+- [x] Verify corrected PR head `a9c8523` in GitHub Actions run
+      [39172307962](https://github.com/Rishflips/Bi-Brain/actions/runs/39172307962):
+      full tests, Chromium, build, offline evaluation, Docker/container smoke,
+      Compose and Caddy all passed.
 
 - [x] Read completed baseline full regression: 1,447 passed / 8 skipped / zero failed,
       132 files at b5610f4. Exact baseline Ubuntu/container CI run 39065046637 succeeded;
@@ -75,7 +83,8 @@ Gate: a clean checkout installs and starts using documented commands; production
       note, migrate separate preview and archive evidence with hash/integrity checks;
       fresh Desktop install/typecheck/build and **23/23 brain/restart tests** passed.
 - [x] Write root `NEXT_AGENT_HANDOFF.md` with current state and next gates. The new
-      handoff/checkpoint corrections are local documentation changes, not yet published.
+      handoff/checkpoint was subsequently superseded by the merged PR #6 checkpoint
+      dated 2026-10-19; older pre-merge language is retained only as history.
 - [x] Read the separate merged-main run
       [39071223934](https://github.com/Rishflips/Bi-Brain/actions/runs/39071223934) to terminal
       completion: **success** at `a702a93`; every listed release-candidate job passed.
@@ -196,7 +205,8 @@ The 2026-10-16 owner direction brings managed personal delivery into the primary
       - [x] Owned clean-baseline admission/generation, full storage contract and money-5 migration with genuine frozen-v4 preservation proof. Accepted in the merged 1,450-pass Windows / 1,458-pass Linux baseline; the [integration plan](superpowers/plans/2026-10-18-billing-admission-integration.md) records the executed contract and closures.
     - [x] Task 3 financial admission/freshness and reserve/mark/audit integration. Accepted in the merged baseline; current local work did not weaken the authority path.
     - [x] Task 4 offline enrollment, positive Windows ACL readback, encrypted key backup/restore, managed backup integration and actual-process synthetic verification. Final local gate: **1,488 passed / 8 platform skips, 141 files; all 44 Chromium journeys; 4/4 offline evaluations; typecheck/lint/build/audit green**. No real financial key or payment was enrolled.
-  - [ ] B1 Paddle integration and actual Sandbox proof. The owner authorized complete default-off local implementation; live execution still has separate business and release gates.
+  - [ ] B1 Paddle release acceptance. The default-off integration is complete;
+    actual Sandbox proof and commercial inputs remain open.
     - [x] Closed server adapter/config, charged-currency allowlist, account-bound checkout intent, pre-I/O ambiguity lock with signed-event recovery and known-transaction resume, authenticated status/portal routes, raw signed webhook inbox, fenced replay/conflict/orphan handling, hard-timeout bounded transport, worker correlation/current-provider reconciliation, backup participation and plain-language Settings UI. Local synthetic authority/evidence/provider/store/HTTP/browser checks pass; no external provider was contacted.
     - [ ] Actual Paddle Sandbox checkout, out-of-order/replay, current-term allowance, renewal, cancellation, refund, portal, export and deletion proof with real sandbox credentials and selected prices/allowances.
 - [ ] G8: Supported packaging, hosted TLS/operations/recovery and human usability/license/privacy/security release gates.

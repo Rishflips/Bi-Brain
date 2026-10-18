@@ -26,6 +26,14 @@ Projects are scopes inside Your brain, not a required setup ceremony. An unassig
 
 ## First visit
 
+Before private content is available, the local edition presents the BiBrain
+promise beside one protected pairing card: **Your thinking, still alive.** The
+installation code remains a security boundary, but the screen should feel like
+the product—not an operator console. The managed edition uses the same product
+story with a real sign-in action. Neither branch invents prior activity.
+
+After pairing or sign-in:
+
 Headline: What do you want to pick up later?
 Primary input: Paste something you are working on.
 Actions: Save to my brain; Try an example.
@@ -59,6 +67,12 @@ Never show success while a job is only queued.
 Today may include a direct “Find something in your brain” action. It navigates to
 real scoped search; it must not masquerade as semantic answering until that
 capability is implemented and verified.
+
+The Today hero places the plain-language orientation beside the state-driven
+neural field. Decorative paths and nodes carry no data meaning. The label, title,
+detail, color treatment, and any motion are selected from real application state;
+reduced-motion preference removes all animation. On a phone, the header and
+navigation stay in document flow so they cannot cover the capture or saved receipt.
 
 ## Prepared item
 

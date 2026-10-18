@@ -1,6 +1,10 @@
 # Ship audit — 2026-10-07
 
-Status note, 2026-10-18: this is a historical audit. Later merged continuous integration closed its workflow-installation gap, and the uncommitted local release candidate adds the B0 operator lifecycle and default-off B1 billing boundary. Read [RELEASE.md](RELEASE.md) and [BUILD_STATE.md](../BUILD_STATE.md) for current status.
+Status note, 2026-10-19: this is a historical audit. Later merged continuous
+integration closed its workflow-installation gap, and PR #6 merged the living
+interface, B0 operator lifecycle, and default-off B1 billing boundary into `main`
+at `7cc5bf2`. Read [RELEASE.md](RELEASE.md) and
+[BUILD_STATE.md](../BUILD_STATE.md) for current status.
 
 The owner canceled ChatGPT Sites deployment and requested an independent deployment package plus a GitHub checkpoint. The full application remains the SQLite/Git/worker suite, not the separate synthetic Sites probe. This audit repairs confirmed packaging/security issues and records actual evidence. It does not certify a live production server or a completed harness V1.
 

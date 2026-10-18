@@ -1,6 +1,6 @@
 # BiBrain — next-agent handoff
 
-**Prepared: 2026-10-18. Read this before resuming implementation.**
+**Prepared: 2026-10-19. Read this before resuming implementation.**
 
 **Read `AGENTS.md` and `NEXT_AGENT_HANDOFF.md` first.**
 
@@ -8,11 +8,51 @@ This is a factual checkpoint and recommended continuation, not permission to ena
 payments, spend money, publish a service, or overwrite user work. Follow the next
 user request and `AGENTS.md`; use the available skills where applicable.
 
-## Latest continuation checkpoint
+## Superseding merged checkpoint — 2026-10-19
+
+The owner merged [PR #6](https://github.com/Rishflips/Bi-Brain/pull/6), **Ship
+the living BiBrain release candidate**. GitHub and Desktop `main` matched merge
+commit `7cc5bf2f656b282d5261069eccec707f4fd0ebc0` before the documentation-only
+follow-up branch `codex/bibrain-docs-refresh` was created.
+
+That merge contains the living first-use and Today interface, the complete local
+B0 operator lifecycle, and the default-off B1 Paddle boundary. It does not prove
+or enable a real Paddle account, catalog, payment, live model, managed identity,
+native-client integration, public host, or production release.
+
+Verified local evidence on the merged source tree:
+
+- **1,488 passed / 8 expected platform skips / 0 failed across 141 Vitest files**.
+- **44/44 Chromium journeys** on the exact final interface tree.
+- **4/4 offline evaluations**, with no provider request.
+- Typecheck, lint, production build, and registry-backed high-severity audit passed;
+  the audit reported zero vulnerabilities.
+- The first PR #6 workflow correctly caught a managed sign-in heading copy
+  regression. The assertion was preserved, the heading was repaired, and its exact
+  integration file passed 10/10 locally. The corrected exact-head workflow
+  [39172307962](https://github.com/Rishflips/Bi-Brain/actions/runs/39172307962)
+  then passed the complete Linux/container gate, including Docker smoke, Compose,
+  and Caddy validation.
+
+The isolated production preview is available at `http://127.0.0.1:4318` while its
+local supervisor remains running. Its health check returned `{"live":true}`, and
+paid-provider variables were absent. This is a local preview, not a public release.
+
+Preserve the untracked personal licensing note
+`docs/LICENSING_AND_MONETIZATION_OPTIONS_2026-09-29.md` and concurrent
+`design/logo-concepts/` work. They are not part of this release or documentation
+follow-up.
+
+The next meaningful gates are external: real Paddle Sandbox acceptance with
+owner-selected commercial inputs, a capped live-model evaluation, production
+hosting and recovery proof, two native clients, a human first-use pilot, and final
+legal/licensing/support decisions.
+
+## Historical pre-merge continuation checkpoint
 
 After this handoff was written, the owner explicitly approved the product framing
 and instructed the agent to ship the complete product without returning for
-slice-by-slice approval. The current uncommitted tree therefore includes the
+slice-by-slice approval. At that pre-merge checkpoint, the uncommitted tree included the
 remaining local B0 operator lifecycle and a default-off B1 Paddle boundary:
 
 - Offline billing enrollment, positive Windows ACL verification, encrypted key
@@ -48,10 +88,11 @@ serial Windows test harness uses a bounded 15-second default for real
 SQLite/Git/child-process cases, while intentional long worker-kill proofs retain
 explicit deadlines.
 No real Paddle account, credential, catalog, payment, allowance, provider request,
-hosted deployment, commit or push exists. Preserve the untracked personal licensing
-note and concurrent `design/logo-concepts/` work.
+or hosted deployment existed. The implementation was subsequently committed and
+merged through PR #6. Preserve the untracked personal licensing note and concurrent
+`design/logo-concepts/` work.
 
-`docs/RELEASE.md` now opens with this latest local candidate instead of presenting
+`docs/RELEASE.md` now opens with the merged PR #6 candidate instead of presenting
 the earlier PR #5 checkpoint as current. `docs/SHIP_AUDIT_2026-10-07.md` is clearly
 labeled as a historical audit. The remaining unchecked release items are external
 gates, not hidden local implementation claims.
@@ -65,40 +106,37 @@ remaining evidence-backed and reversible. Public direction: **“One brain. Ever
 agent. Always caught up. A little ahead.”** Technical harness language stays out
 of primary UX.
 
-The first local slice adds a truthful Today brain pulse and direct real search into
+The first product slice added a truthful Today brain pulse and direct real search into
 Your brain, revises primary copy, and records the charter in README/Product/UX/
 Design System. Fresh typecheck/lint/build, **2/2** focused new browser journeys and
 **6/6** existing capture/layout journeys passed. See the current top BUILD_STATE
-checkpoint. This work is local and uncommitted; it does not enable a live provider,
-real payment, hosted identity or deployment.
+checkpoint. The later living-interface follow-up is merged through PR #6. It does
+not enable a live provider, real payment, hosted identity or deployment.
 
 ## 1. Start here
 
 - **Only primary working folder:** `C:\Users\Gowrishankar\Desktop\Bi Brain`.
 - **Repository:** private `https://github.com/Rishflips/Bi-Brain`.
-- **Current branch:** `main`.
-- **Verified local/GitHub main commit:**
-  `a702a93124b6bcc7eba22268d6f00c9e48c80a86`.
-- **PR #5:** reviewed and merged by the owner; verified through GitHub:
-  <https://github.com/Rishflips/Bi-Brain/pull/5>.
-  Merge time: `2026-10-17T21:30:20Z` (UTC).
-- The merge commit has the **same file tree** as verified PR head
-  `99598a7be349641fd82d135c500d82f55c75eaba`. Functional source was introduced in
-  `92a69b2684b6d852b16e7be6214f629f0245655c`; the next commit recorded delivery.
-- A separate merged-main CI run was **in progress when this handoff was written**:
-  <https://github.com/Rishflips/Bi-Brain/actions/runs/39071223934>.
-  It was subsequently read to terminal completion and **passed** at `a702a93`;
-  install, audit, typecheck, lint, full tests, build, offline evaluations,
-  Chromium, Docker/container, Compose and Caddy steps all succeeded. Exact
-  PR-head push CI and PR merge-candidate CI also passed; see section 5.
+- **Current working branch:** `codex/bibrain-docs-refresh`.
+- **Verified local/GitHub `main` commit before this docs branch:**
+  `7cc5bf2f656b282d5261069eccec707f4fd0ebc0`.
+- **PR #6:** reviewed and merged by the owner:
+  <https://github.com/Rishflips/Bi-Brain/pull/6>. Its corrected source head was
+  `a9c8523f40966b227734949f8ff053fbefdca0fa`.
+- Exact corrected-head workflow
+  [39172307962](https://github.com/Rishflips/Bi-Brain/actions/runs/39172307962)
+  completed successfully. Install, audit, typecheck, lint, full tests, build,
+  offline evaluations, Chromium, Docker/container, Compose and Caddy passed.
+- PR #5 and its merged-main workflow remain valid historical foundation evidence;
+  PR #6 is the current release-candidate baseline.
 - The old OpenCode `cosmic-island` worktree was removed. Git/OpenCode list only
   Desktop. Its old pathname may remain as an **empty Windows-locked directory**;
   it is not another project copy. Do not resume there or recreate it.
 
-At the start of the handoff-writing task, the only untracked personal file was
-`docs/LICENSING_AND_MONETIZATION_OPTIONS_2026-09-29.md`. Preserve it. This handoff
-and its accompanying state/checklist corrections are new local documentation
-changes; they are **not committed or pushed by the handoff-writing task**.
+Preserve both untracked owner/concurrent paths:
+`docs/LICENSING_AND_MONETIZATION_OPTIONS_2026-09-29.md` and
+`design/logo-concepts/`. The documentation refresh is isolated on the branch named
+above; confirm its PR/merge status rather than assuming it reached `main`.
 
 ### Required read order
 
@@ -164,7 +202,7 @@ Implemented and behaviorally tested:
 - Extensive synthetic financial authority and recovery protections, not verified
   payment processing or real customer entitlements.
 
-### Most recent product improvement (PR #5)
+### Capture reliability foundation (historical PR #5)
 
 This **refines existing capture/search/storage**, rather than newly creating them:
 
@@ -201,14 +239,13 @@ and personal-note hashes stayed unchanged. See the archive's `README.md`,
 `file-manifest.json`, `verification.json` and `desktop-verification.json`.
 **The archive is private runtime material, not a sanitized shareable export.**
 
-### Preserved preview (currently stopped)
+### Preserved preview (currently running)
 
-- URL when started: **http://127.0.0.1:4318/#today**.
+- URL: **http://127.0.0.1:4318/#today**.
 - Started from **Desktop**, not the removed worktree.
-- The earlier handoff check was live in local mode with pairing available and both
-  connected and decision processing off. The final 2026-10-18 read-only loopback
-  probe received connection refused: no process is currently listening on 4318.
-  This is a stopped preview, not a failed health response.
+- A 2026-10-19 request to `/api/v1/health/live` returned `{"live":true}` and the
+  root served the merged production asset hashes. Pairing is available; connected
+  and decision processing remain off.
 - Runs the actual API and separate worker, without loading `.env`, with provider/
   billing environment variables stripped and `BRAIN_MANAGED_ALLOW_PAID=0`.
 - No owner provider/key/payment was enabled. Liveness alone is not proof of worker
@@ -239,8 +276,9 @@ leave it unset for loopback rather than weakening the check.
 
 | Gate                                        | Verified result / source                                                                                                                                                                                                             |
 | ------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Current uncommitted Windows full regression | **1,488 passed / 8 platform skips / 0 failed, 141 files**, 1,074.26 s. The older ignored JSON report remains a 1,478-pass historical checkpoint; do not cite it as latest. Vault/advisory and cold-recovery timing regressions are included. |
-| Current uncommitted browser/eval/audit      | **All 44 Chromium journeys passed** (43 in the combined run; one documentation-screenshot open failure passed on immediate focused retry), **4/4 offline evaluations**, typecheck/lint/build passed, registry-backed `npm audit --omit=dev` found **0 vulnerabilities**. |
+| Current merged Windows full regression | **1,488 passed / 8 platform skips / 0 failed, 141 files**, 1,074.26 s. The older ignored JSON report remains a 1,478-pass historical checkpoint; do not cite it as latest. Vault/advisory and cold-recovery timing regressions are included. |
+| Current merged browser/eval/audit      | **All 44 Chromium journeys passed in one exact-final-tree run**, **4/4 offline evaluations**, typecheck/lint/build passed, and the registry-backed high-severity audit reported **0 vulnerabilities**. |
+| Exact PR #6 corrected-head CI               | **SUCCESS** at `a9c8523…`: [run 39172307962](https://github.com/Rishflips/Bi-Brain/actions/runs/39172307962). Full tests, Chromium, Docker/container smoke, Compose and Caddy validation passed. |
 | Settled Windows full regression             | **1,450 passed / 8 platform skips / 0 failed, 132 files**, 637.12 s; source/test/config freeze verified unchanged.                                                                                                                   |
 | Exact PR-head push CI                       | **SUCCESS** at `99598a7…`: <https://github.com/Rishflips/Bi-Brain/actions/runs/39069418518>.                                                                                                                                         |
 | PR merge-candidate CI                       | **SUCCESS** for the same PR head: <https://github.com/Rishflips/Bi-Brain/actions/runs/39069422614>. Checkout was GitHub's synthetic merge candidate, not an agent merge.                                                             |
@@ -447,11 +485,12 @@ an ephemeral frontend/serverless filesystem. A frontend-only upload is not BiBra
 ## 10. First actions for the next agent
 
 1. Confirm Desktop is the current directory; inspect `git status` and local/remote
-   revisions. Preserve this handoff and the user's personal untracked note.
+   revisions. Preserve this handoff, the user's personal untracked note, and
+   `design/logo-concepts/`.
 2. Read the documents in section 1. Resolve any newer user steering first.
-3. Preserve the verified merged-main CI result for run `39071223934`; do not restart
-   historical green gates or treat an unavailable local report path as lost evidence
-   without checking the archive.
+3. Preserve the verified PR #6 corrected-head CI result for run `39172307962`;
+   do not restart historical green gates or treat an unavailable local report path
+   as lost evidence without checking the archive.
 4. Verify the existing preview if needed without exposing credentials or replacing
    datasets. There are no implementation agents intentionally left working.
 5. Do not change billing authority or the Paddle boundary merely to generate work;

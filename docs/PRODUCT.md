@@ -16,6 +16,10 @@ work while remaining calm and trustworthy. “Lively” comes from truthful stat
 continuity, and useful preparation—not fake thinking, decorative activity, or an
 anthropomorphic claim that the software acted when it did not.
 
+The implemented identity expresses this as an atmospheric cognitive field and a
+bounded neural state surface. Those visuals are a product metaphor, never a graph
+of inferred relationships or evidence that work completed.
+
 ## Product wedge
 
 The first market is individual builders, researchers, and creators who move
