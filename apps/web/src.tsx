@@ -1018,6 +1018,9 @@ function App() {
   }
   return (
     <>
+      <a className="skip-link" href="#main-content">
+        Skip to content
+      </a>
       <header className="masthead">
         <a
           className="brand"
@@ -1071,7 +1074,7 @@ function App() {
                 : "Stored on this computer"}
           </small>
         </aside>
-        <main>
+        <main id="main-content">
           {demo ? (
             <div className="banner">
               <strong>Synthetic sample · nothing is saved</strong>
@@ -1141,23 +1144,26 @@ function App() {
               </article>
             </section>
           ) : nav === "Today" ? (
-            <section>
-              <p className="eyebrow">
-                {new Intl.DateTimeFormat("en", { weekday: "long" })
-                  .format(new Date())
-                  .toUpperCase()}{" "}
-                · YOUR PRIVATE SPACE
-              </p>
-              <h1>
-                {notes.length
-                  ? "Welcome back."
-                  : "What do you want to pick up later?"}
-              </h1>
-              <p className="lede">
-                {notes.length
-                  ? "Everything you saved is ready to continue—here or with a connected agent."
-                  : "Drop in anything worth keeping. BiBrain will hold the thread."}
-              </p>
+            <section className="today-view">
+              <div className="today-hero">
+                <div className="today-intro">
+                  <p className="eyebrow">
+                    {new Intl.DateTimeFormat("en", { weekday: "long" })
+                      .format(new Date())
+                      .toUpperCase()}{" "}
+                    · YOUR PRIVATE SPACE
+                  </p>
+                  <h1>
+                    {notes.length
+                      ? "Welcome back."
+                      : "What do you want to pick up later?"}
+                  </h1>
+                  <p className="lede">
+                    {notes.length
+                      ? "Everything you saved is ready to continue—here or with a connected agent."
+                      : "Drop in anything worth keeping. BiBrain will hold the thread."}
+                  </p>
+                </div>
               <BrainPulse
                 hasSavedWork={notes.length > 0}
                 readyCount={ready.length}
@@ -1166,6 +1172,7 @@ function App() {
                 preparationEnabled={!!prefs?.enabled}
                 workerOnline={!!today.status.worker_online}
               />
+              </div>
               {notes.length ? (
                 <BrainQuickFind
                   onFind={(query) => {

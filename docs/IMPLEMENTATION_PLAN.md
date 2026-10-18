@@ -25,6 +25,11 @@ Gate: a clean checkout installs and starts using documented commands; production
       motion under reduced-motion preferences.
 - [x] Add direct Today → scoped Your brain search without presenting keyword search
       as semantic answering.
+- [x] Replace the visually plain first-use and Today presentation with a responsive
+      cognitive field, state-driven neural surface and prominent real capture action;
+      preserve quiet states and do not invent activity, connections or history.
+- [x] Preserve semantic controls, keyboard focus/skip navigation, reduced-motion
+      behavior and 320px light/dark usability in the redesigned shell.
 - [x] Replace primary-flow technical language with remember, continue, stay ahead,
       what changed and use with an agent while retaining evidence inspection.
 - [x] Verify the new slice: typecheck/lint/build, **2/2** focused living-brain
@@ -32,6 +37,11 @@ Gate: a clean checkout installs and starts using documented commands; production
       combined gate subsequently passed **1,488 tests / 8 platform skips across
       141 files and 44/44 Chromium journeys**. Native-client, live-provider and
       public-release gates remain separate.
+- [x] Verify the visual follow-up against production assets: typecheck/lint/build and
+      **6/6 focused Chromium journeys** passed, including a full real capture lifecycle,
+      truthful pulse/search and 320px light/dark layouts. After visual mobile-overlay
+      repair, the exact final tree passed the complete **44/44 Chromium** gate; remote
+      PR CI remains the separate publication check.
 
 - [x] Read completed baseline full regression: 1,447 passed / 8 skipped / zero failed,
       132 files at b5610f4. Exact baseline Ubuntu/container CI run 39065046637 succeeded;
