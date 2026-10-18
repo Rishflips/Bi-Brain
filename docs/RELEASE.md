@@ -2,9 +2,14 @@
 
 This page records what BiBrain can ship today, what each verification result proves, and which external decisions still block a hosted release.
 
-## Latest local release candidate checkpoint, 2026-10-18
+## Latest merged release candidate checkpoint, 2026-10-19
 
-The current uncommitted worktree adds the complete offline B0 operator-safety lifecycle and a default-off B1 billing boundary for Paddle on top of `main` at `a702a93124b6bcc7eba22268d6f00c9e48c80a86`. No account, credential, product catalog, payment, deployment, commit, or push was created.
+[PR #6](https://github.com/Rishflips/Bi-Brain/pull/6), **Ship the living
+BiBrain release candidate**, was merged into `main` at
+`7cc5bf2f656b282d5261069eccec707f4fd0ebc0`. The merged tree contains the living
+first-use/Today interface, complete offline B0 operator-safety lifecycle, and the
+default-off B1 Paddle boundary. It did not create a Paddle account, credential,
+product catalog, payment, public deployment, or live-provider request.
 
 The local product now includes:
 
@@ -12,6 +17,9 @@ The local product now includes:
 - **B1 billing boundary**: closed-by-default configuration, account-bound checkout intent, owner-only status and portal actions, signed replay-safe webhooks, durable provider evidence, bounded leases, currency controls, and one billing-authority grant path
 - **Failure behavior**: hard provider response limits, a crash-safe ambiguous-checkout lock, resumable known transactions, a 60s Git subprocess ceiling, visible attention states, and plain-language unavailable states
 - **Local mode**: no subscription dependency and no live billing requirement
+- **Living interface**: atmospheric first-use, a neural Today surface driven by
+  real state, direct durable capture, responsive phone layout, and reduced-motion
+  behavior without invented memories or activity
 
 The exact local tree passed:
 
@@ -25,11 +33,19 @@ The exact local tree passed:
 
 The final isolated Vitest console run took 1,074.26 seconds. The ignored
 `data/vitest-final-green.json` records the earlier 1,478-pass checkpoint, not this
-latest run. The browser suite used disposable test data; 43 journeys passed in the
-combined run and the one case blocked by a transient Windows documentation-screenshot
-open error passed on immediate focused retry. The preserved preview at
-`127.0.0.1:4318` is stopped, and this checkpoint does not claim a hosted service or
-real payment.
+latest run. After the final living-interface and mobile overlay repair, the exact
+tree passed all **44/44** browser journeys in one fresh run. The browser suite used
+disposable test data. An isolated local preview was rechecked healthy at
+`127.0.0.1:4318`; it is not a hosted service or real payment environment.
+
+The first PR #6 CI attempt found one managed server-rendering copy regression in
+the redesigned sign-in heading. The assertion was retained, the heading was
+repaired, and its exact integration file passed 10/10 locally before the corrected
+head was merged. The corrected exact-head GitHub workflow
+[39172307962](https://github.com/Rishflips/Bi-Brain/actions/runs/39172307962)
+passed in 9m32s: install, audit, typecheck, lint, full tests, build, offline
+evaluation, Chromium, Docker build, container smoke, Compose and Caddy validation
+all succeeded.
 
 The following gates require owner authority, credentials, spending, or external infrastructure:
 
@@ -58,7 +74,8 @@ No owner host has been deployed. The previous private Sites probe was permanentl
 
 ## Historical PR #5 baseline checkpoint, 2026-10-18
 
-This section preserves the verified PR #5 state before the later uncommitted B0 and B1 work recorded above.
+This section preserves the verified PR #5 state before the later B0, B1 and
+living-interface work now merged through PR #6.
 
 Baseline commit **`b5610f411e02584842d2e655a49bf28a781f00f3`** on branch
 `feat/system-one-stage-accounting` was verified clean and **pushed** before the
@@ -87,7 +104,8 @@ hosted release. The functional follow-up now has **41/41 local Chromium journeys
 typecheck/lint/build evidence, covering inline capture through real persistence,
 truthful source-linked receipt, error recovery, deletion, account switching and
 find/reopen. These are improvements to existing services, not live intelligence or
-a commercial launch. The owner prioritized reliability over a flashy redesign.
+a commercial launch. The later PR #6 follow-up supplied the living redesign while
+retaining these reliability gates.
 
 Final local whole-tree verification passed after the reproduced readiness timing repair.
 Parent independently passed **19 readiness/consent/process checks / 1 platform skip**,

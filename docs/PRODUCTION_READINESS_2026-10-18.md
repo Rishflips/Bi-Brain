@@ -5,6 +5,19 @@ offered here. A passing CI packaging run cannot be converted into a readiness
 percentage; the areas still gated are product, live quality, billing, hosted
 operations and legal/support work that no baseline test run can measure.
 
+**Superseding status, 2026-10-19:** [PR #6](https://github.com/Rishflips/Bi-Brain/pull/6)
+merged the living first-use/Today interface, B0 operator lifecycle, and default-off
+B1 Paddle boundary into `main` at `7cc5bf2`. Local evidence reached 1,488 passing
+Vitest checks with 8 platform skips across 141 files, 44/44 Chromium journeys,
+4/4 offline evaluations, passing typecheck/lint/build, and zero high-severity audit
+findings. Public launch remains blocked by real Paddle Sandbox acceptance, capped
+live-model evaluation, chosen-host operations, native-client and human verification,
+and commercial/legal/support decisions. Corrected PR-head workflow
+[39172307962](https://github.com/Rishflips/Bi-Brain/actions/runs/39172307962)
+also passed the full Linux/container packaging gate. [RELEASE.md](RELEASE.md) and
+[BUILD_STATE.md](../BUILD_STATE.md) are the current records; the remainder of this
+dated document preserves the PR #4/#5 readiness assessment as history.
+
 The **40/100** figure preserved in the table below is a **historical engineering
 judgment recorded earlier on 2026-10-18, before the baseline verification in this
 document**. It is not an updated score and this document does not re-score the
@@ -43,7 +56,7 @@ this worktree, chosen target-host TLS/DNS/reboot/monitoring/recovery, live model
 quality, real identity/payment, or a hosted release. It closes the baseline
 "current-branch Linux/container CI missing" gap only.
 
-## Current product status
+## Historical PR #5 product status
 
 The functional capture follow-up has **local browser verification**, not public
 launch acceptance. The controller's settled Chromium command
@@ -75,19 +88,18 @@ Vitest's persistent module cache (`--maxWorkers=1 --fsModuleCache
 disabled. Parent read `success:true`, **1,450 passed / 8 platform skips / zero failed
 across 132 files**, 637.12 s, and verified unchanged frozen source/test/config hashes.
 Its report is `test-results/vitest/product-release-settled-parent.json`.
-Functional source is published as `92a69b2684b6d852b16e7be6214f629f0245655c`,
-Desktop was safely fast-forwarded to the same SHA with the personal note preserved,
-and [draft PR #5](https://github.com/Rishflips/Bi-Brain/pull/5) is open, not merged.
-This documentation-only checkpoint follows that source commit. Exact final PR-head
-Linux/container CI is still pending; read its terminal result in PR #5's checks.
-This does not close the public launch gates.
+Functional source was published as `92a69b2684b6d852b16e7be6214f629f0245655c`,
+then merged through [PR #5](https://github.com/Rishflips/Bi-Brain/pull/5). The later
+PR #6 checkpoint above supersedes this section. Neither merge closes the public
+launch gates.
 The failed report is retained as `test-results/product-release-full-parent.json`;
 it is not being represented as passing.
 
 The historical scored table that follows was written against the pre-`b5610f4`
-preview. Payments and paid providers remain **off**; B1 (Paddle) is **DRAFT /
-UNAPPROVED**; B0 operational protected enrollment, key recovery and Windows ACL
-verification are **unresolved**.
+preview. At that time, payments and paid providers were **off**, B1 (Paddle) was
+**DRAFT / UNAPPROVED**, and B0 operational protected enrollment, key recovery,
+and Windows access-control verification were unresolved. The superseding status
+above records their later default-off implementation without claiming live proof.
 
 | Release area (historical) | Score | Evidence / gap |
 | --- | ---: | --- |
