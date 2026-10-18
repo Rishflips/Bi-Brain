@@ -1,5 +1,46 @@
 # Release and operations
 
+This page records what BiBrain can ship today, what each verification result proves, and which external decisions still block a hosted release.
+
+## Latest local release candidate checkpoint, 2026-10-18
+
+The current uncommitted worktree adds the complete offline B0 operator-safety lifecycle and a default-off B1 billing boundary for Paddle on top of `main` at `a702a93124b6bcc7eba22268d6f00c9e48c80a86`. No account, credential, product catalog, payment, deployment, commit, or push was created.
+
+The local product now includes:
+
+- **B0 operations**: one-time offline enrollment, verified Windows access control lists, encrypted key archive and restore, coordinated backup and guarded restore
+- **B1 billing boundary**: closed-by-default configuration, account-bound checkout intent, owner-only status and portal actions, signed replay-safe webhooks, durable provider evidence, bounded leases, currency controls, and one billing-authority grant path
+- **Failure behavior**: hard provider response limits, a crash-safe ambiguous-checkout lock, resumable known transactions, a 60s Git subprocess ceiling, visible attention states, and plain-language unavailable states
+- **Local mode**: no subscription dependency and no live billing requirement
+
+The exact local tree passed:
+
+| Evidence                     | Result                                                        |
+| ---------------------------- | ------------------------------------------------------------- |
+| Vitest                       | **1,488 passed, 8 platform skips, 0 failed across 141 files** |
+| Chromium                     | **All 44 journeys passed**                                    |
+| Offline evaluation           | **4 of 4 cases passed** with no provider call                 |
+| Static and production checks | Typecheck, lint, and build passed                             |
+| Dependency audit             | **0 vulnerabilities** at `high` severity or above             |
+
+The final isolated Vitest console run took 1,074.26 seconds. The ignored
+`data/vitest-final-green.json` records the earlier 1,478-pass checkpoint, not this
+latest run. The browser suite used disposable test data; 43 journeys passed in the
+combined run and the one case blocked by a transient Windows documentation-screenshot
+open error passed on immediate focused retry. The preserved preview at
+`127.0.0.1:4318` is stopped, and this checkpoint does not claim a hosted service or
+real payment.
+
+The following gates require owner authority, credentials, spending, or external infrastructure:
+
+1. Choose customer prices, annual discount, allowances, seller, tax, legal, privacy, support, and licensing terms.
+2. Supply Paddle Sandbox credentials and approved catalog identifiers, then verify checkout, portal, webhook, cancellation, refund, and reconciliation behavior.
+3. Supply a capped live-model budget and credential, then run held-out quality, cost, outage, and timeout checks.
+4. Choose a production host and domain, then verify Transport Layer Security (TLS), reboot recovery, durable storage, monitoring, backups, and deletion barriers.
+5. Verify two named native agent clients in fresh sessions and complete a human first-use pilot.
+
+Do not enable `BRAIN_PADDLE_ALLOW_LIVE=1` until the Sandbox checks and commercial decisions pass. See [BUILD_STATE.md](../BUILD_STATE.md) for the detailed evidence and [PRODUCTION_READINESS_2026-10-18.md](PRODUCTION_READINESS_2026-10-18.md) for the operator gates.
+
 ## Independent deployment checkpoint — 2026-10-07
 
 ChatGPT Sites is canceled as a deployment path. Use [SELF_HOSTING.md](SELF_HOSTING.md) and [SHIP_AUDIT_2026-10-07.md](SHIP_AUDIT_2026-10-07.md) for the current one-owner HTTPS package. The checklist below records specification/history; it is not proof of a completed harness V1.
@@ -15,7 +56,9 @@ ChatGPT Sites is canceled as a deployment path. Use [SELF_HOSTING.md](SELF_HOSTI
 
 No owner host has been deployed. The previous private Sites probe was permanently deleted following the owner's explicit request and final confirmation on 2026-10-07. The owner list, connector project lookup and former URL verify removal/offline status. GitHub and local application data remain intact.
 
-## Current baseline checkpoint — 2026-10-18 (read this before the historical sections)
+## Historical PR #5 baseline checkpoint, 2026-10-18
+
+This section preserves the verified PR #5 state before the later uncommitted B0 and B1 work recorded above.
 
 Baseline commit **`b5610f411e02584842d2e655a49bf28a781f00f3`** on branch
 `feat/system-one-stage-accounting` was verified clean and **pushed** before the
@@ -63,8 +106,10 @@ terminal evidence belongs to PR #5's checks. Nothing was merged or publicly depl
 The earlier full release run
 failed (missing Vitest temporary transform files plus the actual readiness failure)
 and remains retained, not counted as passing. See BUILD_STATE for the exact reports.
-Payments and paid providers stay off; B1 (Paddle) is DRAFT/UNAPPROVED; B0 operational
-enrollment, key recovery and Windows ACL verification remain open. See
+At this historical checkpoint, payments and paid providers stayed off, B1 (Paddle)
+was a draft, and B0 operational enrollment, key recovery, and Windows access control
+list verification remained open. The latest local checkpoint above supersedes that
+implementation status. See
 [PRODUCTION_READINESS_2026-10-18.md](PRODUCTION_READINESS_2026-10-18.md) for the
 still-blocked launch gates.
 

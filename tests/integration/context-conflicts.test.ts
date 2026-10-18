@@ -173,7 +173,7 @@ it("review UI cites both exact passages, names the proposed correction and expos
     expect(html).toContain("Beta pricing: paid");
     expect(html).toContain("Approve exact correction");
     expect(html).toContain("Keep earlier decision");
-    expect(html).toContain("characters 0–18");
+    expect(html).toContain("passage 0–18");
     const headers = {
       host: "127.0.0.1:4317",
       origin: "http://127.0.0.1:4317",

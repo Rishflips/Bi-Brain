@@ -1,5 +1,12 @@
 import { createHash, randomUUID } from "node:crypto";
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import {
+  chmodSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { ControlStore } from "../../packages/storage/control.ts";
@@ -51,11 +58,17 @@ const ISSUER = "https://synthetic.invalid";
 
 function fixtureBase(): string {
   if (process.platform !== "win32") return tmpdir();
-  if (!existsSync(APPROVED_BASE)) throw new Error("The approved Windows fixture base is missing.");
+  if (!existsSync(APPROVED_BASE))
+    throw new Error("The approved Windows fixture base is missing.");
   return APPROVED_BASE;
 }
 
-export function syntheticPolicy(over: { epoch: number; root_nonce: string; key_commitment: string; mode?: "sandbox" | "live"; }): BillingOperatorPolicy {
+export function syntheticPolicy(over: {
+  epoch: number;
+  root_nonce: string;
+  key_commitment: string;
+  mode?: "sandbox" | "live";
+}): BillingOperatorPolicy {
   return validateBillingOperatorPolicy({
     schema: 1,
     policy_id: "SYNTHETIC-policy",
@@ -66,13 +79,31 @@ export function syntheticPolicy(over: { epoch: number; root_nonce: string; key_c
     key_commitment: over.key_commitment,
     service_daily_micro_usd: 10_000,
     catalog: [
-      { cadence: "monthly", product_ref: "SYNTHETIC-product", price_ref: "SYNTHETIC-price-monthly", allowance_micro_usd: 1_000, per_job_micro_usd: 100, user_daily_micro_usd: 500 },
-      { cadence: "annual", product_ref: "SYNTHETIC-product", price_ref: "SYNTHETIC-price-annual", allowance_micro_usd: 1_000, per_job_micro_usd: 100, user_daily_micro_usd: 500 },
+      {
+        cadence: "monthly",
+        product_ref: "SYNTHETIC-product",
+        price_ref: "SYNTHETIC-price-monthly",
+        allowance_micro_usd: 1_000,
+        per_job_micro_usd: 100,
+        user_daily_micro_usd: 500,
+      },
+      {
+        cadence: "annual",
+        product_ref: "SYNTHETIC-product",
+        price_ref: "SYNTHETIC-price-annual",
+        allowance_micro_usd: 1_000,
+        per_job_micro_usd: 100,
+        user_daily_micro_usd: 500,
+      },
     ],
   });
 }
 
-export function syntheticFacts(binding: ServerOwnedBinding, now: string, over: Partial<ProviderFacts> = {}): ProviderFacts {
+export function syntheticFacts(
+  binding: ServerOwnedBinding,
+  now: string,
+  over: Partial<ProviderFacts> = {},
+): ProviderFacts {
   return {
     transaction_ref: binding.initial_transaction_ref,
     subscription_ref: binding.subscription_ref,
@@ -83,7 +114,10 @@ export function syntheticFacts(binding: ServerOwnedBinding, now: string, over: P
     completed_payment: true,
     current_state: "active",
     paid_period_start: "2027-01-31T00:00:00.000Z",
-    paid_period_end: binding.cadence === "annual" ? "2028-01-31T00:00:00.000Z" : "2027-02-28T00:00:00.000Z",
+    paid_period_end:
+      binding.cadence === "annual"
+        ? "2028-01-31T00:00:00.000Z"
+        : "2027-02-28T00:00:00.000Z",
     verified_at: now,
     ...over,
   };
@@ -110,16 +144,21 @@ export interface BillingAdmissionFixture {
   close(): void;
 }
 
-export function createBillingAdmissionFixture(input: {
-  cadence?: "monthly" | "annual";
-  now?: string;
-  correlation?: BillingCorrelationSource | null;
-  source?: EvidenceSource | null;
-  enrolled?: boolean;
-} = {}): BillingAdmissionFixture {
+export function createBillingAdmissionFixture(
+  input: {
+    base?: string;
+    cadence?: "monthly" | "annual";
+    now?: string;
+    correlation?: BillingCorrelationSource | null;
+    source?: EvidenceSource | null;
+    enrolled?: boolean;
+  } = {},
+): BillingAdmissionFixture {
   const now = input.now ?? DEFAULT_NOW;
   const cadence = input.cadence ?? "monthly";
-  const dir = mkdtempSync(join(fixtureBase(), "billing-admission-"));
+  const dir = mkdtempSync(
+    join(input.base ?? fixtureBase(), "billing-admission-"),
+  );
   const root = join(dir, "managed");
   mkdirSync(root, { mode: 0o700 });
 
@@ -128,7 +167,9 @@ export function createBillingAdmissionFixture(input: {
 
   const runtime = new ManagedRuntime(root, { clock });
   const control = runtime.control;
-  control.db.exec("CREATE TABLE IF NOT EXISTS managed_money_schema(version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL);");
+  control.db.exec(
+    "CREATE TABLE IF NOT EXISTS managed_money_schema(version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL);",
+  );
   control.db.exec(MANAGED_V4_MONEY_DDL);
   control.db.prepare("INSERT INTO managed_money_schema VALUES(4,?)").run(now);
   installBillingMoney5({ control, root, ...ACK });
@@ -137,12 +178,32 @@ export function createBillingAdmissionFixture(input: {
   const epoch = reconciliation.initEpoch(ACK);
 
   const key = Uint8Array.from({ length: 32 }, (_v, i) => (i * 7 + 1) % 256);
-  const commitment = createHash("sha256").update(Buffer.from(key)).digest("hex");
-  enrollBillingKeyOffline(root, key, { ...ACK, expected_commitment: commitment });
+  const commitment = createHash("sha256")
+    .update(Buffer.from(key))
+    .digest("hex");
+  enrollBillingKeyOffline(root, key, {
+    ...ACK,
+    expected_commitment: commitment,
+  });
 
-  const policy = syntheticPolicy({ epoch: epoch.epoch, root_nonce: epoch.nonce, key_commitment: commitment });
-  control.db.prepare("INSERT INTO managed_service_policy(service,daily_micro_usd,version,updated_at) VALUES('managed-processing',?,1,?)").run(policy.service_daily_micro_usd, now);
-  control.db.prepare("INSERT INTO control_billing_policy(singleton,policy_json,policy_digest) VALUES(1,?,?)").run(canonical(policy), createHash("sha256").update(canonical(policy)).digest("hex"));
+  const policy = syntheticPolicy({
+    epoch: epoch.epoch,
+    root_nonce: epoch.nonce,
+    key_commitment: commitment,
+  });
+  control.db
+    .prepare(
+      "INSERT INTO managed_service_policy(service,daily_micro_usd,version,updated_at) VALUES('managed-processing',?,1,?)",
+    )
+    .run(policy.service_daily_micro_usd, now);
+  control.db
+    .prepare(
+      "INSERT INTO control_billing_policy(singleton,policy_json,policy_digest) VALUES(1,?,?)",
+    )
+    .run(
+      canonical(policy),
+      createHash("sha256").update(canonical(policy)).digest("hex"),
+    );
   const policyFile = join(root, ".protected", "billing-policy.json");
   writeFileSync(policyFile, canonical(policy), { mode: 0o600 });
   try {
@@ -152,8 +213,14 @@ export function createBillingAdmissionFixture(input: {
   }
 
   if (input.enrolled) {
-    const policyDigest = createHash("sha256").update(canonical(policy)).digest("hex");
-    const accounts: Array<{ account_id: string; config_digest: string; baseline_digest: string }> = [];
+    const policyDigest = createHash("sha256")
+      .update(canonical(policy))
+      .digest("hex");
+    const accounts: Array<{
+      account_id: string;
+      config_digest: string;
+      baseline_digest: string;
+    }> = [];
     const anchor: EnrollmentAnchor = validateEnrollmentAnchor({
       schema: 1,
       policy_digest: policyDigest,
@@ -161,8 +228,12 @@ export function createBillingAdmissionFixture(input: {
       mode: policy.mode,
       epoch: epoch.epoch,
       root_nonce: epoch.nonce,
-      baseline_digest: createHash("sha256").update(canonical(accounts.map((a) => a.baseline_digest))).digest("hex"),
-      roster_digest: createHash("sha256").update(canonical(accounts)).digest("hex"),
+      baseline_digest: createHash("sha256")
+        .update(canonical(accounts.map((a) => a.baseline_digest)))
+        .digest("hex"),
+      roster_digest: createHash("sha256")
+        .update(canonical(accounts))
+        .digest("hex"),
       accounts,
     });
     const enrollmentFile = join(root, ".protected", "billing-enrollment.json");
@@ -176,16 +247,39 @@ export function createBillingAdmissionFixture(input: {
       .prepare(
         "INSERT INTO control_billing_enrollment(singleton,schema,version,epoch,root_nonce,policy_digest,key_commitment,mode,baseline_digest,roster_digest,enrollment_digest,enrolled_at) VALUES(1,1,1,?,?,?,?,?,?,?,?,?)",
       )
-      .run(epoch.epoch, epoch.nonce, policyDigest, commitment, policy.mode, anchor.baseline_digest, anchor.roster_digest, enrollmentAnchorDigest(anchor), now);
+      .run(
+        epoch.epoch,
+        epoch.nonce,
+        policyDigest,
+        commitment,
+        policy.mode,
+        anchor.baseline_digest,
+        anchor.roster_digest,
+        enrollmentAnchorDigest(anchor),
+        now,
+      );
   }
 
   const account = runtime.provision(ISSUER, `SYNTHETIC-owner-${randomUUID()}`);
-  control.db.prepare("INSERT INTO managed_account_policy(account_id,per_job_micro_usd,user_daily_micro_usd,accounting_tz,version,updated_at) VALUES(?,?,?,NULL,1,?)").run(account.id, 100, 500, now);
+  control.db
+    .prepare(
+      "INSERT INTO managed_account_policy(account_id,per_job_micro_usd,user_daily_micro_usd,accounting_tz,version,updated_at) VALUES(?,?,?,NULL,1,?)",
+    )
+    .run(account.id, 100, 500, now);
 
   const incarnation = control.db
-    .prepare("SELECT incarnation,provisioning_generation FROM managed_account_incarnation WHERE account_id=?")
-    .get(account.id) as { incarnation: string; provisioning_generation: number };
-  const identity = identityDigest({ account_id: account.id, issuer: account.issuer, subject: account.subject });
+    .prepare(
+      "SELECT incarnation,provisioning_generation FROM managed_account_incarnation WHERE account_id=?",
+    )
+    .get(account.id) as {
+    incarnation: string;
+    provisioning_generation: number;
+  };
+  const identity = identityDigest({
+    account_id: account.id,
+    issuer: account.issuer,
+    subject: account.subject,
+  });
   const binding: ServerOwnedBinding = {
     schema: 1,
     account_id: account.id,
@@ -194,7 +288,10 @@ export function createBillingAdmissionFixture(input: {
     provisioning_generation: incarnation.provisioning_generation,
     mode: policy.mode,
     product_ref: "SYNTHETIC-product",
-    price_ref: cadence === "annual" ? "SYNTHETIC-price-annual" : "SYNTHETIC-price-monthly",
+    price_ref:
+      cadence === "annual"
+        ? "SYNTHETIC-price-annual"
+        : "SYNTHETIC-price-monthly",
     cadence,
     customer_ref: `SYNTHETIC-customer-${randomUUID()}`,
     subscription_ref: `SYNTHETIC-subscription-${randomUUID()}`,
@@ -214,13 +311,22 @@ export function createBillingAdmissionFixture(input: {
     correlation_ref: binding.correlation_ref,
     version: binding.version,
   };
-  const defaultCorrelation: BillingCorrelationSource = { resolve: async () => correlation };
-  const correlationSource = input.correlation === undefined ? defaultCorrelation : input.correlation;
+  const defaultCorrelation: BillingCorrelationSource = {
+    resolve: async () => correlation,
+  };
+  const correlationSource =
+    input.correlation === undefined ? defaultCorrelation : input.correlation;
 
   let facts = syntheticFacts(binding, now);
   const defaultSource: EvidenceSource = { read: async () => facts };
   const source = input.source === undefined ? defaultSource : input.source;
-  const authority = new BillingAuthority({ control, root, clock, source, correlation: correlationSource });
+  const authority = new BillingAuthority({
+    control,
+    root,
+    clock,
+    source,
+    correlation: correlationSource,
+  });
   const spending = new ManagedSpendingStore(control, clock);
 
   return {
@@ -248,7 +354,10 @@ export function createBillingAdmissionFixture(input: {
       return authority.beginAdmission(account.id);
     },
     admit(preflightId: string) {
-      return authority.admitAccount({ account_id: account.id, preflight_id: preflightId });
+      return authority.admitAccount({
+        account_id: account.id,
+        preflight_id: preflightId,
+      });
     },
     moneyDigest() {
       return moneyBytesDigest(control.db);
@@ -259,7 +368,12 @@ export function createBillingAdmissionFixture(input: {
       } catch {
         /* the runtime may already be closed */
       } finally {
-        rmSync(dir, { recursive: true, force: true, maxRetries: 8, retryDelay: 50 });
+        rmSync(dir, {
+          recursive: true,
+          force: true,
+          maxRetries: 8,
+          retryDelay: 50,
+        });
       }
     },
   };

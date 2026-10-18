@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { resolve } from "node:path";
 import { Storage } from "../../packages/storage/index.ts";
 import { Brain } from "../../packages/domain/service.ts";
 import { BrainError } from "../../packages/domain/logic.ts";
@@ -8,7 +9,11 @@ import {
   type PreparedProvider,
 } from "../../packages/providers/prepared.ts";
 import { PreparedDecisionProvider } from "../../packages/providers/prepared-decision.ts";
-import { ManagedRuntime, managedCapability, managedDecisionCapability } from "../../packages/runtime/managed.ts";
+import {
+  ManagedRuntime,
+  managedCapability,
+  managedDecisionCapability,
+} from "../../packages/runtime/managed.ts";
 import {
   decisionServerCapability,
   evaluateConfiguredDecisionPolicy,
@@ -31,6 +36,14 @@ import {
 import { loadConfig } from "../server/config.ts";
 import { Worker } from "./engine.ts";
 import { ManagedWorker } from "./managed.ts";
+import { BoundedFetchTransport } from "../../packages/providers/bounded-fetch.ts";
+import { PaddleClient } from "../../packages/providers/paddle.ts";
+import { PaddleEvidenceSource } from "../../packages/providers/paddle-evidence.ts";
+import { PaddleStore } from "../../packages/storage/paddle-store.ts";
+import {
+  PaddleBillingWorker,
+  createBillingAuthorityForPaddle,
+} from "../../packages/runtime/paddle-worker.ts";
 
 const config = loadConfig();
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -268,23 +281,23 @@ if (config.mode === "managed") {
       );
   };
   const fencedDecisionProvider:
-    | Pick<PreparedDecisionProvider, "prepareDecision">
-    | undefined = decisionProvider
-    ? {
-        prepareDecision(input) {
-          ownDecisionReadinessFresh();
-          const call = decisionProvider!.prepareDecision(input);
-          return {
-            identity: call.identity,
-            request_bytes: call.request_bytes,
-            execute: async (signal) => {
-              ownDecisionReadinessFresh();
-              return call.execute(signal);
-            },
-          };
-        },
-      }
-    : undefined;
+    Pick<PreparedDecisionProvider, "prepareDecision"> | undefined =
+    decisionProvider
+      ? {
+          prepareDecision(input) {
+            ownDecisionReadinessFresh();
+            const call = decisionProvider!.prepareDecision(input);
+            return {
+              identity: call.identity,
+              request_bytes: call.request_bytes,
+              execute: async (signal) => {
+                ownDecisionReadinessFresh();
+                return call.execute(signal);
+              },
+            };
+          },
+        }
+      : undefined;
 
   const worker = new ManagedWorker(runtime, {
     ...(installed && fencedProvider
@@ -297,6 +310,32 @@ if (config.mode === "managed") {
         }
       : {}),
   });
+  const paddleStore = config.paddle
+    ? new PaddleStore(resolve(runtime.root, "paddle.sqlite"), control.clock)
+    : undefined;
+  const paddleWorker = (() => {
+    if (!config.paddle || !paddleStore) return undefined;
+    const client = new PaddleClient({
+      mode: config.paddle.mode,
+      api_key: config.paddle.apiKey,
+      product_ref: config.paddle.productRef,
+      monthly_price_ref: config.paddle.monthlyPriceRef,
+      annual_price_ref: config.paddle.annualPriceRef,
+      allowed_currencies: config.paddle.allowedCurrencies,
+      transport: new BoundedFetchTransport(),
+    });
+    const evidence = new PaddleEvidenceSource(client, control.clock);
+    return new PaddleBillingWorker(
+      paddleStore,
+      createBillingAuthorityForPaddle({
+        root: runtime.root,
+        control,
+        evidence,
+        store: paddleStore,
+        clock: control.clock,
+      }),
+    );
+  })();
 
   let heartbeat: ReturnType<typeof setInterval> | undefined;
   const beatReasoning = () => {
@@ -413,8 +452,9 @@ if (config.mode === "managed") {
   process.on("SIGTERM", stop);
   while (running) {
     try {
+      const billingWorked = (await paddleWorker?.tick()) ?? false;
       const worked = await worker.tick();
-      if (!worked) await sleep(1000);
+      if (!worked && !billingWorked) await sleep(1000);
     } catch {
       console.error("Managed worker tick failed; retrying.");
       await sleep(2000);
@@ -422,6 +462,7 @@ if (config.mode === "managed") {
   }
   if (heartbeat) clearInterval(heartbeat);
   await worker.stop();
+  paddleStore?.close();
   try {
     removeWorkerReadiness(runtime.root, workerId);
   } catch {
@@ -435,7 +476,9 @@ if (config.mode === "managed") {
   try {
     runtime.close();
   } catch {
-    console.error("Managed runtime did not close cleanly; a handle was pinned.");
+    console.error(
+      "Managed runtime did not close cleanly; a handle was pinned.",
+    );
   }
 } else {
   const storage = new Storage();

@@ -2,9 +2,36 @@
 
 ## Product statement
 
-Bi Brain helps a person save what matters, resume work with their chosen agent, and review useful preparation tied to explicit goals. It is a standalone product with a GUI, durable state, and agent interfaces.
+BiBrain is the user-owned memory and continuity layer behind the agents a person
+chooses. It helps someone save what matters once, keep that understanding current,
+resume work with the right context in any verified connected agent, and review
+useful preparation tied to explicit goals. It is a standalone suite with a GUI,
+durable state, and agent interfaces—not another agent that traps memory inside
+one vendor.
 
-Public language: One brain for the agents you use. A little ahead of you.
+Public language: **One brain. Every agent. Always caught up. A little ahead.**
+
+The product should feel like a lively central processing unit for the person's
+work while remaining calm and trustworthy. “Lively” comes from truthful state,
+continuity, and useful preparation—not fake thinking, decorative activity, or an
+anthropomorphic claim that the software acted when it did not.
+
+## Product wedge
+
+The first market is individual builders, researchers, and creators who move
+between AI agents and repeatedly reconstruct decisions, preferences, sources,
+and unfinished work. BiBrain wins the first use by making one saved item useful
+before integrations, then proves its distinct value by carrying a corrected,
+source-backed memory into two named agents.
+
+User-facing language describes outcomes: save, remember, continue, stay ahead,
+review, correct, and disconnect. “Cognitive harness,” models, MCP, tokens, queues,
+classifiers, and storage internals stay in technical and operator documentation.
+
+“Self-improving” means that accepted corrections, edits, dismissals, freshness,
+and observed usefulness improve future retrieval and preparation. It never means
+that model output can change permissions, budgets, system instructions, code, or
+accepted truth on its own.
 
 ## Who starts here
 

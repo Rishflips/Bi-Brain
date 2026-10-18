@@ -15,7 +15,7 @@ Do not claim a package version is current from this document. Resolve compatible
 
 ## Repository layout to implement
 
-~~~text
+```text
 apps/
   web/           React UI
   server/        HTTP, owner sessions, production static files
@@ -31,7 +31,7 @@ tests/
   integration/
   e2e/
 data/            Ignored runtime data, never committed
-~~~
+```
 
 Create packages as needed. Avoid empty layers whose only purpose is forwarding calls.
 
@@ -129,6 +129,28 @@ supported restore disables it and rotates the epoch. The integration is locally
 verified with synthetic transport; no local test implies live-provider quality
 or a hosted release. See the [safeguards design](superpowers/specs/2026-10-16-managed-activation-design.md)
 and [provider activation design](superpowers/specs/2026-10-16-managed-provider-activation-design.md).
+
+### Managed subscription boundary (locally implemented, provider proof pending)
+
+Paddle Billing is an optional managed-only adapter. Configuration is all-or-none and
+environment-bound; local/self-hosted operation has no subscription dependency. The API owns
+one expiring checkout intent per account and a separate `paddle.sqlite` coordination store.
+The store records provider-create uncertainty before network I/O. Ambiguous failures
+remain locked against duplicate checkout until the exact signed transaction event
+recovers them; known created transactions are resumed rather than recreated.
+The signed webhook retains only bounded identifiers, status, timestamps and a body digest;
+raw provider payloads and customer PII are not persisted. Event leases are fenced and
+recovered, exact replays are idempotent, changed-content event-id reuse places a known
+binding into attention, and early completion events back off until the server transaction is
+attached.
+
+The worker treats events only as correlation or refresh signals. It reads the current
+quantity-one subscription, completed transaction and adjustments through a fixed-origin,
+fixed-operation, three-second/one-MiB transport, checks the configured price/product/cadence
+and charged-currency allowlist, then submits facts to `BillingAuthority`. The Paddle store has
+no authority tables and cannot create allowance. Knowledge, correction, export and deletion
+remain available when billing is absent, stale, canceled or unavailable. Cold backups include
+the coordination database and key commitment metadata, never the billing authority key.
 
 ## Observability
 

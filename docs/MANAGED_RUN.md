@@ -5,7 +5,7 @@ standards-based OIDC login. It is **not a public release**. One central
 account/service spending authority is implemented and locally verified. The
 default-off activation path is locally verified with synthetic provider transport;
 no real owner account or live provider has been activated. Live-provider quality,
-target-host recovery, TLS and billing remain separate gates. Do not advertise or open the
+target-host recovery, TLS and real Paddle Sandbox/live acceptance remain separate gates. Do not advertise or open the
 managed service to the public. Local self-hosting is unchanged and remains the
 supported path.
 
@@ -15,17 +15,84 @@ Managed startup is explicit and fails closed. `BRAIN_MODE=managed` requires
 every value below; a missing or malformed field stops the process **before** any
 runtime, tenant store or local database is created.
 
-| Variable | Required | Notes |
-| --- | --- | --- |
-| `BRAIN_MODE` | managed mode | `local` (default) or `managed`. |
-| `BRAIN_MANAGED_ROOT` | yes | One absolute directory outside the repo for managed data only. |
-| `BRAIN_PUBLIC_ORIGIN` | yes | The exact HTTPS origin served, one bare origin, no path. |
-| `BRAIN_OIDC_ISSUER` | yes | HTTPS issuer identifier, no credentials, query or fragment. |
-| `BRAIN_OIDC_CLIENT_ID` | yes | Registered client id. |
-| `BRAIN_OIDC_CLIENT_SECRET` | yes | Server-side only. Never printed, logged or bundled. |
-| `BRAIN_OIDC_CALLBACK_PATH` | no | Fixed absolute path; defaults to `/auth/callback`. |
-| `BRAIN_MANAGED_ALLOW_PAID` | no | Default off. `1` is a deployment opt-in, never sufficient by itself. |
-| `OPENAI_API_KEY` | worker only, when separately authorized | Loaded once at worker startup; never needed by the server or written to a profile/readiness file. Rotation requires restarting the worker. |
+| Variable                   | Required                                | Notes                                                                                                                                      |
+| -------------------------- | --------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| `BRAIN_MODE`               | managed mode                            | `local` (default) or `managed`.                                                                                                            |
+| `BRAIN_MANAGED_ROOT`       | yes                                     | One absolute directory outside the repo for managed data only.                                                                             |
+| `BRAIN_PUBLIC_ORIGIN`      | yes                                     | The exact HTTPS origin served, one bare origin, no path.                                                                                   |
+| `BRAIN_OIDC_ISSUER`        | yes                                     | HTTPS issuer identifier, no credentials, query or fragment.                                                                                |
+| `BRAIN_OIDC_CLIENT_ID`     | yes                                     | Registered client id.                                                                                                                      |
+| `BRAIN_OIDC_CLIENT_SECRET` | yes                                     | Server-side only. Never printed, logged or bundled.                                                                                        |
+| `BRAIN_OIDC_CALLBACK_PATH` | no                                      | Fixed absolute path; defaults to `/auth/callback`.                                                                                         |
+| `BRAIN_MANAGED_ALLOW_PAID` | no                                      | Default off. `1` is a deployment opt-in, never sufficient by itself.                                                                       |
+| `OPENAI_API_KEY`           | worker only, when separately authorized | Loaded once at worker startup; never needed by the server or written to a profile/readiness file. Rotation requires restarting the worker. |
+
+Managed subscriptions are optional and all-or-none. With every Paddle field
+absent, billing reports a plain unavailable state and the rest of BiBrain is
+unchanged. A partial set stops startup. Sandbox and live credentials, catalog
+ids, webhook destinations, and data never mix.
+
+| Variable                           | Required when Paddle is enabled | Notes                                                                                              |
+| ---------------------------------- | ------------------------------- | -------------------------------------------------------------------------------------------------- |
+| `BRAIN_PADDLE_MODE`                | yes                             | `sandbox` or `live`; live also requires the explicit post-review `BRAIN_PADDLE_ALLOW_LIVE=1` gate. |
+| `BRAIN_PADDLE_API_KEY`             | yes                             | Backend secret for the matching environment; never returned to the browser.                        |
+| `BRAIN_PADDLE_CLIENT_TOKEN`        | yes                             | Public Paddle.js token returned only in the authenticated own-account status.                      |
+| `BRAIN_PADDLE_PRODUCT_ID`          | yes                             | One configured recurring product.                                                                  |
+| `BRAIN_PADDLE_MONTHLY_PRICE_ID`    | yes                             | Exact monthly recurring price id.                                                                  |
+| `BRAIN_PADDLE_ANNUAL_PRICE_ID`     | yes                             | Exact annual recurring price id; must differ from monthly.                                         |
+| `BRAIN_PADDLE_ALLOWED_CURRENCIES`  | yes                             | 1–20 unique uppercase ISO codes, comma-separated; completed charges outside this allowlist deny.   |
+| `BRAIN_PADDLE_WEBHOOK_SECRET`      | yes                             | Secret for the exact notification destination.                                                     |
+| `BRAIN_PADDLE_WEBHOOK_ENDPOINT_ID` | yes                             | Exact `ntfset_…` namespace used for replay uniqueness.                                             |
+| `BRAIN_PADDLE_PORTAL_ORIGIN`       | yes                             | Independently verified bare HTTPS portal origin for this environment.                              |
+| `BRAIN_PADDLE_CHECKOUT_PATH`       | no                              | Fixed approved payment-link page on `BRAIN_PUBLIC_ORIGIN`; defaults to `/`.                        |
+
+## Managed subscription boundary (B1, default off)
+
+The authenticated Settings card offers monthly or annual checkout only when the
+complete managed Paddle configuration is valid. The server first persists one
+expiring, account-bound intent, then creates one automatic quantity-one
+transaction using only the configured price. The browser receives a public
+transaction id and public client token; it never receives the API key, webhook
+secret, identity subject, knowledge, model configuration, or allowance.
+
+Immediately before the create request can reach Paddle, the server durably marks
+the intent uncertain. A timeout, 5xx, unreadable/oversized response, process exit,
+or unusable returned checkout link therefore cannot silently free the account to
+create a second charge. A definitive rejected request may release a retry. A signed
+transaction event carrying the exact server intent can recover the transaction;
+when its transaction id is known, Settings offers **Continue secure checkout**
+instead of creating another one. An exact canceled transaction releases the intent.
+An unresolved ambiguous create stays in **Needs attention** and does not expire into
+an automatic retry; inspect Paddle before any manual remediation.
+
+`POST /api/v1/billing/webhook` is the single session/CSRF exception. Host/origin
+guards and global bounds remain active. Its `application/json` body is retained as
+raw bytes up to 256 KiB, verified against `Paddle-Signature` with a five-second
+window, and only then parsed and reduced to a PII-free projection. Exact retries
+are acknowledged once; changed-content reuse of an event id is rejected.
+
+Events are wake-up/correlation signals, never payment authority. The worker leases
+at most ten events, binds only the exact transaction created for the server-owned
+intent, and performs at most four due account reconciliations per pass. Current
+provider reads require one configured quantity-one subscription item, one matching
+positive completed transaction for the current/latest paid period in an explicitly
+allowed currency, and a bounded adjustment
+scan. Pending/approved adjustments deny or restrict; refunds and chargebacks are
+adverse evidence. Only `BillingAuthority` can publish an allowance after its own
+admission, immutable-policy, key, generation, freshness, and sealed-history checks.
+
+Checkout completion displays **Confirming your plan** until that path succeeds.
+Portal sessions are owner-initiated, short-lived, never persisted, and validated
+against the configured HTTPS portal origin. Cancellation or billing failure never
+blocks sign-in, capture, correction, search, agent revocation, export, or deletion.
+
+Local tests use synthetic keys, ids, transports, and signed payloads. They are not
+Paddle Sandbox proof. Before a Sandbox claim, configure an actual sandbox account,
+approved payment-link page, notification destination, catalog, both prices, portal
+origin, and a disposable managed tenant; then verify checkout, out-of-order/replayed
+events, cancellation, refund, renewal, monthly allowance, export, and deletion.
+Live mode additionally requires selected prices/allowances, seller/KYC/tax review,
+the written live gate, and the explicit boot flag. No values are inferred.
 
 The server and worker read the same validated configuration. No secret is
 printed at startup; only the mode, origin and issuer are reported.
@@ -117,8 +184,11 @@ is never read or adopted.
 
 ## Remaining gates
 
-Not implemented or verified as a release: public hosting, billing, entitlements,
-live paid-model dispatch, TLS and graceful signal handling on the target host.
+Not implemented or verified as a release: public hosting, real Paddle Sandbox/live
+payments, live entitlements, live paid-model dispatch, TLS and graceful signal
+handling on the target host. The default-off billing boundary and sealed
+entitlement path are locally implemented and synthetically verified; that is not
+a provider acceptance result.
 Central account/service spending control, restore barriers and the own-account
 money view and default-off activation path are locally verified; this is not a
 live-provider or production-host claim. Managed login has HTTP integration and Chromium
@@ -333,9 +403,12 @@ root so deletions can be replayed):
 
 A bundle records a strict manifest (schema/version, account inventory and a
 SHA-256 per file) that binds the control database, each tenant database, vault,
-protected quarantine and marker. A swapped tenant, control, marker or altered
-file is rejected before anything is published. The hashes are an integrity check,
-not an adversarial signature.
+protected quarantine and marker. When a billing authority key exists, the
+manifest also records its fixed path, size and commitment, while explicitly
+recording that the key is not in the portable bundle. Restore verifies the
+current operator still possesses that exact key before staging financial history.
+A swapped tenant, control, marker or altered file is rejected before anything is
+published. The hashes are an integrity check, not an adversarial signature.
 
 Restore applies the control restore barrier first (a durable service-wide money
 deny and deletion of restored sessions, agent-token routes and pending OIDC
@@ -350,6 +423,50 @@ restore.
 This tool is not a hot-snapshot tool: it cannot prove writers were quiesced, it
 covers only the deletions visible in the supplied current root, and it does not
 claim to be an adversarial or authenticated backup.
+
+## Billing authority enrollment and key recovery (B0 Task 4)
+
+The billing authority remains default-off after the explicit money-5 install.
+Enrollment is an offline, one-time operator action; normal API/worker startup,
+webhooks and browser routes cannot create a key, policy, baseline or enrollment.
+Set `BRAIN_MANAGED_ROOT`, stop every API/worker, and use this sequence:
+
+```
+npm run managed:reconcile -- audit-history --offline --workers-terminated
+npm run managed:billing -- enroll <audit_uuid> <policy_json_abs> <32_byte_key_abs> --offline --workers-terminated
+npm run managed:billing -- status
+```
+
+The policy must already contain the exact current epoch/root nonce, the SHA-256
+commitment of the supplied key, the selected sandbox/live namespace, and explicit
+integer micro-USD ceilings. Enrollment does not select those values. It verifies
+the strict money-5 schema and current audit, backfills generation-1 tenant
+incarnations where required, writes the protected key/policy/enrollment artifacts,
+records the immutable manual baseline, and then verifies the complete result.
+Replaying the identical enrollment is safe; a changed key, policy, root, audit or
+artifact is denied.
+
+On Windows the enrollment command replaces inherited ACLs on `.protected` and its
+billing artifacts with an explicit DACL for the current owner, SYSTEM and local
+Administrators, then reads the DACL back. `managed:billing verify-acl` performs the
+same positive read-only check; `harden-acl` is an explicit offline repair command.
+On POSIX the existing 0700/0600 checks remain authoritative.
+
+Key backup is separate from the portable managed bundle. It is an authenticated,
+encrypted AES-256-GCM envelope derived with scrypt from a 16–4096 byte passphrase
+file. The passphrase is supplied by absolute regular-file path and never through
+argv, environment, logs or archive output:
+
+```
+npm run managed:billing -- key-backup <archive_abs> <passphrase_file_abs> --offline --workers-terminated
+npm run managed:billing -- key-restore <archive_abs> <passphrase_file_abs> <expected_commitment> --offline --workers-terminated
+```
+
+Restore never overwrites or rotates an existing key. A restored managed bundle
+still has no key and remains paid-blocked until the encrypted key is restored and
+a fresh audit/enrollment is completed under the restore's rotated epoch. Losing
+both the protected key and its encrypted archive is deliberately unrecoverable by
+software; no webhook or model may mint a replacement or re-sign history.
 
 ## Operator reconciliation CLI and all-account audit (Task 3 slice)
 

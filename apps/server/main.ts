@@ -9,6 +9,9 @@ import {
   managedCapability,
   managedDecisionCapability,
 } from "./startup-gates.ts";
+import { BoundedFetchTransport } from "../../packages/providers/bounded-fetch.ts";
+import { PaddleClient } from "../../packages/providers/paddle.ts";
+import { PaddleBillingService } from "../../packages/runtime/paddle-billing.ts";
 
 // Fail closed before any storage or adapter is constructed: an unknown mode or
 // a missing managed field throws here rather than silently serving local data.
@@ -64,6 +67,29 @@ if (config.mode === "managed") {
     return { available: c.available, reason: c.reason };
   };
   const login = new ManagedLogin(runtime, oidc);
+  const billing = config.paddle
+    ? new PaddleBillingService(
+        runtime.root,
+        new PaddleClient({
+          mode: config.paddle.mode,
+          api_key: config.paddle.apiKey,
+          product_ref: config.paddle.productRef,
+          monthly_price_ref: config.paddle.monthlyPriceRef,
+          annual_price_ref: config.paddle.annualPriceRef,
+          allowed_currencies: config.paddle.allowedCurrencies,
+          transport: new BoundedFetchTransport(),
+        }),
+        {
+          mode: config.paddle.mode,
+          public_origin: config.publicOrigin,
+          checkout_path: config.paddle.checkoutPath,
+          client_token: config.paddle.clientToken,
+          webhook_secret: Buffer.from(config.paddle.webhookSecret, "utf8"),
+          webhook_endpoint_ref: config.paddle.webhookEndpointRef,
+          portal_origin: config.paddle.portalOrigin,
+        },
+      )
+    : undefined;
   const app = await createApp(undefined, {
     managed: runtime,
     login,
@@ -72,6 +98,7 @@ if (config.mode === "managed") {
     metadataLogs: true,
     capability: () => capability(),
     decisionCapability: () => decisionCapability(),
+    billing,
   });
   await app.listen({ host, port });
   // No secret is ever printed; the operator learns the mode and origin only.
@@ -91,6 +118,11 @@ if (config.mode === "managed") {
       runtime.close();
     } catch {
       /* release happens per request; a pinned handle must not crash shutdown */
+    }
+    try {
+      billing?.close();
+    } catch {
+      /* already closed */
     }
   };
   process.on("SIGINT", () => void stop());

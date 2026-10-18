@@ -7,16 +7,21 @@ const entries = [
     ? [["node_modules/vite/bin/vite.js", "--config", "apps/web/vite.config.ts"]]
     : []),
 ];
-// The worker-only decision key must never reach the API server or the dev
-// frontend child. Every legacy variable (OPENAI/identity/etc.) is preserved; only
-// this one deliberately scoped key is removed from non-worker environments.
+// Secret-bearing service variables never reach the dev frontend child. The
+// decision key remains worker-only; Paddle backend credentials are available to
+// the API server and worker because both validate the same all-or-none managed
+// config. Public client tokens are served through authenticated billing status.
 const isWorker = (args) => args[args.length - 1] === "apps/worker/main.ts";
+const isServer = (args) => args[args.length - 1] === "apps/server/main.ts";
 const children = entries.map((args) => {
   const env = {
     ...process.env,
     NODE_ENV: dev ? "development" : "production",
   };
   if (!isWorker(args)) delete env.BRAIN_DECISION_API_KEY;
+  if (!isServer(args) && !isWorker(args)) delete env.BRAIN_PADDLE_API_KEY;
+  if (!isServer(args) && !isWorker(args)) delete env.BRAIN_PADDLE_WEBHOOK_SECRET;
+  if (!isServer(args) && !isWorker(args)) delete env.BRAIN_OIDC_CLIENT_SECRET;
   return spawn(process.execPath, args, { stdio: "inherit", env });
 });
 let stopping = false;

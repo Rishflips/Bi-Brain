@@ -30,6 +30,7 @@
     "managed:decision-activation": "node --env-file-if-exists=.env --import tsx scripts/managed-decision-activation.ts",
     "managed:backup": "node --env-file-if-exists=.env --import tsx scripts/managed-backup.ts",
     "managed:restore": "node --env-file-if-exists=.env --import tsx scripts/managed-restore.ts",
+    "managed:billing": "node --env-file-if-exists=.env --import tsx scripts/managed-billing.ts",
     "managed:reconcile": "node --env-file-if-exists=.env --import tsx scripts/managed-reconcile.ts",
     "vault:dry-run": "node --env-file-if-exists=.env --import tsx scripts/vault.ts dry-run",
     "vault:migrate": "node --env-file-if-exists=.env --import tsx scripts/vault.ts migrate",

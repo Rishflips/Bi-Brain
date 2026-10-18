@@ -27,9 +27,8 @@ export type FirstNote = {
 };
 
 /**
- * Calm inline capture on Today. One labelled text field and two actions, per the
- * first-use direction. The draft lives in this component so a failed save can
- * never discard what the user typed.
+ * Zero-setup inline capture on Today. The draft lives in this component so a
+ * failed save can never discard what the user typed.
  */
 export function FirstNoteComposer({
   providerEnabled,
@@ -72,10 +71,10 @@ export function FirstNoteComposer({
   };
   return (
     <article className="first-note">
-      <h2>Keep the context. Continue the work.</h2>
+      <h2>Drop it here. Pick it up anywhere.</h2>
       <p>
-        Paste a conversation or a note. Your original is retained exactly as you
-        wrote it, with a source-linked preview alongside it.
+        Paste a note, decision, plan, or conversation. BiBrain keeps the
+        original and makes it easy to continue from any connected agent.
       </p>
       <form
         onSubmit={(event) => {
@@ -101,7 +100,7 @@ export function FirstNoteComposer({
               void submit();
             }
           }}
-          placeholder="Paste something you are working on…"
+          placeholder="Paste a note, decision, plan, or conversation…"
         />
         <p id="first-note-limit" className="muted">
           Up to 100,000 characters and 1 MiB per note. Ctrl or ⌘ + Enter to
@@ -122,8 +121,8 @@ export function FirstNoteComposer({
         </div>
         <p className="muted">
           {providerEnabled
-            ? "A model provider is enabled for preparation; its use and limits are shown under Settings."
-            : "Local extractive preview · nothing is sent to a model provider."}
+            ? "AI preparation is available. You control what it can use under Settings."
+            : "Private local preview · nothing is sent to an AI provider."}
         </p>
       </form>
     </article>

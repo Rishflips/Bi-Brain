@@ -2,7 +2,11 @@
 
 ## Intent
 
-Calm, readable, personal, and competent. Use content and evidence as the visual focus. The reference preview is a concept, not production code or evidence that actions work.
+Calmly alive, readable, personal, and competent. Use content, continuity, and
+evidence as the visual focus. The interface may have a recognizable pulse and
+subtle state-driven motion, but it must feel like a dependable personal space—not
+a control panel or a decorative AI spectacle. The reference preview is a concept,
+not production code or evidence that actions work.
 
 ## Suggested tokens
 
@@ -27,7 +31,10 @@ Desktop: narrow navigation rail, content area with readable maximum line length,
 Mobile: compact navigation above or below content; detail views become full-width.
 First-use screen focuses on one capture field and two actions.
 
-Avoid ornamental gradients, floating brain illustrations, spinning neural graphs, large statistic tiles, unnecessary gradients, and fake activity indicators.
+Avoid ornamental gradients, floating brain illustrations, spinning neural graphs,
+large statistic tiles, unnecessary gradients, and fake activity indicators. A
+small abstract BiBrain pulse is allowed when its label and motion map to real
+application state. Resting and quiet states remain visually still.
 
 ## Components to build
 
@@ -37,7 +44,8 @@ Each component needs loading, empty, error, keyboard-focus, and disabled states 
 
 ## Copy
 
-Prefer Save something, Your brain, Continue in another agent, See sources, Keep this plan, and Pause background help.
+Prefer Save something, Your brain, Use with an agent, See sources, Keep this plan,
+Stay ahead, What changed, and What BiBrain remembers.
 
 Avoid ingest, embeddings, context packer, classifier confidence, cron, vector store, and memory consolidation in primary screens. Explain actual user impact in advanced settings.
 

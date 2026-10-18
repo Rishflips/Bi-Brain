@@ -1,15 +1,16 @@
-# Paddle Billing integration (B1) — DRAFT
+# Paddle Billing integration (B1) — approved local boundary, external proof pending
 
-**Status: DRAFT — UNAPPROVED. TOP DRAFT for review only; this creates no account, price,
-product, key, environment variable, route, dependency, schema or code.** It consumes the B0
-contract (`2026-10-17-renewal-safe-financial-authority-design.md`) as a document only and
-never authorizes B0 implementation. No exact prices, provider ids or allowance amounts appear
-here; every monetary value is a required operator enrollment input with default off/zero.
-Lifecycle rules here are **PROPOSED**, not owner policy.
+**Status: approved for default-off local implementation by the owner's instruction to ship
+the complete product without slice-by-slice approval. External Sandbox and live gates remain
+open.** The code creates no provider account, catalog, credential, payment, or public service.
+No exact customer prices, provider ids, allowance amounts, annual discount, refund policy,
+tax position, or seller/KYC outcome is selected here; each remains an explicit operator or
+business input with default off/zero. Where those unresolved choices matter, execution denies
+rather than guessing.
 
-The owner has approved the separate **B0 written design**, not this B1 draft. B0's
-implementation and independent verification are still prerequisites. No Paddle transport,
-checkout, webhook, price or payment implementation is authorized by B0's approval.
+The B0 authority is implemented separately and stays the only allowance writer. This B1
+boundary may persist checkout correlation and verified provider evidence, but neither a
+browser return nor a signed event can grant paid processing.
 
 ## Scope
 
@@ -26,7 +27,7 @@ policy, taxes, KYC, payouts, live execution.
 - https://developer.paddle.com/api-reference/about/versioning.md — pin version `1`; webhook
   destination API version `1`.
 - https://developer.paddle.com/webhooks/about/signature-verification.md — `Paddle-Signature:
-  ts=<seconds>;h1=<hex>`, `HMAC-SHA256(secret, "${ts}:${RAW_BODY}")`; accept multiple `h1` for
+ts=<seconds>;h1=<hex>`, `HMAC-SHA256(secret, "${ts}:${RAW_BODY}")`; accept multiple `h1` for
   future key rotation; SDK default tolerance 5 seconds. Samples that log raw payloads or
   assume exactly one signature are not copied into our integration.
 - https://developer.paddle.com/webhooks/about/respond-to-webhooks.md — sandbox 3 attempts in
@@ -79,7 +80,7 @@ checkout return/`custom_data` (rejected):** a return URL is not payment proof.
 - Mapping is by provider ids; the account id is never sent to Paddle except as an opaque local
   intent nonce. No knowledge, session or model key, and no raw tenant identity, leaves.
 
-## Verified payment proof (PROPOSED, closed)
+## Verified payment proof (implemented locally; real-provider proof pending)
 
 A grant requires, together: a CURRENT provider `GET` (our own source) of the subscription in
 lowercase `active`; a matching **COMPLETED** paid transaction with the configured price,
@@ -102,8 +103,9 @@ creates the recurring binding.
 - A server-owned **checkout intent** row (nonce, local account, cadence, expected catalog
   product/price, base currency, created, expiry) is written before any provider call; the
   pre-provider response exposes only an opaque intent id. Exactly one pending intent per account.
-- Checkout input carries **cadence only** plus our **own** `Idempotency-Key` UUID bound to the
-  account and request payload. We do **not** assume Paddle has its own idempotency key.
+- Checkout input carries **cadence only**. The server persists the account-bound
+  intent and an uncertainty flag before the provider create can begin; it does not
+  assume Paddle accepts an application-supplied idempotency key.
 - The creation result returns the opaque intent, the ready transaction id (public), and the
   public client token/mode needed to open `Paddle.Checkout.open`; a bounded response shape. It
   is not “only an opaque intent” with no way to open checkout.
@@ -112,15 +114,15 @@ creates the recurring binding.
   of every future renewal to the first checkout's transaction ID.
 - Our checkout return URLs are our own origin, allowlisted, never a user-chosen redirect; the
   `Checkout.open` transaction id is public and not proof.
-- A signed webhook may arrive **before** the POST response: store an ORPHAN pending record keyed
-  by intent nonce and grant **no** admission until the creation result exists or a strict
-  reconciliation correlates the real transaction from the provider list. A nonce alone is not
-  proof (it can be copied from the public frontend); an ambiguous case is manual attention,
-  never an automatic bind. A second active completion for the same account grants no extra
-  allowance and blocks paid until operator resolution; only one active provider binding per
-  account.
+- A signed webhook may arrive **before** the POST response or after an ambiguous
+  timeout. It can recover only the uncertain exact server intent and provider-signed
+  transaction reference; this correlation still grants no allowance. A pending
+  intent that was never placed into provider-create uncertainty remains an orphan.
+  Missing or conflicting references are manual attention, never an automatic bind.
+  A second active completion for the same account grants no extra allowance and
+  blocks paid until operator resolution; only one active provider binding per account.
 
-## Webhook verification and inbox (PROPOSED)
+## Webhook verification and inbox (implemented locally)
 
 - Only this route bypasses session/CSRF; Host/Origin and global guards are not disabled.
 - Body > 256 KiB or header > 4 KiB rejected. Exactly one `ts` (strict digits) and 1–4 `h1`
@@ -131,15 +133,16 @@ creates the recurring binding.
   unknown field can never silently grant a plan or enum.
 - Bounded **control-side** leased inbox (never a tenant job or the tenant vault): owner, fence,
   future expiry, `BEGIN IMMEDIATE`, CAS completion. Uniqueness is `(mode, merchant endpoint,
-  event_id)` — **not** global event id. Ack 200 only after committing a minimal verified
+event_id)` — **not** global event id. Ack 200 only after committing a minimal verified
   projection (≤256 KiB) plus body hash. Same event id with different content → 400 + durable
-  deny **only for a known binding**, never a global DoS from an unknown signed bogus event.
+  attention and urgent current-provider recheck **only for a known binding**, never a global
+  DoS from an unknown signed bogus event.
   Unknown/unmapped ids carry no account authority. Persist failure → 503, no fake ack.
-- Raw payload is verified in memory only, then reduced to sealed normalized fields
-  (root/MAC provenance + request digest); no email, card data or whole payload is logged or
-  stored.
+- Raw payload is verified in memory only, then reduced to bounded normalized identifiers,
+  status/timestamps and a request digest; no email, card data or whole payload is logged or
+  stored. This store does not mint or seal allowance.
 
-## Adjustments and refunds (PROPOSED)
+## Adjustments and refunds (implemented locally; policy/Sandbox proof pending)
 
 Adjustments are read for the CURRENT paid transaction and all known related transactions.
 A fully refunded annual term strictly revokes future monthly grants. Pending or partial
@@ -184,18 +187,17 @@ instantaneous remote revocation. None of these reads block the independent heart
 
 - `packages/domain/paddle-signature.ts`, `packages/domain/paddle-event.ts` — pure rules and
   closed event normalization.
-- `packages/storage/billing-inbox.ts`, `billing-cache.ts`, `billing-checkout-intent.ts` —
-  leased inbox, lean cache, intents in `control_billing_*`.
-- `packages/providers/paddle.ts` — three explicit operations with phase/audience keys:
-  bounded `readSnapshot` GETs on closed subscription/transaction/adjustment paths, a user-only
-  `createCheckoutTransaction` POST and a user-only `createPortalSession` POST. No arbitrary
-  URL/method surface. Writing is **not** hidden inside a “read.ts”. Server/webhook transport classes
-  are backend-only; env keys are never client-side except the public Paddle.js token.
-- `packages/runtime/billing-grants.ts` — implements B0’s dependency; calls
-  `ensureCurrentGrant`/`admitNewAccount`.
-- `apps/worker/managed-billing.ts` — bounded reconciliation pass.
+- `packages/storage/paddle-store.ts` — separate durable leased inbox, bindings and checkout
+  intents. It intentionally contains no authority/grant tables.
+- `packages/providers/paddle.ts`, `paddle-evidence.ts`, `bounded-fetch.ts` — closed
+  subscription/transaction/adjustment reads, user-only checkout and portal writes, strict
+  response schemas, charged-currency allowlist, redirect refusal, hard timeout and byte bound.
+  Backend keys never enter the frontend; only the public Paddle.js client token is returned.
+- `packages/runtime/paddle-billing.ts` — account-bound checkout/status/portal/webhook service.
+- `packages/runtime/paddle-worker.ts` — bounded event and current-evidence reconciliation into
+  the existing B0 `BillingAuthority`.
 - `apps/server/billing-routes.ts` — the routes below.
-- `apps/web/billing.tsx` (new, proposed) and narrow `apps/web/src.tsx` wiring — a Settings
+- `apps/web/src.tsx` and `apps/web/style.css` — a Settings
   billing section, not a fourth primary navigation item. Show both cadences, plain-language
   allowance/reset and renewal dates, pending confirmation, failure and cancellation. Checkout
   return remains **Confirming payment** until server verification, never a paid-success badge
@@ -204,21 +206,13 @@ instantaneous remote revocation. None of these reads block the independent heart
 
 ### Interfaces
 
-B1 does **not** hand B0 a free-form `{state:"verified"}`. It uses B0's
-`StoredPaidTermReference` format as a lookup view. B0 re-loads its referenced record from the
-**authority-owned store under transaction**, checks MAC/purpose/root/policy/provenance and
-fresh-state projection, and computes the grant itself. References are not signing permits;
-the closed writer validates the pinned provider reads and server-owned correlation first.
-
-```ts
-// StoredPaidTermReference is defined in B0 §Interfaces, not independently here.
-interface BillingGrantSource {
-  verifiedPaidTerm(account: string, now: Date): StoredPaidTermReference | "stale" | "none" | "restricted";
-}
-```
-
-B0 itself owns `billingEligibility` / `ensureCurrentGrant` / `admitNewAccount` exactly as
-defined in B0 §Interfaces.
+B1 does **not** hand B0 a free-form `{state:"verified"}` or a signing permit.
+`PaddleEvidenceSource` implements B0's closed `EvidenceSource` contract and returns bounded
+current facts only after checking the server-owned binding, configured quantity-one plan,
+cadence, positive completed charge, currency allowlist and adjustment scan. B0 independently
+rechecks identity/generation/correlation, normalizes and authenticates the evidence, and alone
+publishes or revokes the sealed grant. `billingEligibility`, admission and spending remain B0
+operations; the Paddle store cannot invoke them directly.
 
 ## Routes
 
@@ -252,27 +246,29 @@ return URL or grants entitlement from the flag. No extra public server route is 
 The app sends only the opaque intent nonce and provider catalog ids; Paddle’s checkout collects
 the necessary customer PII directly, disclosed in privacy. Merchant billing data is **not**
 part of the portable knowledge export, and we do not auto-delete legally required receipts or
-claim a complete data-protection export. A whole control backup already carries any
-`control_billing_*` tables; restore keeps money blocks and the rotated epoch and keeps denying
-new paid calls until re-verification.
+claim a complete data-protection export. A whole managed backup carries the authoritative
+`control_billing_*` history plus the separate `paddle.sqlite` coordination store. It includes
+only key commitment metadata, never the key; restore keeps money blocks, rotates the epoch,
+expires unfinished checkouts and requires the matching separately archived key before
+financial history can be staged.
 
 ## Fault and recovery matrix (closed)
 
-| Fault | Webhook reply | New paid model call | Knowledge/auth |
-|---|---|---|---|
-| Bad/absent signature | 400 static | unchanged | available |
-| Body/header over bound | 413/400 | unchanged | available |
-| Duplicate same digest | 200 | unchanged | available |
-| Same event id, different content (known binding) | 400 + durable deny | denied | available |
-| Inbox insert unavailable | 503 | unchanged | available |
-| Provider read timeout / stale cache | n/a | denied after freshness | available |
-| past_due/canceled/refund/chargeback | 200 | denied | available |
-| Early webhook before POST response (orphan) | 200 pending | no admission until correlated | available |
-| Adjustment pending/partial | 200 | denied; manual review | available |
-| Fully refunded annual term | 200 | future monthly grants revoked | available |
-| Cadence/anchor drift or price change mid-period | 200 | denied; manual attention | available |
-| Local duplicate active subscription | 200 | no extra allowance; manual gate | available |
-| Supported restore | n/a | denied until re-verify | available |
+| Fault                                            | Webhook reply           | New paid model call                                          | Knowledge/auth |
+| ------------------------------------------------ | ----------------------- | ------------------------------------------------------------ | -------------- |
+| Bad/absent signature                             | 400 static              | unchanged                                                    | available      |
+| Body/header over bound                           | 413/400                 | unchanged                                                    | available      |
+| Duplicate same digest                            | 200                     | unchanged                                                    | available      |
+| Same event id, different content (known binding) | 400 + attention/recheck | unchanged until current evidence denies or freshness expires | available      |
+| Inbox insert unavailable                         | 503                     | unchanged                                                    | available      |
+| Provider read timeout / stale cache              | n/a                     | denied after freshness                                       | available      |
+| past_due/canceled/refund/chargeback              | 200                     | denied                                                       | available      |
+| Early webhook before POST response (orphan)      | 200 pending             | no admission until correlated                                | available      |
+| Adjustment pending/partial                       | 200                     | denied; manual review                                        | available      |
+| Fully refunded annual term                       | 200                     | future monthly grants revoked                                | available      |
+| Cadence/anchor drift or price change mid-period  | 200                     | denied; manual attention                                     | available      |
+| Local duplicate active subscription              | 200                     | no extra allowance; manual gate                              | available      |
+| Supported restore                                | n/a                     | denied until re-verify                                       | available      |
 
 ## Negative acceptance proofs
 
@@ -282,7 +278,8 @@ new paid calls until re-verification.
   comparing all renewals to the initial checkout ID is a failing regression.
 - A localized charged currency in the enrolled allowlist is not rejected because it differs
   from the catalog currency, and it cannot change the processing budget.
-- Duplicate same-digest → 200 no second grant; same id different content → 400 + deny, no overwrite.
+- Duplicate same-digest → 200 no second grant; same id different content → 400 + durable
+  attention/current recheck, no overwrite or event-derived grant.
 - A webhook before the POST response stays orphaned with no admission until strict correlation.
 - A `next` page URL off the fixed official origin/path is rejected.
 - A fully refunded annual term revokes future grants; pending/partial grants no prorated budget.

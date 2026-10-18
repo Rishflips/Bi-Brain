@@ -4,7 +4,7 @@ The owner wants an open-source career project with a subscription model and poss
 
 ## Proposed split
 
-**Owner direction accepted 2026-10-16:** browser-first managed personal accounts and monetization are the primary delivery target, alongside a useful self-hosted open-source edition sharing the core. Managed login, billing and included allowances are not yet delivered merely because this split is approved. Pricing, a payment-provider account, legal terms and the software license require their actual release gates. See [the current release design](superpowers/specs/2026-10-16-managed-suite-design.md).
+**Owner direction accepted 2026-10-16:** browser-first managed personal accounts and monetization are the primary delivery target, alongside a useful self-hosted open-source edition sharing the core. Managed login and the default-off subscription/allowance boundary are implemented and locally verified with synthetic providers; no real payment, customer price, hosted service or live allowance exists. Pricing, a payment-provider account, legal terms and the software license require their actual release gates. See [the current release design](superpowers/specs/2026-10-16-managed-suite-design.md).
 
 Open specification, useful local application, contracts, and official adapters support adoption.
 Managed hosting, always-on preparation, maintained connectors, synchronization, and operations support can justify a subscription.
@@ -56,9 +56,9 @@ annual subscriptions are billed yearly but their processing allowance renews
 **monthly, with no rollover**, rather than granting a year's processing upfront.
 Use the same monthly no-rollover rule for monthly subscriptions. Exact prices,
 any annual discount, allowance amounts and cancellation/refund lifecycle remain
-separate design/economic decisions. Do not create Paddle products/prices or
-billing code from this choice alone; include both cadences in the separately
-reviewed billing design.
+separate design/economic decisions. The subsequently approved default-off local
+billing boundary supports both cadences without creating Paddle products/prices or
+guessing those decisions; real Sandbox and live execution remain gated.
 
 - Paddle says it supports software sellers worldwide except its listed unsupported
   countries; India is not on that list. This is eligibility in principle, not
@@ -83,7 +83,8 @@ reviewed billing design.
 No Paddle account was created, bank/KYC information collected, product/price
 created, checkout launched or payment enabled. Provider preference is not approval
 of a billing architecture, customer pricing, refunds policy or live rollout.
-The billing design still needs its separate review before implementation.
+The billing design is now approved for the implemented default-off local boundary.
+Actual Sandbox acceptance and every live/business gate below remain open.
 
 Official sources (accessed 2026-10-17):
 
