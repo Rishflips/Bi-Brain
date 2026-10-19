@@ -1,6 +1,50 @@
 # Build state
 
-Updated: 2026-10-19
+Updated: 2026-10-20
+
+## Active delivery — interface refinement and finishing
+
+Work is in progress on `codex/interface-refinement`, based on merged PR #10 at
+`aa81359cde8cc32cdb2f00df82a2306db85c3a10`. This pass removes the remaining
+generic AI-dashboard presentation without changing BiBrain's established storage,
+authorization, evidence or agent-access behavior.
+
+Implemented in the working tree:
+
+- The signed-in product now uses a flat ivory/charcoal canvas, solid surfaces,
+  hairline borders, tighter typography and a restrained black/gold action system.
+  Excess glow, glass treatment, oversized workspace headings, pill-heavy controls
+  and repeated floating cards were removed.
+- Today keeps its real state derivation but replaces the ornamental neural-logo
+  scene with a compact state card, plain-language status and a small signal that
+  moves only for genuine active or attention states.
+- First use is a focused editorial story and protected pairing card. The decorative
+  orbit scene and duplicated hero emblem are gone; the official brand remains
+  accessible vector geometry with an inverse dark-theme treatment.
+- Light and dark themes now set the browser theme color. Focus treatment, dialog
+  containment and reduced motion remain explicit. At 320px, Today, Your brain and
+  Connections occupy one stable navigation row rather than wrapping or becoming a
+  full-height rail.
+- Production-browser checks now reject reintroduction of the neural scene, raster
+  first-use branding, page texture, stale theme color or a wrapping mobile primary
+  navigation.
+
+Verification on this working tree: `npm run typecheck`, `npm run lint`,
+`npm run build` and `git diff --check` passed. The production bundle is
+`index-Dg8Dtite.css` and `index-lMhy6O6c.js`. The first focused
+production-browser run passed **12/12**; after a visual dark-theme review repaired
+state-card contrast and compact navigation, the affected dark 320px journey passed
+**1/1**. The final complete Chromium suite passed **47/47 in 2.7 minutes** on the
+exact finished tree, covering capture, source evidence, correction, deletion,
+reload, agent retrieval, account isolation, truthful money/consent states,
+managed failure boundaries, and responsive light/dark layouts. The generated
+Today and source-workflow screenshots contain synthetic data and were visually
+inspected.
+
+This remains a local product-interface delivery. It does not close live-provider
+quality/cost, two-client native verification, Paddle Sandbox, target-host,
+legal/trademark, human-pilot or public-release gates. The owner's untracked design
+concepts and personal licensing note remain untouched.
 
 ## Active delivery — consumer interface foundation
 

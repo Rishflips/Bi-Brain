@@ -73,7 +73,6 @@ export function SignIn({
             One calm place that carries your context between every agent you
             choose to use.
           </p>
-          <BrainChamber />
         </div>
         <article className="entry-card">
           {signInAvailable && signInUrl ? (
@@ -109,7 +108,6 @@ export function SignIn({
           Save a thought once. BiBrain keeps the original, carries the context,
           and helps every agent you choose pick up where you left off.
         </p>
-        <BrainChamber />
         <div className="entry-promises" aria-label="What BiBrain does">
           <span>Private by default</span>
           <span>Originals stay inspectable</span>
@@ -166,23 +164,5 @@ export function SignIn({
         </details>
       </article>
     </section>
-  );
-}
-
-function BrainChamber() {
-  return (
-    <div
-      className="entry-brain"
-      data-ui="entry-living-field"
-      aria-hidden="true"
-    >
-      <span className="entry-orbit orbit-one" />
-      <span className="entry-orbit orbit-two" />
-      <span className="entry-orbit orbit-three" />
-      <span className="entry-neural-ring" />
-      <span className="orbit-dot dot-one" />
-      <span className="orbit-dot dot-two" />
-      <span className="orbit-dot dot-three" />
-    </div>
   );
 }

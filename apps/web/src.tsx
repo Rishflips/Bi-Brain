@@ -23,6 +23,7 @@ import { SignIn, ConnectionUnavailable, type RuntimeMode } from "./sign-in.tsx";
 import { BrandLockup } from "./brand.tsx";
 import "@fontsource-variable/manrope/wght.css";
 import "./style.css";
+import "./refinement.css";
 let csrf = "";
 
 function NavGlyph({ name }: { name: string }) {
@@ -414,6 +415,9 @@ function App() {
   useEffect(() => {
     document.documentElement.dataset.theme = dark ? "dark" : "light";
     localStorage.setItem("brain-theme", dark ? "dark" : "light");
+    document
+      .querySelector('meta[name="theme-color"]')
+      ?.setAttribute("content", dark ? "#111111" : "#f7f5ef");
   }, [dark]);
   const refresh = useCallback(async () => {
     const generation = authGeneration;

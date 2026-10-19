@@ -1,6 +1,5 @@
 import { useState } from "react";
 import type { Entity, Evidence } from "../../packages/contracts/index.ts";
-import { BrainEmblem } from "./brand.tsx";
 
 type BrainPulseState =
   | "ready"
@@ -89,31 +88,20 @@ export function BrainPulse({
       aria-labelledby="brain-pulse-title"
       aria-live="polite"
     >
-      <div className="brain-pulse-visual" aria-hidden="true">
-        <span className="brain-pulse-glow" />
-        <svg className="brain-network" viewBox="0 0 220 220">
-          <path className="network-path path-one" d="M31 112C48 70 72 47 108 40c37-8 75 10 86 42 13 38-8 79-45 97-42 20-90 3-111-31-9-15-11-25-7-36Z" />
-          <path className="network-path path-two" d="M60 164c-1-35 12-75 45-103 26-22 58-27 81-9M38 91c29 1 59 16 82 43 19 22 44 30 69 24" />
-          <path className="network-path path-three" d="M71 53c7 27 25 48 50 62 25 15 41 38 43 70M42 135c31-17 68-20 103-10 26 8 43 3 56-13" />
-          <circle className="network-node node-one" cx="38" cy="91" r="5" />
-          <circle className="network-node node-two" cx="71" cy="53" r="5" />
-          <circle className="network-node node-three" cx="145" cy="125" r="6" />
-          <circle className="network-node node-four" cx="189" cy="158" r="5" />
-          <circle className="network-node node-five" cx="164" cy="185" r="4" />
-        </svg>
-        <BrainEmblem className="brain-pulse-core" />
-      </div>
       <div className="brain-pulse-copy">
-        <p className="brain-pulse-label">{label}</p>
+        <div className="brain-pulse-status">
+          <span className="brain-state-dot" aria-hidden="true" />
+          <p className="brain-pulse-label">{label}</p>
+        </div>
         <h2 id="brain-pulse-title">{title}</h2>
         <p>{detail}</p>
-        <div className="brain-signal" aria-hidden="true">
-          <span />
-          <span />
-          <span />
-          <span />
-          <span />
-        </div>
+      </div>
+      <div className="brain-signal" aria-hidden="true">
+        <span />
+        <span />
+        <span />
+        <span />
+        <span />
       </div>
     </section>
   );
@@ -286,17 +274,18 @@ export function CurrentKnowledge({
                 ) : (
                   <p className="muted">
                     {(g.data.reasons ?? [])
-                      .map((reason: string) =>
-                        ({
-                          ordinary_language_needs_owner_review:
-                            "Found in ordinary language · waiting for your review",
-                          owner_taught_meaning_needs_review:
-                            "Meaning supplied by you · waiting for confirmation",
-                          explicit_decision_needs_owner_review:
-                            "Explicit decision · waiting for your review",
-                          captured_candidate_needs_review:
-                            "Exact passage · waiting for your review",
-                        })[reason] ?? reason.replaceAll("_", " "),
+                      .map(
+                        (reason: string) =>
+                          ({
+                            ordinary_language_needs_owner_review:
+                              "Found in ordinary language · waiting for your review",
+                            owner_taught_meaning_needs_review:
+                              "Meaning supplied by you · waiting for confirmation",
+                            explicit_decision_needs_owner_review:
+                              "Explicit decision · waiting for your review",
+                            captured_candidate_needs_review:
+                              "Exact passage · waiting for your review",
+                          })[reason] ?? reason.replaceAll("_", " "),
                       )
                       .join(" · ")}
                   </p>
