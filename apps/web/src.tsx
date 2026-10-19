@@ -363,7 +363,9 @@ function App() {
   const [forgetNeedsRetry, setForgetNeedsRetry] = useState<string | null>(null);
   const [identityDisclosure, setIdentityDisclosure] = useState<any>(null);
   const [claimEntity, setClaimEntity] = useState("");
+  const [claimKind, setClaimKind] = useState("status");
   const [claimStatus, setClaimStatus] = useState("active");
+  const [claimMeaning, setClaimMeaning] = useState("");
   const [claimQuote, setClaimQuote] = useState("");
   const [dark, setDark] = useState(
     () => localStorage.getItem("brain-theme") === "dark",
@@ -489,7 +491,9 @@ function App() {
     setExpiration("");
     setSnooze("");
     setClaimEntity("");
+    setClaimKind("status");
     setClaimStatus("active");
+    setClaimMeaning("");
     setClaimQuote("");
     setBusy(false);
     preferencesDirty.current = false;
@@ -2657,7 +2661,9 @@ function App() {
                 <button
                   onClick={() => {
                     setClaimEntity("");
+                    setClaimKind("status");
                     setClaimStatus("active");
+                    setClaimMeaning("");
                     setClaimQuote(source.body.slice(0, 300));
                     setDialog("propose-claim");
                   }}
@@ -2785,8 +2791,8 @@ function App() {
               close={close}
             >
               <p>
-                Select an exact passage, then review the proposed fact in Your
-                brain. The original stays intact.
+                Tell BiBrain what an exact passage means. It stays a suggestion
+                until you review it, and the original always remains inspectable.
               </p>
               <form
                 onSubmit={(event) => {
@@ -2794,8 +2800,12 @@ function App() {
                   void act(async () => {
                     await api(`/sources/${source.id}/claim-proposals`, {
                       expected_version: source.version,
+                      type: claimKind === "status" ? "fact" : claimKind,
                       entity: claimEntity,
-                      field: { aspect: "status", value: claimStatus },
+                      field:
+                        claimKind === "status"
+                          ? { aspect: "status", value: claimStatus }
+                          : { aspect: "statement", value: claimMeaning },
                       quote: claimQuote,
                     });
                     setScope(source.project_id);
@@ -2818,26 +2828,52 @@ function App() {
                   />
                 </label>
                 <label className="field">
-                  Status
+                  What kind of memory is this?
                   <select
-                    value={claimStatus}
-                    onChange={(event) => setClaimStatus(event.target.value)}
+                    value={claimKind}
+                    onChange={(event) => setClaimKind(event.target.value)}
                   >
-                    {(
-                      [
-                        "planned",
-                        "active",
-                        "paused",
-                        "done",
-                        "cancelled",
-                      ] as const
-                    ).map((value) => (
-                      <option key={value} value={value}>
-                        {value}
-                      </option>
-                    ))}
+                    <option value="status">A status</option>
+                    <option value="fact">A fact</option>
+                    <option value="decision">A decision</option>
+                    <option value="rule">A rule</option>
+                    <option value="hypothesis">A possibility</option>
                   </select>
                 </label>
+                {claimKind === "status" ? (
+                  <label className="field">
+                    Status
+                    <select
+                      value={claimStatus}
+                      onChange={(event) => setClaimStatus(event.target.value)}
+                    >
+                      {(
+                        [
+                          "planned",
+                          "active",
+                          "paused",
+                          "done",
+                          "cancelled",
+                        ] as const
+                      ).map((value) => (
+                        <option key={value} value={value}>
+                          {value}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                ) : (
+                  <label className="field">
+                    What should BiBrain remember?
+                    <input
+                      required
+                      maxLength={1000}
+                      value={claimMeaning}
+                      onChange={(event) => setClaimMeaning(event.target.value)}
+                      placeholder="Write the meaning in your own words"
+                    />
+                  </label>
+                )}
                 <label className="field">
                   Exact passage from original
                   <textarea
@@ -3539,14 +3575,18 @@ function App() {
                     Copy connection key
                   </button>
                   <details>
-                    <summary>Manual setup details</summary>
+                    <summary>Connect Codex or Claude Code</summary>
                     <p>
-                      Set this value as <code>BRAIN_AGENT_TOKEN</code>, then run{" "}
-                      <code>
-                        node node_modules/tsx/dist/cli.mjs apps/mcp/main.ts
-                      </code>{" "}
-                      from the BiBrain workspace. See <code>docs/LOCAL_RUN.md</code>
-                      for client-specific steps.
+                      Keep this key out of prompts and shared files. Start the
+                      agent from a private terminal where this value is set as{" "}
+                      <code>BRAIN_AGENT_TOKEN</code>. BiBrain includes safe,
+                      project-local steps in{" "}
+                      <code>docs/NATIVE_CLIENT_SETUP.md</code>.
+                    </p>
+                    <p>
+                      After the agent uses BiBrain, this connection changes from
+                      “Not connected” to “Connected”. Revoke it here when the
+                      work is finished.
                     </p>
                   </details>
                 </>

@@ -2820,3 +2820,53 @@ On branch `ant/session44-context-conflicts`, based on `3e1d7f0`, the existing ow
 Regressions exercise rejection and original retention; duplicate/ambiguous suppression; complete citations for an older typed decision; stale review versions and competing corrections; revisions, privacy, moves and withdrawal of old/new sources; safe undo; read-only approval denial; revoked/cross-project access; private pending proposals not suppressing public review; explicit active-goal opt-in scheduling; quarantine; approved-state vault rebuild/restart; managed forgetting of copied earlier passages and retained Git text. Source and claim history are preserved until managed deletion.
 
 **Limits:** ASCII explicit-line syntax only; the full left key is a statement slot, not general semantic contradiction detection. Initial decisions require approval. Source editing does not extract a new decision; stale proposals require a fresh captured note. Existing status and arbitrary-prose passage workflows are unchanged. Capture-linked review is manual bookkeeping, not proactive preparation; background work remains opt-in to explicit active goals. This checkpoint verifies real SQLite/vault services, authenticated HTTP injection and server-rendered React; it does **not** verify browser interaction, native Claude/Codex, paid-provider reasoning, human usability, deployment or full harness release. No new dependency, permission scope, model, external fetch or background preference was introduced. No commit, push, remote change or deployment was performed. All historical checkpoints above remain historical.
+
+## Current verified checkpoint — consumer memory and native-client readiness (2026-10-19)
+
+BiBrain now makes a narrow, deterministic review suggestion when a saved public
+note contains exactly one clear statement shaped like “X is Y”, “X will be Y”,
+or “X uses Y”. Plain decisions such as “We decided that beta pricing is paid”
+remain pending until owner approval. The extractor preserves the full sentence
+and Unicode code-point range, declines questions, conditionals, vague pronouns,
+discourse-prefixed/comma subjects and ambiguous multi-statement notes, and never
+changes current truth on its own. Accepted changed statements use the existing
+cited correction/history/compensating-undo path.
+
+From an open original, the owner can now teach a status, fact, decision, rule or
+hypothesis from an exact passage. If an automatic suggestion exists for that
+identical evidence, the owner-taught meaning replaces it as the only pending
+card. Duplicate current meanings are refused. The review UI explains automatic
+versus owner-supplied meaning in plain language; initial approval is not mislabeled
+as a correction. Pending meaning remains invisible to agent answers until review.
+
+Native connection readiness is documented without changing global client state.
+`.codex/config.toml.example` is a token-free project template that forwards
+`BRAIN_AGENT_TOKEN` and `BRAIN_API_URL` from the local environment. Claude Code
+uses a project-local connection. `docs/NATIVE_CLIENT_SETUP.md` documents setup,
+removal and the required synthetic fresh-session recall/correction/privacy/
+revocation proof. Installed clients were inspected read-only: Codex CLI 0.156.1
+and Claude Code 2.1.283. No native model session was started, no subscription or
+API allowance was consumed, and configuration readiness does not close G6.
+
+**Actual verification on this branch:** `npm run typecheck`, `npm run lint`,
+`npm run build`, and `git diff --check` passed. Focused memory/correction/MCP
+integration ran **17/17** before the overlap repair; the final affected
+memory/correction integration ran **17/17**. The final complete Chromium run
+passed **47/47** in 3.7 minutes. `npm run brain-eval` passed **4/4** deterministic
+offline fixtures after the sandboxed attempt's disposable Git initialization was
+denied by Windows temp permissions. The broad Vitest run exercised 1,501 cases:
+**1,492 passed**, **8 platform-specific skips**, and one unrelated managed
+advisory-worker case exceeded its 30-second timeout under full-suite load; the
+complete file then passed **19/19**, including that exact case in 4.1 seconds.
+The first sandboxed focused run was not counted because Windows transform/temp
+access produced ENOENT/EPERM; the identical normal-local run passed. Browser RED
+observations found and repaired the initial-approval label assertion and the
+automatic/manual same-passage overlap; a later transient pairing failure passed
+on immediate isolated rerun and the final 47-test run was clean.
+
+**Remaining limits:** this is conservative grammar plus human review, not general
+semantic understanding or calibrated intelligence. Goal-linked live reasoning,
+held-out provider quality/cost, both native client runs, Paddle Sandbox evidence,
+target-host operations, human usability, legal/license decisions and public
+deployment remain open. No owner data, live provider, payment system, deployment,
+global client configuration or external action was used in this checkpoint.

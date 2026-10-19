@@ -1,0 +1,11 @@
+# Copy this file to .codex/config.toml only on a trusted local checkout.
+# Keep BRAIN_AGENT_TOKEN in the environment; never put it in this file.
+[mcp_servers.bibrain]
+command = "node"
+args = ["node_modules/tsx/dist/cli.mjs", "apps/mcp/main.ts"]
+cwd = "."
+env_vars = ["BRAIN_AGENT_TOKEN", "BRAIN_API_URL"]
+startup_timeout_sec = 15
+tool_timeout_sec = 60
+required = false
+default_tools_approval_mode = "writes"

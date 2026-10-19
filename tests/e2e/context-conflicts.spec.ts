@@ -22,7 +22,7 @@ test("browser approves, compares, rejects and undoes source-cited decision corre
     expect((await answer.json()).answer).toContain(`statement: ${value}`);
   }
   await save("free");
-  await pending().getByRole("button", { name: "Approve exact correction" }).click();
+  await pending().getByRole("button", { name: "Accept reviewed claim" }).click();
   await current("free");
   await save("paid");
   await expect(pending()).toContainText(`${key}: free`);
