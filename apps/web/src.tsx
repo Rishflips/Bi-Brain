@@ -21,6 +21,7 @@ import {
 } from "./first-note.tsx";
 import { SignIn, ConnectionUnavailable, type RuntimeMode } from "./sign-in.tsx";
 import { BrandLockup } from "./brand.tsx";
+import "@fontsource-variable/manrope/wght.css";
 import "./style.css";
 let csrf = "";
 
@@ -1068,61 +1069,65 @@ function App() {
       <a className="skip-link" href="#main-content">
         Skip to content
       </a>
-      {showProductShell ? <header className="masthead">
-        <a
-          className="brand"
-          href="#"
-          onClick={(e) => {
-            e.preventDefault();
-            setNav("Today");
-          }}
-        >
-          <BrandLockup className="masthead-lockup" />
-          <span className="tagline">One brain. Every agent.</span>
-        </a>
-        <button
-          className="primary"
-          data-ui="save-something"
-          disabled={!paired || demo}
-          onClick={saveDialog}
-        >
-          ＋ Save something
-        </button>
-      </header> : null}
-      <div className={`layout${showProductShell ? "" : " entry-layout"}`}>
-        {showProductShell ? <aside>
-          <nav aria-label="Main navigation" data-ui="primary-navigation">
-            {["Today", "Your brain", "Connections"].map((n) => (
-              <button
-                key={n}
-                aria-current={nav === n ? "page" : undefined}
-                onClick={() => setNav(n)}
-              >
-                <NavGlyph name={n} />
-                <span className="nav-label">{n}</span>
-              </button>
-            ))}
-          </nav>
-          <p className="rail-copy">
-            Agents change.
-            <br />
-            Your brain stays yours.
-          </p>
-          <button
-            className="link settings"
-            onClick={() => setNav("Settings")}
-            disabled={!paired || demo}
+      {showProductShell ? (
+        <header className="masthead">
+          <a
+            className="brand"
+            href="#"
+            onClick={(e) => {
+              e.preventDefault();
+              setNav("Today");
+            }}
           >
-            Settings & privacy
+            <BrandLockup className="masthead-lockup" />
+            <span className="tagline">One brain. Every agent.</span>
+          </a>
+          <button
+            className="primary"
+            data-ui="save-something"
+            disabled={!paired || demo}
+            onClick={saveDialog}
+          >
+            ＋ Save something
           </button>
-          <small>
-            {phase !== "ready"
-              ? ""
-              : runtime?.mode === "managed"
-                ? "Stored in your account"
-                : "Stored on this computer"}
-          </small>
-        </aside> : null}
+        </header>
+      ) : null}
+      <div className={`layout${showProductShell ? "" : " entry-layout"}`}>
+        {showProductShell ? (
+          <aside>
+            <nav aria-label="Main navigation" data-ui="primary-navigation">
+              {["Today", "Your brain", "Connections"].map((n) => (
+                <button
+                  key={n}
+                  aria-current={nav === n ? "page" : undefined}
+                  onClick={() => setNav(n)}
+                >
+                  <NavGlyph name={n} />
+                  <span className="nav-label">{n}</span>
+                </button>
+              ))}
+            </nav>
+            <p className="rail-copy">
+              Agents change.
+              <br />
+              Your brain stays yours.
+            </p>
+            <button
+              className="link settings"
+              onClick={() => setNav("Settings")}
+              disabled={!paired || demo}
+            >
+              Settings & privacy
+            </button>
+            <small>
+              {phase !== "ready"
+                ? ""
+                : runtime?.mode === "managed"
+                  ? "Stored in your account"
+                  : "Stored on this computer"}
+            </small>
+          </aside>
+        ) : null}
         <main id="main-content">
           {demo ? (
             <div className="banner">
@@ -1213,14 +1218,14 @@ function App() {
                       : "Drop in anything worth keeping. BiBrain will hold the thread."}
                   </p>
                 </div>
-              <BrainPulse
-                hasSavedWork={notes.length > 0}
-                readyCount={ready.length}
-                hasActiveJobs={hasActiveJobs}
-                hasStaleUnderstanding={hasStaleUnderstanding}
-                preparationEnabled={!!prefs?.enabled}
-                workerOnline={!!today.status.worker_online}
-              />
+                <BrainPulse
+                  hasSavedWork={notes.length > 0}
+                  readyCount={ready.length}
+                  hasActiveJobs={hasActiveJobs}
+                  hasStaleUnderstanding={hasStaleUnderstanding}
+                  preparationEnabled={!!prefs?.enabled}
+                  workerOnline={!!today.status.worker_online}
+                />
               </div>
               {notes.length ? (
                 <BrainQuickFind
@@ -2792,7 +2797,8 @@ function App() {
             >
               <p>
                 Tell BiBrain what an exact passage means. It stays a suggestion
-                until you review it, and the original always remains inspectable.
+                until you review it, and the original always remains
+                inspectable.
               </p>
               <form
                 onSubmit={(event) => {
