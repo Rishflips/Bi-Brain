@@ -1,5 +1,6 @@
 import { useState } from "react";
 import type { Entity, Evidence } from "../../packages/contracts/index.ts";
+import { BrainEmblem } from "./brand.tsx";
 
 type BrainPulseState =
   | "ready"
@@ -84,6 +85,7 @@ export function BrainPulse({
     <section
       className="brain-pulse"
       data-brain-state={state}
+      data-ui="living-field"
       aria-labelledby="brain-pulse-title"
       aria-live="polite"
     >
@@ -99,7 +101,7 @@ export function BrainPulse({
           <circle className="network-node node-four" cx="189" cy="158" r="5" />
           <circle className="network-node node-five" cx="164" cy="185" r="4" />
         </svg>
-        <span className="brain-pulse-core"><span>b.</span></span>
+        <BrainEmblem className="brain-pulse-core" />
       </div>
       <div className="brain-pulse-copy">
         <p className="brain-pulse-label">{label}</p>
@@ -128,6 +130,7 @@ export function BrainQuickFind({
   return (
     <form
       className="brain-quick-find"
+      data-ui="brain-search"
       role="search"
       onSubmit={(event) => {
         event.preventDefault();
@@ -382,7 +385,7 @@ export function ProposalCard({
   onSnooze: (item: Entity) => void;
 }) {
   return (
-    <article className="featured">
+    <article className="featured" data-ui="prepared-review">
       <span className="pill">Ready to review · {project}</span>
       <h2>{item.data.title}</h2>
       <p>{item.data.reason}</p>

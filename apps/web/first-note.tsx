@@ -70,7 +70,7 @@ export function FirstNoteComposer({
     }
   };
   return (
-    <article className="first-note">
+    <article className="first-note" data-ui="save-composer">
       <h2>Drop it here. Pick it up anywhere.</h2>
       <p>
         Paste a note, decision, plan, or conversation. BiBrain keeps the
@@ -181,7 +181,7 @@ export function FirstNoteSaved({
 
   const source = note.source;
   return (
-    <article className="saved-note">
+    <article className="saved-note" data-ui="saved-receipt">
       <p className="status saved" role="status">
         <span className="tick" aria-hidden="true">
           ✓

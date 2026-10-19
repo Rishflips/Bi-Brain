@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { BrainEmblem, BrandLockup } from "./brand.tsx";
 
 export type RuntimeMode = "local" | "managed";
 
@@ -16,12 +17,12 @@ export function ConnectionUnavailable({
   onRetry: () => void;
 }) {
   return (
-    <section className="welcome entry-experience">
+    <section className="welcome connection-unavailable">
       <p className="eyebrow">NOT CONNECTED</p>
-      <h1>We can’t reach this Bi Brain.</h1>
+      <h1>We can’t reach this BiBrain.</h1>
       <p>
         The server did not return the information needed to open your brain.
-        Nothing has been changed, and this is not a local installation.
+        Nothing has been changed, and no installation type has been assumed.
       </p>
       <article>
         <h2>Try again</h2>
@@ -63,8 +64,9 @@ export function SignIn({
   const [code, setCode] = useState("");
   if (mode === "managed")
     return (
-      <section className="welcome entry-experience">
+      <section className="welcome entry-experience" data-ui="first-use">
         <div className="entry-story">
+          <BrandLockup className="entry-lockup" />
           <p className="eyebrow">YOUR PRIVATE SPACE</p>
           <h1>Your work, remembered.</h1>
           <p className="entry-lede">
@@ -83,15 +85,7 @@ export function SignIn({
               </p>
               <a
                 href={signInUrl}
-                style={{
-                  display: "inline-block",
-                  padding: "11px 16px",
-                  borderRadius: 8,
-                  background: "var(--green)",
-                  color: "var(--on-green)",
-                  textDecoration: "none",
-                  fontWeight: 600,
-                }}
+                className="primary-link"
               >
                 Sign in to BiBrain
               </a>
@@ -109,22 +103,20 @@ export function SignIn({
       </section>
     );
   return (
-    <section className="welcome entry-experience">
+    <section className="welcome entry-experience" data-ui="first-use">
       <div className="entry-story">
+        <BrandLockup className="entry-lockup" />
         <p className="eyebrow">YOUR PRIVATE SPACE</p>
-        <h1>
-          Your thinking,<br />
-          <em>still alive.</em>
-        </h1>
+        <h1>A private brain for everything you’re building.</h1>
         <p className="entry-lede">
-          Save a thought once. Pick it up with any agent, with the context
-          intact and the source always in reach.
+          Save a thought once. BiBrain keeps the original, carries the context,
+          and helps every agent you choose pick up where you left off.
         </p>
         <BrainChamber />
         <div className="entry-promises" aria-label="What BiBrain does">
-          <span>Remembers what you save</span>
-          <span>Carries context forward</span>
-          <span>Stays quiet until useful</span>
+          <span>Private by default</span>
+          <span>Originals stay inspectable</span>
+          <span>You control every connection</span>
         </div>
       </div>
       <article className="entry-card">
@@ -132,7 +124,8 @@ export function SignIn({
         <h2>Open your local brain</h2>
         <p>
           Use the private installation code stored on this computer. No account
-          is needed and nothing leaves this machine.
+          is needed. Optional AI preparation stays off until you choose it in
+          Settings.
         </p>
         <form
           onSubmit={(event) => {
@@ -149,6 +142,8 @@ export function SignIn({
               value={code}
               onChange={(event) => setCode(event.target.value)}
               autoComplete="off"
+              autoCapitalize="none"
+              spellCheck={false}
               aria-label="Installation code"
             />
           </label>
@@ -160,9 +155,17 @@ export function SignIn({
           </button>
         </form>
         <p className="entry-help">
-          Find the code in <code>data/owner-secret</code>. Pairing protects this
-          private installation from other browsers.
+          Use the <code>owner-secret</code> file stored beside this installation’s
+          brain database. Pairing protects your private space from other browsers.
         </p>
+        <details className="entry-details">
+          <summary>Where is my code?</summary>
+          <p>
+            In the standard local setup it is <code>data/owner-secret</code>. A
+            separate preview or custom data folder has its own code in that
+            folder—use the one belonging to the server open in this browser.
+          </p>
+        </details>
       </article>
     </section>
   );
@@ -170,20 +173,12 @@ export function SignIn({
 
 function BrainChamber() {
   return (
-    <div className="entry-brain" aria-hidden="true">
+    <div className="entry-brain" data-ui="living-field" aria-hidden="true">
       <span className="entry-orbit orbit-one" />
       <span className="entry-orbit orbit-two" />
       <span className="entry-orbit orbit-three" />
-      <svg viewBox="0 0 360 260">
-        <path d="M75 134c0-48 41-88 91-88 21 0 40 7 55 20 12-8 27-12 42-9 28 5 48 29 47 57 17 12 27 31 24 51-4 31-31 53-62 50-17 19-43 30-70 27-27-2-50-17-63-38-35 0-64-28-64-63v-7Z" />
-        <path d="M129 68c-10 25-5 49 15 70 20 20 21 48 5 70M218 68c17 16 21 37 12 62-9 26-3 50 18 73M84 126c30-8 56 0 79 24 20 21 47 28 79 19M171 48c-8 25-2 47 19 65 22 19 32 43 29 73M105 184c24-21 50-27 78-17 29 10 54 5 76-16" />
-        <circle cx="129" cy="68" r="5" />
-        <circle cx="163" cy="150" r="6" />
-        <circle cx="230" cy="130" r="5" />
-        <circle cx="105" cy="184" r="5" />
-        <circle cx="259" cy="151" r="6" />
-      </svg>
-      <span className="entry-brain-core">b.</span>
+      <span className="entry-neural-ring" />
+      <BrainEmblem className="entry-brain-core" />
       <span className="orbit-dot dot-one" />
       <span className="orbit-dot dot-two" />
       <span className="orbit-dot dot-three" />

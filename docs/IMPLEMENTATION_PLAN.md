@@ -17,6 +17,33 @@ Gate: a clean checkout installs and starts using documented commands; production
 
 ### Approved visible delivery follow-up — 2026-10-18
 
+#### Consumer interface foundation — 2026-10-19
+
+- [x] Package the two owner-selected official BiBrain marks and expose reusable,
+      dimensioned, accessible brand components without modifying the source art.
+- [x] Apply the approved black/gold/ivory design tokens across first use, Today,
+      Your brain, Connections, Settings and dialogs while preserving all real
+      application callbacks and plain-language safety states.
+- [x] Clarify installation-code discovery for default, preview and custom data
+      folders without exposing a secret, and keep optional provider use off until
+      explicitly enabled.
+- [x] Add stable UI hooks for the design/wiring seam: first use, navigation,
+      save, living field, saved receipt, search, prepared review, source viewer,
+      connections and permission preview.
+- [x] Repair first-use behavior at 320px: no horizontal overflow, no inherited
+      full-height mobile rail, in-flow navigation, and stacked story/pairing card.
+      Add a browser regression for the exact boundary.
+- [x] Run typecheck, lint, production build and the 10-test runtime first-use
+      contract. The final rebuilt production bundle passed the complete browser
+      suite **45/45**, including the 320px first-use boundary, capture/reload,
+      source lifecycle, account isolation and runtime-discovery failure.
+- [x] Compare the exact delivered `BiBrain-HANDOFF_1.md`, standalone HTML and
+      ZIP source with this implementation. Adopt the standalone first-use
+      hierarchy, trust language, icon-supported product navigation, responsive
+      boundaries and official asset treatment. Keep the prototype's permissive
+      pairing, browser-only storage, synthetic connections, fake timers and
+      billing fixtures out of the real application paths.
+
 - [x] Record the approved product charter: BiBrain is the user-owned central memory
       and continuity layer behind verified connected agents, with zero-method first use
       and calmly alive, truthful state.
