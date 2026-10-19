@@ -20,8 +20,44 @@ import {
   type FirstNote,
 } from "./first-note.tsx";
 import { SignIn, ConnectionUnavailable, type RuntimeMode } from "./sign-in.tsx";
+import { BrandLockup } from "./brand.tsx";
 import "./style.css";
 let csrf = "";
+
+function NavGlyph({ name }: { name: string }) {
+  const common = {
+    width: 18,
+    height: 18,
+    viewBox: "0 0 24 24",
+    fill: "none",
+    stroke: "currentColor",
+    strokeWidth: 1.8,
+    strokeLinecap: "round" as const,
+    strokeLinejoin: "round" as const,
+    "aria-hidden": true,
+  };
+  if (name === "Today")
+    return (
+      <svg {...common}>
+        <circle cx="12" cy="12" r="3.5" />
+        <path d="M12 2v2M12 20v2M4.93 4.93l1.42 1.42M17.65 17.65l1.42 1.42M2 12h2M20 12h2M4.93 19.07l1.42-1.42M17.65 6.35l1.42-1.42" />
+      </svg>
+    );
+  if (name === "Your brain")
+    return (
+      <svg {...common}>
+        <path d="M5 5.5A2.5 2.5 0 0 1 7.5 3H11v17H7.5A2.5 2.5 0 0 1 5 17.5v-12ZM19 5.5A2.5 2.5 0 0 0 16.5 3H13v17h3.5a2.5 2.5 0 0 0 2.5-2.5v-12Z" />
+        <path d="M5 8h3M16 8h3M5 15h3M16 15h3" />
+      </svg>
+    );
+  return (
+    <svg {...common}>
+      <path d="M9.5 14.5 7 17a3.54 3.54 0 0 1-5-5l3-3a3.54 3.54 0 0 1 5 0" />
+      <path d="m14.5 9.5 2.5-2.5a3.54 3.54 0 0 1 5 5l-3 3a3.54 3.54 0 0 1-5 0" />
+      <path d="m8 16 8-8" />
+    </svg>
+  );
+}
 /**
  * Exact dollar display from integer micro-USD. A nonzero amount below the
  * display floor is shown as "<$0.0001", never as a free "$0.0000".
@@ -189,12 +225,14 @@ function Modal({
   children,
   error,
   variant,
+  dataUi,
 }: {
   title: string;
   close: () => void;
   children: React.ReactNode;
   error?: string;
   variant?: "inspector";
+  dataUi?: string;
 }) {
   const ref = useRef<HTMLDialogElement>(null);
   useEffect(() => {
@@ -211,6 +249,7 @@ function Modal({
         close();
       }}
       aria-labelledby="dialog-title"
+      data-ui={dataUi}
     >
       <header className="row">
         <h2 id="dialog-title">{title}</h2>
@@ -995,6 +1034,10 @@ function App() {
         : child}
     </label>
   );
+  // Keep the disabled global action visible in the explicit disconnected
+  // recovery state. It makes the unavailable boundary legible and preserves
+  // the safety contract that a runtime discovery failure can never look paired.
+  const showProductShell = paired || demo || phase === "unknown";
   function reviewProposal(item: Entity) {
     setProposal(item);
     setArtifact(item.data.artifact);
@@ -1021,7 +1064,7 @@ function App() {
       <a className="skip-link" href="#main-content">
         Skip to content
       </a>
-      <header className="masthead">
+      {showProductShell ? <header className="masthead">
         <a
           className="brand"
           href="#"
@@ -1030,27 +1073,29 @@ function App() {
             setNav("Today");
           }}
         >
-          <span className="mark">b.</span>BiBrain{" "}
+          <BrandLockup className="masthead-lockup" />
           <span className="tagline">One brain. Every agent.</span>
         </a>
         <button
           className="primary"
+          data-ui="save-something"
           disabled={!paired || demo}
           onClick={saveDialog}
         >
           ＋ Save something
         </button>
-      </header>
-      <div className="layout">
-        <aside>
-          <nav aria-label="Main navigation">
+      </header> : null}
+      <div className={`layout${showProductShell ? "" : " entry-layout"}`}>
+        {showProductShell ? <aside>
+          <nav aria-label="Main navigation" data-ui="primary-navigation">
             {["Today", "Your brain", "Connections"].map((n) => (
               <button
                 key={n}
                 aria-current={nav === n ? "page" : undefined}
                 onClick={() => setNav(n)}
               >
-                {n}
+                <NavGlyph name={n} />
+                <span className="nav-label">{n}</span>
               </button>
             ))}
           </nav>
@@ -1073,7 +1118,7 @@ function App() {
                 ? "Stored in your account"
                 : "Stored on this computer"}
           </small>
-        </aside>
+        </aside> : null}
         <main id="main-content">
           {demo ? (
             <div className="banner">
@@ -1409,7 +1454,7 @@ function App() {
               </div>
             </section>
           ) : nav === "Your brain" ? (
-            <section>
+            <section className="brain-view" data-ui="brain-library">
               <p className="eyebrow">SAVE → CONTINUE</p>
               <h1>Your brain</h1>
               <p className="lede">
@@ -1652,7 +1697,7 @@ function App() {
                 ))}
             </section>
           ) : nav === "Connections" ? (
-            <section>
+            <section className="connections-view" data-ui="connections">
               <p className="eyebrow">YOUR CHOICE OF AGENT</p>
               <h1>Connections</h1>
               <p className="lede">
@@ -1767,7 +1812,7 @@ function App() {
               </div>
               {grants.length ? (
                 grants.map((g) => (
-                  <article key={g.id}>
+                  <article key={g.id} data-ui="connection-row">
                     <div className="row">
                       <h3>Agent access</h3>
                       <span className="pill">{g.status}</span>
@@ -2587,6 +2632,7 @@ function App() {
               title={source.title}
               close={close}
               variant="inspector"
+              dataUi="source-viewer"
             >
               <p className="muted">
                 {projectName(source.project_id)} · Original version{" "}
@@ -3472,13 +3518,14 @@ function App() {
               error={error}
               title="Give an agent selected access"
               close={close}
+              dataUi="permission-preview"
             >
               {token ? (
                 <>
                   <p>
-                    Copy this token now. It is shown once and stored as a hash.
-                    Configure it as BRAIN_AGENT_TOKEN for the stdio adapter. A
-                    configured token is not proof of a connection.
+                    Copy this private connection key now. BiBrain shows it once
+                    and stores only a protected fingerprint. Creating a key does
+                    not mean an agent has connected yet.
                   </p>
                   <pre>{token}</pre>
                   <button
@@ -3489,16 +3536,19 @@ function App() {
                       })
                     }
                   >
-                    Copy token
+                    Copy connection key
                   </button>
-                  <p>
-                    Run:{" "}
-                    <code>
-                      node node_modules/tsx/dist/cli.mjs apps/mcp/main.ts
-                    </code>{" "}
-                    with the workspace as the working directory. See
-                    docs/LOCAL_RUN.md for client configuration.
-                  </p>
+                  <details>
+                    <summary>Manual setup details</summary>
+                    <p>
+                      Set this value as <code>BRAIN_AGENT_TOKEN</code>, then run{" "}
+                      <code>
+                        node node_modules/tsx/dist/cli.mjs apps/mcp/main.ts
+                      </code>{" "}
+                      from the BiBrain workspace. See <code>docs/LOCAL_RUN.md</code>
+                      for client-specific steps.
+                    </p>
+                  </details>
                 </>
               ) : (
                 <form
@@ -3567,7 +3617,7 @@ function App() {
           {dialog === "import" ? (
             <Modal error={error} title="Import your brain" close={close}>
               <p>
-                Choose a Bi Brain JSON export. Preview before applying.
+                Choose a BiBrain JSON export. Preview before applying.
                 Conflicting originals block the entire import.
               </p>
               {field(

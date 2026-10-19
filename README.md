@@ -81,8 +81,10 @@ npm start
 ```
 
 Open [http://127.0.0.1:4317](http://127.0.0.1:4317). Paste the private pairing
-code from `data/owner-secret` into the first-use screen. The code is generated
-locally and is never logged or exported.
+code from `data/owner-secret` into the first-use screen. A preview or custom
+database folder has its own `owner-secret` beside that database; use the code
+for the server open in your browser. The code is generated locally and is never
+logged or exported.
 
 No provider key is required. Without one, BiBrain keeps originals, search,
 review, and labeled extractive previews available locally. Data is stored in
@@ -154,6 +156,8 @@ usability have separate gates.
 | [Product](docs/PRODUCT.md) | Audience, promise, scope, and outcomes |
 | [UX](docs/UX.md) | First-use, Today, review, and failure states |
 | [Design system](docs/DESIGN_SYSTEM.md) | Living visual language and accessibility |
+| [Approved interface brief](design.md) | Official black/gold identity, responsive surfaces, states, and wiring rules |
+| [Prototype handoff](design/BiBrain-HANDOFF_1.md) | Delivered Claude prototype boundaries and the real-service wiring map |
 | [Architecture](docs/ARCHITECTURE.md) | Runtime, storage, trust, and deployment shape |
 | [API](docs/API.md) | HTTP contracts and errors |
 | [Agent integration](docs/AGENT_INTEGRATION.md) | Scoped tools, grants, and client verification |

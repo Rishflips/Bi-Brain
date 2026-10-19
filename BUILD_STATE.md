@@ -2,6 +2,64 @@
 
 Updated: 2026-10-19
 
+## Active delivery — consumer interface foundation
+
+Work is in progress on `codex/consumer-interface-foundation`, based on the
+post-PR #7 merged `main` commit `30c4ac2`. This checkpoint applies the approved
+black, gold, ivory and white BiBrain identity to the real application rather
+than adopting the separate prototype's fixture adapter or replacing the mature
+service architecture.
+
+Implemented in the working tree:
+
+- The two owner-selected official raster marks are packaged as nondestructive
+  web assets and used through shared `BrandLockup` and `BrainEmblem` components.
+- First use, Today, Your brain, Connections, Settings and dialogs share the new
+  design tokens, surfaces, focus treatment and responsive shell. The state-driven
+  living field remains derived only from real saved-work, queue, freshness,
+  worker and preparation state.
+- First use now stands on its own without the signed-in application rail. After
+  pairing, the real product shell appears with icon-supported Today, Your brain
+  and Connections navigation. This follows the delivered prototype's information
+  hierarchy without copying its browser-only controller.
+- Local pairing explains that each custom/preview data folder has its own
+  `owner-secret`; no secret is exposed in markup, a URL, a log, fixture data or
+  a screenshot. Optional AI preparation is described truthfully as off until
+  the owner enables it.
+- Stable integration hooks now identify first use, primary navigation, capture,
+  saved receipts, search, prepared review, source viewer, connections and
+  permission preview without changing their behavior.
+- A visual 320px review found an onboarding overflow and an inherited full-height
+  mobile rail. Both were repaired; a permanent browser regression now checks the
+  official first-use content, pairing help and absence of horizontal overflow.
+- The tracked synthetic product screenshots were regenerated from real browser
+  journeys using the production build. No owner knowledge is included.
+
+Checks actually run on this working tree: `npm run typecheck`, `npm run lint`,
+and `npm run build` passed; the final build produced `index-BJfUWT-l.css` and
+`index-Drwa1yY4.js`. The runtime first-use contract passed **10/10** outside the
+Windows temp-directory sandbox. The final complete browser suite passed
+**45/45** against the rebuilt production bundle, including the new standalone
+first-use boundary at 320px, real capture/reload, source lifecycle, managed
+account isolation and honest runtime-discovery failure. A desktop first-use
+capture was also inspected locally after the final layout change.
+
+The supplied `BiBrain-HANDOFF_1.md`, standalone prototype HTML and complete ZIP
+source were reviewed as design documentation, not proof of backend behavior.
+The exact first-use, Today, Your brain, Connections and Settings compositions,
+responsive screenshots, component states and token layer were compared with the
+real app. The standalone first-use hierarchy, trust language, compact icon
+navigation, responsive boundaries and official crop treatment were adopted.
+The fixture controller was deliberately not transplanted: its permissive pairing,
+browser-only saves, fake timers, synthetic connections, fake preparation and
+prototype billing remain design-only. Those surfaces continue to use the real
+HTTP, application-service, SQLite, authorization and evidence paths already in
+this repository.
+
+This remains a local UI delivery. It does not close live-provider quality/cost,
+native two-client, Paddle Sandbox, target-host, legal/trademark, human-pilot or
+public-release gates.
+
 ## Current merged baseline — PR #6
 
 The owner merged [PR #6](https://github.com/Rishflips/Bi-Brain/pull/6), **Ship
