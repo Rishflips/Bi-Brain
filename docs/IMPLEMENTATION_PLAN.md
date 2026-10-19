@@ -19,8 +19,14 @@ Gate: a clean checkout installs and starts using documented commands; production
 
 #### Consumer interface foundation — 2026-10-19
 
-- [x] Package the two owner-selected official BiBrain marks and expose reusable,
-      dimensioned, accessible brand components without modifying the source art.
+- [x] Replace the active raster brand copies with reusable, dimensioned,
+      accessible inline SVG logo/wordmark components and an SVG favicon. Remove
+      the repeated emblem from the right-side first-use cognitive field.
+- [x] Remove Inter from the application and self-host the Manrope variable font
+      with platform fallbacks; verify the typography and vector-only first-use
+      brand at the 320px boundary in the production browser test. The focused
+      regression passed **1/1** and the main product journeys passed **8/8**;
+      regenerated synthetic screenshots were visually inspected.
 - [x] Apply the approved black/gold/ivory design tokens across first use, Today,
       Your brain, Connections, Settings and dialogs while preserving all real
       application callbacks and plain-language safety states.

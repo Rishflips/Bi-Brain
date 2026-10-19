@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { BrainEmblem, BrandLockup } from "./brand.tsx";
+import { BrandLockup } from "./brand.tsx";
 
 export type RuntimeMode = "local" | "managed";
 
@@ -83,10 +83,7 @@ export function SignIn({
                 You will return here after your identity provider confirms who
                 you are. No password is stored by Bi Brain.
               </p>
-              <a
-                href={signInUrl}
-                className="primary-link"
-              >
+              <a href={signInUrl} className="primary-link">
                 Sign in to BiBrain
               </a>
             </>
@@ -155,8 +152,9 @@ export function SignIn({
           </button>
         </form>
         <p className="entry-help">
-          Use the <code>owner-secret</code> file stored beside this installation’s
-          brain database. Pairing protects your private space from other browsers.
+          Use the <code>owner-secret</code> file stored beside this
+          installation’s brain database. Pairing protects your private space
+          from other browsers.
         </p>
         <details className="entry-details">
           <summary>Where is my code?</summary>
@@ -173,12 +171,15 @@ export function SignIn({
 
 function BrainChamber() {
   return (
-    <div className="entry-brain" data-ui="living-field" aria-hidden="true">
+    <div
+      className="entry-brain"
+      data-ui="entry-living-field"
+      aria-hidden="true"
+    >
       <span className="entry-orbit orbit-one" />
       <span className="entry-orbit orbit-two" />
       <span className="entry-orbit orbit-three" />
       <span className="entry-neural-ring" />
-      <BrainEmblem className="entry-brain-core" />
       <span className="orbit-dot dot-one" />
       <span className="orbit-dot dot-two" />
       <span className="orbit-dot dot-three" />

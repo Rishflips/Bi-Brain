@@ -4,16 +4,19 @@ Updated: 2026-10-19
 
 ## Active delivery — consumer interface foundation
 
-Work is in progress on `codex/consumer-interface-foundation`, based on the
-post-PR #7 merged `main` commit `30c4ac2`. This checkpoint applies the approved
+Work is in progress on `codex/memory-quality-agent-proof`, currently based on
+commit `b27a4a8`. This checkpoint applies the approved
 black, gold, ivory and white BiBrain identity to the real application rather
 than adopting the separate prototype's fixture adapter or replacing the mature
 service architecture.
 
 Implemented in the working tree:
 
-- The two owner-selected official raster marks are packaged as nondestructive
-  web assets and used through shared `BrandLockup` and `BrainEmblem` components.
+- The active logo and wordmark are transparent inline SVG geometry shared by
+  `BrandLockup` and `BrainEmblem`; the former raster web copies were removed.
+  The right-side first-use cognitive field no longer repeats the emblem.
+- Inter was removed from the root typography stack. The interface now ships the
+  self-hosted Manrope variable font, with platform fallbacks and no font CDN.
 - First use, Today, Your brain, Connections, Settings and dialogs share the new
   design tokens, surfaces, focus treatment and responsive shell. The state-driven
   living field remains derived only from real saved-work, queue, freshness,
@@ -36,8 +39,15 @@ Implemented in the working tree:
   journeys using the production build. No owner knowledge is included.
 
 Checks actually run on this working tree: `npm run typecheck`, `npm run lint`,
-and `npm run build` passed; the final build produced `index-BJfUWT-l.css` and
-`index-Drwa1yY4.js`. The runtime first-use contract passed **10/10** outside the
+and `npm run build` passed after the vector-brand/font refinement; the focused
+320px production-browser regression passed **1/1**, asserting an accessible SVG
+wordmark, no raster images in first use, no hero emblem and no Inter family. The
+main real-product browser journeys then passed **8/8**, including capture,
+evidence, review, agent retrieval, imports, correction, deletion, reload,
+keyboard and responsive layouts. The tracked synthetic product screenshots were
+regenerated from that production run and visually inspected. The
+earlier complete build produced `index-BJfUWT-l.css` and `index-Drwa1yY4.js`.
+The runtime first-use contract passed **10/10** outside the
 Windows temp-directory sandbox. The final complete browser suite passed
 **45/45** against the rebuilt production bundle, including the new standalone
 first-use boundary at 320px, real capture/reload, source lifecycle, managed
