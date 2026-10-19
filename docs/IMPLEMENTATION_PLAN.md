@@ -218,7 +218,11 @@ The 2026-10-16 owner direction brings managed personal delivery into the primary
     - [x] Task 3 explicit worker coordinator pair/bootstrap and synthetic process verification: final parent 984 passed / 2 existing POSIX-only skips, 98 files, 720.54 s; 24 Chromium journeys; 4 offline evaluations; typecheck/lint/build/audit passed. Five actual-main process cases include restart/no-resend, long-call heartbeats, unpaid account continuity and independent stage bootstraps. Strict fixture cleanup passed without warning. See BUILD_STATE for retained-charge/source/privacy repairs and limits.
   - [ ] Explicitly authorized real held-out decision/reasoning quality, compatibility and total-cost evidence. S1 accounting/consent/activation and S2 advisory worker are locally accepted; synthetic fixtures do not complete G4.
 - [ ] G5: Ordinary-prose understanding/recall/correction and goal-linked preparation with live evidence.
+  - [x] Deterministic, single-statement ordinary-language suggestions; exact Unicode evidence; owner-taught meaning for arbitrary passages; review-only acceptance, correction and safe undo; quiet ambiguity behavior. Locally verified on 2026-10-19.
+  - [ ] Goal-linked semantic preparation and held-out live-model quality/cost evidence.
 - [ ] G6: Two named native integrations with fresh-session correction/privacy/revocation evidence.
+  - [x] Token-free project Codex template, project-local Claude setup, revocation instructions and a five-part synthetic proof checklist.
+  - [ ] Run the checklist in fresh native Codex and Claude Code sessions with explicit owner authorization; record recall, correction, privacy and immediate revocation evidence.
 - [ ] G7: Subscription/webhook reconciliation, allowances, cancellation and payment-independent export/deletion.
   - [x] Owner selected Paddle Billing for an India-based individual/sole proprietor, monthly+annual plans and monthly no-rollover allowance without automatic overages. No customer price or allowance amount selected.
   - [x] B0 renewal-safe financial-authority written design approved by the owner's "okay go ahead".

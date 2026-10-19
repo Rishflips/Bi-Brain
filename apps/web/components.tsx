@@ -237,11 +237,11 @@ export function CurrentKnowledge({
       )}
       {gates.length ? (
         <section>
-          <h2>Decision review and history</h2>
+          <h2>Review what BiBrain understood</h2>
           <p className="muted">
-            Offline extraction recognizes one explicit “Entity aspect: value”
-            line per note. It does not understand arbitrary prose. Proposed
-            changes are not applied until you approve them.
+            BiBrain can suggest one clear memory from a plain “X is Y” sentence
+            or an explicit decision. It stays a suggestion until you approve it.
+            Ambiguous notes remain saved without invented meaning.
           </p>
           {gates
             .filter((g) => g.data.status === "queued")
@@ -284,7 +284,22 @@ export function CurrentKnowledge({
                     </p>
                   </>
                 ) : (
-                  <p className="muted">{g.data.reasons.join(" · ")}</p>
+                  <p className="muted">
+                    {(g.data.reasons ?? [])
+                      .map((reason: string) =>
+                        ({
+                          ordinary_language_needs_owner_review:
+                            "Found in ordinary language · waiting for your review",
+                          owner_taught_meaning_needs_review:
+                            "Meaning supplied by you · waiting for confirmation",
+                          explicit_decision_needs_owner_review:
+                            "Explicit decision · waiting for your review",
+                          captured_candidate_needs_review:
+                            "Exact passage · waiting for your review",
+                        })[reason] ?? reason.replaceAll("_", " "),
+                      )
+                      .join(" · ")}
+                  </p>
                 )}
                 <EvidenceList
                   items={g.data.evidence ?? []}

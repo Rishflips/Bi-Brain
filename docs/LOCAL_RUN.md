@@ -65,7 +65,7 @@ env: { "BRAIN_AGENT_TOKEN": "<token from Connections>", "BRAIN_API_URL": "http:/
 
 Do not commit the client configuration containing the token. API and worker must be running. The eight tools are `brain.search`, `brain.get`, `brain.propose`, `brain.forget`, `brain.link`, `brain.ask`, `brain.intent`, and `brain.diff`, filtered by the grant's actual operations. Read-only grants discover search/get/ask/diff. Typed proposals return commit or queue; agent intentions require owner review before changing goals. Returned source content is data, never agent instructions. Context is bounded at 3,000 estimated tokens with explicit omissions. Revocation is immediate on every operation; there is no cache bypass. For an independently hosted server, set `BRAIN_API_URL` to its exact trusted HTTPS origin. The adapter rejects remote plaintext, URL credentials/paths, and redirects; it remains a local stdio process, not a hosted HTTP MCP endpoint.
 
-The official SDK test client verifies fresh-session recall, correction, private and cross-project denial, and revocation. Codex and Claude Code native clients still require separate verification; no client configuration or global Codex settings were changed.
+The official SDK test client verifies fresh-session recall, correction, private and cross-project denial, and revocation. Token-free, project-scoped Codex and Claude Code setup is documented in [NATIVE_CLIENT_SETUP.md](NATIVE_CLIENT_SETUP.md). The named clients still require separate end-to-end verification; no global client settings are changed by this repository.
 
 ## Backup and restore
 

@@ -49,11 +49,17 @@ Re-check permissions when jobs execute and return results. Derivatives inherit r
 
 | Client | Transport | Read | Remember | Fresh-session recall | Revocation | Status |
 |---|---|---|---|---|---|---|
-| Codex | stdio, version to record | Unverified | Unverified | Unverified | Unverified | Not implemented |
-| Claude Code | stdio, version to record | Unverified | Unverified | Unverified | Unverified | Not implemented |
+| Codex | stdio, installed 0.156.1 | Unverified | Unverified | Unverified | Unverified | Token-free project template ready; native run not authorized |
+| Claude Code | stdio, installed 2.1.283 | Unverified | Unverified | Unverified | Unverified | Project-local setup ready; native run not authorized |
 | Generic MCP inspector | stdio | Unverified | Unverified | N/A | Unverified | Not implemented |
 
 Two-client end-to-end verification is a local V1 release gate. If a client is unavailable, finish the adapter and inspector tests, then report that native-client gate as unverified.
+
+The checked-in setup in [NATIVE_CLIENT_SETUP.md](NATIVE_CLIENT_SETUP.md) keeps
+the grant out of Git and avoids machine-wide configuration. Installing the
+configuration is an owner action because a native run can consume a client
+subscription or API allowance. Configuration readiness is not compatibility
+evidence.
 
 ## Verification script
 

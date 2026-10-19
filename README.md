@@ -36,7 +36,8 @@ The merged application provides a complete single-owner local workflow:
 1. Pair a browser to the local installation.
 2. Save text, Markdown, notes, decisions, or supported conversation exports.
 3. Keep immutable source versions in SQLite plus the portable Git-backed vault.
-4. Inspect source-linked understanding and promote exact evidence through review.
+4. Review one clear memory suggested from ordinary language, or teach BiBrain
+   the meaning of any exact passage. Nothing becomes current until you approve it.
 5. Search the full retained text and reopen the original.
 6. Export or use project-scoped context through an expiring agent grant.
 7. Choose goals, request bounded preparation, review evidence, accept, snooze,
@@ -57,16 +58,20 @@ processed a real payment.
 | Managed accounts | Implemented foundation with local isolation and recovery evidence |
 | Connected model processing | Default off; live quality and cost gate still open |
 | Paddle billing | Default-off integration boundary; real Sandbox proof still open |
-| Agent connections | Scoped stdio adapter implemented; named native-client verification still open |
+| Agent connections | Scoped stdio adapter and safe Codex/Claude setup ready; named native-client verification still open |
 | Public cloud release | Not deployed; hosting, legal, support, and human-pilot gates remain open |
 
-The current merged release candidate has local evidence for **1,488 passing
-tests with 8 platform skips across 141 files**, **44/44 Chromium journeys**,
-**4/4 deterministic offline evaluations**, a high-severity dependency audit with
-zero findings, and the B0 operator/B1 billing safety suites. Its corrected PR head
-also passed the complete Linux/container workflow, including Docker smoke, Compose,
-and Caddy validation. These remain synthetic release gates—not proof of live model
-quality, real billing, or target-host operations. See
+The current branch adds a locally verified consumer-memory slice: focused
+integration checks passed **17/17** and the final complete browser run passed
+**47/47 Chromium journeys**. The broad Vitest run exercised 1,501 cases:
+**1,492 passed**, **8 platform cases skipped**, and one unrelated 30-second
+managed-worker timeout subsequently passed with its complete file **19/19** in
+isolation. Typecheck, lint, and the production build pass. Earlier merged release
+evidence remains recorded in BUILD_STATE; the current deterministic offline
+evaluation also passed **4/4** after rerunning its disposable Git-vault case with
+normal Windows temp access. These are local synthetic release gates—not
+proof of live model quality, native-agent compatibility, real billing, or
+target-host operations. See
 [BUILD_STATE.md](BUILD_STATE.md) for commands, exact scope, and known limits.
 
 ## Quick start
@@ -94,6 +99,9 @@ supervisor.
 For full setup, backup/restore, provider limits, and scoped agent configuration,
 read [Run BiBrain locally](docs/LOCAL_RUN.md). For a private always-on server,
 use [Self-hosting](docs/SELF_HOSTING.md) and `deploy/compose.yaml`.
+Native Codex and Claude Code setup is in
+[Connect a native agent](docs/NATIVE_CLIENT_SETUP.md); configuration readiness
+is not a completed client certification.
 
 ## Product surfaces
 
@@ -161,6 +169,7 @@ usability have separate gates.
 | [Architecture](docs/ARCHITECTURE.md) | Runtime, storage, trust, and deployment shape |
 | [API](docs/API.md) | HTTP contracts and errors |
 | [Agent integration](docs/AGENT_INTEGRATION.md) | Scoped tools, grants, and client verification |
+| [Native client setup](docs/NATIVE_CLIENT_SETUP.md) | Token-safe Codex/Claude setup and the required proof checklist |
 | [Managed operator guide](docs/MANAGED_RUN.md) | Identity, activation, billing, and recovery gates |
 | [Release](docs/RELEASE.md) | What can ship and what still blocks launch |
 | [Implementation plan](docs/IMPLEMENTATION_PLAN.md) | Dependency-ordered milestone checklist |

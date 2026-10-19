@@ -44,6 +44,7 @@ import {
   type AdvisoryQuestionResult,
   type AdvisoryRecord,
 } from "./decision-advisory.ts";
+import { extractReviewableMemory } from "./memory-understanding.ts";
 import {
   attemptReferencesSource,
   claimDecisionAttempt,
@@ -554,40 +555,34 @@ export class Brain {
           principal: p,
         });
         if (!fromGate && !quarantined && v.visibility === "project") {
-          // Offline syntax extraction, not semantic understanding. A single explicit
-          // two-or-more-word key is the decision slot (e.g. "Beta pricing").
-          const decisions = v.body
-            .split(/\r?\n/)
-            .filter((line) =>
-              /^[A-Za-z][A-Za-z0-9_-]*(?: [A-Za-z][A-Za-z0-9_-]*){1,7}: [A-Za-z0-9][A-Za-z0-9 _.-]{0,299}$/.test(
-                line,
-              ),
-            );
-          if (
-            decisions.length === 1 &&
-            !/^(i|me|my|myself|owner|user|identity)\b/i.test(decisions[0])
-          ) {
-            const line = decisions[0];
-            const [entity, value] = line.split(": ");
-            const key = entity.toLocaleLowerCase();
+          // A bounded deterministic grammar can suggest one unambiguous memory
+          // from ordinary language. It is never applied without owner review.
+          const memory = extractReviewableMemory(v.body);
+          if (memory) {
+            const key = memory.entity;
             const existing = this.currentClaims(p, v.project_id).filter(
               (c) =>
                 c.data.entity === key &&
-                c.data.aspect === "statement" &&
+                c.data.aspect === memory.field.aspect &&
                 c.data.evidence?.every(
                   (e: Evidence) =>
                     this.source(p, e.source_id).visibility === "project",
                 ),
             );
             const duplicate =
-              existing.some((c) => c.data.value === value) ||
+              existing.some(
+                (c) =>
+                  JSON.stringify(c.data.value) ===
+                  JSON.stringify(memory.field.value),
+              ) ||
               this.entities(p, "gate").some(
                 (g) =>
                   g.project_id === v.project_id &&
                   g.data.status === "queued" &&
                   g.data.entity === key &&
-                  g.data.field?.aspect === "statement" &&
-                  g.data.field?.value === value &&
+                  g.data.field?.aspect === memory.field.aspect &&
+                  JSON.stringify(g.data.field?.value) ===
+                    JSON.stringify(memory.field.value) &&
                   g.data.evidence?.every(
                     (e: Evidence) =>
                       this.evidenceCurrent(v.project_id, e) &&
@@ -595,24 +590,21 @@ export class Brain {
                   ),
               );
             if (!duplicate) {
-              const start = Array.from(
-                v.body.slice(0, v.body.indexOf(line)),
-              ).length;
               this.createEntity(v.project_id, "gate", {
                 raw_id: id,
-                type: "decision",
+                type: memory.type,
                 entity: key,
-                field: { aspect: "statement", value },
+                field: memory.field,
                 evidence: [
                   {
                     source_id: id,
                     source_version: 1,
-                    start,
-                    end: start + Array.from(line).length,
-                    quote: line,
+                    start: memory.start,
+                    end: memory.end,
+                    quote: memory.quote,
                   },
                 ],
-                correction: true,
+                correction: existing.length > 0,
                 conflicts: existing.map((c) => ({
                   id: c.id,
                   version: c.version,
@@ -643,12 +635,12 @@ export class Brain {
                 })),
                 status: "queued",
                 reasons: [
-                  "explicit_decision_needs_owner_review",
-                  ...(existing.length ? ["changed_decision"] : []),
+                  memory.reason,
+                  ...(existing.length ? ["changed_understanding"] : []),
                 ],
                 actor: "owner",
                 policy_version: policyVersion,
-                classifier_version: "explicit-decision-line-v1",
+                classifier_version: memory.classifier_version,
               });
             }
           }
@@ -2211,13 +2203,30 @@ export class Brain {
     const v = z
       .object({
         expected_version: z.number().int().positive(),
+        type: z
+          .enum(["fact", "decision", "rule", "hypothesis"])
+          .default("fact"),
         entity: z.string().trim().min(1).max(200),
-        field: z
-          .object({
-            aspect: z.literal("status"),
-            value: z.enum(["planned", "active", "paused", "done", "cancelled"]),
-          })
-          .strict(),
+        field: z.discriminatedUnion("aspect", [
+          z
+            .object({
+              aspect: z.literal("status"),
+              value: z.enum([
+                "planned",
+                "active",
+                "paused",
+                "done",
+                "cancelled",
+              ]),
+            })
+            .strict(),
+          z
+            .object({
+              aspect: z.literal("statement"),
+              value: z.string().trim().min(1).max(1000),
+            })
+            .strict(),
+        ]),
         quote: z.string().min(1).max(10000),
       })
       .strict()
@@ -2247,18 +2256,67 @@ export class Brain {
         },
       ];
       this.checkEvidence(p, source.project_id, evidence);
-      return this.createEntity(source.project_id, "gate", {
+      const current = this.currentClaims(p, source.project_id).filter(
+        (claim) =>
+          claim.data.entity === v.entity.toLocaleLowerCase() &&
+          claim.data.aspect === v.field.aspect,
+      );
+      if (
+        current.some(
+          (claim) =>
+            JSON.stringify(claim.data.value) === JSON.stringify(v.field.value),
+        )
+      )
+        throw new BrainError(
+          "INVALID_INPUT",
+          "BiBrain already remembers this meaning as current.",
+        );
+      const correction = source.visibility === "project" && current.length > 0;
+      const automaticForSamePassage = this.entities(p, "gate").filter(
+        (gate) =>
+          gate.project_id === source.project_id &&
+          gate.data.status === "queued" &&
+          gate.data.raw_id === source.id &&
+          gate.data.reasons?.includes(
+            "ordinary_language_needs_owner_review",
+          ) &&
+          gate.data.evidence?.some(
+            (item: Evidence) =>
+              item.source_id === source.id &&
+              item.source_version === source.version &&
+              item.start === evidence[0].start &&
+              item.end === evidence[0].end &&
+              item.quote === evidence[0].quote,
+          ),
+      );
+      const taught = this.createEntity(source.project_id, "gate", {
         raw_id: source.id,
-        type: "fact",
-        entity: v.entity,
+        type: v.type,
+        entity: v.entity.toLocaleLowerCase(),
         field: v.field,
         evidence,
+        correction,
+        conflicts: correction
+          ? current.map((claim) => ({
+              id: claim.id,
+              version: claim.version,
+              value: claim.data.value,
+              evidence: claim.data.evidence,
+            }))
+          : [],
         status: "queued",
-        reasons: ["owner_selected_passage_review"],
+        reasons: ["owner_taught_meaning_needs_review"],
         actor: "owner",
         policy_version: policyVersion,
         classifier_version: classifierVersion,
       });
+      for (const gate of automaticForSamePassage)
+        this.revise(gate, {
+          ...gate.data,
+          status: "rejected",
+          resolution: "replaced_by_owner_taught_meaning",
+        });
+      return taught;
     });
   }
   reviewGate(p: Principal, id: string, input: unknown) {
@@ -2279,7 +2337,7 @@ export class Brain {
         if (!gate.data.correction || gate.data.status !== "accepted")
           throw new BrainError(
             "VERSION_CONFLICT",
-            "Only an approved explicit decision can be undone.",
+            "Only an approved correction can be undone.",
             409,
           );
         const approved = (gate.data.claim_ids as string[]).map((claimId) =>

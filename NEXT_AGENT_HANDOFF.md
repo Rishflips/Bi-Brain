@@ -8,6 +8,31 @@ This is a factual checkpoint and recommended continuation, not permission to ena
 payments, spend money, publish a service, or overwrite user work. Follow the next
 user request and `AGENTS.md`; use the available skills where applicable.
 
+## Latest continuation checkpoint — 2026-10-19
+
+Desktop `main` and `origin/main` matched PR #8 merge commit `c69e6c1` before
+branch `codex/memory-quality-agent-proof` was created. This branch adds the first
+consumer-memory G5 slice: one conservative ordinary-language statement can become
+a cited review suggestion; the owner can teach the meaning of any exact passage;
+accepted changes use the existing correction/history/safe-undo path; and pending
+meaning never reaches agent answers. Ambiguity stays quiet. See the newest
+BUILD_STATE checkpoint for exact grammar, RED→GREEN observations and limits.
+
+The branch also adds a token-free project Codex template and project-local Claude
+Code setup with a five-part native verification checklist. No global client
+configuration was changed and no native model session was run. G6 remains open.
+
+Current final checks: typecheck, lint and production build pass; affected
+integration passed 17/17; complete Chromium passed 47/47. The broad Vitest run
+reported 1,492 passed, 8 platform skips and one 30-second load timeout; that
+complete managed-worker file passed 19/19 in isolation. Do not rewrite this as an
+uninterrupted full-suite pass. The deterministic offline evaluation passed 4/4;
+its first sandboxed attempt was a Windows temp permission failure, not a semantic
+failure. No live provider, payment, deployment or owner data was used.
+
+Preserve the owner's unrelated untracked design/logo and licensing files. They
+are not part of this branch.
+
 ## Superseding merged checkpoint — 2026-10-19
 
 The owner merged [PR #6](https://github.com/Rishflips/Bi-Brain/pull/6), **Ship
@@ -117,7 +142,7 @@ not enable a live provider, real payment, hosted identity or deployment.
 
 - **Only primary working folder:** `C:\Users\Gowrishankar\Desktop\Bi Brain`.
 - **Repository:** private `https://github.com/Rishflips/Bi-Brain`.
-- **Current working branch:** `codex/bibrain-docs-refresh`.
+- **Current working branch:** `codex/memory-quality-agent-proof`.
 - **Verified local/GitHub `main` commit before this docs branch:**
   `7cc5bf2f656b282d5261069eccec707f4fd0ebc0`.
 - **PR #6:** reviewed and merged by the owner:
@@ -488,7 +513,8 @@ an ephemeral frontend/serverless filesystem. A frontend-only upload is not BiBra
    revisions. Preserve this handoff, the user's personal untracked note, and
    `design/logo-concepts/`.
 2. Read the documents in section 1. Resolve any newer user steering first.
-3. Preserve the verified PR #6 corrected-head CI result for run `39172307962`;
+3. Preserve the verified PR #6 corrected-head CI result for run `39172307962`
+   as historical evidence and PR #8 merge `c69e6c1` as the current base;
    do not restart historical green gates or treat an unavailable local report path
    as lost evidence without checking the archive.
 4. Verify the existing preview if needed without exposing credentials or replacing
