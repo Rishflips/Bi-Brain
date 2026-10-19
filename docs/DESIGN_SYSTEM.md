@@ -1,74 +1,115 @@
-# Design direction
+# BiBrain design system
 
-## Intent
+## Product character
 
-Calmly alive, readable, personal, and competent. Use content, continuity, and
-evidence as the visual focus. The interface may have a recognizable pulse and
-subtle state-driven motion, but it must feel like a dependable personal space—not
-a control panel or a decorative AI spectacle. The reference preview is a concept,
-not production code or evidence that actions work.
+BiBrain should feel like a private, dependable place to think: quiet, editorial,
+direct and exceptionally clear. It is a working product, not an AI demonstration.
+The interface earns liveliness through responsive behavior, truthful state and
+well-timed feedback rather than decorative networks, glass effects or invented
+activity.
 
-## Current core tokens
+The official black-and-gold mark is the strongest visual signature. Everything
+around it should be restrained enough for the user's own material to remain the
+focus.
 
-| Token | Light | Dark |
-|---|---|---|
-| Canvas | #F4F1E9 | #0B1712 |
-| Surface | #FFFDF8 | #15241D |
-| Text | #16251F | #EDF1EB |
-| Secondary text | #5B6B63 | #B2BBB3 |
-| Border | #D7DFD6 | #344A3E |
-| Primary action | #174C38 | #B1D2B8 |
-| Text on primary | #FFFFFF | #192C20 |
-| Subtle highlight | #E9F0E8 | #2A362C |
-| Living signal | #63A47A | #8FB79A |
-| Quiet accent | #BDDA7E | #BDDA7E |
+## Core tokens
 
-Verify contrast against actual backgrounds; token choice alone is not accessibility verification.
+| Token           | Light     | Dark      |
+| --------------- | --------- | --------- |
+| Canvas          | `#F7F5EF` | `#111111` |
+| Surface         | `#FFFEFA` | `#191918` |
+| Raised surface  | `#FFFFFF` | `#20201E` |
+| Text            | `#181817` | `#F4F1E9` |
+| Secondary text  | `#6A6861` | `#AAA69D` |
+| Border          | `#D9D5CA` | `#34332F` |
+| Primary action  | `#181817` | `#F4F1E9` |
+| Text on primary | `#FFFFFF` | `#181817` |
+| Gold accent     | `#D6A900` | `#E3B500` |
+| Gold wash       | `#F4E9B4` | `#3B3414` |
+| Attention       | `#9B4B1B` | `#F0A986` |
 
-Use a locally available system sans-serif. Body text is 15–16px and supporting
-text is at least 12px. Product headings may scale fluidly from 28px to 68px;
-editorial emphasis may use the system serif fallback. Prefer regular and medium
-weights. Use an 8px spacing rhythm, pill-shaped actions where appropriate,
-14–30px surface radii, and generous margins.
+Verify contrast against the rendered background. A token name is not evidence of
+accessible contrast.
+
+## Typography and spacing
+
+Use the self-hosted Manrope variable font with platform sans-serif fallbacks. No
+font CDN is required. Body copy is 15–16px, supporting text never drops below
+12px, and application headings stay compact. First-use editorial headlines may
+scale up to 58–66px on large screens, but signed-in workspace headings should not
+look like landing-page marketing.
+
+Prefer regular, medium and semibold weights. Use a 4px base and an 8px primary
+spacing rhythm. Controls use an approximately 9px radius; cards and dialogs use
+12–14px. Generous whitespace should come from layout, not oversized controls.
 
 ## Layout
 
-Desktop: narrow navigation rail, content area with readable maximum line length, optional evidence detail panel.
-Mobile: compact navigation above or below content; detail views become full-width.
-First-use pairs one product story with one protected opening action. After pairing,
-Today pairs a short orientation with the real brain-state surface and keeps direct
-capture visually dominant.
+Desktop uses a narrow navigation rail and a content column with a readable line
+length. Today pairs a short orientation with a compact, truthful state card and
+keeps direct capture visually dominant. Evidence may open in a detail panel or
+dialog without obscuring the current task.
 
-Atmospheric gradients, a sparse cognitive field, and an abstract neural form are
-part of the current identity. They must stay lightweight, decorative, and
-`aria-hidden`; they cannot imply invented connections, memories, intelligence, or
-completed work. Avoid spinning graphs, large statistic tiles, infinite activity,
-and fake signal indicators. The Today neural surface may animate nodes or breathe
-only for a real active/attention state. Resting and quiet states remain still.
+Mobile places Today, Your brain and Connections in one stable row above the
+content. Detail views become full width, actions wrap intentionally, and the page
+must remain usable at 320px without horizontal scrolling.
 
-## Components to build
+First use pairs one product story with one protected opening action. It must
+explain local ownership and optional AI preparation before asking for an
+installation code, without displaying or embedding that secret.
 
-AppShell, PrimaryNavigation, SaveDialog, SourceViewer, BriefEditor, PreparedItem, EvidenceList, RevisionComparison, ConnectionRow, PermissionEditor, BackgroundPreferences, StatusMessage, EmptyState, ConfirmDeletion.
+## Interface finishing rules
 
-Each component needs loading, empty, error, keyboard-focus, and disabled states where relevant.
+- Use a flat canvas, solid surfaces, hairline borders and minimal shadows.
+- Give each region one obvious primary action. Secondary actions stay visually
+  quieter and remain proper semantic controls.
+- Use gold for the brand, focus, selected state and genuine attention—not as
+  ambient decoration or a substitute for hierarchy.
+- Do not use ornamental brain art, neural networks, orbit scenes, floating glows,
+  glass panels, dashboard statistics or fake signal activity.
+- Avoid repeated rounded cards when spacing, a divider or a heading can express
+  the same grouping.
+- Keep status language literal. A small state indicator may animate only while
+  real work is active; quiet and caught-up states remain still.
+- Respect reduced-motion preferences. Never make essential meaning depend on
+  animation or color alone.
+- Use visible focus treatment, persistent labels, useful empty states and
+  disabled explanations for every interactive surface.
 
-## Copy
+## Components
 
-Prefer Save something, Your brain, Use with an agent, See sources, Keep this plan,
-Stay ahead, What changed, and What BiBrain remembers.
+AppShell, PrimaryNavigation, SaveDialog, SourceViewer, BriefEditor, PreparedItem,
+EvidenceList, RevisionComparison, ConnectionRow, PermissionEditor,
+BackgroundPreferences, StatusMessage, EmptyState and ConfirmDeletion.
 
-Avoid ingest, embeddings, context packer, classifier confidence, cron, vector store, and memory consolidation in primary screens. Explain actual user impact in advanced settings.
+Each component needs loading, empty, error, keyboard-focus and disabled states
+where relevant. Every visible control must have real behavior or clearly state why
+it is unavailable.
 
-Do not say Your brain learned this when only a queued job exists. Do not say I noticed unless the observation follows from available evidence.
+## Language
 
-## Interaction
+Prefer **Save something**, **Your brain**, **Use with an agent**, **See sources**,
+**Keep this plan**, **Stay ahead**, **What changed** and **What BiBrain remembers**.
 
-Use subtle state transitions; respect reduced motion. Preserve typed text after errors. Destructive actions explain scope and retention. Success messages confirm the actual completed operation. Display speculative suggestions with textual labels, not color alone.
+Keep ingest, embeddings, context packer, classifier confidence, cron, vector store,
+tokens, queues and memory consolidation out of primary screens. Explain the user
+impact in advanced settings when a technical concept is unavoidable.
 
-## Visual reference and production evidence
+Do not say “Your brain learned this” when only a queued job exists. Do not say “I
+noticed” unless the observation follows from available evidence. Speculative
+suggestions must be labeled in text.
 
-See `docs/screenshots/first-use.png` for the current production Today surface and
-`docs/screenshots/source-preview.png` for the source workflow. Both are generated
-by a real browser journey using synthetic data. The older
-`design/reference-light.png` and `design/reference-dark.png` files remain concept
-references only; the implemented UI and UX specification are authoritative.
+## Interaction and trust
+
+Preserve typed text after errors. Success messages confirm only the operation that
+actually completed. Destructive actions explain scope and retention. Acceptance
+and undo must keep their version checks. Offline, stale, uncertain and failed
+states use plain language and never imply successful background intelligence.
+
+## Production evidence
+
+`docs/screenshots/first-use.png` shows the current paired Today surface and
+`docs/screenshots/source-preview.png` shows the source workflow. Both are generated
+from real browser journeys using synthetic data. Older files under `design/` are
+concept references only; the implemented interface and UX specification remain
+authoritative.

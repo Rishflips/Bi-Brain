@@ -17,6 +17,24 @@ Gate: a clean checkout installs and starts using documented commands; production
 
 ### Approved visible delivery follow-up — 2026-10-18
 
+#### Interface refinement and finishing — 2026-10-20
+
+- [x] Replace the remaining generic AI-dashboard presentation with a restrained
+      editorial product layer: flat canvas, solid surfaces, compact hierarchy,
+      crisp borders, minimal shadow and a consistent black/gold action system.
+- [x] Remove ornamental orbit/neural scenes and the repeated hero emblem while
+      retaining the official accessible vector lockup and truthful state derivation.
+- [x] Replace the large Today neural surface with a compact real-state card whose
+      copy, color and motion continue to follow saved-work, worker, freshness and
+      review state rather than simulated intelligence.
+- [x] Finish light/dark contrast, browser theme color, keyboard focus, dialog
+      containment, reduced motion and one-row mobile navigation at 320px.
+- [x] Add browser regressions that reject page texture, raster first-use branding,
+      decorative neural markup, stale theme color and wrapping primary navigation.
+- [x] Record final typecheck, lint, build and **47/47 Chromium** results in
+      `BUILD_STATE.md`. The complete browser run covers the real application-service
+      integration paths; publication remains a separate review step.
+
 #### Consumer interface foundation — 2026-10-19
 
 - [x] Replace the active raster brand copies with reusable, dimensioned,
@@ -243,7 +261,7 @@ The 2026-10-16 owner direction brings managed personal delivery into the primary
     - [x] Task 3 financial admission/freshness and reserve/mark/audit integration. Accepted in the merged baseline; current local work did not weaken the authority path.
     - [x] Task 4 offline enrollment, positive Windows ACL readback, encrypted key backup/restore, managed backup integration and actual-process synthetic verification. Final local gate: **1,488 passed / 8 platform skips, 141 files; all 44 Chromium journeys; 4/4 offline evaluations; typecheck/lint/build/audit green**. No real financial key or payment was enrolled.
   - [ ] B1 Paddle release acceptance. The default-off integration is complete;
-    actual Sandbox proof and commercial inputs remain open.
+        actual Sandbox proof and commercial inputs remain open.
     - [x] Closed server adapter/config, charged-currency allowlist, account-bound checkout intent, pre-I/O ambiguity lock with signed-event recovery and known-transaction resume, authenticated status/portal routes, raw signed webhook inbox, fenced replay/conflict/orphan handling, hard-timeout bounded transport, worker correlation/current-provider reconciliation, backup participation and plain-language Settings UI. Local synthetic authority/evidence/provider/store/HTTP/browser checks pass; no external provider was contacted.
     - [ ] Actual Paddle Sandbox checkout, out-of-order/replay, current-term allowance, renewal, cancellation, refund, portal, export and deletion proof with real sandbox credentials and selected prices/allowances.
 - [ ] G8: Supported packaging, hosted TLS/operations/recovery and human usability/license/privacy/security release gates.

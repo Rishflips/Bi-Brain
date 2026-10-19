@@ -8,6 +8,11 @@ test.beforeEach(async ({ page }) => {
       .getByRole("heading", { name: "What do you want to pick up later?" })
       .or(page.getByRole("heading", { name: "Welcome back." })),
   ).toBeVisible();
+  await expect(page.locator('[data-ui="living-field"]')).toBeVisible();
+  await expect(page.locator(".brain-network, .brain-pulse-core")).toHaveCount(
+    0,
+  );
+  await expect(page.locator(".brain-state-dot")).toHaveCount(1);
 });
 
 test("ordinary capture becomes reviewed current truth and agent retrieval", async ({

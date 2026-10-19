@@ -48,6 +48,18 @@ for (const theme of ["light", "dark"] as const) {
       const composer = page.locator("main textarea").first();
       await expect(composer).toBeVisible();
       await expect(page.locator("html")).toHaveAttribute("data-theme", theme);
+      await expect(page.locator('meta[name="theme-color"]')).toHaveAttribute(
+        "content",
+        theme === "dark" ? "#111111" : "#f7f5ef",
+      );
+      const navigationRows = await page
+        .locator('[data-ui="primary-navigation"] button')
+        .evaluateAll(
+          (buttons) =>
+            new Set(buttons.map((button) => button.getBoundingClientRect().top))
+              .size,
+        );
+      expect(navigationRows).toBe(1);
       await expect(
         page
           .locator("main")

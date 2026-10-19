@@ -14,10 +14,9 @@ test("official first use stays readable at 320px and explains the correct local 
     page.locator('[data-ui="first-use"] .brand-lockup svg'),
   ).toHaveCount(1);
   await expect(page.locator('[data-ui="first-use"] img')).toHaveCount(0);
-  await expect(
-    page.locator('[data-ui="entry-living-field"] .brain-emblem'),
-  ).toHaveCount(0);
+  await expect(page.locator(".entry-brain, .brain-emblem")).toHaveCount(0);
   await expect(page.locator("html")).not.toHaveCSS("font-family", /inter/i);
+  await expect(page.locator("body")).toHaveCSS("background-image", "none");
   await expect(
     page.getByRole("heading", {
       name: "A private brain for everything you’re building.",
