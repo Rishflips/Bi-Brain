@@ -22,9 +22,9 @@ a queued job as success and never resumes a paused goal by requesting work.
 
 Typecheck, lint, production build and the isolated real-storage browser journey
 pass. The complete Chromium suite passes 52/52 in 3.4 minutes, including the new
-320px dark state. Implementation commit `6d4a66d` is pushed in open, mergeable
-[PR #14](https://github.com/Rishflips/Bi-Brain/pull/14). Its clean Linux
-release-candidate workflow
+320px dark state. [PR #14](https://github.com/Rishflips/Bi-Brain/pull/14) was
+merged into `main` at `ed8a42c4083d164d53ea0248796e2b427dc8948b`.
+Its clean Linux release-candidate workflow
 [39413228202](https://github.com/Rishflips/Bi-Brain/actions/runs/39413228202)
 passed full tests, build, offline evaluation, Chromium and container/configuration
 gates. This is deterministic release evidence, not live-model, native-client,
