@@ -167,7 +167,22 @@ Never simulate opening an external agent or report clipboard success if copying 
 
 ## Connections
 
-Separate Knowledge sources from Agents.
+Open with one selected-project continuity workspace, not setup instructions. Show
+only real counts for reviewed memory, retained originals, current open questions,
+chosen direction, verified agents, and keys waiting for first use. A retained
+original alone is not handoff-ready: direct the owner to review its meaning before
+offering the reviewed handoff. Never treat a generated key as an active agent.
+
+Present two plain-language paths side by side: copy a one-time reviewed handoff,
+which creates no ongoing access, or keep an agent caught up with temporary scoped
+access. Use the same selected project for handoff, connection defaults, identity
+disclosure, and imports so the owner does not have to repeat scope choices.
+Fence in-flight page and review reads when the selected project changes; never
+render the previous project's counts under the new project name.
+
+Separate Knowledge sources from current Agents. Keep revoked access in collapsed
+history instead of presenting it as active; expired access may create a fresh
+grant but does not silently reactivate the old key.
 Status vocabulary: Not connected, Awaiting authorization, Checking, Connected, Needs attention, Revoked.
 A configured token alone does not establish Connected; verify a round trip.
 

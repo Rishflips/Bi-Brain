@@ -1,6 +1,47 @@
 # Build state
 
-Updated: 2026-10-20
+Updated: 2026-10-21
+
+## Active delivery — agent continuity workspace
+
+Desktop and GitHub `main` were synchronized to merged
+[PR #17](https://github.com/Rishflips/Bi-Brain/pull/17) at
+`e492e34d41a3c573d1e6280ff2686118bf815de6` before
+`codex/agent-continuity-workspace` was created. This slice turns
+Connections into the approachable central-agent bridge promised by the product
+without claiming that an unverified key or unreviewed original is ready context.
+
+Implemented in the working tree:
+
+- One project selector now governs handoff, connection defaults, identity
+  disclosure, and imports. The page shows real reviewed-memory, original,
+  open-question, direction, verified-agent, and waiting-key state.
+- Project changes immediately fence and clear older page/review reads, so a
+  delayed response cannot present another project's memory as current.
+- One-time reviewed handoff and temporary live access are distinct paths with
+  their different trust boundaries stated before action.
+- A raw saved original routes back to owner review. Only reviewed memory or a
+  real active intention unlocks the reviewed-handoff action; the server still
+  builds and displays the exact final handoff.
+- Live grants continue to default to one project, read-only access, and 24 hours.
+  Revoked grants move into collapsed history; expired grants can create a fresh
+  bounded connection without reviving the old key.
+- The layout remains usable in dark appearance at 320px and adds no new API,
+  dependency, permission, provider call, or external action.
+
+Current verification: `npm run typecheck`, `npm run lint`, `npm run build`, and
+`git diff --check` pass. The production build emits `index-Dsie-RV-.css` and
+`index-DIKQv5We.js`. The focused real-storage journey passes after reproducing
+and repairing two trust/accessibility issues: an unreviewed original was first
+called ready, and the readiness live region collided with the import completion
+status. The corrected affected set passed **11/11**, and the complete production
+browser regression passed **54/54 in 2.8 minutes** on the finalized tree. The
+generated synthetic 320px dark screenshot was visually inspected.
+
+This is deterministic local/browser evidence, not fresh native Codex/Claude
+certification, a human usability pilot, live-model quality, payment, target-host
+operations or public deployment. The owner's unrelated untracked design/logo
+and licensing files remain untouched.
 
 ## Latest merged delivery — Project Focus workspace
 

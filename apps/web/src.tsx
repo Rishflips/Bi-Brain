@@ -22,6 +22,7 @@ import {
 import { SignIn, ConnectionUnavailable, type RuntimeMode } from "./sign-in.tsx";
 import { BrandLockup } from "./brand.tsx";
 import {
+  AgentContinuityWorkspace,
   AgentClientPicker,
   AgentSetupGuide,
   agentSetupCommand,
@@ -370,6 +371,7 @@ function App() {
   } | null>(null);
   const [searchResults, setSearchResults] = useState<Source[]>([]);
   const [knowledgePages, setKnowledgePages] = useState<any[]>([]);
+  const [knowledgeProject, setKnowledgeProject] = useState("");
   const [gateQueue, setGateQueue] = useState<Entity[]>([]);
   const [queryPage, setQueryPage] = useState(0);
   const [adapterSelection, setAdapterSelection] = useState<any>(null);
@@ -385,6 +387,7 @@ function App() {
   const [dark, setDark] = useState(
     () => localStorage.getItem("brain-theme") === "dark",
   );
+  const knowledgeReadSeq = useRef(0);
   useEffect(() => {
     const update = () => setNav(navFromHash());
     window.addEventListener("popstate", update);
@@ -468,6 +471,10 @@ function App() {
       status: { jobs: [] },
     });
     setPrefs(null);
+    knowledgeReadSeq.current += 1;
+    setKnowledgeProject("");
+    setKnowledgePages([]);
+    setGateQueue([]);
     setGrants([]);
     setBilling(null);
     setScope("inbox");
@@ -669,6 +676,12 @@ function App() {
   useEffect(() => {
     if (!paired || demo) return;
     const project = scope || "inbox";
+    const read = ++knowledgeReadSeq.current;
+    if (knowledgeProject !== project) {
+      setKnowledgeProject(project);
+      setKnowledgePages([]);
+      setGateQueue([]);
+    }
     Promise.all([
       api<any[]>(
         `/pages?project_id=${encodeURIComponent(project)}&include_retired=true`,
@@ -676,10 +689,15 @@ function App() {
       api<Entity[]>(`/gates?project_id=${encodeURIComponent(project)}`),
     ])
       .then(([pages, gates]) => {
+        if (read !== knowledgeReadSeq.current) return;
         setKnowledgePages(pages);
         setGateQueue(gates);
       })
-      .catch(() => {});
+      .catch(() => {
+        if (read !== knowledgeReadSeq.current) return;
+        setKnowledgePages([]);
+        setGateQueue([]);
+      });
   }, [paired, demo, scope, today]);
   useEffect(() => {
     if (!paired || demo) return;
@@ -844,6 +862,15 @@ function App() {
     setCaptureScope(scope || "inbox");
     setVisibility("project");
     setSeparate(false);
+  }
+  function connectAgent(projectIds: string[] = [scope || "inbox"]) {
+    const available = new Set(projects.map((project) => project.id));
+    const selected = projectIds.filter((id) => available.has(id));
+    setGrantProjects(selected.length ? selected : [scope || "inbox"]);
+    setToken("");
+    setGrantDuration(24);
+    setCanWrite(false);
+    setDialog("grant");
   }
   /**
    * Applies a fresh read of the receipt's source. An explicit NOT_FOUND (404) or
@@ -1050,9 +1077,13 @@ function App() {
   const firstSessionSourceId = notes[0]?.id;
   const firstSessionKnowledgeInScope =
     (scope || "inbox") === firstSessionProject;
+  const scopedKnowledgePages =
+    knowledgeProject === (scope || "inbox") ? knowledgePages : [];
+  const scopedGateQueue =
+    knowledgeProject === (scope || "inbox") ? gateQueue : [];
   const firstSessionMemoryState: FirstSessionMemoryState =
     firstSessionKnowledgeInScope &&
-    knowledgePages.some((page) =>
+    scopedKnowledgePages.some((page) =>
       page.current?.some((claim: Entity) =>
         (claim.data.evidence ?? []).some(
           (evidence: Evidence) => evidence.source_id === firstSessionSourceId,
@@ -1061,7 +1092,7 @@ function App() {
     )
       ? "accepted"
       : firstSessionKnowledgeInScope &&
-          gateQueue.some(
+          scopedGateQueue.some(
             (item) =>
               item.data.status === "queued" &&
               (item.data.evidence ?? []).some(
@@ -1097,6 +1128,45 @@ function App() {
   const focusReadyReviews = ready.filter(
     (item: Entity) => item.project_id === focusProject,
   ).length;
+  const connectionProject = scope || "inbox";
+  const connectionSources = notes.filter(
+    (item) => item.project_id === connectionProject,
+  );
+  const connectionMemories = scopedKnowledgePages.reduce(
+    (count, page) => count + (page.current?.length ?? 0),
+    0,
+  );
+  const connectionBrief = today.briefs.find(
+    (item: Entity) =>
+      item.project_id === connectionProject && item.data.status === "current",
+  );
+  const connectionActiveGoal = today.goals.find(
+    (item: Entity) =>
+      item.project_id === connectionProject && item.data.status === "active",
+  );
+  const connectionGoal =
+    connectionActiveGoal ??
+    today.goals.find(
+      (item: Entity) =>
+        item.project_id === connectionProject && item.data.status === "paused",
+    );
+  const projectGrants = grants.filter((grant) =>
+    grant.projects?.includes(connectionProject),
+  );
+  const currentProjectGrants = projectGrants.filter(
+    (grant) => grant.status !== "Revoked",
+  );
+  const pastProjectGrants = projectGrants.filter(
+    (grant) => grant.status === "Revoked",
+  );
+  const connectedProjectAgents = currentProjectGrants.filter(
+    (grant) => grant.status === "Connected",
+  ).length;
+  const waitingProjectAgents = currentProjectGrants.filter(
+    (grant) => grant.status === "Not connected",
+  ).length;
+  const connectionHasReviewedContext =
+    connectionMemories > 0 || !!connectionActiveGoal;
   const projectSummaries = projects.map((project) => {
     const projectBrief = today.briefs.find(
       (item: Entity) =>
@@ -1134,7 +1204,7 @@ function App() {
       )
     : false;
   const hasUsefulUnderstanding =
-    knowledgePages.some((page) => page.current?.length > 0) ||
+    scopedKnowledgePages.some((page) => page.current?.length > 0) ||
     today.briefs.some(
       (item: Entity) =>
         item.project_id === proactiveProject && item.data.status === "current",
@@ -1722,7 +1792,7 @@ function App() {
                     <ProjectFocus
                       projectTitle={projectName(focusProject)}
                       sources={focusSources}
-                      pages={knowledgePages}
+                      pages={scopedKnowledgePages}
                       brief={focusBrief}
                       goal={focusGoal}
                       readyReviews={focusReadyReviews}
@@ -1753,8 +1823,8 @@ function App() {
                     />
                   ) : null}
                   <CurrentKnowledge
-                    pages={knowledgePages}
-                    gates={gateQueue}
+                    pages={scopedKnowledgePages}
+                    gates={scopedGateQueue}
                     openSource={(id) => void openSource(id)}
                     review={(id, version, action) =>
                       void act(async () => {
@@ -1964,50 +2034,38 @@ function App() {
             </section>
           ) : nav === "Connections" ? (
             <section className="connections-view" data-ui="connections">
-              <p className="eyebrow">YOUR CHOICE OF AGENT</p>
+              <p className="eyebrow">YOUR BRAIN, ANY AGENT</p>
               <h1>Connections</h1>
               <p className="lede">
-                Share selected knowledge. Keep everything else to yourself.
+                Let another agent continue the work without making you explain
+                everything again.
               </p>
-              <article className="handoff-card">
-                <p className="section-kicker">SHARE A SNAPSHOT</p>
-                <h2>Continue in another agent</h2>
-                <p>
-                  Carry one project's accepted understanding and open intentions
-                  into any chat. You review the exact handoff before anything is
-                  copied.
-                </p>
-                {field(
-                  "Handoff project",
-                  <select
-                    value={scope || "inbox"}
-                    onChange={(e) => setScope(e.target.value)}
-                  >
-                    {projects.map((p) => (
-                      <option key={p.id} value={p.id}>
-                        {p.title}
-                      </option>
-                    ))}
-                  </select>,
-                )}
-                <button
-                  onClick={() =>
-                    void act(async () => {
-                      setHandoff(
-                        await api("/handoffs", {
-                          project_id: scope || "inbox",
-                        }),
-                      );
-                      setDialog("handoff");
-                    })
-                  }
-                >
-                  Preview handoff
-                </button>
-                <button onClick={() => setNav("Your brain")}>
-                  Choose a brief
-                </button>
-              </article>
+              <AgentContinuityWorkspace
+                projects={projects}
+                projectId={connectionProject}
+                projectTitle={projectName(connectionProject)}
+                originals={connectionSources.length}
+                memories={connectionMemories}
+                openQuestions={connectionBrief?.data.unknowns?.length ?? 0}
+                goalTitle={connectionGoal?.data.title ?? null}
+                connectedAgents={connectedProjectAgents}
+                waitingAgents={waitingProjectAgents}
+                hasReviewedContext={connectionHasReviewedContext}
+                onProjectChange={setScope}
+                onPreviewHandoff={() =>
+                  void act(async () => {
+                    setHandoff(
+                      await api("/handoffs", {
+                        project_id: connectionProject,
+                      }),
+                    );
+                    setDialog("handoff");
+                  })
+                }
+                onConnect={() => connectAgent()}
+                onSave={saveDialog}
+                onReview={() => setNav("Today")}
+              />
               <details>
                 <summary>Choose identity details an agent may receive</summary>
                 <p>
@@ -2068,27 +2126,15 @@ function App() {
               <div className="section-heading connection-heading">
                 <div>
                   <p className="section-kicker">LIVE CONTINUITY</p>
-                  <h2>Connected agents</h2>
+                  <h2>Who can use this project</h2>
                   <p>
                     Give Codex or Claude Code temporary access to only the work
                     you choose. A key alone never counts as connected.
                   </p>
                 </div>
-                <button
-                  className="primary"
-                  onClick={() => {
-                    setGrantProjects([scope || "inbox"]);
-                    setToken("");
-                    setGrantDuration(24);
-                    setCanWrite(false);
-                    setDialog("grant");
-                  }}
-                >
-                  Connect an agent
-                </button>
               </div>
-              {grants.length ? (
-                grants.map((g) => (
+              {currentProjectGrants.length ? (
+                currentProjectGrants.map((g) => (
                   <article
                     key={g.id}
                     className="connection-row"
@@ -2123,8 +2169,16 @@ function App() {
                       Expires {new Date(g.expires_at).toLocaleString()}
                     </small>
                     <div className="actions">
+                      {g.status === "Needs attention" ? (
+                        <button
+                          type="button"
+                          onClick={() => connectAgent(g.projects)}
+                        >
+                          Create fresh access
+                        </button>
+                      ) : null}
                       <button
-                        disabled={!!g.revoked_at}
+                        type="button"
                         onClick={() =>
                           void act(async () => {
                             await api(`/agent-grants/${g.id}`, {}, "DELETE");
@@ -2147,27 +2201,51 @@ function App() {
                   </p>
                 </div>
               )}
-              <h2>Knowledge sources</h2>
+              {pastProjectGrants.length ? (
+                <details className="connection-history">
+                  <summary>
+                    Past connections ({pastProjectGrants.length})
+                  </summary>
+                  {pastProjectGrants.map((g) => (
+                    <article
+                      key={g.id}
+                      className="connection-row"
+                      data-ui="connection-row"
+                    >
+                      <div className="row">
+                        <div>
+                          <h3>Ended agent access</h3>
+                          <p className="connection-status-copy">Access ended</p>
+                        </div>
+                        <span className="pill connection-status">Revoked</span>
+                      </div>
+                      <p>
+                        {g.projects.map(projectName).join(", ")} ·{" "}
+                        {g.operations.includes("propose_memory")
+                          ? "Read and propose memories"
+                          : "Read only"}
+                      </p>
+                      <div className="actions">
+                        <button
+                          type="button"
+                          onClick={() => connectAgent(g.projects)}
+                        >
+                          Create fresh access
+                        </button>
+                      </div>
+                    </article>
+                  ))}
+                </details>
+              ) : null}
+              <h2>Bring more context in</h2>
               <article>
                 <h3>Bring in files or conversations</h3>
                 <p>
                   Choose a local folder of text or Markdown, or a JSON chat
-                  export. Review the detected items before saving. Attachments
-                  and unsupported formats are skipped.
+                  export for {projectName(connectionProject)}. Review the
+                  detected items before saving. Attachments and unsupported
+                  formats are skipped.
                 </p>
-                {field(
-                  "Import into project",
-                  <select
-                    value={scope || "inbox"}
-                    onChange={(e) => setScope(e.target.value)}
-                  >
-                    {projects.map((p) => (
-                      <option key={p.id} value={p.id}>
-                        {p.title}
-                      </option>
-                    ))}
-                  </select>,
-                )}
                 <button onClick={saveDialog}>Import a file</button>
                 <div
                   className="dropzone"
