@@ -68,11 +68,12 @@ Today may include a direct “Find something in your brain” action. It navigat
 real scoped search; it must not masquerade as semantic answering until that
 capability is implemented and verified.
 
-The Today hero places the plain-language orientation beside the state-driven
-neural field. Decorative paths and nodes carry no data meaning. The label, title,
-detail, color treatment, and any motion are selected from real application state;
-reduced-motion preference removes all animation. On a phone, the header and
-navigation stay in document flow so they cannot cover the capture or saved receipt.
+The Today hero places the plain-language orientation beside a compact state card.
+Its label, title, detail, color treatment, and any motion are selected from real
+application state; reduced-motion preference removes all animation. There is no
+decorative neural map or invented relationship display. On a phone, the header
+and navigation stay in document flow so they cannot cover the capture or saved
+receipt.
 
 ## Prepared item
 
@@ -117,6 +118,19 @@ Never simulate opening an external agent or report clipboard success if copying 
 Separate Knowledge sources from Agents.
 Status vocabulary: Not connected, Awaiting authorization, Checking, Connected, Needs attention, Revoked.
 A configured token alone does not establish Connected; verify a round trip.
+
+The primary agent flow asks where the user wants to continue, which projects the
+agent may read, whether it may only read or also suggest, and how long access
+lasts. Default to one selected project, read only, and one day. Generate the key
+only after this review. Show it once, keep it out of generated commands, and give
+client-specific project-local setup for Codex and Claude Code. Technical setup is
+progressive detail, not the first screen.
+
+After key creation, say that access is ready but not connected. Change to
+Connected only after a real authenticated operation. Show expiry and last
+verification, allow immediate revocation, and verify that an already-open client
+is denied on its next operation. Existing project configuration must not be
+silently overwritten.
 
 Agent grants: readable projects, ability to propose memories, expiration, last verified access, revoke.
 Source grants: selected folders/files, sync direction, freshness, disconnect, remove retained imports.

@@ -1,6 +1,6 @@
 # BiBrain — next-agent handoff
 
-**Prepared: 2026-10-19. Read this before resuming implementation.**
+**Prepared: 2026-10-20. Read this before resuming implementation.**
 
 **Read `AGENTS.md` and `NEXT_AGENT_HANDOFF.md` first.**
 
@@ -8,30 +8,26 @@ This is a factual checkpoint and recommended continuation, not permission to ena
 payments, spend money, publish a service, or overwrite user work. Follow the next
 user request and `AGENTS.md`; use the available skills where applicable.
 
-## Latest continuation checkpoint — 2026-10-19
+## Latest continuation checkpoint — 2026-10-20
 
-Desktop `main` and `origin/main` matched PR #8 merge commit `c69e6c1` before
-branch `codex/memory-quality-agent-proof` was created. This branch adds the first
-consumer-memory G5 slice: one conservative ordinary-language statement can become
-a cited review suggestion; the owner can teach the meaning of any exact passage;
-accepted changes use the existing correction/history/safe-undo path; and pending
-meaning never reaches agent answers. Ambiguity stays quiet. See the newest
-BUILD_STATE checkpoint for exact grammar, RED→GREEN observations and limits.
+Desktop `main` and `origin/main` matched merged PR #11 at `90bc92d` before branch
+`codex/next-consumer-slice` was created. This branch turns the existing scoped
+agent grant into a guided Codex/Claude Code connection flow: least-access
+defaults, one-time key handling, secret-free project-local setup, truthful
+waiting/Connected/revoked states, immediate revocation, and denial of the same
+key on its next operation.
 
-The branch also adds a token-free project Codex template and project-local Claude
-Code setup with a five-part native verification checklist. No global client
-configuration was changed and no native model session was run. G6 remains open.
+The flow uses the existing application-service authorization boundary. It does
+not overwrite an existing Codex project configuration, put a key into commands,
+or claim Connected until a real authenticated operation updates verification.
+The complete Chromium suite passes 49/49, including the new lifecycle and 320px
+dark-mode regression; typecheck, lint, and production build also pass. See the
+newest BUILD_STATE checkpoint for exact evidence and remaining limits.
 
-Current final checks: typecheck, lint and production build pass; affected
-integration passed 17/17; complete Chromium passed 47/47. The broad Vitest run
-reported 1,492 passed, 8 platform skips and one 30-second load timeout; that
-complete managed-worker file passed 19/19 in isolation. Do not rewrite this as an
-uninterrupted full-suite pass. The deterministic offline evaluation passed 4/4;
-its first sandboxed attempt was a Windows temp permission failure, not a semantic
-failure. No live provider, payment, deployment or owner data was used.
-
-Preserve the owner's unrelated untracked design/logo and licensing files. They
-are not part of this branch.
+G6 remains open because no native Codex or Claude Code session was run. No live
+provider, payment, deployment, owner data, or global client configuration was
+used. Preserve the owner's unrelated untracked design/logo and licensing files;
+they are not part of this branch.
 
 ## Superseding merged checkpoint — 2026-10-19
 

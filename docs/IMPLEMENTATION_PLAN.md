@@ -193,6 +193,10 @@ Gate: synthetic beta-launch scenario produces a reviewable proposal with correct
 - [x] Five-tool stdio MCP adapter through shared API policy.
 - [x] Context budget and omissions.
 - [x] Inspector contract tests and private/cross-project denial tests.
+- [x] Guided Codex/Claude connection flow with least-access defaults, one-time
+      key handling, secret-free project-local setup, real-use status, expiry,
+      immediate revocation and a 320px regression. This is product readiness,
+      not native-client certification.
 - [ ] Codex fresh-session remember/recall/correction/revocation evidence.
 - [ ] Second supported client repeats the workflow.
 - [x] Connection UI reflects real verification state.

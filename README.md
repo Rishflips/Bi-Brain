@@ -26,7 +26,7 @@ you to learn a “second brain” method. The primary experience is simply:
   keeps quiet when nothing is useful, and never silently takes external action.
 - **Local ownership is real.** The self-hosted edition works without an account,
   subscription, model key, or remote telemetry.
-- **The interface reflects real state.** Its cognitive field can be ready,
+- **The interface reflects real state.** Its compact state card can be ready,
   organizing, waiting, refreshing, caught up, or quiet—never fake “AI thinking.”
 
 ## What works today
@@ -39,7 +39,8 @@ The merged application provides a complete single-owner local workflow:
 4. Review one clear memory suggested from ordinary language, or teach BiBrain
    the meaning of any exact passage. Nothing becomes current until you approve it.
 5. Search the full retained text and reopen the original.
-6. Export or use project-scoped context through an expiring agent grant.
+6. Copy an exact project handoff, or connect Codex or Claude Code through a
+   guided, expiring, project-scoped permission flow.
 7. Choose goals, request bounded preparation, review evidence, accept, snooze,
    dismiss, or safely undo.
 8. Back up, restore, withdraw, delete, and revoke access with explicit safeguards.
@@ -52,26 +53,22 @@ processed a real payment.
 
 ## Release status
 
-| Route | Current state |
-| --- | --- |
-| Local / self-hosted | Working single-owner application; no subscription required |
-| Managed accounts | Implemented foundation with local isolation and recovery evidence |
-| Connected model processing | Default off; live quality and cost gate still open |
-| Paddle billing | Default-off integration boundary; real Sandbox proof still open |
-| Agent connections | Scoped stdio adapter and safe Codex/Claude setup ready; named native-client verification still open |
-| Public cloud release | Not deployed; hosting, legal, support, and human-pilot gates remain open |
+| Route                      | Current state                                                                                                                               |
+| -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| Local / self-hosted        | Working single-owner application; no subscription required                                                                                  |
+| Managed accounts           | Implemented foundation with local isolation and recovery evidence                                                                           |
+| Connected model processing | Default off; live quality and cost gate still open                                                                                          |
+| Paddle billing             | Default-off integration boundary; real Sandbox proof still open                                                                             |
+| Agent connections          | Guided Codex/Claude setup, real-use verification and immediate revocation are implemented; native fresh-session certification is still open |
+| Public cloud release       | Not deployed; hosting, legal, support, and human-pilot gates remain open                                                                    |
 
-The current branch adds a locally verified consumer-memory slice: focused
-integration checks passed **17/17** and the final complete browser run passed
-**47/47 Chromium journeys**. The broad Vitest run exercised 1,501 cases:
-**1,492 passed**, **8 platform cases skipped**, and one unrelated 30-second
-managed-worker timeout subsequently passed with its complete file **19/19** in
-isolation. Typecheck, lint, and the production build pass. Earlier merged release
-evidence remains recorded in BUILD_STATE; the current deterministic offline
-evaluation also passed **4/4** after rerunning its disposable Git-vault case with
-normal Windows temp access. These are local synthetic release gates—not
-proof of live model quality, native-agent compatibility, real billing, or
-target-host operations. See
+The merged foundation passed its recorded integration, broad Vitest and offline
+evaluation gates. This branch adds a guided agent-connection lifecycle and a
+320px dark-mode regression; its complete browser run passes **49/49 Chromium
+journeys**, with real local grant creation, authenticated verification, owner
+revocation and subsequent denial covered. Typecheck, lint, and the production
+build pass. These are local release gates—not proof of live model quality,
+native-agent compatibility, real billing, or target-host operations. See
 [BUILD_STATE.md](BUILD_STATE.md) for commands, exact scope, and known limits.
 
 ## Quick start
@@ -109,13 +106,16 @@ is not a completed client certification.
   quiet caught-up state.
 - **Your brain** — sources, accepted understanding, history, corrections, search,
   goals, and evidence.
-- **Connections** — bounded imports and project-scoped grants for agents.
+- **Connections** — exact manual handoffs, guided Codex/Claude setup, bounded
+  project access, real-use status, immediate revocation, and reviewed imports.
 - **Settings & privacy** — appearance, background help, provider consent,
   spending controls, export, deletion, and managed plan state.
 
 Technical terms such as models, queues, tokens, classifiers, and MCP stay out of
 the primary flow. Every visible control either works or states why it is
 unavailable.
+
+![BiBrain guided agent connection — synthetic project and no connection key shown](docs/screenshots/agent-connection.png)
 
 ## Architecture in one view
 
@@ -156,24 +156,24 @@ usability have separate gates.
 
 ## Documentation map
 
-| Document | Purpose |
-| --- | --- |
-| [AGENTS.md](AGENTS.md) | Required instructions for coding agents |
-| [BUILD_STATE.md](BUILD_STATE.md) | Latest verified evidence and limits |
-| [NEXT_AGENT_HANDOFF.md](NEXT_AGENT_HANDOFF.md) | Current continuation state and safe next steps |
-| [Product](docs/PRODUCT.md) | Audience, promise, scope, and outcomes |
-| [UX](docs/UX.md) | First-use, Today, review, and failure states |
-| [Design system](docs/DESIGN_SYSTEM.md) | Living visual language and accessibility |
-| [Approved interface brief](design.md) | Official black/gold identity, responsive surfaces, states, and wiring rules |
-| [Prototype handoff](design/BiBrain-HANDOFF_1.md) | Delivered Claude prototype boundaries and the real-service wiring map |
-| [Architecture](docs/ARCHITECTURE.md) | Runtime, storage, trust, and deployment shape |
-| [API](docs/API.md) | HTTP contracts and errors |
-| [Agent integration](docs/AGENT_INTEGRATION.md) | Scoped tools, grants, and client verification |
-| [Native client setup](docs/NATIVE_CLIENT_SETUP.md) | Token-safe Codex/Claude setup and the required proof checklist |
-| [Managed operator guide](docs/MANAGED_RUN.md) | Identity, activation, billing, and recovery gates |
-| [Release](docs/RELEASE.md) | What can ship and what still blocks launch |
-| [Implementation plan](docs/IMPLEMENTATION_PLAN.md) | Dependency-ordered milestone checklist |
-| [Business](docs/BUSINESS.md) | Open-source and subscription decisions |
+| Document                                           | Purpose                                                                     |
+| -------------------------------------------------- | --------------------------------------------------------------------------- |
+| [AGENTS.md](AGENTS.md)                             | Required instructions for coding agents                                     |
+| [BUILD_STATE.md](BUILD_STATE.md)                   | Latest verified evidence and limits                                         |
+| [NEXT_AGENT_HANDOFF.md](NEXT_AGENT_HANDOFF.md)     | Current continuation state and safe next steps                              |
+| [Product](docs/PRODUCT.md)                         | Audience, promise, scope, and outcomes                                      |
+| [UX](docs/UX.md)                                   | First-use, Today, review, and failure states                                |
+| [Design system](docs/DESIGN_SYSTEM.md)             | Living visual language and accessibility                                    |
+| [Approved interface brief](design.md)              | Official black/gold identity, responsive surfaces, states, and wiring rules |
+| [Prototype handoff](design/BiBrain-HANDOFF_1.md)   | Delivered Claude prototype boundaries and the real-service wiring map       |
+| [Architecture](docs/ARCHITECTURE.md)               | Runtime, storage, trust, and deployment shape                               |
+| [API](docs/API.md)                                 | HTTP contracts and errors                                                   |
+| [Agent integration](docs/AGENT_INTEGRATION.md)     | Scoped tools, grants, and client verification                               |
+| [Native client setup](docs/NATIVE_CLIENT_SETUP.md) | Token-safe Codex/Claude setup and the required proof checklist              |
+| [Managed operator guide](docs/MANAGED_RUN.md)      | Identity, activation, billing, and recovery gates                           |
+| [Release](docs/RELEASE.md)                         | What can ship and what still blocks launch                                  |
+| [Implementation plan](docs/IMPLEMENTATION_PLAN.md) | Dependency-ordered milestone checklist                                      |
+| [Business](docs/BUSINESS.md)                       | Open-source and subscription decisions                                      |
 
 ## Open source and commercial route
 

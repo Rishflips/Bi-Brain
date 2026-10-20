@@ -7,12 +7,15 @@ named client has recalled or corrected anything.
 ## Before connecting
 
 1. Start BiBrain with `npm start` and keep it running.
-2. In **Connections**, create a short-lived grant for only the project the agent
-   needs. Choose read-only unless the agent must propose memories.
+2. In **Connections**, choose **Connect an agent**, select Codex or Claude Code,
+   keep the default read-only access unless suggestions are needed, and choose a
+   short duration. BiBrain defaults to the current project and one day.
 3. Copy the connection key when BiBrain shows it. The key is displayed once.
    Do not put it in Git, a URL, a screenshot, a prompt, or a shared terminal log.
-4. Open a new PowerShell window in the BiBrain repository and set the key only
-   for that process:
+4. Use **Copy setup** for the chosen client and paste it into a new private
+   PowerShell window opened in the BiBrain repository. The generated setup asks
+   for the key with `Read-Host`; it never includes the key itself. The manual
+   equivalent is:
 
    ```powershell
    $env:BRAIN_AGENT_TOKEN = Read-Host "Paste the BiBrain connection key"
@@ -28,7 +31,9 @@ BiBrain includes a token-free project configuration template at
 `.codex/config.toml.example`. Copy it to `.codex/config.toml` in this trusted
 checkout, then start Codex from the same PowerShell window. The real config is
 ignored by Git; it forwards the two named environment variables instead of
-storing the connection key in the repository.
+storing the connection key in the repository. The guided setup never overwrites
+an existing `.codex/config.toml`; compare it with the example if BiBrain is not
+already listed.
 
 Alternatively, add it with the Codex CLI. This form stores the supplied value
 in the local Codex configuration, so use a short-lived grant and revoke it when

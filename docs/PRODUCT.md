@@ -16,9 +16,10 @@ work while remaining calm and trustworthy. “Lively” comes from truthful stat
 continuity, and useful preparation—not fake thinking, decorative activity, or an
 anthropomorphic claim that the software acted when it did not.
 
-The implemented identity expresses this as an atmospheric cognitive field and a
-bounded neural state surface. Those visuals are a product metaphor, never a graph
-of inferred relationships or evidence that work completed.
+The implemented identity expresses this through a restrained black-and-gold
+workspace and a compact, bounded state surface. The state is derived from real
+saved work and processing status; it is never a graph of inferred relationships
+or evidence that work completed.
 
 ## Product wedge
 
@@ -55,20 +56,20 @@ Core problem: useful context, decisions, and unfinished work are scattered acros
 
 ## Required V1 capabilities
 
-| ID | Requirement | Observable acceptance |
-|---|---|---|
-| P01 | Useful entry without integrations | Paste a note and receive a source-linked result without OAuth |
-| P02 | Durable capture | Original content survives application and worker restarts |
-| P03 | Inspectable understanding | Every factual brief item can open supporting source text |
-| P04 | User corrections | Corrected knowledge is used in subsequent briefs |
-| P05 | Cross-agent continuation | Export a scoped brief; verify native access separately |
-| P06 | Goals chosen by the user | Background initiative requires an active, explicit goal |
-| P07 | Evidence-backed preparation | A changed assumption produces a reviewable proposal |
-| P08 | Reversible review | Accept creates a revision; undo preserves intervening edits |
-| P09 | User control | Pause, revoke, delete, export, and cap spending are functional |
-| P10 | Honest empty/failure states | No fabricated activity, sources, or integration success |
-| P11 | Affordable maintenance | Process changed material; bound each run and total spending |
-| P12 | Accessible, responsive GUI | Keyboard-complete at 360px and desktop; usable at 320px |
+| ID  | Requirement                       | Observable acceptance                                          |
+| --- | --------------------------------- | -------------------------------------------------------------- |
+| P01 | Useful entry without integrations | Paste a note and receive a source-linked result without OAuth  |
+| P02 | Durable capture                   | Original content survives application and worker restarts      |
+| P03 | Inspectable understanding         | Every factual brief item can open supporting source text       |
+| P04 | User corrections                  | Corrected knowledge is used in subsequent briefs               |
+| P05 | Cross-agent continuation          | Export a scoped brief; verify native access separately         |
+| P06 | Goals chosen by the user          | Background initiative requires an active, explicit goal        |
+| P07 | Evidence-backed preparation       | A changed assumption produces a reviewable proposal            |
+| P08 | Reversible review                 | Accept creates a revision; undo preserves intervening edits    |
+| P09 | User control                      | Pause, revoke, delete, export, and cap spending are functional |
+| P10 | Honest empty/failure states       | No fabricated activity, sources, or integration success        |
+| P11 | Affordable maintenance            | Process changed material; bound each run and total spending    |
+| P12 | Accessible, responsive GUI        | Keyboard-complete at 360px and desktop; usable at 320px        |
 
 ## First workflow to prove
 
