@@ -2,6 +2,25 @@
 
 This page records what BiBrain can ship today, what each verification result proves, and which external decisions still block a hosted release.
 
+## Current release candidate, 2026-10-21
+
+Merged [PR #17](https://github.com/Rishflips/Bi-Brain/pull/17) is synchronized
+on desktop and GitHub `main` at
+`e492e34d41a3c573d1e6280ff2686118bf815de6`. The current branch adds a
+project-centered Connections workspace: real continuity counts, a clear choice
+between reviewed manual handoff and temporary live access, review-first handling
+for raw originals, default-bounded connection setup, real verification state,
+immediate revocation, collapsed revoked history and fenced project-scope reads.
+
+`npm run typecheck`, `npm run lint`, `npm run build`, and whitespace checks pass.
+The focused journey and corrected affected set pass, and the complete production
+browser regression passes **54/54 in 2.8 minutes**. The 320px dark screenshot was
+visually inspected. GitHub/Linux/container evidence for this branch is not
+claimed until its pull-request workflow completes.
+
+This candidate does not prove fresh native Codex/Claude use, a human pilot,
+live-model quality, payment, target-host operations or public hosting.
+
 ## Latest merged product checkpoint, 2026-10-20
 
 [PR #16](https://github.com/Rishflips/Bi-Brain/pull/16) was merged into `main`

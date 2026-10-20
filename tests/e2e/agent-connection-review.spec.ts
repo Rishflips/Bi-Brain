@@ -13,6 +13,8 @@ test("owner connects Claude Code with bounded access, sees real verification and
     await page
       .getByRole("button", { name: "Connections", exact: true })
       .click();
+    const continuity = page.locator('[data-ui="agent-continuity"]');
+    await expect(continuity).toContainText("Inbox needs a first memory");
     await expect(page.locator('[data-ui="connection-empty"]')).toContainText(
       "No agent has access",
     );
@@ -72,6 +74,7 @@ test("owner connects Claude Code with bounded access, sees real verification and
     const row = page.locator('[data-ui="connection-row"]');
     await expect(row).toContainText("Not connected");
     await expect(row).toContainText("waiting for first use");
+    await expect(continuity).toContainText("1 waiting for first use");
 
     const verified = await page.evaluate(
       async (connectionKey) =>
@@ -91,10 +94,12 @@ test("owner connects Claude Code with bounded access, sees real verification and
     await page.reload();
     await expect(row).toContainText("Connected");
     await expect(row).toContainText("Verified");
+    await expect(continuity).toContainText("1 connected agent");
 
     await row.getByRole("button", { name: "Revoke access" }).click();
     await expect(row).toContainText("Revoked");
     await expect(row).toContainText("Access ended");
+    await expect(continuity).toContainText("No agent using this project yet");
     const denied = await page.evaluate(
       async (connectionKey) =>
         (

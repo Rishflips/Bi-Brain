@@ -1,6 +1,6 @@
 # BiBrain — next-agent handoff
 
-**Prepared: 2026-10-20. Read this before resuming implementation.**
+**Prepared: 2026-10-21. Read this before resuming implementation.**
 
 **Read `AGENTS.md` and `NEXT_AGENT_HANDOFF.md` first.**
 
@@ -8,7 +8,33 @@ This is a factual checkpoint and recommended continuation, not permission to ena
 payments, spend money, publish a service, or overwrite user work. Follow the next
 user request and `AGENTS.md`; use the available skills where applicable.
 
-## Latest continuation checkpoint — 2026-10-20
+## Latest continuation checkpoint — 2026-10-21
+
+The owner merged
+[PR #17](https://github.com/Rishflips/Bi-Brain/pull/17) into `main` at
+`e492e34d41a3c573d1e6280ff2686118bf815de6`. Desktop `main` was fast-forwarded to that exact merge before
+`codex/agent-continuity-workspace` was created.
+
+The working branch turns Connections into a project-centered continuity
+workspace. One project choice drives a reviewed one-time handoff, temporary
+live-agent access, identity disclosure and imports. Every displayed count comes
+from current authorized state. Raw originals route through owner review instead
+of being called ready; generated keys remain waiting until actual authenticated
+use. Project changes fence older page/review reads before showing new counts.
+Active/expired grants stay visible, while revoked grants move to collapsed
+history and can only be replaced with a fresh bounded grant.
+
+Typecheck, lint, production build and whitespace checks pass. The corrected
+focused journey and affected **11/11** browser set pass. The full production
+browser suite passes **54/54 in 2.8 minutes**, including the new reviewed-context
+handoff, live verification/revocation, import status, dark appearance and 320px
+containment. The new synthetic screenshot was visually inspected.
+
+This is deterministic local/browser evidence, not native-client certification,
+human-pilot, live-model, payment, hosted-operations or public-release evidence.
+Preserve the owner's unrelated untracked design/logo and licensing files.
+
+## Prior continuation checkpoint — 2026-10-20
 
 The owner merged
 [PR #16](https://github.com/Rishflips/Bi-Brain/pull/16) into `main` at

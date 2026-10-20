@@ -197,6 +197,11 @@ Gate: synthetic beta-launch scenario produces a reviewable proposal with correct
       key handling, secret-free project-local setup, real-use status, expiry,
       immediate revocation and a 320px regression. This is product readiness,
       not native-client certification.
+- [x] Project-centered continuity workspace distinguishes a reviewed one-time
+      handoff from temporary live access, uses real memory/source/question/goal
+      and connection state, routes unreviewed originals back through review,
+      and separates revoked history. Full production-browser regression passes
+      54/54; native clients remain a separate evidence gate.
 - [ ] Codex fresh-session remember/recall/correction/revocation evidence.
 - [ ] Second supported client repeats the workflow.
 - [x] Connection UI reflects real verification state.

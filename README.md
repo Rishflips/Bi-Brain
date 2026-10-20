@@ -112,8 +112,9 @@ is not a completed client certification.
 - **Your brain** — a real-state Project Focus workspace plus sources, accepted
   understanding, open questions, history, corrections, search, goals, and
   evidence.
-- **Connections** — exact manual handoffs, guided Codex/Claude setup, bounded
-  project access, real-use status, immediate revocation, and reviewed imports.
+- **Connections** — one project-centered continuity workspace with exact manual
+  handoffs, guided Codex/Claude setup, bounded live access, real-use status,
+  immediate revocation, past-access history, and reviewed imports.
 - **Settings & privacy** — appearance, background help, provider consent,
   spending controls, export, deletion, and managed plan state.
 
@@ -126,6 +127,8 @@ unavailable.
 ![BiBrain guided proactive goal — synthetic chosen goal before any preparation](docs/screenshots/proactive-goal.png)
 
 ![BiBrain Project Focus — synthetic reviewed memory, goal, and retained original](docs/screenshots/project-focus.png)
+
+![BiBrain agent continuity — synthetic reviewed project at 320px in dark appearance](docs/screenshots/agent-continuity.png)
 
 ![BiBrain guided agent connection — synthetic project and no connection key shown](docs/screenshots/agent-connection.png)
 
