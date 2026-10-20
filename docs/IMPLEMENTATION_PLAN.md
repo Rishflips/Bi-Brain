@@ -209,6 +209,9 @@ Gate: same authorized project knowledge is available in two clients; unrelated/p
 - [x] Docker/local installation path with pinned runtime requirements.
 - [x] Backup/restore and migration recovery tested.
 - [x] Browser E2E suite, keyboard flows, responsive checks, error recovery.
+- [x] Truthful first-session loop derived from durable capture, owner-reviewed
+      memory/search and same-project verified connection state; it exits after
+      the second saved item. This prepares a human pilot but does not replace it.
 - [x] Owner settings, spending, worker status, export, and deletion accessible.
 - [x] Clean Ubuntu CI install and container setup verification. (Merged-main run 38889855879 at `5dd6ed0`: `npm ci`, 479 tests, Docker build and non-root/container restart-persistence/auth/worker/backup smoke passed. Other target-host operations remain separate.)
 - [x] Run first-use pilot or mark human usability gate unverified.

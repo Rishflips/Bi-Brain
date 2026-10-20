@@ -27,6 +27,10 @@ import {
   agentSetupCommand,
   type AgentClient,
 } from "./agent-connection.tsx";
+import {
+  FirstSessionJourney,
+  type FirstSessionMemoryState,
+} from "./first-session.tsx";
 import "@fontsource-variable/manrope/wght.css";
 import "./style.css";
 import "./refinement.css";
@@ -1040,6 +1044,36 @@ function App() {
   const hasStaleUnderstanding = today.briefs.some(
     (item: Entity) => item.data.status !== "current",
   );
+  const firstSessionProject = notes[0]?.project_id ?? "inbox";
+  const firstSessionSourceId = notes[0]?.id;
+  const firstSessionKnowledgeInScope =
+    (scope || "inbox") === firstSessionProject;
+  const firstSessionMemoryState: FirstSessionMemoryState =
+    firstSessionKnowledgeInScope &&
+    knowledgePages.some((page) =>
+      page.current?.some((claim: Entity) =>
+        (claim.data.evidence ?? []).some(
+          (evidence: Evidence) => evidence.source_id === firstSessionSourceId,
+        ),
+      ),
+    )
+      ? "accepted"
+      : firstSessionKnowledgeInScope &&
+          gateQueue.some(
+            (item) =>
+              item.data.status === "queued" &&
+              (item.data.evidence ?? []).some(
+                (evidence: Evidence) =>
+                  evidence.source_id === firstSessionSourceId,
+              ),
+          )
+        ? "pending"
+        : "searchable";
+  const firstSessionConnected = grants.some(
+    (grant) =>
+      grant.status === "Connected" &&
+      grant.projects?.includes(firstSessionProject),
+  );
   const target = scope || "inbox";
   const field = (label: string, child: React.ReactNode) => (
     <label className="field">
@@ -1266,6 +1300,27 @@ function App() {
                   providerEnabled={!!prefs?.provider_enabled}
                   onSave={saveFirstNote}
                   onTryExample={() => setDemo(true)}
+                />
+              ) : null}
+              {notes.length === 1 ? (
+                <FirstSessionJourney
+                  memoryState={firstSessionMemoryState}
+                  connected={firstSessionConnected}
+                  shareable={notes[0].visibility === "project"}
+                  onOpenMemory={() => {
+                    setScope(firstSessionProject);
+                    setNav("Your brain");
+                  }}
+                  onFind={() => {
+                    setScope(firstSessionProject);
+                    setSearch(notes[0].title);
+                    setQueryPage(0);
+                    setNav("Your brain");
+                  }}
+                  onConnect={() => {
+                    setScope(firstSessionProject);
+                    setNav("Connections");
+                  }}
                 />
               ) : null}
               {notes.length && ready.length ? (

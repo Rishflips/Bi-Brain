@@ -46,6 +46,19 @@ After save:
 4. Offer Edit understanding and Continue in another agent.
 5. Offer Keep this up to date only after the first useful result.
 
+While exactly one active item exists, Today may show a restrained **first useful
+loop** beneath the saved receipt. Its three rows are derived only from real
+state: the durable original, a pending or owner-approved memory (or ordinary
+search when no clear memory exists), and a verified project connection. Each
+unfinished row has one direct action. It must not use percentages, streaks,
+confetti, fictional completion, or an infinite suggestion feed. It disappears
+after a second item is saved, so normal product use replaces onboarding rather
+than requiring a dismissal ceremony.
+
+Private material must never receive an agent action in this loop. “Available
+where you work” requires a real verified grant for the same project; a generated
+key is not completion.
+
 Do not force sign-up in the local application. Hosted identity and guest-to-account migration require a separate specification before hosted launch. Do not quietly upload a first-use note to a model provider without indicating that processing choice.
 
 ## Today

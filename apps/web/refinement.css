@@ -464,6 +464,84 @@ article {
   padding: 24px;
 }
 
+.first-session-journey {
+  max-width: 900px;
+  margin: 26px 0 6px;
+  padding: 28px 0 4px;
+  border-top: 1px solid var(--line-strong);
+}
+
+.first-session-journey > header {
+  max-width: 660px;
+  margin-bottom: 20px;
+}
+
+.first-session-journey h2 {
+  margin: 0 0 8px;
+  font-size: clamp(23px, 2.5vw, 30px);
+  line-height: 1.15;
+  letter-spacing: -0.035em;
+  text-wrap: balance;
+}
+
+.first-session-journey header > p:last-child {
+  margin: 0;
+  color: var(--muted);
+}
+
+.first-session-journey ol {
+  margin: 0;
+  padding: 0;
+  border-top: 1px solid var(--line);
+  list-style: none;
+}
+
+.first-session-journey li {
+  display: grid;
+  grid-template-columns: 32px minmax(0, 1fr) auto;
+  gap: 14px;
+  align-items: center;
+  min-width: 0;
+  padding: 18px 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.journey-marker {
+  display: grid;
+  width: 28px;
+  height: 28px;
+  place-items: center;
+  border: 1px solid var(--line-strong);
+  border-radius: 50%;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 750;
+}
+
+.first-session-journey li[data-complete="true"] .journey-marker {
+  border-color: #181817;
+  background: #181817;
+  color: #ffffff;
+}
+
+.first-session-journey li > div,
+.first-session-journey li > div p {
+  min-width: 0;
+}
+
+.first-session-journey li > div p {
+  margin: 4px 0 0;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.journey-state {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 650;
+}
+
 .pill {
   border: 1px solid #ded8ca;
   border-radius: 4px;
@@ -1077,6 +1155,15 @@ footer {
   color: #f0a986;
 }
 
+:root[data-theme="dark"]
+  .first-session-journey
+  li[data-complete="true"]
+  .journey-marker {
+  border-color: #f4f1e9;
+  background: #f4f1e9;
+  color: #181817;
+}
+
 :root[data-theme="dark"] .alert,
 :root[data-theme="dark"] .banner {
   background: #2b2617;
@@ -1217,6 +1304,16 @@ footer {
 
   .connection-choice-grid {
     grid-template-columns: 1fr;
+  }
+
+  .first-session-journey li {
+    grid-template-columns: 30px minmax(0, 1fr);
+  }
+
+  .first-session-journey li > button,
+  .first-session-journey li > .journey-state {
+    grid-column: 2;
+    justify-self: start;
   }
 
   dialog.inspector {
