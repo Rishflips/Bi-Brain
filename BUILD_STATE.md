@@ -2,6 +2,47 @@
 
 Updated: 2026-10-20
 
+## Active delivery — guided agent connection
+
+Desktop and GitHub `main` were synchronized to merged PR #11 at
+`90bc92d` before branch `codex/next-consumer-slice` was created. This slice
+turns the existing scoped grant and stdio adapter into a consumer-facing
+connection journey without changing its authorization boundary.
+
+Implemented in the working tree:
+
+- Connections now offers an explicit **Connect an agent** flow for Codex and
+  Claude Code. It defaults to the current project, read-only access and a one-day
+  expiry; suggestion access and longer durations require visible owner choices.
+- Key creation still uses the existing application service and returns the
+  one-time secret only after permission review. The generated project-local setup
+  contains no secret, prompts for it privately, uses the current BiBrain origin,
+  and does not overwrite an existing Codex project configuration.
+- The UI distinguishes “access ready” from Connected. A row becomes Connected
+  only after a real authenticated agent operation updates the existing verification
+  record. Expiry, real verification and immediate revocation remain visible, and
+  the same revoked key is denied on its next request.
+- The surrounding Connections page now explains exact manual handoff, live agent
+  continuity and its quiet no-access state in product language. A 320px dark-mode
+  regression keeps the entire permission form usable without horizontal overflow.
+- Product, UX, native-client setup and milestone documentation now describe this
+  flow while leaving the two-client fresh-session certification gate open.
+
+Current verification: `npm run typecheck`, `npm run lint` and `npm run build`
+passed; the production bundle is `index-CIZblH0p.css` and
+`index-B_Vuoh13.js`. The new isolated Chromium lifecycle and 320px regression
+passed **2/2**, and the complete browser regression passed **49/49**. The
+lifecycle asserts the actual grant request, one-time key, secret-free Claude
+setup, real authenticated verification, Connected status, owner revocation and
+subsequent 401 denial. The design screenshot is captured before key creation and
+explicitly masks the key element.
+
+This is a guided setup implementation, not evidence that native Codex or Claude
+Code successfully recalled or corrected knowledge. No native model session,
+subscription allowance, live provider, payment, owner data, global client
+configuration or public deployment was used. The owner's untracked design and
+licensing files remain untouched.
+
 ## Active delivery — interface refinement and finishing
 
 Work is in progress on `codex/interface-refinement`, based on merged PR #10 at

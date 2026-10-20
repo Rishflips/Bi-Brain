@@ -21,6 +21,12 @@ import {
 } from "./first-note.tsx";
 import { SignIn, ConnectionUnavailable, type RuntimeMode } from "./sign-in.tsx";
 import { BrandLockup } from "./brand.tsx";
+import {
+  AgentClientPicker,
+  AgentSetupGuide,
+  agentSetupCommand,
+  type AgentClient,
+} from "./agent-connection.tsx";
 import "@fontsource-variable/manrope/wght.css";
 import "./style.css";
 import "./refinement.css";
@@ -330,7 +336,8 @@ function App() {
     [token, setToken] = useState(""),
     [grantProjects, setGrantProjects] = useState<string[]>([]),
     [canWrite, setCanWrite] = useState(false),
-    [expiration, setExpiration] = useState(""),
+    [grantDuration, setGrantDuration] = useState(24),
+    [agentClient, setAgentClient] = useState<AgentClient>("codex"),
     [preview, setPreview] = useState<any>(null),
     [snooze, setSnooze] = useState(""),
     [confirmation, setConfirmation] = useState(""),
@@ -493,7 +500,8 @@ function App() {
     setToken("");
     setGrantProjects([]);
     setCanWrite(false);
-    setExpiration("");
+    setGrantDuration(24);
+    setAgentClient("codex");
     setSnooze("");
     setClaimEntity("");
     setClaimKind("status");
@@ -1716,12 +1724,13 @@ function App() {
               <p className="lede">
                 Share selected knowledge. Keep everything else to yourself.
               </p>
-              <article>
+              <article className="handoff-card">
+                <p className="section-kicker">SHARE A SNAPSHOT</p>
                 <h2>Continue in another agent</h2>
                 <p>
-                  Build a project-scoped handoff from your accepted
-                  understanding and open intentions. Review exactly what the
-                  next agent receives.
+                  Carry one project's accepted understanding and open intentions
+                  into any chat. You review the exact handoff before anything is
+                  copied.
                 </p>
                 {field(
                   "Handoff project",
@@ -1811,24 +1820,53 @@ function App() {
                   Save identity sharing
                 </button>
               </details>
-              <div className="section-heading">
-                <h2>Agents</h2>
+              <div className="section-heading connection-heading">
+                <div>
+                  <p className="section-kicker">LIVE CONTINUITY</p>
+                  <h2>Connected agents</h2>
+                  <p>
+                    Give Codex or Claude Code temporary access to only the work
+                    you choose. A key alone never counts as connected.
+                  </p>
+                </div>
                 <button
+                  className="primary"
                   onClick={() => {
-                    setGrantProjects([]);
+                    setGrantProjects([scope || "inbox"]);
                     setToken("");
+                    setGrantDuration(24);
+                    setCanWrite(false);
                     setDialog("grant");
                   }}
                 >
-                  Grant access
+                  Connect an agent
                 </button>
               </div>
               {grants.length ? (
                 grants.map((g) => (
-                  <article key={g.id} data-ui="connection-row">
+                  <article
+                    key={g.id}
+                    className="connection-row"
+                    data-ui="connection-row"
+                  >
                     <div className="row">
-                      <h3>Agent access</h3>
-                      <span className="pill">{g.status}</span>
+                      <div>
+                        <h3>Agent access</h3>
+                        <p className="connection-status-copy">
+                          {g.status === "Connected"
+                            ? `Verified ${new Date(g.last_verified_at).toLocaleString()}`
+                            : g.status === "Revoked"
+                              ? "Access ended"
+                              : g.status === "Needs attention"
+                                ? "This key has expired"
+                                : "Key created · waiting for first use"}
+                        </p>
+                      </div>
+                      <span
+                        className={`pill connection-status connection-status-${String(g.status).toLowerCase().replaceAll(" ", "-")}`}
+                      >
+                        {g.status}
+                      </span>
                     </div>
                     <p>
                       {g.projects.map(projectName).join(", ")} ·{" "}
@@ -1837,11 +1875,7 @@ function App() {
                         : "Read only"}
                     </p>
                     <small>
-                      Expires {new Date(g.expires_at).toLocaleString()} · Last
-                      verified{" "}
-                      {g.last_verified_at
-                        ? new Date(g.last_verified_at).toLocaleString()
-                        : "never"}
+                      Expires {new Date(g.expires_at).toLocaleString()}
                     </small>
                     <div className="actions">
                       <button
@@ -1860,10 +1894,13 @@ function App() {
                   </article>
                 ))
               ) : (
-                <p>
-                  No agents have access yet. Manual brief transfer is ready to
-                  use.
-                </p>
+                <div className="connection-empty" data-ui="connection-empty">
+                  <strong>No agent has access.</strong>
+                  <p>
+                    Your saved work stays private. You can still copy a handoff,
+                    or connect one agent when you are ready.
+                  </p>
+                </div>
               )}
               <h2>Knowledge sources</h2>
               <article>
@@ -3562,46 +3599,37 @@ function App() {
           {dialog === "grant" ? (
             <Modal
               error={error}
-              title="Give an agent selected access"
+              title="Connect an agent"
               close={close}
               dataUi="permission-preview"
             >
               {token ? (
-                <>
-                  <p>
-                    Copy this private connection key now. BiBrain shows it once
-                    and stores only a protected fingerprint. Creating a key does
-                    not mean an agent has connected yet.
-                  </p>
-                  <pre>{token}</pre>
-                  <button
-                    onClick={() =>
-                      void act(async () => {
-                        await navigator.clipboard.writeText(token);
-                        setNotice("Agent token copied.");
-                      })
-                    }
-                  >
-                    Copy connection key
-                  </button>
-                  <details>
-                    <summary>Connect Codex or Claude Code</summary>
-                    <p>
-                      Keep this key out of prompts and shared files. Start the
-                      agent from a private terminal where this value is set as{" "}
-                      <code>BRAIN_AGENT_TOKEN</code>. BiBrain includes safe,
-                      project-local steps in{" "}
-                      <code>docs/NATIVE_CLIENT_SETUP.md</code>.
-                    </p>
-                    <p>
-                      After the agent uses BiBrain, this connection changes from
-                      “Not connected” to “Connected”. Revoke it here when the
-                      work is finished.
-                    </p>
-                  </details>
-                </>
+                <AgentSetupGuide
+                  client={agentClient}
+                  token={token}
+                  apiUrl={location.origin}
+                  busy={busy}
+                  onCopyToken={() =>
+                    void act(async () => {
+                      await navigator.clipboard.writeText(token);
+                      setNotice("Connection key copied. Keep it private.");
+                    })
+                  }
+                  onCopySetup={() =>
+                    void act(async () => {
+                      await navigator.clipboard.writeText(
+                        agentSetupCommand(agentClient, location.origin),
+                      );
+                      setNotice(
+                        `${agentClient === "codex" ? "Codex" : "Claude Code"} setup copied. Paste it into a private PowerShell in this BiBrain folder.`,
+                      );
+                    })
+                  }
+                  onDone={close}
+                />
               ) : (
                 <form
+                  className="connection-form"
                   onSubmit={(e) => {
                     e.preventDefault();
                     void act(async () => {
@@ -3610,19 +3638,31 @@ function App() {
                         operations: canWrite
                           ? ["read", "propose_memory"]
                           : ["read"],
-                        expires_at: new Date(expiration).toISOString(),
+                        expires_at: new Date(
+                          Date.now() + grantDuration * 60 * 60 * 1000,
+                        ).toISOString(),
                       });
                       setToken(result.token);
                       await refresh();
                     });
                   }}
                 >
-                  <fieldset>
-                    <legend>Readable projects</legend>
+                  <p>
+                    Choose where you want to continue, then select the smallest
+                    amount of access it needs. You can revoke it instantly.
+                  </p>
+                  <AgentClientPicker
+                    value={agentClient}
+                    onChange={setAgentClient}
+                  />
+                  <fieldset className="connection-permissions">
+                    <legend>What may this agent read?</legend>
                     {projects.map((p) => (
                       <label className="check" key={p.id}>
                         <input
                           type="checkbox"
+                          name="agent-project"
+                          value={p.id}
                           checked={grantProjects.includes(p.id)}
                           onChange={(e) =>
                             setGrantProjects(
@@ -3636,29 +3676,60 @@ function App() {
                       </label>
                     ))}
                   </fieldset>
-                  <p>Private sources are always excluded.</p>
-                  <label>
-                    <input
-                      type="checkbox"
-                      checked={canWrite}
-                      onChange={(e) => setCanWrite(e.target.checked)}
-                    />{" "}
-                    Allow proposed memories (cannot overwrite your decisions)
-                  </label>
+                  <fieldset className="connection-permissions">
+                    <legend>What may it do?</legend>
+                    <label className="connection-choice compact">
+                      <input
+                        type="radio"
+                        name="agent-access"
+                        checked={!canWrite}
+                        onChange={() => setCanWrite(false)}
+                      />
+                      <span>
+                        <strong>Read only</strong>
+                        <small>
+                          Recommended · recall selected accepted memory.
+                        </small>
+                      </span>
+                    </label>
+                    <label className="connection-choice compact">
+                      <input
+                        type="radio"
+                        name="agent-access"
+                        checked={canWrite}
+                        onChange={() => setCanWrite(true)}
+                      />
+                      <span>
+                        <strong>Read and suggest</strong>
+                        <small>
+                          Suggestions still wait for your review and cannot
+                          overwrite decisions.
+                        </small>
+                      </span>
+                    </label>
+                  </fieldset>
                   {field(
-                    "Expires at",
-                    <input
-                      type="datetime-local"
-                      required
-                      value={expiration}
-                      onChange={(e) => setExpiration(e.target.value)}
-                    />,
+                    "Access duration",
+                    <select
+                      name="agent-duration"
+                      value={grantDuration}
+                      onChange={(e) => setGrantDuration(Number(e.target.value))}
+                    >
+                      <option value={24}>One day</option>
+                      <option value={168}>Seven days</option>
+                      <option value={720}>Thirty days</option>
+                    </select>,
                   )}
+                  <p className="permission-note">
+                    Private sources are always excluded. A connection cannot
+                    change permissions, delete your work, or accept its own
+                    suggestions.
+                  </p>
                   <button
                     className="primary"
                     disabled={busy || !grantProjects.length}
                   >
-                    Create grant
+                    Create private connection
                   </button>
                 </form>
               )}
