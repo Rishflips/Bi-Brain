@@ -2,7 +2,27 @@
 
 This page records what BiBrain can ship today, what each verification result proves, and which external decisions still block a hosted release.
 
-## Latest merged release candidate checkpoint, 2026-10-19
+## Latest merged product checkpoint, 2026-10-20
+
+[PR #12](https://github.com/Rishflips/Bi-Brain/pull/12), **Guide safe Codex and
+Claude connections**, was merged into `main` at
+`77785dcf317eb6a68bf3aec86fb6a725ccaa9af4`. It adds least-access connection
+review, one-time secret handling, secret-free project-local setup, real-use
+verification, expiry and immediate revocation without changing the shared
+authorization boundary.
+
+The exact PR head passed typecheck, lint, production build, 22/22 focused agent
+authorization checks and all 49 Chromium journeys locally. GitHub's complete
+release-candidate workflow then passed in 7m24s, including dependency audit,
+full tests, offline evaluation, Chromium, Docker/container smoke, Compose and
+Caddy validation. These results do not certify a fresh native Codex or Claude
+Code session, live model quality, a payment, a human pilot, or a public host.
+
+The next local product branch adds a state-derived first-session path to prepare
+for that human pilot. Its implementation evidence belongs in BUILD_STATE until
+merged; it must not be described as completed human usability evidence.
+
+## Prior merged release candidate checkpoint, 2026-10-19
 
 [PR #6](https://github.com/Rishflips/Bi-Brain/pull/6), **Ship the living
 BiBrain release candidate**, was merged into `main` at
@@ -86,10 +106,10 @@ current UI work began. A subsequent remote check found
 The agent performed no merge. Desktop was verified at `b5610f4` before the current
 UI work. Two independent passes at that baseline SHA:
 
-| Evidence | Result |
-| --- | --- |
-| Windows full regression `test-results/prepublication-full-parent.json` | `success:true` — **1,447 passed / 8 skipped / 0 failed across 132 files** |
-| GitHub Actions [run 39065046637](https://github.com/Rishflips/Bi-Brain/actions/runs/39065046637) | **success** at `headSha b5610f411e02584842d2e655a49bf28a781f00f3` |
+| Evidence                                                                                         | Result                                                                    |
+| ------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------- |
+| Windows full regression `test-results/prepublication-full-parent.json`                           | `success:true` — **1,447 passed / 8 skipped / 0 failed across 132 files** |
+| GitHub Actions [run 39065046637](https://github.com/Rishflips/Bi-Brain/actions/runs/39065046637) | **success** at `headSha b5610f411e02584842d2e655a49bf28a781f00f3`         |
 
 The Linux job (Ubuntu, Node 24.19) ran `npm ci`, audit, typecheck, lint, the full
 132-file suite, build, 4 offline evaluations, 24 Chromium journeys, Docker build,
@@ -174,11 +194,11 @@ evaluations**, plus typecheck/lint/build and dependency audit. Separate default-
 decision configuration, guarded accounting and withdrawable account consent are
 implemented. No production decision consumer or readiness writer is installed by
 S1. The separate S2 worker is now locally accepted with synthetic transport as
-recorded below, not live-provider quality evidence. *(Superseded 2026-10-18: this
+recorded below, not live-provider quality evidence. _(Superseded 2026-10-18: this
 branch is now committed and pushed at `b5610f4` with the Linux/container CI run
 recorded in the current baseline checkpoint above; it is still not a public
 deployment. PR #4's later external merge is recorded above. Billing, capped live quality/cost, native
-clients, target-host drills and owner release/legal decisions remain gates.)*
+clients, target-host drills and owner release/legal decisions remain gates.)_
 
 ### Advisory worker S2 — all three tasks accepted locally, not deployed
 
@@ -247,4 +267,3 @@ Use arbitrary captured content, source-backed continuation in another agent, new
 ## Verification record — 2026-09-28
 
 See BUILD_STATE.md for commands and evidence. This is a runnable local preview with the local V1 implementation, not a fully verified Local V1 release. Native Codex/second-client sessions, a live provider evaluation, Docker/fresh-machine installation, and human pilot remain unverified. The checked native-client item above records this transparent limitation, not successful client verification. Disk-full and live provider outage drills are also unverified.
-

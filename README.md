@@ -36,14 +36,16 @@ The merged application provides a complete single-owner local workflow:
 1. Pair a browser to the local installation.
 2. Save text, Markdown, notes, decisions, or supported conversation exports.
 3. Keep immutable source versions in SQLite plus the portable Git-backed vault.
-4. Review one clear memory suggested from ordinary language, or teach BiBrain
+4. Follow one quiet first-session loop from saved original to reviewed meaning,
+   search, and optional agent continuity; it disappears as the brain grows.
+5. Review one clear memory suggested from ordinary language, or teach BiBrain
    the meaning of any exact passage. Nothing becomes current until you approve it.
-5. Search the full retained text and reopen the original.
-6. Copy an exact project handoff, or connect Codex or Claude Code through a
+6. Search the full retained text and reopen the original.
+7. Copy an exact project handoff, or connect Codex or Claude Code through a
    guided, expiring, project-scoped permission flow.
-7. Choose goals, request bounded preparation, review evidence, accept, snooze,
+8. Choose goals, request bounded preparation, review evidence, accept, snooze,
    dismiss, or safely undo.
-8. Back up, restore, withdraw, delete, and revoke access with explicit safeguards.
+9. Back up, restore, withdraw, delete, and revoke access with explicit safeguards.
 
 The repository also contains the browser-first managed foundation: isolated
 accounts, standards-based sign-in, guarded processing authority, recovery
@@ -62,13 +64,13 @@ processed a real payment.
 | Agent connections          | Guided Codex/Claude setup, real-use verification and immediate revocation are implemented; native fresh-session certification is still open |
 | Public cloud release       | Not deployed; hosting, legal, support, and human-pilot gates remain open                                                                    |
 
-The merged foundation passed its recorded integration, broad Vitest and offline
-evaluation gates. This branch adds a guided agent-connection lifecycle and a
-320px dark-mode regression; its complete browser run passes **49/49 Chromium
-journeys**, with real local grant creation, authenticated verification, owner
-revocation and subsequent denial covered. Typecheck, lint, and the production
-build pass. These are local release gates—not proof of live model quality,
-native-agent compatibility, real billing, or target-host operations. See
+The merged foundation and guided agent-connection lifecycle passed their
+recorded integration, broad Vitest, offline evaluation, browser and container
+gates. This branch adds the truthful first-session loop; its focused desktop and
+320px dark-mode journeys pass 2/2 and the complete browser regression passes
+51/51. These are local release gates—not proof of a human usability pilot, live
+model quality, native-agent compatibility, real billing, or target-host
+operations. See
 [BUILD_STATE.md](BUILD_STATE.md) for commands, exact scope, and known limits.
 
 ## Quick start
@@ -114,6 +116,8 @@ is not a completed client certification.
 Technical terms such as models, queues, tokens, classifiers, and MCP stay out of
 the primary flow. Every visible control either works or states why it is
 unavailable.
+
+![BiBrain first useful loop — synthetic item with owner-reviewed meaning](docs/screenshots/first-session.png)
 
 ![BiBrain guided agent connection — synthetic project and no connection key shown](docs/screenshots/agent-connection.png)
 

@@ -2,6 +2,47 @@
 
 Updated: 2026-10-20
 
+## Active delivery — truthful first-session journey
+
+Desktop and GitHub `main` were synchronized to merged PR #12 at
+`77785dcf317eb6a68bf3aec86fb6a725ccaa9af4` before branch
+`codex/first-session-journey` was created. This slice prepares the product for a
+real human first-use pilot without claiming that a pilot has happened.
+
+Implemented in the working tree:
+
+- Today shows one restrained **first useful loop** only while exactly one active
+  item exists. The rows come from real durable capture, knowledge-review/search
+  and same-project connection state; there is no stored fictional progress.
+- The meaning row distinguishes a pending suggestion, owner-approved current
+  understanding and ordinary searchable material. Its action opens the real
+  review workspace or scoped search.
+- Agent continuity is complete only for a verified grant covering the same
+  project. Private material has no connection action, and an unverified key
+  never becomes a completed step.
+- The guide disappears after a second item is saved, so onboarding naturally
+  yields to the normal workspace instead of becoming a permanent checklist or
+  suggestion feed.
+- UX, release, README and milestone documentation describe the flow and keep
+  human-pilot, two-native-client and live-provider gates open.
+
+Current verification: `npm run typecheck`, `npm run lint`, `npm run build` and
+`git diff --check` pass. The production bundle is `index-DJEAC97p.css` and
+`index-dsuX77EM.js`. The isolated desktop lifecycle and 320px dark-mode browser
+regression pass **2/2**. The lifecycle saves a real source, reviews and accepts
+its cited memory, observes the updated Today state, navigates to real Connections,
+saves a second item and proves the guide leaves the interface. The synthetic
+documentation screenshot was visually inspected. The complete finalized browser
+regression then passed **51/51 in 2.9 minutes**. The relevant brain and
+correction integration files passed **33/33** outside the filesystem sandbox;
+their first sandboxed attempt was blocked by Windows temporary-directory read and
+cleanup permissions, not an application assertion.
+
+This is implementation and synthetic browser evidence, not a human usability
+pilot. No native client, live provider, payment, public deployment, owner data or
+global client configuration was used. The owner's untracked design and licensing
+files remain untouched.
+
 ## Active delivery — guided agent connection
 
 Desktop and GitHub `main` were synchronized to merged PR #11 at

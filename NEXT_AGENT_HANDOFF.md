@@ -10,6 +10,25 @@ user request and `AGENTS.md`; use the available skills where applicable.
 
 ## Latest continuation checkpoint — 2026-10-20
 
+Desktop `main` and `origin/main` matched merged PR #12 at `77785dc` before
+branch `codex/first-session-journey` was created. This branch adds one truthful
+first-use path from durable original to reviewed meaning/search and optional
+same-project agent continuity. It appears only for exactly one saved item and
+uses real backend state; private material has no agent action, and only a verified
+grant counts as connected. The guide disappears after the second saved item.
+
+Current checks: typecheck, lint, production build and diff whitespace pass. The
+new real-storage desktop lifecycle and 320px dark-mode browser regression pass
+2/2, and the complete finalized browser regression passes 51/51 in 2.9 minutes.
+Publication remains to be completed before this checkpoint is final. This is
+preparation for a human pilot, not evidence that a human pilot or native-client
+session occurred.
+
+Preserve the owner's unrelated untracked design/logo and licensing files. They
+are not part of this branch.
+
+## Superseded continuation checkpoint — guided agent connection
+
 Desktop `main` and `origin/main` matched merged PR #11 at `90bc92d` before branch
 `codex/next-consumer-slice` was created. This branch turns the existing scoped
 agent grant into a guided Codex/Claude Code connection flow: least-access
