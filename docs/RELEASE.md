@@ -4,6 +4,24 @@ This page records what BiBrain can ship today, what each verification result pro
 
 ## Latest merged product checkpoint, 2026-10-20
 
+[PR #13](https://github.com/Rishflips/Bi-Brain/pull/13), **Guide the first useful
+BiBrain session**, was merged into `main` at
+`9be79fc6c078570bcb83ce88434f5c3456f63519`. It adds the real-state first useful
+loop from durable original to reviewed meaning/search and optional verified
+same-project agent continuity. The loop leaves Today after the second saved item.
+
+The exact branch passed typecheck, lint, production build, 33/33 relevant
+integration checks and 51/51 Chromium journeys locally. The current follow-up
+branch adds the next consumer step: a restrained Today path from reusable
+understanding to one chosen goal, one evidence-linked review and a separate
+explicit Stay-ahead choice. Its isolated lifecycle and full 52/52 browser suite
+pass locally; publication and GitHub CI remain separate checkpoints.
+
+None of this is a human pilot, native-client certification, live-model quality
+evidence, a payment or a public deployment.
+
+## Prior merged product checkpoint, 2026-10-20
+
 [PR #12](https://github.com/Rishflips/Bi-Brain/pull/12), **Guide safe Codex and
 Claude connections**, was merged into `main` at
 `77785dcf317eb6a68bf3aec86fb6a725ccaa9af4`. It adds least-access connection
@@ -18,9 +36,7 @@ full tests, offline evaluation, Chromium, Docker/container smoke, Compose and
 Caddy validation. These results do not certify a fresh native Codex or Claude
 Code session, live model quality, a payment, a human pilot, or a public host.
 
-The next local product branch adds a state-derived first-session path to prepare
-for that human pilot. Its implementation evidence belongs in BUILD_STATE until
-merged; it must not be described as completed human usability evidence.
+The following first-session branch was merged through PR #13 above.
 
 ## Prior merged release candidate checkpoint, 2026-10-19
 

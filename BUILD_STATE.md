@@ -2,6 +2,43 @@
 
 Updated: 2026-10-20
 
+## Active delivery — guided proactive goal
+
+Desktop and GitHub `main` were synchronized to merged PR #13 at
+`9be79fc6c078570bcb83ce88434f5c3456f63519` before branch
+`codex/guided-proactive-loop` was created. This slice makes BiBrain's bounded
+proactive value understandable from Today without claiming live intelligence.
+
+Implemented in the working tree:
+
+- After at least two saved items and real reusable understanding exist, Today
+  offers one restrained Stay-ahead path instead of another dashboard or feed.
+- The path creates a real project goal, explicitly enables only that goal when
+  the owner requests a first review, and queues the existing evidence-linked
+  preparation job. It does not change paid-processing consent or account-wide
+  background help.
+- Queued work is shown as preparing or waiting, never as completed. When a real
+  proposal is ready the setup card leaves the page and the existing evidence
+  review becomes the primary action.
+- After review, Stay ahead is a separate explicit choice. A paused goal remains
+  visibly paused and resuming it does not silently request work.
+- The surface uses the existing black/gold/ivory system, semantic controls and a
+  single responsive layout. The 320px dark regression has no horizontal scroll.
+
+Current verification: `npm run typecheck`, `npm run lint`, `npm run build` and
+the focused isolated production-browser lifecycle pass. The built assets are
+`index-B4wdYByM.css` and `index-Dhch3A8C.js`. The complete Chromium regression
+passes **52/52 in 3.4 minutes**. The first focused run correctly exposed an
+unsupported synthetic memory sentence and was repaired in the fixture rather
+than weakening BiBrain's conservative memory grammar. The generated proactive
+goal screenshot contains synthetic data and was visually inspected.
+
+This is deterministic/local product evidence, not a live-model result or human
+usability proof. No native client, provider credential, payment, public host,
+owner data or global client configuration was used. Publication and GitHub CI
+remain pending. The owner's untracked design and licensing files remain
+untouched.
+
 ## Active delivery — truthful first-session journey
 
 Desktop and GitHub `main` were synchronized to merged PR #12 at

@@ -88,6 +88,27 @@ decorative neural map or invented relationship display. On a phone, the header
 and navigation stay in document flow so they cannot cover the capture or saved
 receipt.
 
+### Guided proactive loop
+
+After at least two items exist and the selected project has reusable current
+understanding, Today may offer one calm **Stay ahead** path. It is not a feed and
+it must not appear before first value. The path is derived only from real goal,
+job, proposal, preference and worker state:
+
+1. Choose one outcome for the selected project.
+2. Request one evidence-linked review. This explicitly enables preparation for
+   that goal, but it does not turn on account-wide background help or paid model
+   processing.
+3. Show queued work as waiting or preparing, never as completed.
+4. When a real proposal is ready, remove the setup card and foreground the
+   existing review surface.
+5. After review, offer Stay ahead as a separate explicit choice. Quiet remains
+   valid; turning it on applies only to goals the owner selected.
+
+A paused goal is shown as paused and can be resumed without silently requesting
+work. Every proposal remains a hypothesis until the owner accepts it, and no
+external action is taken.
+
 ## Prepared item
 
 Collapsed content: project, specific title, why it matters now, evidence count, and Prepared—not applied.
