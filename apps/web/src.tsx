@@ -32,6 +32,7 @@ import {
   type FirstSessionMemoryState,
 } from "./first-session.tsx";
 import { ProactiveGoal, type ProactiveGoalState } from "./proactive-goal.tsx";
+import { ProjectFocus, ProjectOverview } from "./project-focus.tsx";
 import "@fontsource-variable/manrope/wght.css";
 import "./style.css";
 import "./refinement.css";
@@ -318,7 +319,7 @@ function App() {
     [grants, setGrants] = useState<any[]>([]),
     [billing, setBilling] = useState<BillingStatus | null>(null),
     [scope, setScope] = useState(
-      () => localStorage.getItem("brain-project") ?? "",
+      () => localStorage.getItem("brain-project") ?? "inbox",
     ),
     [search, setSearch] = useState(""),
     [dialog, setDialog] = useState<string | null>(null),
@@ -414,7 +415,7 @@ function App() {
     if (runtime?.mode !== "managed") return;
     // Do not let a stale local scope or search from another visitor bleed into
     // a managed session.
-    setScope("");
+    setScope("inbox");
     setSearch("");
     setSearchResults([]);
     setQueryPage(0);
@@ -469,7 +470,7 @@ function App() {
     setPrefs(null);
     setGrants([]);
     setBilling(null);
-    setScope("");
+    setScope("inbox");
     setSearch("");
     setSearchResults([]);
     setQueryPage(0);
@@ -1076,6 +1077,41 @@ function App() {
       grant.projects?.includes(firstSessionProject),
   );
   const target = scope || "inbox";
+  const focusProject = scope || "inbox";
+  const focusSources = notes.filter((item) => item.project_id === focusProject);
+  const focusBrief =
+    today.briefs.find(
+      (item: Entity) =>
+        item.project_id === focusProject && item.data.status === "current",
+    ) ?? null;
+  const focusGoal =
+    today.goals.find(
+      (item: Entity) =>
+        item.project_id === focusProject && item.data.status === "active",
+    ) ??
+    today.goals.find(
+      (item: Entity) =>
+        item.project_id === focusProject && item.data.status === "paused",
+    ) ??
+    null;
+  const focusReadyReviews = ready.filter(
+    (item: Entity) => item.project_id === focusProject,
+  ).length;
+  const projectSummaries = projects.map((project) => {
+    const projectBrief = today.briefs.find(
+      (item: Entity) =>
+        item.project_id === project.id && item.data.status === "current",
+    );
+    return {
+      id: project.id,
+      title: project.title,
+      openQuestions: projectBrief?.data.unknowns?.length ?? 0,
+      activeGoals: today.goals.filter(
+        (item: Entity) =>
+          item.project_id === project.id && item.data.status === "active",
+      ).length,
+    };
+  });
   const proactiveProject = scope || "inbox";
   const proactiveGoal =
     today.goals.find(
@@ -1680,27 +1716,71 @@ function App() {
                   New project
                 </button>
               </div>
-              <CurrentKnowledge
-                pages={knowledgePages}
-                gates={gateQueue}
-                openSource={(id) => void openSource(id)}
-                review={(id, version, action) =>
-                  void act(async () => {
-                    await api(`/proposals/gate/${id}/review`, {
-                      expected_version: version,
-                      action,
-                    });
-                    await refresh();
-                    setNotice(
-                      action === "undo"
-                        ? "Correction undone without erasing history."
-                        : action === "accept"
-                          ? "Reviewed change saved."
-                          : "Earlier understanding kept. Original retained without promoting a claim.",
-                    );
-                  })
-                }
-              />
+              {scope ? (
+                <>
+                  {!search.trim() ? (
+                    <ProjectFocus
+                      projectTitle={projectName(focusProject)}
+                      sources={focusSources}
+                      pages={knowledgePages}
+                      brief={focusBrief}
+                      goal={focusGoal}
+                      readyReviews={focusReadyReviews}
+                      onSave={saveDialog}
+                      onOpenSource={(id) => void openSource(id)}
+                      onPreviewHandoff={() =>
+                        void act(async () => {
+                          setHandoff(
+                            await api("/handoffs", {
+                              project_id: focusProject,
+                            }),
+                          );
+                          setDialog("handoff");
+                        })
+                      }
+                      onChooseGoal={() => {
+                        setCaptureScope(focusProject);
+                        setDialog("goal");
+                      }}
+                      onViewGoal={() =>
+                        document
+                          .getElementById("chosen-goals")
+                          ?.scrollIntoView({
+                            behavior: "smooth",
+                            block: "start",
+                          })
+                      }
+                    />
+                  ) : null}
+                  <CurrentKnowledge
+                    pages={knowledgePages}
+                    gates={gateQueue}
+                    openSource={(id) => void openSource(id)}
+                    review={(id, version, action) =>
+                      void act(async () => {
+                        await api(`/proposals/gate/${id}/review`, {
+                          expected_version: version,
+                          action,
+                        });
+                        await refresh();
+                        setNotice(
+                          action === "undo"
+                            ? "Correction undone without erasing history."
+                            : action === "accept"
+                              ? "Reviewed change saved."
+                              : "Earlier understanding kept. Original retained without promoting a claim.",
+                        );
+                      })
+                    }
+                  />
+                </>
+              ) : (
+                <ProjectOverview
+                  projects={projectSummaries}
+                  onSelect={(projectId) => setScope(projectId)}
+                  onCreate={() => setDialog("project")}
+                />
+              )}
               <div className="section-heading">
                 <h2>
                   Saved material{" "}
@@ -1761,7 +1841,7 @@ function App() {
                   </button>
                 ) : null}
               </div>
-              <div className="section-heading">
+              <div className="section-heading" id="chosen-goals">
                 <h2>Chosen goals</h2>
                 <button
                   onClick={() => {

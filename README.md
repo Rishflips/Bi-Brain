@@ -46,7 +46,9 @@ The merged application provides a complete single-owner local workflow:
 8. Move from reviewed understanding into one guided proactive loop: choose a
    goal, request one source-linked review, then explicitly turn on quiet
    background preparation if you want it.
-9. Back up, restore, withdraw, delete, and revoke access with explicit safeguards.
+9. Open any project as a focused workspace for current understanding, open
+   questions, chosen direction, recent originals, and an exact agent handoff.
+10. Back up, restore, withdraw, delete, and revoke access with explicit safeguards.
 
 The repository also contains the browser-first managed foundation: isolated
 accounts, standards-based sign-in, guarded processing authority, recovery
@@ -107,8 +109,9 @@ is not a completed client certification.
 
 - **Today** — truthful brain state, direct capture, useful prepared work, and a
   quiet caught-up state.
-- **Your brain** — sources, accepted understanding, history, corrections, search,
-  goals, and evidence.
+- **Your brain** — a real-state Project Focus workspace plus sources, accepted
+  understanding, open questions, history, corrections, search, goals, and
+  evidence.
 - **Connections** — exact manual handoffs, guided Codex/Claude setup, bounded
   project access, real-use status, immediate revocation, and reviewed imports.
 - **Settings & privacy** — appearance, background help, provider consent,
@@ -121,6 +124,8 @@ unavailable.
 ![BiBrain first useful loop — synthetic item with owner-reviewed meaning](docs/screenshots/first-session.png)
 
 ![BiBrain guided proactive goal — synthetic chosen goal before any preparation](docs/screenshots/proactive-goal.png)
+
+![BiBrain Project Focus — synthetic reviewed memory, goal, and retained original](docs/screenshots/project-focus.png)
 
 ![BiBrain guided agent connection — synthetic project and no connection key shown](docs/screenshots/agent-connection.png)
 

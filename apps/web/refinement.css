@@ -607,6 +607,244 @@ article {
   border-top-color: #181817;
 }
 
+.project-overview,
+.project-focus {
+  max-width: 980px;
+  margin: 34px 0 8px;
+  border-top: 3px solid #181817;
+}
+
+.project-focus-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 32px;
+  padding: 24px 0 22px;
+  border-bottom: 1px solid var(--line);
+}
+
+.project-focus-heading > div:first-child {
+  max-width: 650px;
+}
+
+.project-focus-heading h2 {
+  margin: 0 0 7px;
+  font-size: clamp(27px, 3vw, 38px);
+  letter-spacing: -0.04em;
+}
+
+.project-focus-heading p:not(.section-kicker) {
+  margin: 0;
+  color: var(--muted);
+}
+
+.project-focus-actions {
+  display: flex;
+  flex: 0 0 auto;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 9px;
+}
+
+.project-overview-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  border-bottom: 1px solid var(--line);
+}
+
+.project-overview-card {
+  display: grid;
+  gap: 18px;
+  min-height: 132px;
+  border: 0;
+  border-right: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+  border-radius: 0;
+  background: transparent;
+  padding: 22px 24px;
+  text-align: left;
+}
+
+.project-overview-card:nth-child(2n) {
+  border-right: 0;
+}
+
+.project-overview-card:hover {
+  border-color: var(--line);
+  background: var(--subtle);
+}
+
+.project-overview-title {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  font-size: 18px;
+}
+
+.project-overview-meta {
+  align-self: end;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.project-focus-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.35fr) minmax(280px, 0.65fr);
+  border-bottom: 1px solid var(--line);
+}
+
+.project-focus-panel {
+  min-width: 0;
+  min-height: 270px;
+  border-right: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+  padding: 26px 26px 28px 0;
+}
+
+.project-focus-panel:nth-child(2n) {
+  border-right: 0;
+  padding-right: 0;
+  padding-left: 26px;
+}
+
+.project-focus-panel:nth-last-child(-n + 2) {
+  border-bottom: 0;
+}
+
+.project-focus-panel h3 {
+  margin: 0 0 18px;
+  font-size: 20px;
+}
+
+.project-focus-panel > p {
+  color: var(--muted);
+}
+
+.project-focus-panel > small {
+  display: block;
+  color: var(--muted);
+  line-height: 1.55;
+}
+
+.project-focus-panel > button {
+  margin-top: 18px;
+}
+
+.project-focus-panel-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.project-focus-panel-heading > span {
+  display: grid;
+  min-width: 26px;
+  height: 26px;
+  place-items: center;
+  border: 1px solid var(--line);
+  border-radius: 50%;
+  color: var(--muted);
+  font-size: 10px;
+  text-transform: capitalize;
+}
+
+.project-focus-list,
+.project-question-list,
+.project-source-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.project-focus-list li {
+  display: grid;
+  gap: 4px;
+  padding: 14px 0;
+  border-top: 1px solid var(--line);
+}
+
+.project-focus-list li > span {
+  color: #765900;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.project-focus-list li > strong {
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.project-focus-list li > small,
+.project-source-list small {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.project-question-list {
+  counter-reset: questions;
+}
+
+.project-question-list li {
+  display: grid;
+  grid-template-columns: 24px minmax(0, 1fr);
+  gap: 10px;
+  padding: 13px 0;
+  border-top: 1px solid var(--line);
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.5;
+  counter-increment: questions;
+}
+
+.project-question-list li::before {
+  content: counter(questions, decimal-leading-zero);
+  color: #9a7600;
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.project-source-list li {
+  border-top: 1px solid var(--line);
+}
+
+.project-source-list button {
+  display: grid;
+  gap: 4px;
+  width: 100%;
+  min-height: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  padding: 13px 0;
+  text-align: left;
+}
+
+.project-source-list button:hover {
+  background: transparent;
+  color: #765900;
+}
+
+.project-focus-empty {
+  padding: 14px 0;
+  border-top: 1px solid var(--line);
+}
+
+.project-focus-empty p {
+  margin: 0 0 5px;
+  font-weight: 650;
+}
+
+.project-focus-empty span {
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
 .pill {
   border: 1px solid #ded8ca;
   border-radius: 4px;
@@ -1180,6 +1418,25 @@ footer {
   border-top-color: #f4f1e9;
 }
 
+:root[data-theme="dark"] .project-overview,
+:root[data-theme="dark"] .project-focus {
+  border-top-color: #f4f1e9;
+}
+
+:root[data-theme="dark"] .project-overview-card,
+:root[data-theme="dark"] .project-source-list button {
+  background: transparent;
+}
+
+:root[data-theme="dark"] .project-overview-card:hover {
+  background: #201f1b;
+}
+
+:root[data-theme="dark"] .project-focus-list li > span,
+:root[data-theme="dark"] .project-question-list li::before {
+  color: #e6c85e;
+}
+
 :root[data-theme="dark"] .connection-row {
   background: transparent;
 }
@@ -1396,6 +1653,38 @@ footer {
     flex-direction: column;
   }
 
+  .project-focus-heading {
+    align-items: stretch;
+    flex-direction: column;
+    gap: 18px;
+  }
+
+  .project-focus-actions {
+    justify-content: flex-start;
+  }
+
+  .project-focus-grid,
+  .project-overview-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .project-focus-panel,
+  .project-focus-panel:nth-child(2n) {
+    min-height: 0;
+    border-right: 0;
+    border-bottom: 1px solid var(--line);
+    padding: 24px 0;
+  }
+
+  .project-focus-panel:last-child {
+    border-bottom: 0;
+  }
+
+  .project-overview-card,
+  .project-overview-card:nth-child(2n) {
+    border-right: 0;
+  }
+
   dialog.inspector {
     width: 100%;
     border-radius: 0;
@@ -1410,6 +1699,15 @@ footer {
   .masthead-lockup {
     width: 116px;
     height: 34px;
+  }
+
+  .project-focus-actions {
+    display: grid;
+    grid-template-columns: 1fr;
+  }
+
+  .project-focus-actions button {
+    width: 100%;
   }
 
   .masthead .primary {
