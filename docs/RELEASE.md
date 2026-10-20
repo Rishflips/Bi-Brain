@@ -15,7 +15,11 @@ integration checks and 51/51 Chromium journeys locally. The current follow-up
 branch adds the next consumer step: a restrained Today path from reusable
 understanding to one chosen goal, one evidence-linked review and a separate
 explicit Stay-ahead choice. Its isolated lifecycle and full 52/52 browser suite
-pass locally; publication and GitHub CI remain separate checkpoints.
+pass locally. Implementation commit `6d4a66d` is published in open, mergeable
+[PR #14](https://github.com/Rishflips/Bi-Brain/pull/14); its clean Linux workflow
+[39413228202](https://github.com/Rishflips/Bi-Brain/actions/runs/39413228202)
+passed the full tests, build, offline evaluation, Chromium and container/configuration
+gates.
 
 None of this is a human pilot, native-client certification, live-model quality
 evidence, a payment or a public deployment.

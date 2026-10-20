@@ -36,8 +36,13 @@ goal screenshot contains synthetic data and was visually inspected.
 This is deterministic/local product evidence, not a live-model result or human
 usability proof. No native client, provider credential, payment, public host,
 owner data or global client configuration was used. Publication and GitHub CI
-remain pending. The owner's untracked design and licensing files remain
-untouched.
+completed at implementation commit `6d4a66d864974766198000fea31b764a518a9516`:
+[PR #14](https://github.com/Rishflips/Bi-Brain/pull/14) is open and mergeable,
+and release-candidate workflow
+[39413228202](https://github.com/Rishflips/Bi-Brain/actions/runs/39413228202)
+passed clean install, high-severity audit, full tests, build, 4/4 offline
+evaluation, 52/52 Chromium, Docker/container smoke, Compose and Caddy checks.
+The owner's untracked design and licensing files remain untouched.
 
 ## Active delivery — truthful first-session journey
 
