@@ -1,8 +1,53 @@
 # Connect a native agent to BiBrain
 
-Status: configuration path implemented; native end-to-end certification still
-requires an explicitly authorized client run. These steps do not prove that a
-named client has recalled or corrected anything.
+Status, 2026-10-21: the bounded read-only workflow below passed in actual fresh
+Codex CLI 0.156.1 and Claude Code 2.1.283 sessions. This does not certify arbitrary
+native write/propose/forget workflows or every future client version.
+
+## Recorded native acceptance
+
+Both clients used their existing subscription sign-in, synthetic disposable SQLite
+storage and an expiring read-only grant. No owner data, global client configuration,
+paid API key, or BiBrain provider activation was used. Subscription quota was used.
+
+| Observation                                               | Codex                | Claude Code          |
+| --------------------------------------------------------- | -------------------- | -------------------- |
+| Read-only tool discovery; no propose tool                 | Pass                 | Pass                 |
+| Pending fact absent from current answer                   | Pass                 | Pass                 |
+| Owner-reviewed fact returned with exact source citation   | Pass                 | Pass                 |
+| Owner-reviewed correction replaces earlier current answer | Pass                 | Pass                 |
+| Private and other-project original reads                  | 404 / 404            | 404 / 404            |
+| Revocation during the open native session                 | Next verify/read 401 | Next verify/read 401 |
+
+The native sessions called the real stdio adapter and loopback HTTP services.
+An operator fixture accepted the two predefined synthetic review gates between
+calls; the native model did not approve knowledge or change permissions. The
+proof script checks observed backend responses rather than trusting a model's
+completion claim. Original versions remain in the disposable store until cleanup.
+
+The initial Codex attempt discovered tools but correctly refused invocation under
+its approval policy: the server lacked read-only MCP annotations. Truthful
+read-only/idempotent/destructive hints were added and the documented project
+`default_tools_approval_mode="writes"` setting was applied. The fresh retest
+passed without granting write access or bypassing approval. Claude's fresh run
+used restricted mode, no built-in tools and only the supplied MCP configuration.
+
+Reproduce explicitly (consumes native subscription quota):
+
+```powershell
+$env:BRAIN_NATIVE_PROOF = '1'
+node --import tsx scripts/native-client-proof.ts codex
+node --import tsx scripts/native-client-proof.ts claude
+```
+
+Each client process has a 120-second timeout; generated grants are revoked and
+disposable storage is removed. Reports remain under ignored `data/native-*-proof.json`;
+they contain synthetic results and never the grant key. The script uses the
+observed Windows npm installation paths by default; other installations can
+set `BRAIN_NATIVE_CODEX_ENTRY` or `BRAIN_NATIVE_CLAUDE_BINARY` to explicit paths.
+Codex uses GPT-6 Sol for this proof. The observed Claude subscription selected
+`claude-opus-5-5`. These are compatibility observations, not recommendations or
+BiBrain live reasoning quality/cost evidence.
 
 ## Before connecting
 

@@ -3,6 +3,7 @@ import { z } from "zod";
 import { BrainError } from "../../packages/domain/logic.ts";
 import { PADDLE_WEBHOOK_MAX_BODY_BYTES } from "../../packages/domain/paddle-signature.ts";
 import type { PaddleBillingService } from "../../packages/runtime/paddle-billing.ts";
+import type { DodoBillingService } from "../../packages/runtime/dodo-billing.ts";
 
 const unavailable = () =>
   new BrainError(
@@ -30,7 +31,7 @@ function account(req: FastifyRequest): string {
 /** Registers the closed customer billing surface plus one raw-body webhook. */
 export async function registerBillingRoutes(
   app: FastifyInstance,
-  billing?: PaddleBillingService,
+  billing?: PaddleBillingService | DodoBillingService,
 ): Promise<void> {
   app.get("/api/v1/billing/status", (req) => {
     const accountId = ownerAccount(req);
@@ -59,7 +60,7 @@ export async function registerBillingRoutes(
   });
 
   // This is the only JSON route that receives bytes rather than a parsed body.
-  // Signature verification happens before JSON.parse in PaddleBillingService.
+  // Each provider verifies the signature before JSON.parse.
   await app.register(async (webhook) => {
     webhook.removeContentTypeParser("application/json");
     webhook.addContentTypeParser(
@@ -72,9 +73,10 @@ export async function registerBillingRoutes(
       if (!Buffer.isBuffer(req.body))
         throw new BrainError(
           "INVALID_INPUT",
-          "The Paddle webhook body must be JSON bytes.",
+          "The payment webhook body must be JSON bytes.",
           400,
         );
+      if ("provider" in billing) return billing.webhook(req.body, req.headers);
       const header = req.headers["paddle-signature"];
       if (typeof header !== "string")
         throw new BrainError(

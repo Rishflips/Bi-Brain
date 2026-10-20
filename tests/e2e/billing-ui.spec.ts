@@ -4,17 +4,14 @@ test("managed Settings explains checkout plainly and stays confirming", async ({
   page,
 }) => {
   let checkoutRequested = false;
-  await page.addInitScript(() => {
-    (window as any).Paddle = {
-      Environment: { set() {} },
-      Initialize() {},
-      Checkout: {
-        open(input: { transactionId: string }) {
-          (window as any).__openedTransaction = input.transactionId;
-        },
-      },
-    };
-  });
+  const checkoutUrl =
+    "https://test.checkout.dodopayments.com/session/cks_synthetic";
+  await page.route(checkoutUrl, (route) =>
+    route.fulfill({
+      contentType: "text/html",
+      body: "<h1>Synthetic Dodo hosted checkout</h1>",
+    }),
+  );
   await page.route("**/api/v1/**", async (route) => {
     const path = new URL(route.request().url()).pathname.replace("/api/v1", "");
     const json = (body: unknown, status = 200) =>
@@ -62,19 +59,17 @@ test("managed Settings explains checkout plainly and stays confirming", async ({
       return json({
         available: true,
         mode: "sandbox",
-        client_token: "test_01234567890123456789012345",
+        provider: "dodo",
         state: checkoutRequested ? "confirming" : "not_started",
         cadence: checkoutRequested ? "monthly" : null,
         subscription_status: null,
-        transaction_ref: checkoutRequested
-          ? "txn_01h00000000000000000000000"
-          : null,
+        checkout_url: checkoutRequested ? checkoutUrl : null,
         management_available: false,
       });
     if (path === "/billing/checkout-intent") {
       checkoutRequested = true;
       return json({
-        transaction_ref: "txn_01h00000000000000000000000",
+        checkout_url: checkoutUrl,
         status: "confirming",
       });
     }
@@ -91,29 +86,15 @@ test("managed Settings explains checkout plainly and stays confirming", async ({
   ).toBeVisible();
   await expect(page.getByText("Test checkout · no real payment")).toBeVisible();
   await page.getByRole("button", { name: "Choose monthly" }).click();
-  await expect
-    .poll(() =>
-      page.evaluate(() =>
-        String(
-          (window as unknown as { __openedTransaction?: string })
-            .__openedTransaction ?? "",
-        ),
-      ),
-    )
-    .toBe("txn_01h00000000000000000000000");
+  await expect(page).toHaveURL(checkoutUrl);
+  await page.goBack();
+  await page.getByRole("button", { name: "Settings & privacy" }).click();
   await expect(
     page.getByRole("heading", { name: "Confirming your plan" }),
   ).toBeVisible();
-  await expect(page.getByText(/No paid allowance is enabled/)).toBeVisible();
+  await expect(
+    page.getByText(/Your plan starts only after confirmation/),
+  ).toBeVisible();
   await page.getByRole("button", { name: "Continue secure checkout" }).click();
-  await expect
-    .poll(() =>
-      page.evaluate(() =>
-        String(
-          (window as unknown as { __openedTransaction?: string })
-            .__openedTransaction ?? "",
-        ),
-      ),
-    )
-    .toBe("txn_01h00000000000000000000000");
+  await expect(page).toHaveURL(checkoutUrl);
 });

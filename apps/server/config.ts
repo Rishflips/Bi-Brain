@@ -1,5 +1,6 @@
 import { isAbsolute } from "node:path";
 import { deploymentPolicy } from "./deployment.ts";
+import { dodoConfig, type RuntimeDodoConfig } from "./dodo-config.ts";
 
 /**
  * Fixed, non-caller-overridable callback path. The same value is given to the
@@ -50,6 +51,7 @@ export type RuntimeConfig =
       publicOrigin: string;
       oidc: RuntimeOidcConfig;
       paddle?: RuntimePaddleConfig;
+      dodo?: RuntimeDodoConfig;
     };
 
 type Env = Record<string, string | undefined>;
@@ -279,6 +281,7 @@ export function loadConfig(env: Env = process.env): RuntimeConfig {
       callbackPath: callbackPath(env),
     },
     paddle: paddleConfig(env),
+    dodo: dodoConfig(env),
   };
 }
 

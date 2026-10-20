@@ -37,15 +37,17 @@ import { loadConfig } from "../server/config.ts";
 import { Worker } from "./engine.ts";
 import { ManagedWorker } from "./managed.ts";
 import { BoundedFetchTransport } from "../../packages/providers/bounded-fetch.ts";
-import { PaddleClient } from "../../packages/providers/paddle.ts";
-import { PaddleEvidenceSource } from "../../packages/providers/paddle-evidence.ts";
-import { PaddleStore } from "../../packages/storage/paddle-store.ts";
+import { DodoClient } from "../../packages/providers/dodo.ts";
+import { DodoEvidenceSource } from "../../packages/providers/dodo-evidence.ts";
+import { DodoStore } from "../../packages/storage/dodo-store.ts";
 import {
-  PaddleBillingWorker,
-  createBillingAuthorityForPaddle,
+  ProviderBillingWorker,
+  createBillingAuthorityForProvider,
 } from "../../packages/runtime/paddle-worker.ts";
 
 const config = loadConfig();
+if (config.mode === "managed" && config.paddle)
+  throw new Error("Paddle is retired. Configure BRAIN_DODO_* instead.");
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 /**
@@ -310,28 +312,28 @@ if (config.mode === "managed") {
         }
       : {}),
   });
-  const paddleStore = config.paddle
-    ? new PaddleStore(resolve(runtime.root, "paddle.sqlite"), control.clock)
+  const billingStore = config.dodo
+    ? new DodoStore(resolve(runtime.root, "dodo.sqlite"), control.clock)
     : undefined;
-  const paddleWorker = (() => {
-    if (!config.paddle || !paddleStore) return undefined;
-    const client = new PaddleClient({
-      mode: config.paddle.mode,
-      api_key: config.paddle.apiKey,
-      product_ref: config.paddle.productRef,
-      monthly_price_ref: config.paddle.monthlyPriceRef,
-      annual_price_ref: config.paddle.annualPriceRef,
-      allowed_currencies: config.paddle.allowedCurrencies,
+  const billingWorker = (() => {
+    if (!config.dodo || !billingStore) return undefined;
+    const client = new DodoClient({
+      mode: config.dodo.mode,
+      api_key: config.dodo.apiKey,
+      business_id: config.dodo.businessId,
+      monthly_product_ref: config.dodo.monthlyProductRef,
+      annual_product_ref: config.dodo.annualProductRef,
+      allowed_currencies: config.dodo.allowedCurrencies,
       transport: new BoundedFetchTransport(),
     });
-    const evidence = new PaddleEvidenceSource(client, control.clock);
-    return new PaddleBillingWorker(
-      paddleStore,
-      createBillingAuthorityForPaddle({
+    const evidence = new DodoEvidenceSource(client, control.clock);
+    return new ProviderBillingWorker(
+      billingStore,
+      createBillingAuthorityForProvider({
         root: runtime.root,
         control,
         evidence,
-        store: paddleStore,
+        store: billingStore,
         clock: control.clock,
       }),
     );
@@ -452,7 +454,7 @@ if (config.mode === "managed") {
   process.on("SIGTERM", stop);
   while (running) {
     try {
-      const billingWorked = (await paddleWorker?.tick()) ?? false;
+      const billingWorked = (await billingWorker?.tick()) ?? false;
       const worked = await worker.tick();
       if (!worked && !billingWorked) await sleep(1000);
     } catch {
@@ -462,7 +464,7 @@ if (config.mode === "managed") {
   }
   if (heartbeat) clearInterval(heartbeat);
   await worker.stop();
-  paddleStore?.close();
+  billingStore?.close();
   try {
     removeWorkerReadiness(runtime.root, workerId);
   } catch {
