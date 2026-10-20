@@ -2,6 +2,48 @@
 
 Updated: 2026-10-20
 
+## Active delivery — Project Focus workspace
+
+Desktop and GitHub main were synchronized to merged PR #15 at
+3fc373d3f1053b5936f5c3f5a5d580be3bbc30a8 before branch
+codex/project-focus-workspace was created. This slice turns Your brain from a
+flat library into a project command center without creating new derived truth.
+
+Implemented in the working tree:
+
+- The selected project opens with one plain-language focus view: current
+  understanding, open questions, chosen direction, recent originals and the
+  number of real reviews waiting.
+- Every summary is derived from existing authorized project sources, accepted
+  claims, the current brief, goals and ready proposals. Missing context is shown
+  as an honest empty state; no decisions, questions or activity are invented.
+- The owner can add directly to the project, open retained originals, set a
+  goal, jump to its detailed controls, and preview the exact existing agent
+  handoff without leaving the workspace.
+- All projects now has a compact real-state overview. Search deliberately hides
+  the focus summary so results stay unambiguous, while detailed evidence,
+  correction history, saved material and goal controls remain intact.
+- Inbox is the safe default project for a fresh real session. Managed sessions
+  discard browser-persisted scope on account change and use the constant Inbox
+  default instead.
+- The browser harness accepts an optional BRAIN_E2E_PORT, keeping its normal
+  4317 default while allowing isolated verification when that port is occupied.
+
+Current verification: typecheck, lint, production build and whitespace checks
+pass. The focused real-storage browser journey passes, including reviewed memory,
+goal creation, exact handoff preview, source reopening, all-project navigation,
+dark appearance and 320px containment. The first full 53-test Chromium run found
+five existing-selector ambiguities caused by duplicated summary controls and
+titles; the product was tightened without weakening those tests. The corrected
+affected set passed 8/8, the finalized focused journey passed again, and the
+complete production-browser regression passed **53/53 in 3.7 minutes**. The
+generated synthetic screenshot was visually inspected. GitHub CI is still
+pending at this checkpoint.
+
+This is deterministic local product evidence, not a human usability pilot,
+native-client session, live-model result, payment or public deployment. The
+owner's untracked design/logo and licensing files remain untouched.
+
 ## Active delivery — guided proactive goal
 
 Desktop and GitHub `main` were synchronized to merged PR #13 at

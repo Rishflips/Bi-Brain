@@ -10,6 +10,33 @@ user request and `AGENTS.md`; use the available skills where applicable.
 
 ## Latest continuation checkpoint — 2026-10-20
 
+The owner merged the documentation follow-up
+[PR #15](https://github.com/Rishflips/Bi-Brain/pull/15) at
+3fc373d3f1053b5936f5c3f5a5d580be3bbc30a8. Desktop and GitHub main were
+synchronized to that exact merge before codex/project-focus-workspace was
+created.
+
+The working branch adds Project Focus to Your brain using only real authorized
+state: accepted understanding or the current source-linked brief, open questions,
+chosen goals, ready review count and retained originals. It provides direct
+capture, detailed-goal navigation and the existing exact handoff preview. Search
+hides the summary to avoid duplicate results, and All projects remains available
+as a real-state overview. Missing context is shown as quiet, not fabricated.
+
+Typecheck, lint, production build and the focused real-storage browser journey
+pass, including handoff contents, source reopening, all-project navigation,
+dark mode and 320px containment. The initial full regression exposed summary
+controls and source titles that duplicated existing accessible names; those were
+removed without changing the established tests. The affected app set then passed
+8/8 and the complete production-browser regression passed **53/53 in 3.7
+minutes**. Publication and CI remain to be recorded.
+
+This is local deterministic implementation evidence, not a human pilot,
+native-client certification, live-model run, payment or hosted release. Preserve
+the owner's unrelated untracked design/logo and licensing files.
+
+## Superseded continuation checkpoint — guided proactive goal
+
 The owner merged [PR #13](https://github.com/Rishflips/Bi-Brain/pull/13) at
 `9be79fc6c078570bcb83ce88434f5c3456f63519`. Desktop `main` was fast-forwarded
 to that exact merge before `codex/guided-proactive-loop` was created.

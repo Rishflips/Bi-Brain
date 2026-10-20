@@ -135,6 +135,24 @@ Open a source to view the retained original and derived claims.
 Search respects access scope and deletion before ranking and snippets.
 No-result state: No matching notes. Try a different word or save something new.
 
+The selected project opens as **Project Focus**, a compact command center built
+only from authorized saved state:
+
+- Current understanding prefers owner-reviewed claims, with the current
+  source-linked brief as a labeled fallback.
+- Open questions are copied from the current brief, never generated in the
+  browser.
+- Chosen direction reflects the real active or paused goal and its accepted plan
+  state.
+- Recent originals open the retained source directly.
+- Preview agent handoff uses the existing server-built project handoff; it never
+  claims to open or message an external agent.
+
+When All projects is selected, show a small overview with real counts rather
+than mixing project claims. While the owner searches, hide Project Focus so each
+matching source appears only once and search remains the primary task. Inbox is
+the no-setup default for real sessions.
+
 Editing source content creates a new source version; it never rewrites a prior source version in place.
 Editing derived understanding creates a user revision and invalidates dependent briefs.
 Display pending rebuilds as updating, not current.
