@@ -4,15 +4,18 @@ This page records what BiBrain can ship today, what each verification result pro
 
 ## Latest merged product checkpoint, 2026-10-20
 
-[PR #15](https://github.com/Rishflips/Bi-Brain/pull/15), a documentation-only
-checkpoint for the proactive-goal merge, was merged into main at
-3fc373d3f1053b5936f5c3f5a5d580be3bbc30a8. The current Project Focus branch
-turns one selected project into a real-state workspace for understanding, open
-questions, direction, originals and exact handoff preview. Its focused
+[PR #16](https://github.com/Rishflips/Bi-Brain/pull/16) was merged into `main`
+at `3719f23b3bc74ad4d0ba1bbf43002842357fef98`. Project Focus turns one selected
+project into a real-state workspace for understanding, open questions,
+direction, originals and exact handoff preview. Its focused
 real-storage browser journey, 320px dark regression, typecheck, lint and build
 pass locally. After the first full run exposed and drove removal of duplicate
 summary control names, the exact finalized production build passed all **53/53
-Chromium journeys in 3.7 minutes**. GitHub workflow evidence remains pending.
+Chromium journeys in 3.7 minutes**. Exact PR-head workflow
+[39421708664](https://github.com/Rishflips/Bi-Brain/actions/runs/39421708664)
+passed in 9m17s: clean install, high-severity audit, full tests, build, 4/4
+offline evaluation, 53/53 Chromium, Docker build and container smoke, Compose
+validation and Caddy/TLS validation.
 
 This implementation does not prove a human pilot, native-client compatibility,
 live-model quality, payment or public hosting.

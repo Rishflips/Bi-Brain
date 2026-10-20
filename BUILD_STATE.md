@@ -2,14 +2,14 @@
 
 Updated: 2026-10-20
 
-## Active delivery — Project Focus workspace
+## Latest merged delivery — Project Focus workspace
 
-Desktop and GitHub main were synchronized to merged PR #15 at
-3fc373d3f1053b5936f5c3f5a5d580be3bbc30a8 before branch
-codex/project-focus-workspace was created. This slice turns Your brain from a
+Desktop and GitHub `main` are synchronized to merged
+[PR #16](https://github.com/Rishflips/Bi-Brain/pull/16) at
+`3719f23b3bc74ad4d0ba1bbf43002842357fef98`. This slice turns Your brain from a
 flat library into a project command center without creating new derived truth.
 
-Implemented in the working tree:
+Merged implementation:
 
 - The selected project opens with one plain-language focus view: current
   understanding, open questions, chosen direction, recent originals and the
@@ -37,10 +37,13 @@ five existing-selector ambiguities caused by duplicated summary controls and
 titles; the product was tightened without weakening those tests. The corrected
 affected set passed 8/8, the finalized focused journey passed again, and the
 complete production-browser regression passed **53/53 in 3.7 minutes**. The
-generated synthetic screenshot was visually inspected. GitHub CI is still
-pending at this checkpoint.
+generated synthetic screenshot was visually inspected. Exact PR-head workflow
+[39421708664](https://github.com/Rishflips/Bi-Brain/actions/runs/39421708664)
+then passed in 9m17s: clean install, high-severity audit, full tests, production
+build, 4/4 offline evaluation, 53/53 Chromium, Docker build and container smoke,
+Compose validation and Caddy/TLS validation.
 
-This is deterministic local product evidence, not a human usability pilot,
+This is deterministic local and CI product evidence, not a human usability pilot,
 native-client session, live-model result, payment or public deployment. The
 owner's untracked design/logo and licensing files remain untouched.
 
