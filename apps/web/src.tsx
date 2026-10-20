@@ -31,6 +31,7 @@ import {
   FirstSessionJourney,
   type FirstSessionMemoryState,
 } from "./first-session.tsx";
+import { ProactiveGoal, type ProactiveGoalState } from "./proactive-goal.tsx";
 import "@fontsource-variable/manrope/wght.css";
 import "./style.css";
 import "./refinement.css";
@@ -1075,6 +1076,46 @@ function App() {
       grant.projects?.includes(firstSessionProject),
   );
   const target = scope || "inbox";
+  const proactiveProject = scope || "inbox";
+  const proactiveGoal =
+    today.goals.find(
+      (goal: Entity) =>
+        goal.project_id === proactiveProject && goal.data.status === "active",
+    ) ??
+    today.goals.find(
+      (goal: Entity) =>
+        goal.project_id === proactiveProject && goal.data.status === "paused",
+    );
+  const proactiveReady = proactiveGoal
+    ? ready.some((item: Entity) => item.data.goal_id === proactiveGoal.id)
+    : false;
+  const proactivePreparing = proactiveGoal
+    ? today.status.jobs.some(
+        (job: any) =>
+          job.project_id === proactiveGoal.project_id &&
+          job.kind === "review_changed_assumption" &&
+          ["queued", "running", "leased", "retry_wait"].includes(job.status),
+      )
+    : false;
+  const hasUsefulUnderstanding =
+    knowledgePages.some((page) => page.current?.length > 0) ||
+    today.briefs.some(
+      (item: Entity) =>
+        item.project_id === proactiveProject && item.data.status === "current",
+    );
+  const proactiveState: ProactiveGoalState = !proactiveGoal
+    ? "choose"
+    : proactiveGoal.data.status === "paused"
+      ? "paused"
+      : proactivePreparing
+        ? "preparing"
+        : proactiveGoal.data.preparation_enabled
+          ? "watching"
+          : "selected";
+  const showProactiveGoal =
+    notes.length >= 2 &&
+    !proactiveReady &&
+    (!!proactiveGoal || hasUsefulUnderstanding);
   const field = (label: string, child: React.ReactNode) => (
     <label className="field">
       {label}
@@ -1353,6 +1394,75 @@ function App() {
                     </details>
                   ) : null}
                 </>
+              ) : null}
+              {showProactiveGoal ? (
+                <ProactiveGoal
+                  state={proactiveState}
+                  goalTitle={proactiveGoal?.data.title}
+                  projectTitle={projectName(proactiveProject)}
+                  stayAhead={!!prefs?.enabled}
+                  workerOnline={!!today.status.worker_online}
+                  onChoose={() => {
+                    setCaptureScope(proactiveProject);
+                    setDialog("goal");
+                  }}
+                  onPrepare={() => {
+                    if (!proactiveGoal) return;
+                    void act(async () => {
+                      if (!proactiveGoal.data.preparation_enabled)
+                        await api(
+                          `/goals/${proactiveGoal.id}`,
+                          {
+                            expected_version: proactiveGoal.version,
+                            preparation_enabled: true,
+                          },
+                          "PATCH",
+                        );
+                      try {
+                        await api(`/goals/${proactiveGoal.id}/prepare`, {});
+                      } finally {
+                        // The goal opt-in may already be durable if the enqueue
+                        // request fails. Refresh so the UI never hides that
+                        // partial, retryable state behind stale local data.
+                        await refresh();
+                      }
+                      setNotice(
+                        "Review requested. Nothing changes until you approve it.",
+                      );
+                    });
+                  }}
+                  onEnableStayAhead={() =>
+                    void act(async () => {
+                      setPrefs(
+                        await api(
+                          "/preferences/background",
+                          backgroundPatchBody({ enabled: true }),
+                          "PATCH",
+                        ),
+                      );
+                      await refresh();
+                      setNotice(
+                        "Stay ahead is on for goals you explicitly selected.",
+                      );
+                    })
+                  }
+                  onResume={() => {
+                    if (!proactiveGoal) return;
+                    void act(async () => {
+                      await api(
+                        `/goals/${proactiveGoal.id}`,
+                        {
+                          expected_version: proactiveGoal.version,
+                          status: "active",
+                        },
+                        "PATCH",
+                      );
+                      await refresh();
+                      setNotice("Goal resumed. No preparation was requested.");
+                    });
+                  }}
+                  onViewGoal={() => setNav("Your brain")}
+                />
               ) : null}
               {notes.length && !firstNote ? (
                 <>

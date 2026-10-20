@@ -10,6 +10,25 @@ user request and `AGENTS.md`; use the available skills where applicable.
 
 ## Latest continuation checkpoint — 2026-10-20
 
+The owner merged [PR #13](https://github.com/Rishflips/Bi-Brain/pull/13) at
+`9be79fc6c078570bcb83ce88434f5c3456f63519`. Desktop `main` was fast-forwarded
+to that exact merge before `codex/guided-proactive-loop` was created.
+
+The working branch adds a real-state proactive path on Today after reusable
+understanding exists: choose one goal, request one source-linked review, show
+real waiting/preparing state, foreground the actual proposal when ready, and
+separately opt into Stay ahead. It never turns on paid processing, never treats
+a queued job as success and never resumes a paused goal by requesting work.
+
+Typecheck, lint, production build and the isolated real-storage browser journey
+pass. The complete Chromium suite passes 52/52 in 3.4 minutes, including the new
+320px dark state. Publication and GitHub CI remain pending. This is local
+deterministic evidence, not live-model, native-client, payment, deployment or
+human-pilot evidence. Preserve the owner's unrelated untracked design/logo and
+licensing files.
+
+## Superseded continuation checkpoint — first useful session
+
 Desktop `main` and `origin/main` matched merged PR #12 at `77785dc` before
 branch `codex/first-session-journey` was created. This branch adds one truthful
 first-use path from durable original to reviewed meaning/search and optional

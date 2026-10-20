@@ -43,8 +43,9 @@ The merged application provides a complete single-owner local workflow:
 6. Search the full retained text and reopen the original.
 7. Copy an exact project handoff, or connect Codex or Claude Code through a
    guided, expiring, project-scoped permission flow.
-8. Choose goals, request bounded preparation, review evidence, accept, snooze,
-   dismiss, or safely undo.
+8. Move from reviewed understanding into one guided proactive loop: choose a
+   goal, request one source-linked review, then explicitly turn on quiet
+   background preparation if you want it.
 9. Back up, restore, withdraw, delete, and revoke access with explicit safeguards.
 
 The repository also contains the browser-first managed foundation: isolated
@@ -64,11 +65,11 @@ processed a real payment.
 | Agent connections          | Guided Codex/Claude setup, real-use verification and immediate revocation are implemented; native fresh-session certification is still open |
 | Public cloud release       | Not deployed; hosting, legal, support, and human-pilot gates remain open                                                                    |
 
-The merged foundation and guided agent-connection lifecycle passed their
-recorded integration, broad Vitest, offline evaluation, browser and container
-gates. This branch adds the truthful first-session loop; its focused desktop and
-320px dark-mode journeys pass 2/2 and the complete browser regression passes
-51/51. These are local release gates—not proof of a human usability pilot, live
+The merged foundation, guided connection and truthful first-session lifecycles
+passed their recorded integration, broad Vitest, offline evaluation, browser and
+container gates. The current branch adds the guided proactive-goal loop; its
+isolated real-storage journey passes and the complete browser regression passes
+52/52. These are local release gates—not proof of a human usability pilot, live
 model quality, native-agent compatibility, real billing, or target-host
 operations. See
 [BUILD_STATE.md](BUILD_STATE.md) for commands, exact scope, and known limits.
@@ -118,6 +119,8 @@ the primary flow. Every visible control either works or states why it is
 unavailable.
 
 ![BiBrain first useful loop — synthetic item with owner-reviewed meaning](docs/screenshots/first-session.png)
+
+![BiBrain guided proactive goal — synthetic chosen goal before any preparation](docs/screenshots/proactive-goal.png)
 
 ![BiBrain guided agent connection — synthetic project and no connection key shown](docs/screenshots/agent-connection.png)
 

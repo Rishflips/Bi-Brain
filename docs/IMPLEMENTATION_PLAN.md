@@ -212,6 +212,10 @@ Gate: same authorized project knowledge is available in two clients; unrelated/p
 - [x] Truthful first-session loop derived from durable capture, owner-reviewed
       memory/search and same-project verified connection state; it exits after
       the second saved item. This prepares a human pilot but does not replace it.
+- [x] Guided proactive loop appears only after reusable understanding, moves one
+      chosen goal through real queued/prepared/reviewed states, keeps background
+      help a separate explicit opt-in and remains usable at 320px. This is local
+      product behavior, not live-model quality evidence.
 - [x] Owner settings, spending, worker status, export, and deletion accessible.
 - [x] Clean Ubuntu CI install and container setup verification. (Merged-main run 38889855879 at `5dd6ed0`: `npm ci`, 479 tests, Docker build and non-root/container restart-persistence/auth/worker/backup smoke passed. Other target-host operations remain separate.)
 - [x] Run first-use pilot or mark human usability gate unverified.
