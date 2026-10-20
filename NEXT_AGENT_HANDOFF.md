@@ -10,13 +10,12 @@ user request and `AGENTS.md`; use the available skills where applicable.
 
 ## Latest continuation checkpoint — 2026-10-20
 
-The owner merged the documentation follow-up
-[PR #15](https://github.com/Rishflips/Bi-Brain/pull/15) at
-3fc373d3f1053b5936f5c3f5a5d580be3bbc30a8. Desktop and GitHub main were
-synchronized to that exact merge before codex/project-focus-workspace was
-created.
+The owner merged
+[PR #16](https://github.com/Rishflips/Bi-Brain/pull/16) into `main` at
+`3719f23b3bc74ad4d0ba1bbf43002842357fef98`. Desktop `main` was fast-forwarded
+to that exact merge.
 
-The working branch adds Project Focus to Your brain using only real authorized
+The merged product adds Project Focus to Your brain using only real authorized
 state: accepted understanding or the current source-linked brief, open questions,
 chosen goals, ready review count and retained originals. It provides direct
 capture, detailed-goal navigation and the existing exact handoff preview. Search
@@ -29,9 +28,12 @@ dark mode and 320px containment. The initial full regression exposed summary
 controls and source titles that duplicated existing accessible names; those were
 removed without changing the established tests. The affected app set then passed
 8/8 and the complete production-browser regression passed **53/53 in 3.7
-minutes**. Publication and CI remain to be recorded.
+minutes**. Exact PR-head workflow
+[39421708664](https://github.com/Rishflips/Bi-Brain/actions/runs/39421708664)
+passed in 9m17s, including clean install, audit, full tests, build, 4/4 offline
+evaluation, 53/53 Chromium, Docker/container smoke, Compose and Caddy validation.
 
-This is local deterministic implementation evidence, not a human pilot,
+This is deterministic local and CI implementation evidence, not a human pilot,
 native-client certification, live-model run, payment or hosted release. Preserve
 the owner's unrelated untracked design/logo and licensing files.
 
