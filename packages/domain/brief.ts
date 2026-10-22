@@ -14,6 +14,7 @@ export type BriefItem = {
   target: BriefTarget;
   created_at: string;
   source_id?: string;
+  aspect?: string;
 };
 export type BriefSourceRef = { id: string; project_id: string; body: string; captured_at: string };
 export type BriefJob = { id: string; project_id: string; kind: string; attempts: number; created_at: string; source_id?: string };
@@ -94,6 +95,7 @@ export function buildBrief(input: BriefInput, now: Date): { items: BriefItem[]; 
       evidence,
       target: { type: "gate", id: g.id, version: g.version },
       created_at: g.created_at,
+      aspect: field.aspect,
     });
   }
 
@@ -153,6 +155,7 @@ export function buildBrief(input: BriefInput, now: Date): { items: BriefItem[]; 
       evidence,
       target: { type: "claim", id: c.id, version: c.version },
       created_at: c.created_at,
+      aspect: c.data.aspect,
     });
   }
 

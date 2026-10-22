@@ -29,6 +29,7 @@ export type BriefItem = {
   };
   created_at: string;
   source_id?: string;
+  aspect?: string;
 };
 export type Brief = { items: BriefItem[]; waiting: number };
 export type AskHit =

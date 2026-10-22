@@ -1,12 +1,19 @@
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type BrowserContext, type Page } from "@playwright/test";
 
+// Local pairing is limited to 10 a minute, so pair once and reuse the session.
+type Cookies = Parameters<BrowserContext["addCookies"]>[0];
+let paired: Cookies | null = null;
 async function pair(page: Page) {
+  const nav = page.getByRole("navigation", { name: "Main navigation" });
+  if (paired) await page.context().addCookies(paired);
   await page.goto("/");
-  await page.getByLabel("Installation code").fill("e2e-local-only");
-  await page.getByRole("button", { name: "Open my brain" }).click();
-  await expect(
-    page.getByRole("navigation", { name: "Main navigation" }),
-  ).toBeVisible();
+  if (!paired) {
+    await page.getByLabel("Installation code").fill("e2e-local-only");
+    await page.getByRole("button", { name: "Open my brain" }).click();
+    await expect(nav).toBeVisible();
+    paired = await page.context().cookies();
+  }
+  await expect(nav).toBeVisible();
 }
 
 test("a brain with saved work and nothing to review says it is quiet", async ({
@@ -137,4 +144,129 @@ test("a question over 500 characters is refused before it is sent", async ({
     "Questions can be up to 500 characters.",
   );
   expect(sent).toBe(0);
+});
+
+const decision = "We decided that Northstar beta is invite only.";
+
+test("a found decision can be kept, undone, and never kept twice", async ({
+  page,
+}) => {
+  await pair(page);
+  await page.getByLabel("Save to your brain").fill(decision);
+  await page.getByRole("button", { name: "Save", exact: true }).click();
+  const card = page.getByRole("article").filter({ hasText: "invite only" });
+  await expect(card).toBeVisible();
+  await expect(card.getByText(decision)).toBeVisible();
+  await card.getByRole("button", { name: "Keep as true" }).click();
+  await expect(page.getByText(/kept as a fact/i)).toBeVisible();
+  await expect(card).toHaveCount(0);
+  await page.getByRole("button", { name: "Undo" }).click();
+  await expect(page.getByText(/undone/i)).toBeVisible();
+  const claims = await (
+    await page.request.get("/api/v1/claims?project_id=inbox")
+  ).json();
+  expect(
+    claims.filter((c: any) => JSON.stringify(c.data).includes("invite only"))
+      .length,
+  ).toBe(0);
+});
+
+test("Fix keeps the owner's own wording", async ({ page }) => {
+  await pair(page);
+  await page
+    .getByLabel("Save to your brain")
+    .fill("We decided that Orion pilot is limited to five teams.");
+  await page.getByRole("button", { name: "Save", exact: true }).click();
+  const card = page.getByRole("article").filter({ hasText: "five teams" });
+  await card.getByRole("button", { name: "Fix" }).click();
+  await card
+    .getByLabel("Your wording")
+    .fill("limited to five teams until December");
+  await card.getByRole("button", { name: "Save my version" }).click();
+  await expect(page.getByText(/your wording/i)).toBeVisible();
+  const claims = await (
+    await page.request.get("/api/v1/claims?project_id=inbox")
+  ).json();
+  expect(
+    claims.some(
+      (c: any) => c.data.value === "limited to five teams until December",
+    ),
+  ).toBe(true);
+});
+
+test("an item acted on in another tab is refused and the brief refreshes", async ({
+  page,
+  context,
+}) => {
+  await pair(page);
+  await page
+    .getByLabel("Save to your brain")
+    .fill("We decided that Vega launch is postponed to spring.");
+  await page.getByRole("button", { name: "Save", exact: true }).click();
+  const card = page.getByRole("article").filter({ hasText: "spring" });
+  await expect(card).toBeVisible();
+  const other = await context.newPage();
+  await other.goto("/");
+  await other
+    .getByRole("article")
+    .filter({ hasText: "spring" })
+    .getByRole("button", { name: "Keep as true" })
+    .click();
+  await expect(other.getByText(/kept as a fact/i)).toBeVisible();
+  await card.getByRole("button", { name: "Keep as true" }).click();
+  await expect(page.getByRole("alert")).toContainText(/changed|already/i);
+  await expect(card).toHaveCount(0);
+});
+
+test("dismiss can be undone before it is sent", async ({ page }) => {
+  await pair(page);
+  await page
+    .getByLabel("Save to your brain")
+    .fill("We decided that Lyra docs is public.");
+  await page.getByRole("button", { name: "Save", exact: true }).click();
+  const card = page.getByRole("article").filter({ hasText: "public" });
+  let sent = 0;
+  await page.route("**/api/v1/proposals/gate/*/review", (route) => {
+    sent += 1;
+    return route.continue();
+  });
+  await card.getByRole("button", { name: "Dismiss" }).click();
+  await expect(card).toHaveCount(0);
+  await page.getByRole("button", { name: "Undo" }).click();
+  await expect(
+    page.getByRole("article").filter({ hasText: "public" }),
+  ).toBeVisible();
+  await page.waitForTimeout(6500);
+  expect(sent).toBe(0);
+});
+
+test("the brief never shows more than three items", async ({ page }) => {
+  await pair(page);
+  for (const name of ["Atlas", "Borealis", "Cygnus", "Draco"]) {
+    await page
+      .getByLabel("Save to your brain")
+      .fill(`We decided that ${name} project is paused.`);
+    await page.getByRole("button", { name: "Save", exact: true }).click();
+    await expect(page.getByText(/kept exactly as you wrote it/i)).toBeVisible();
+  }
+  await expect(page.getByRole("article")).toHaveCount(3);
+  await expect(page.getByText(/\d+ more waiting/i)).toBeVisible();
+});
+
+test("a double click on Keep sends one request", async ({ page }) => {
+  await pair(page);
+  await page
+    .getByLabel("Save to your brain")
+    .fill("We decided that Pavo tour is sold out.");
+  await page.getByRole("button", { name: "Save", exact: true }).click();
+  const card = page.getByRole("article").filter({ hasText: "sold out" });
+  await expect(card).toBeVisible();
+  let sent = 0;
+  await page.route("**/api/v1/proposals/gate/*/review", (route) => {
+    sent += 1;
+    return route.continue();
+  });
+  await card.getByRole("button", { name: "Keep as true" }).dblclick();
+  await expect(page.getByText(/kept as a fact/i)).toBeVisible();
+  expect(sent).toBe(1);
 });

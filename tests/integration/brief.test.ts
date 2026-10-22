@@ -34,6 +34,19 @@ describe("buildBrief", () => {
     expect(out.items[2]).toMatchObject({ kind: "agent_memory", why: expect.stringContaining("Claude Code") });
   });
 
+  it("carries the kind of fact on gate and stale items", () => {
+    const input = empty();
+    input.gates.push(entity("gate", "g-status", { status: "queued", entity: "Beta", field: { aspect: "status", value: "paused" }, evidence: [ev("s1", "Beta is paused")], actor: "owner" }));
+    input.claims.push(entity("claim", "c-beta", { status: "current", entity: "beta launch", aspect: "statement", value: "opens November 14", recorded_at: "2026-09-20T09:00:00Z", evidence: [ev("s5", "opens November 14")] }));
+    input.sources.push(
+      { id: "s6", project_id: "p1", body: "beta launch", captured_at: "2026-10-10T09:00:00Z" },
+      { id: "s7", project_id: "p1", body: "beta launch", captured_at: "2026-10-12T09:00:00Z" },
+    );
+    const items = buildBrief(input, now).items;
+    expect(items.find((i) => i.kind === "memory")?.aspect).toBe("status");
+    expect(items.find((i) => i.kind === "stale")?.aspect).toBe("statement");
+  });
+
   it("flags a fact as stale only when it is old and newer originals mention it", () => {
     const input = empty();
     input.claims.push(entity("claim", "c-beta", { status: "current", entity: "beta launch", aspect: "statement", value: "opens November 14", recorded_at: "2026-09-20T09:00:00Z", evidence: [ev("s5", "opens November 14")] }));
