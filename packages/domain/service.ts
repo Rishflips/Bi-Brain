@@ -45,6 +45,7 @@ import {
   type AdvisoryRecord,
 } from "./decision-advisory.ts";
 import { extractReviewableMemory } from "./memory-understanding.ts";
+import { buildBrief, type BriefJob } from "./brief.ts";
 import {
   attemptReferencesSource,
   claimDecisionAttempt,
@@ -553,6 +554,7 @@ export class Brain {
         this.invalidate(v.project_id);
         const job = this.enqueue(v.project_id, "derive_brief", {
           principal: p,
+          source_id: id,
         });
         if (!fromGate && !quarantined && v.visibility === "project") {
           // A bounded deterministic grammar can suggest one unambiguous memory
@@ -3646,6 +3648,78 @@ export class Brain {
       this.store.run("DELETE FROM imports WHERE id=?", id);
       return { imported: true };
     });
+  }
+  brief(p: Principal) {
+    this.owner(p);
+    const projects = this.projects(p) as { id: string }[];
+    const current = (project: string, list: unknown) =>
+      Array.isArray(list) && list.length > 0 && (list as Evidence[]).every((e) => this.evidenceCurrent(project, e));
+    const gates = this.entities(p, "gate").filter(
+      (g) => g.data.status === "queued" && current(g.project_id, g.data.evidence),
+    );
+    const proposals = this.entities(p, "proposal").filter(
+      (x) => x.data.status === "ready" && current(x.project_id, x.data.evidence),
+    );
+    const claims = projects.flatMap((project) => this.currentClaims(p, project.id));
+    const failedJobs = this.store
+      .all<{ id: string; project_id: string; kind: string; attempts: number; created_at: string; payload: string }>(
+        "SELECT id,project_id,kind,attempts,created_at,payload FROM jobs WHERE status='failed' AND kind IN ('derive_brief','review_changed_assumption') ORDER BY created_at DESC LIMIT 20",
+      )
+      .map(({ payload, ...job }): BriefJob => {
+        let source_id: unknown;
+        try {
+          source_id = JSON.parse(payload)?.source_id;
+        } catch {
+          source_id = undefined;
+        }
+        return typeof source_id === "string" ? { ...job, source_id } : job;
+      });
+    const sources = projects.flatMap((project) =>
+      this.sources(p, project.id).map((s) => ({
+        id: s.id,
+        project_id: s.project_id,
+        body: s.body,
+        captured_at: s.captured_at,
+      })),
+    );
+    // Grants carry no display name, so every connected agent is named generically.
+    const agentNames = Object.fromEntries(
+      (this.connections(p) as unknown as { id: string }[]).map((g) => [g.id, "A connected agent"]),
+    );
+    return buildBrief(
+      {
+        gates,
+        proposals,
+        claims,
+        failedJobs,
+        sources,
+        dismissed: this.store.setting<string[]>("brief_dismissed", []),
+        confirmations: this.store.setting<Record<string, string>>("claim_confirmations", {}),
+        agentNames,
+      },
+      this.clock(),
+    );
+  }
+  dismissBriefItem(p: Principal, input: unknown) {
+    this.owner(p);
+    const v = z.object({ signature: z.string().min(1).max(300) }).strict().parse(input);
+    const list = this.store.setting<string[]>("brief_dismissed", []);
+    if (!list.includes(v.signature)) this.store.set("brief_dismissed", [...list, v.signature].slice(-500));
+    return { dismissed: true as const };
+  }
+  confirmClaim(p: Principal, id: string) {
+    this.owner(p);
+    id = z.string().min(1).max(100).parse(id);
+    const claim = this.store.get<{ project_id: string; kind: string }>(
+      "SELECT project_id,kind FROM entities WHERE id=?",
+      id,
+    );
+    if (!claim || claim.kind !== "claim" || !this.currentClaims(p, claim.project_id).some((c) => c.id === id))
+      throw new BrainError("NOT_FOUND", "Fact unavailable.", 404);
+    const confirmed_at = this.now();
+    const map = this.store.setting<Record<string, string>>("claim_confirmations", {});
+    this.store.set("claim_confirmations", { ...map, [id]: confirmed_at });
+    return { id, confirmed_at };
   }
   status(p: Principal) {
     this.owner(p);
