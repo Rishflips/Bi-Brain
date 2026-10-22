@@ -468,3 +468,56 @@ test("Fix puts the cursor in the wording box and Cancel returns to Keep", async 
     card.getByRole("button", { name: "Keep as true" }),
   ).toBeFocused();
 });
+
+test("project cards show real counts and open the project that was clicked", async ({
+  page,
+}) => {
+  await pair(page);
+  const name = `Cards ${Date.now()}`;
+  // Writes are rate limited per minute and this file writes a lot, so wait and retry.
+  let status = 0;
+  for (let attempt = 0; attempt < 12 && status !== 200; attempt++) {
+    status = await page.evaluate(async (title) => {
+      const session = await (await fetch("/api/v1/session")).json();
+      const res = await fetch("/api/v1/projects", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-Brain-CSRF": session.csrf,
+          "Idempotency-Key": crypto.randomUUID(),
+        },
+        body: JSON.stringify({ title }),
+      });
+      return res.status;
+    }, name);
+    if (status !== 200) await page.waitForTimeout(5000);
+  }
+  expect(status).toBe(200);
+  await page.reload();
+  const inbox = page.locator(".tv-proj").filter({ hasText: "Inbox" });
+  await expect(inbox).toContainText(/\d+ facts?/);
+  await expect(inbox).toContainText("No agent connected");
+  await expect(page.locator(".tv-state")).toHaveText(
+    /Caught up|\d+ to look at|Background help off/,
+  );
+  const other = page.locator(".tv-proj").filter({ hasText: name });
+  await expect(other).toContainText("0 facts");
+  // Reachable and operable from the keyboard.
+  const open = other.getByRole("button", { name });
+  await open.focus();
+  await page.keyboard.press("Enter");
+  await expect(page.getByRole("heading", { name: "Your brain" })).toBeVisible();
+  await expect(page.getByRole("heading", { name, level: 2 })).toBeVisible();
+});
+
+test("Today fits a 320px screen in dark appearance", async ({ page }) => {
+  await page.setViewportSize({ width: 320, height: 720 });
+  await page.emulateMedia({ colorScheme: "dark" });
+  await pair(page);
+  await expect(page.locator(".tv-state")).toBeVisible();
+  const width = await page.evaluate(() => document.documentElement.scrollWidth);
+  expect(width).toBeLessThanOrEqual(320);
+  await expect(
+    page.getByLabel(/save to your brain|ask your brain/i),
+  ).toBeVisible();
+});

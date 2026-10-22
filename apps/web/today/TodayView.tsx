@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { BriefCard, friendlyError } from "./BriefCard.tsx";
+import { ProjectCards } from "./ProjectCards.tsx";
 import { SaveAskBar } from "./SaveAskBar.tsx";
 import type { Brief, TodayProps } from "./types.ts";
 import { useUndoToast } from "./useUndoToast.tsx";
@@ -10,6 +11,8 @@ export function TodayView(props: TodayProps) {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [hidden, setHidden] = useState<Set<string>>(new Set());
   const [actionError, setActionError] = useState<string | null>(null);
+  // Bumped when the owner changes something, so project fact counts are read again.
+  const [changes, setChanges] = useState(0);
   const { toast, show } = useUndoToast();
   const mounted = useRef(true);
   const pending = useRef(
@@ -27,6 +30,7 @@ export function TodayView(props: TodayProps) {
       setLoadError(null);
     } catch (e) {
       if (!mounted.current) return;
+      props.onBriefCount?.(null);
       setLoadError(
         e instanceof Error ? e.message : "Your brain is unavailable.",
       );
@@ -238,6 +242,7 @@ export function TodayView(props: TodayProps) {
                 onOpenSource={props.onOpenSource}
                 onDone={(message, undo) => {
                   setActionError(null);
+                  setChanges((n) => n + 1);
                   show(
                     message,
                     undo
@@ -248,6 +253,7 @@ export function TodayView(props: TodayProps) {
                             setActionError(friendlyError(e));
                             throw e;
                           } finally {
+                            setChanges((n) => n + 1);
                             await loadBrief();
                             props.onChanged();
                           }
@@ -305,6 +311,18 @@ export function TodayView(props: TodayProps) {
           </p>
         )}
         {toast}
+      </div>
+      <div className="tv-section" aria-labelledby="tv-proj-h">
+        <div className="tv-section-head">
+          <h2 id="tv-proj-h">Projects</h2>
+        </div>
+        <ProjectCards
+          api={api}
+          projects={props.projects}
+          agentNamesByProject={props.agentNamesByProject}
+          refreshKey={`${props.sourceCount}:${changes}`}
+          onOpen={props.onOpenProject}
+        />
       </div>
     </section>
   );

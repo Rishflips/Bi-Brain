@@ -22,6 +22,7 @@ test("a new brain shows three ways to start and no fake activity", async ({
     page.getByRole("button", { name: "Choose an agent" }),
   ).toBeVisible();
   await expect(page.getByText(/things to look at/i)).toHaveCount(0);
+  await expect(page.locator(".tv-state")).toHaveText("Empty brain");
 
   await page.setViewportSize({ width: 320, height: 700 });
   const overflow = await page.evaluate(

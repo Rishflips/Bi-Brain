@@ -58,5 +58,5 @@ export type TodayProps = {
   onOpenProject: (projectId: string) => void;
   onNavigate: (to: "Your brain" | "Connections") => void;
   onChanged: () => void;
-  onBriefCount?: (n: number) => void;
+  onBriefCount?: (n: number | null) => void;
 };
