@@ -29,4 +29,27 @@ describe("ask ranking", () => {
   it("returns nothing when no word matches", () => {
     expect(rankAnswers("pricing", [claim], [src("s1", "Beta", "opens")])).toEqual([]);
   });
+
+  it("keeps short tokens that contain a digit", () => {
+    expect(questionWords("Q3?")).toEqual(["q3"]);
+    expect(questionWords("What happens on 14?")).toEqual(["happen", "14"]);
+    expect(questionWords("is v2 ok")).toEqual(["v2"]);
+  });
+
+  it("keeps words with combining marks whole and matches them", () => {
+    expect(questionWords("தமிழ்")).toEqual(["தமிழ்"]);
+    const hits = rankAnswers("தமிழ்", [], [src("s9", "Note", "இது தமிழ் குறிப்பு")]);
+    expect(hits.map((h) => h.id)).toEqual(["s9"]);
+  });
+
+  it("never returns a fact without evidence", () => {
+    const bare = { ...claim, id: "c2", data: { ...claim.data, evidence: [] } };
+    const missing = { ...claim, id: "c3", data: { ...claim.data, evidence: undefined } };
+    expect(rankAnswers("beta", [bare, missing], [])).toEqual([]);
+  });
+
+  it("falls back to the title when the body is empty", () => {
+    const [hit] = rankAnswers("timeline", [], [src("s5", "Beta timeline", "")]);
+    expect(hit).toMatchObject({ type: "original", snippet: "Beta timeline" });
+  });
 });

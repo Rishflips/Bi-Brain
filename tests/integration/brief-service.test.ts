@@ -87,6 +87,20 @@ describe("Brain.ask", () => {
     expect(() => b.ask(owner, { q: "x".repeat(501) })).toThrow();
   });
 
+  it("never returns withdrawn sources or retired facts", () => {
+    const { b } = setup();
+    const saved = b.capture(owner, { title: "Decision", body: "We decided that Northstar beta is invite only." }) as any;
+    const gate = b.brief(owner).items[0];
+    const reviewed = b.reviewGate(owner, gate.target.id, { action: "accept", expected_version: gate.target.version }) as any;
+    expect(b.ask(owner, { q: "Is the beta invite only?" }).hits[0]).toMatchObject({ type: "fact" });
+    const claim = b.entity(owner, reviewed.claim_ids[0]);
+    b.retireClaim(owner, claim.id, claim.version);
+    const afterRetire = b.ask(owner, { q: "Is the beta invite only?" });
+    expect(afterRetire.hits.some((h) => h.type === "fact")).toBe(false);
+    b.removeSource(owner, saved.source_id, 1, false);
+    expect(b.ask(owner, { q: "Is the beta invite only?" })).toMatchObject({ answered: false, hits: [] });
+  });
+
   it("is owner-only over HTTP and returns hits for the paired owner", async () => {
     const { b } = setup();
     const app = await createApp(b, { pairSecret: "test-code", static: false });

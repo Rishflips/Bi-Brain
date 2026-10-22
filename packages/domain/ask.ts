@@ -10,8 +10,8 @@ const STOP = new Set(
 );
 
 export function questionWords(question: string): string[] {
-  const words = question.toLocaleLowerCase().match(/[\p{L}\p{N}$]+/gu) ?? [];
-  return [...new Set(words.filter((w) => w.length > 2 && !STOP.has(w)).map((w) => w.replace(/s$/u, "")))];
+  const words = question.toLocaleLowerCase().match(/[\p{L}\p{M}\p{N}$]+/gu) ?? [];
+  return [...new Set(words.filter((w) => (w.length > 2 || /\p{N}/u.test(w)) && !STOP.has(w)).map((w) => w.replace(/s$/u, "")))];
 }
 
 function overlap(words: string[], text: string) {
@@ -19,7 +19,7 @@ function overlap(words: string[], text: string) {
   return words.reduce((n, w) => n + (own.has(w) ? 1 : 0), 0);
 }
 
-function bestSentence(body: string, words: string[]) {
+function bestSentence(body: string, title: string, words: string[]) {
   const parts = body.split(/(?<=[.?!])\s+|\n+/u).filter(Boolean);
   let best = parts[0] ?? body;
   let score = -1;
@@ -27,6 +27,7 @@ function bestSentence(body: string, words: string[]) {
     const n = overlap(words, part);
     if (n > score) { score = n; best = part; }
   }
+  if (!best.trim()) best = title;
   return Array.from(best).length > 240 ? Array.from(best).slice(0, 237).join("") + "…" : best;
 }
 
@@ -38,7 +39,7 @@ export function rankAnswers(question: string, claims: Entity[], sources: Source[
       const text = c.data.aspect === "status" ? `${c.data.entity} is ${c.data.value}.` : `${c.data.entity}: ${c.data.value}`;
       return { c, text, n: overlap(words, text) };
     })
-    .filter((x) => x.n > 0)
+    .filter((x) => x.n > 0 && (x.c.data.evidence ?? []).length > 0)
     .sort((a, b) => b.n - a.n);
   const covered = new Set(facts.flatMap((x) => (x.c.data.evidence ?? []).map((e: { source_id: string }) => e.source_id)));
   const originals = sources
@@ -53,7 +54,7 @@ export function rankAnswers(question: string, claims: Entity[], sources: Source[
     })),
     ...originals.map(({ s }) => ({
       type: "original" as const, id: s.id, project_id: s.project_id, title: s.title,
-      snippet: bestSentence(s.body, words), source_version: s.version,
+      snippet: bestSentence(s.body, s.title, words), source_version: s.version,
     })),
   ];
   return hits.slice(0, limit);
