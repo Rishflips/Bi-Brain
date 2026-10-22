@@ -490,7 +490,8 @@ test("project cards show real counts and open the project that was clicked", asy
       });
       return res.status;
     }, name);
-    if (status !== 200) await page.waitForTimeout(5000);
+    if (status !== 429) break;
+    await page.waitForTimeout(5000);
   }
   expect(status).toBe(200);
   await page.reload();
@@ -514,10 +515,29 @@ test("Today fits a 320px screen in dark appearance", async ({ page }) => {
   await page.setViewportSize({ width: 320, height: 720 });
   await page.emulateMedia({ colorScheme: "dark" });
   await pair(page);
-  await expect(page.locator(".tv-state")).toBeVisible();
+  const state = page.locator(".tv-state");
+  await expect(state).toBeVisible();
+  const clipped = await state.evaluate((el) => el.scrollWidth > el.clientWidth);
+  expect(clipped).toBe(false);
   const width = await page.evaluate(() => document.documentElement.scrollWidth);
   expect(width).toBeLessThanOrEqual(320);
   await expect(
     page.getByLabel(/save to your brain|ask your brain/i),
   ).toBeVisible();
+});
+
+test("the header says so when the Brief cannot be checked", async ({
+  page,
+}) => {
+  await page.route("**/api/v1/brief", (route) =>
+    route.fulfill({
+      status: 500,
+      contentType: "application/json",
+      body: JSON.stringify({ error: { code: "INTERNAL", message: "Down." } }),
+    }),
+  );
+  await pair(page);
+  await expect(page.locator(".tv-state")).toHaveText(
+    "Couldn't check for changes",
+  );
 });

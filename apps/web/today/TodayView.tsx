@@ -30,7 +30,7 @@ export function TodayView(props: TodayProps) {
       setLoadError(null);
     } catch (e) {
       if (!mounted.current) return;
-      props.onBriefCount?.(null);
+      props.onBriefCount?.("unavailable");
       setLoadError(
         e instanceof Error ? e.message : "Your brain is unavailable.",
       );

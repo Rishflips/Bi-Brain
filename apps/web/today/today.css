@@ -502,3 +502,14 @@
   color: var(--muted);
   font-size: 13px;
 }
+@media (max-width: 420px) {
+  .masthead {
+    flex-wrap: wrap;
+  }
+  .tv-state {
+    order: 3;
+    flex-basis: 100%;
+    overflow: visible;
+    white-space: normal;
+  }
+}

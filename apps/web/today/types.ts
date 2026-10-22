@@ -58,5 +58,6 @@ export type TodayProps = {
   onOpenProject: (projectId: string) => void;
   onNavigate: (to: "Your brain" | "Connections") => void;
   onChanged: () => void;
-  onBriefCount?: (n: number | null) => void;
+  /** null: not loaded yet. "unavailable": the last check failed. */
+  onBriefCount?: (n: number | null | "unavailable") => void;
 };

@@ -365,20 +365,24 @@ function App() {
   const [searchResults, setSearchResults] = useState<Source[]>([]);
   const [knowledgePages, setKnowledgePages] = useState<any[]>([]);
   const [knowledgeProject, setKnowledgeProject] = useState("");
-  const [briefCount, setBriefCount] = useState<number | null>(null);
+  const [briefCount, setBriefCount] = useState<number | null | "unavailable">(
+    null,
+  );
   // Connections reports no client name, so a verified grant is shown generically.
   const brainState =
     notes.length === 0
       ? "Empty brain"
-      : !prefs
-        ? ""
-        : !prefs.enabled
-          ? "Background help off"
-          : briefCount === null
-            ? "Checking…"
-            : briefCount > 0
-              ? `${briefCount} to look at`
-              : "Caught up";
+      : briefCount === "unavailable"
+        ? "Couldn't check for changes"
+        : !prefs
+          ? ""
+          : !prefs.enabled
+            ? "Background help off"
+            : briefCount === null
+              ? "Checking…"
+              : briefCount > 0
+                ? `${briefCount} to look at`
+                : "Caught up";
   const agentNamesByProject = useMemo(() => {
     const map: Record<string, string[]> = {};
     for (const g of grants)
@@ -486,6 +490,7 @@ function App() {
       status: { jobs: [] },
     });
     setPrefs(null);
+    setBriefCount(null);
     knowledgeReadSeq.current += 1;
     setKnowledgeProject("");
     setKnowledgePages([]);
