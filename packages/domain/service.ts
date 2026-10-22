@@ -2327,7 +2327,7 @@ export class Brain {
       .object({
         action: z.enum(["accept", "reject", "undo"]),
         expected_version: z.number().int().positive(),
-        value: z.string().trim().min(1).max(2000).optional(),
+        value: z.string().trim().min(1).max(1000).optional(),
       })
       .strict()
       .parse(input);
@@ -2348,7 +2348,10 @@ export class Brain {
         );
       const acceptedValue = v.value ?? gate.data.field?.value;
       if (v.action === "undo") {
-        if (gate.data.status !== "accepted" || !gate.data.field || !(gate.data.claim_ids ?? []).length)
+        if (gate.data.status !== "accepted" ||
+          gate.data.type === "intent" ||
+          gate.data.intent_id ||
+          !gate.data.field || !(gate.data.claim_ids ?? []).length)
           throw new BrainError(
             "VERSION_CONFLICT",
             "Only a kept memory can be undone.",
@@ -2424,7 +2427,7 @@ export class Brain {
             retirement_reason: "owner_undo",
           });
         for (const { c, data } of restore) this.revise(c, data);
-        this.revise(gate, {
+        const revertedGate = this.revise(gate, {
           ...gate.data,
           status: "reverted",
           reverted_at: this.now(),
@@ -2433,6 +2436,7 @@ export class Brain {
           reviewed: true,
           claim_ids: restore.map(({ c }) => c.id),
           intent_id: undefined,
+          gate_version: revertedGate.version,
         };
       }
       if (gate.data.status !== "queued")
@@ -2587,14 +2591,13 @@ export class Brain {
           intentId = target.id;
         }
       }
-      this.revise(gate, {
+      const revisedGate = this.revise(gate, {
         ...gate.data,
         status: v.action === "accept" ? "accepted" : "rejected",
         reviewed_at: this.now(),
         claim_ids: claims,
         intent_id: intentId,
       });
-      const revisedGate = this.entity(p, gate.id);
       return {
         reviewed: true,
         claim_ids: claims,

@@ -78,4 +78,37 @@ describe("gate review", () => {
     ).toThrow(/wording/i);
     expect(current(b).filter((c) => c.data.aspect === "status")).toEqual([]);
   });
+
+  it("will not half-undo an intent gate that also carries a claim", () => {
+    const { b } = setup();
+    const gate = b.propose(owner, {
+      project_id: "inbox",
+      title: "Beta",
+      text: "Review the Northstar beta list",
+      type: "intent",
+      entity: "Northstar",
+      field: { aspect: "statement", value: "beta list" },
+      intent: { action: "propose" },
+    });
+    expect(gate.disposition).toBe("queue");
+    const r = b.reviewGate(owner, gate.proposal_id, { action: "accept", expected_version: 1 }) as any;
+    expect(r.intent_id).toBeTruthy();
+    const goal = b.entity(owner, r.intent_id);
+    expect(() => b.reviewGate(owner, gate.proposal_id, { action: "undo", expected_version: r.gate_version })).toThrow(/kept memory/i);
+    expect(b.entity(owner, r.intent_id).version).toBe(goal.version);
+    expect(current(b).some((c) => c.data.value === "beta list")).toBe(true);
+  });
+
+  it("rejects wording longer than a statement can hold", () => {
+    const { b, gateId, version } = setup();
+    expect(() => b.reviewGate(owner, gateId, { action: "accept", expected_version: version, value: "x".repeat(1001) })).toThrow();
+    expect(current(b)).toEqual([]);
+  });
+
+  it("returns the reverted gate version on undo", () => {
+    const { b, gateId, version } = setup();
+    const r = b.reviewGate(owner, gateId, { action: "accept", expected_version: version }) as any;
+    const u = b.reviewGate(owner, gateId, { action: "undo", expected_version: r.gate_version }) as any;
+    expect(u.gate_version).toBe(r.gate_version + 1);
+  });
 });
