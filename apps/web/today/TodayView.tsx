@@ -29,7 +29,10 @@ export function TodayView(props: TodayProps) {
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      const tag = (document.activeElement as HTMLElement | null)?.tagName ?? "";
+      if (e.ctrlKey || e.metaKey || e.altKey) return;
+      const el = document.activeElement as HTMLElement | null;
+      const tag = el?.tagName ?? "";
+      if (el?.isContentEditable) return;
       if (e.key === "/" && !/^(INPUT|TEXTAREA|SELECT)$/u.test(tag)) {
         e.preventDefault();
         document.getElementById("tv-bar")?.focus();

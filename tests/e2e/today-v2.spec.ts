@@ -56,7 +56,7 @@ test("saving from the bar keeps the original across reload", async ({
     .fill(
       "Northstar launch checklist: invites, pricing page, onboarding copy.",
     );
-  await page.getByRole("button", { name: "Save", exact: true }).first().click();
+  await page.getByRole("button", { name: "Save", exact: true }).click();
   await expect(page.getByText(/kept exactly as you wrote it/i)).toBeVisible();
   await page.reload();
   await page
@@ -76,7 +76,7 @@ test("a failed save keeps the draft and claims nothing", async ({ page }) => {
   );
   const bar = page.getByLabel("Save to your brain");
   await bar.fill("Draft that must survive");
-  await page.getByRole("button", { name: "Save", exact: true }).first().click();
+  await page.getByRole("button", { name: "Save", exact: true }).click();
   await expect(page.getByRole("alert")).toContainText(/not saved/i);
   await expect(bar).toHaveValue("Draft that must survive");
   await expect(page.getByText(/kept exactly as you wrote it/i)).toHaveCount(0);
@@ -89,12 +89,12 @@ test("asking answers from saved material, says when nothing matches, and validat
   await page
     .getByLabel("Save to your brain")
     .fill("The private beta opens on November 14 for 50 invited builders.");
-  await page.getByRole("button", { name: "Save", exact: true }).first().click();
+  await page.getByRole("button", { name: "Save", exact: true }).click();
   await expect(page.getByText(/kept exactly as you wrote it/i)).toBeVisible();
   const bar = page.getByLabel(/save to your brain|ask your brain/i);
   await bar.fill("When does the beta open?");
   await expect(
-    page.getByRole("button", { name: "Ask", exact: true }).first(),
+    page.getByRole("button", { name: "Ask", exact: true }),
   ).toBeVisible();
   await page.keyboard.press("Enter");
   await expect(page.getByText("From your brain")).toBeVisible();
@@ -107,4 +107,34 @@ test("asking answers from saved material, says when nothing matches, and validat
   await bar.fill("??");
   await page.keyboard.press("Enter");
   await expect(page.getByRole("alert")).toContainText(/a few words/i);
+});
+
+test("a two-line note that ends in a question mark is saved, not asked", async ({
+  page,
+}) => {
+  await pair(page);
+  await page
+    .getByLabel(/save to your brain|ask your brain/i)
+    .fill("Pricing review notes for Zephyr\nWho owns the final call on tiers?");
+  await page.keyboard.press("Enter");
+  await expect(page.getByText(/kept exactly as you wrote it/i)).toBeVisible();
+  await expect(page.getByText("From your brain")).toHaveCount(0);
+});
+
+test("a question over 500 characters is refused before it is sent", async ({
+  page,
+}) => {
+  await pair(page);
+  let sent = 0;
+  await page.route("**/api/v1/ask*", (route) => {
+    sent += 1;
+    return route.continue();
+  });
+  await page.getByRole("button", { name: "Ask mode" }).click();
+  await page.getByLabel("Ask your brain").fill("word ".repeat(120));
+  await page.getByRole("button", { name: "Ask", exact: true }).click();
+  await expect(page.getByRole("alert")).toContainText(
+    "Questions can be up to 500 characters.",
+  );
+  expect(sent).toBe(0);
 });

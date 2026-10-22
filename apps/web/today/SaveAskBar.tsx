@@ -13,6 +13,7 @@ type Result =
   | null;
 
 const LIMIT = 100_000;
+const QUESTION_LIMIT = 500;
 
 export function SaveAskBar({ api, projects, onSaved, onOpenSource }: Props) {
   const [text, setText] = useState("");
@@ -23,12 +24,20 @@ export function SaveAskBar({ api, projects, onSaved, onOpenSource }: Props) {
   const [result, setResult] = useState<Result>(null);
   const area = useRef<HTMLTextAreaElement>(null);
   const inFlight = useRef(false);
+  const latest = useRef("");
   const ask = mode === "ask";
 
   function change(value: string) {
+    latest.current = value;
     setText(value);
     setError(null);
-    if (/\?\s*$/u.test(value)) setMode("ask");
+    // Only a short single line that ends in "?" switches to Ask. A pasted note is never turned into a question.
+    if (
+      /\?\s*$/u.test(value) &&
+      !/[\r\n]/u.test(value.trim()) &&
+      Array.from(value.trim()).length <= QUESTION_LIMIT
+    )
+      setMode("ask");
   }
 
   async function submit() {
@@ -44,16 +53,25 @@ export function SaveAskBar({ api, projects, onSaved, onOpenSource }: Props) {
       setError("That is over 100,000 characters. Split it into smaller notes.");
       return;
     }
+    if (ask && Array.from(value).length > QUESTION_LIMIT) {
+      setError("Questions can be up to 500 characters.");
+      return;
+    }
     inFlight.current = true;
     setBusy(true);
     setError(null);
+    setResult(null);
+    const submitted = text;
     try {
       if (ask) {
         const out = await api<{ question: string; hits: AskHit[] }>(
           `/ask?q=${encodeURIComponent(value)}`,
         );
         setResult({ kind: "answer", question: out.question, hits: out.hits });
-        setText("");
+        if (latest.current === submitted) {
+          latest.current = "";
+          setText("");
+        }
         setMode("save");
       } else {
         const firstLine = value.split("\n")[0];
@@ -72,7 +90,10 @@ export function SaveAskBar({ api, projects, onSaved, onOpenSource }: Props) {
           title,
           project: projects.find((p) => p.id === project)?.title ?? "Inbox",
         });
-        setText("");
+        if (latest.current === submitted) {
+          latest.current = "";
+          setText("");
+        }
         onSaved(saved.source_id);
       }
     } catch (e) {
@@ -87,6 +108,16 @@ export function SaveAskBar({ api, projects, onSaved, onOpenSource }: Props) {
     }
   }
 
+  // A fact is only shown with a non-empty quote.
+  const shown =
+    result?.kind === "answer"
+      ? result.hits.filter(
+          (h) =>
+            h.type !== "fact" ||
+            h.evidence.some((ev) => ev.quote.trim().length > 0),
+        )
+      : [];
+
   return (
     <div className="tv-bar-wrap">
       <form
@@ -99,6 +130,9 @@ export function SaveAskBar({ api, projects, onSaved, onOpenSource }: Props) {
         <label className="tv-sr" htmlFor="tv-bar">
           {ask ? "Ask your brain" : "Save to your brain"}
         </label>
+        <span className="tv-sr" aria-live="polite">
+          {ask ? "Ask mode" : "Save mode"}
+        </span>
         <div className="tv-bar-row">
           <textarea
             id="tv-bar"
@@ -130,6 +164,7 @@ export function SaveAskBar({ api, projects, onSaved, onOpenSource }: Props) {
           <div className="tv-seg" role="group" aria-label="What the bar does">
             <button
               type="button"
+              aria-label="Save mode"
               aria-pressed={!ask}
               onClick={() => {
                 setMode("save");
@@ -140,6 +175,7 @@ export function SaveAskBar({ api, projects, onSaved, onOpenSource }: Props) {
             </button>
             <button
               type="button"
+              aria-label="Ask mode"
               aria-pressed={ask}
               onClick={() => {
                 setMode("ask");
@@ -207,11 +243,14 @@ export function SaveAskBar({ api, projects, onSaved, onOpenSource }: Props) {
           <p className="tv-faint">
             You asked: <b>{result.question}</b>
           </p>
-          {result.hits.length === 0 ? (
+          {shown.length === 0 ? (
             <p>Nothing in your brain answers that yet.</p>
           ) : (
-            result.hits.map((h) => {
-              const quote = h.type === "fact" ? h.evidence[0] : undefined;
+            shown.map((h) => {
+              const quote =
+                h.type === "fact"
+                  ? h.evidence.find((ev) => ev.quote.trim().length > 0)
+                  : undefined;
               // A fact is never shown without its quote.
               if (h.type === "fact" && !quote) return null;
               return (
