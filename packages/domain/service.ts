@@ -2327,19 +2327,31 @@ export class Brain {
       .object({
         action: z.enum(["accept", "reject", "undo"]),
         expected_version: z.number().int().positive(),
+        value: z.string().trim().min(1).max(2000).optional(),
       })
       .strict()
       .parse(input);
+    if (v.value !== undefined && v.action !== "accept")
+      throw new BrainError(
+        "INVALID_INPUT",
+        "Only a kept memory can use your wording.",
+      );
     return this.store.transaction(() => {
       const gate = this.entity(p, id);
       if (gate.kind !== "gate")
         throw new BrainError("INVALID_INPUT", "Not a pending review.");
       requireVersion(gate.version, v.expected_version);
+      if (v.value !== undefined && gate.data.field?.aspect !== "statement")
+        throw new BrainError(
+          "INVALID_INPUT",
+          "Your wording can replace a statement, not a status.",
+        );
+      const acceptedValue = v.value ?? gate.data.field?.value;
       if (v.action === "undo") {
-        if (!gate.data.correction || gate.data.status !== "accepted")
+        if (gate.data.status !== "accepted" || !gate.data.field || !(gate.data.claim_ids ?? []).length)
           throw new BrainError(
             "VERSION_CONFLICT",
-            "Only an approved correction can be undone.",
+            "Only a kept memory can be undone.",
             409,
           );
         const approved = (gate.data.claim_ids as string[]).map((claimId) =>
@@ -2365,7 +2377,7 @@ export class Brain {
             409,
           );
         const restore = (
-          gate.data.conflicts as { id: string; version: number }[]
+          (gate.data.conflicts ?? []) as { id: string; version: number }[]
         ).map((ref) => {
           const c = this.entity(p, ref.id);
           requireVersion(c.version, ref.version + 1);
@@ -2495,7 +2507,8 @@ export class Brain {
         const claim = this.createEntity(gate.project_id, "claim", {
           entity: gate.data.entity,
           aspect: field.aspect,
-          value: field.value,
+          value: acceptedValue,
+          edited_by_owner: v.value !== undefined,
           source_id: source.id,
           source_version: source.version,
           agent: gate.data.actor,
@@ -2581,7 +2594,13 @@ export class Brain {
         claim_ids: claims,
         intent_id: intentId,
       });
-      return { reviewed: true, claim_ids: claims, intent_id: intentId };
+      const revisedGate = this.entity(p, gate.id);
+      return {
+        reviewed: true,
+        claim_ids: claims,
+        intent_id: intentId,
+        gate_version: revisedGate.version,
+      };
     });
   }
   retireClaim(p: Principal, id: string, expected: number) {
