@@ -1,0 +1,1051 @@
+<title>BiBrain Reframe Prototype</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Manrope:wght@400;500;600;700;800&display=swap">
+<style>
+/* Layout: a quiet left rail, one working column; Today is led by the save-or-ask bar and a Brief of at most three decisions. */
+:root {
+  --canvas: #F6F3EC;
+  --canvas-warm: #EFE8D8;
+  --surface: #FFFFFF;
+  --surface-2: #F1EDE4;
+  --text: #121212;
+  --text-2: #676158;
+  --text-3: #8C857A;
+  --line: #DDD6C8;
+  --line-2: #B8AE9C;
+  --primary: #111111;
+  --on-primary: #FFFFFF;
+  --signal: #FABC08;
+  --signal-soft: #FFF1B8;
+  --gold-text: #8A5A00;
+  --focus: #7A4F00;
+  --ok: #16724A;
+  --info: #2856A8;
+  --attn: #A44913;
+  --plate: #FAF8F2;
+  --mark: #FFE38A;
+  --shadow: 0 18px 50px rgb(34 25 8 / 12%);
+  --font-ui: "Manrope", "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
+  --font-data: "IBM Plex Mono", ui-monospace, Consolas, monospace;
+  --r: 14px;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --canvas: #0C0C0D; --canvas-warm: #17130A; --surface: #171719; --surface-2: #202024;
+    --text: #F8F5ED; --text-2: #BBB4A8; --text-3: #8F887D; --line: #37332C; --line-2: #5C5447;
+    --primary: #F8F5ED; --on-primary: #111111; --signal: #FABC08; --signal-soft: #3B300A;
+    --gold-text: #FFD247; --focus: #FFD247; --ok: #65D49B; --info: #8CB7FF; --attn: #FFAA70;
+    --plate: #FAF8F2; --mark: #5A4500; --shadow: 0 18px 50px rgb(0 0 0 / 45%);
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --canvas: #0C0C0D; --canvas-warm: #17130A; --surface: #171719; --surface-2: #202024;
+  --text: #F8F5ED; --text-2: #BBB4A8; --text-3: #8F887D; --line: #37332C; --line-2: #5C5447;
+  --primary: #F8F5ED; --on-primary: #111111; --signal: #FABC08; --signal-soft: #3B300A;
+  --gold-text: #FFD247; --focus: #FFD247; --ok: #65D49B; --info: #8CB7FF; --attn: #FFAA70;
+  --plate: #FAF8F2; --mark: #5A4500; --shadow: 0 18px 50px rgb(0 0 0 / 45%);
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+html, body { min-height: 100%; }
+body {
+  background: var(--canvas); color: var(--text);
+  font-family: var(--font-ui); font-size: 15px; line-height: 1.55;
+  -webkit-font-smoothing: antialiased;
+}
+button, input, textarea, select { font: inherit; color: inherit; }
+button { cursor: pointer; }
+:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; border-radius: 6px; }
+h1, h2, h3 { text-wrap: balance; margin: 0; }
+p { margin: 0; }
+.data { font-family: var(--font-data); font-size: 12px; letter-spacing: 0; }
+.eyebrow { font-size: 11.5px; font-weight: 700; letter-spacing: .09em; text-transform: uppercase; color: var(--gold-text); }
+.muted { color: var(--text-2); }
+.faint { color: var(--text-3); }
+
+/* Shell */
+.top {
+  position: sticky; top: env(safe-area-inset-top, 0px); z-index: 20;
+  display: flex; align-items: center; gap: 14px;
+  padding-block: 12px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  background: color-mix(in srgb, var(--canvas) 92%, transparent);
+  backdrop-filter: blur(10px);
+  border-bottom: 1px solid var(--line);
+}
+body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-area-inset-top, 0px); z-index: 10; background: var(--canvas); }
+.brand { display: flex; align-items: center; gap: 10px; font-weight: 800; font-size: 18px; letter-spacing: -.02em; text-decoration: none; color: var(--text); }
+.brand .plate { width: 34px; height: 34px; border-radius: 9px; background: var(--plate); display: grid; place-items: center; border: 1px solid var(--line); }
+.brand .plate svg { width: 26px; height: 26px; }
+.brand b { color: var(--gold-text); font-weight: 800; }
+.sample { font-size: 11.5px; font-weight: 700; padding: 3px 9px; border-radius: 99px; border: 1px dashed var(--line-2); color: var(--text-2); white-space: nowrap; }
+.top .spacer { flex: 1; }
+.state { display: inline-flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 600; color: var(--text-2); white-space: nowrap; }
+.state .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--line-2); }
+.state.live .dot { background: var(--signal); box-shadow: 0 0 0 0 var(--signal); animation: pulse 2.4s ease-out infinite; }
+.state.calm .dot { background: var(--ok); }
+@keyframes pulse { 0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--signal) 60%, transparent); } 70%, 100% { box-shadow: 0 0 0 8px transparent; } }
+@media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
+.icon-btn { border: 1px solid var(--line); background: var(--surface); border-radius: 10px; height: 36px; min-width: 36px; padding: 0 10px; font-size: 13px; font-weight: 600; }
+
+.shell {
+  display: grid; grid-template-columns: 210px minmax(0, 1fr); gap: 40px;
+  max-width: 1180px; margin: 0 auto;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 28px 80px;
+}
+.rail { position: sticky; top: 92px; align-self: start; display: flex; flex-direction: column; gap: 4px; }
+.rail button {
+  display: flex; align-items: center; gap: 11px; text-align: left;
+  border: 0; background: transparent; padding: 10px 12px; border-radius: 10px;
+  font-weight: 600; color: var(--text-2);
+}
+.rail button svg { width: 18px; height: 18px; flex: none; }
+.rail button:hover { background: var(--surface-2); color: var(--text); }
+.rail button[aria-current="page"] { background: var(--signal-soft); color: var(--text); }
+.rail .badge { margin-left: auto; font-size: 11px; font-weight: 800; min-width: 20px; height: 20px; border-radius: 99px; display: grid; place-items: center; background: var(--primary); color: var(--on-primary); padding: 0 6px; }
+.rail .sep { height: 1px; background: var(--line); margin: 12px 4px; }
+.rail .foot { font-size: 12px; color: var(--text-3); padding: 4px 12px; line-height: 1.45; }
+main { min-width: 0; max-width: 820px; }
+
+/* Buttons */
+.btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; border-radius: 10px; padding: 9px 15px; font-weight: 700; font-size: 14px; border: 1px solid var(--line-2); background: var(--surface); white-space: nowrap; }
+.btn:hover { border-color: var(--text-2); }
+.btn.primary { background: var(--primary); color: var(--on-primary); border-color: var(--primary); }
+.btn.primary:hover { opacity: .9; }
+.btn.ghost { border-color: transparent; background: transparent; color: var(--text-2); }
+.btn.ghost:hover { color: var(--text); background: var(--surface-2); }
+.btn.danger { color: var(--attn); }
+.btn:disabled { opacity: .5; cursor: not-allowed; }
+.btn.sm { padding: 6px 11px; font-size: 13px; }
+.link { border: 0; background: none; padding: 0; color: var(--gold-text); font-weight: 700; text-decoration: underline; text-underline-offset: 3px; }
+
+/* Today */
+.hello { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 8px 16px; margin-bottom: 14px; }
+.hello h1 { font-size: clamp(28px, 4.2vw, 40px); letter-spacing: -.03em; font-weight: 750; line-height: 1.08; }
+.bar {
+  background: var(--surface); border: 1.5px solid var(--line-2); border-radius: 18px;
+  box-shadow: var(--shadow); padding: 8px; display: grid; gap: 8px;
+}
+.bar:focus-within { border-color: var(--text); }
+.bar-row { display: flex; gap: 8px; align-items: flex-end; }
+.bar textarea {
+  flex: 1; min-width: 0; resize: none; border: 0; background: transparent; outline: none;
+  font-size: 17px; line-height: 1.5; padding: 10px 10px 8px; min-height: 48px; max-height: 220px;
+}
+.bar textarea::placeholder { color: var(--text-3); }
+.bar-foot { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; padding: 0 6px 4px; }
+.seg { display: inline-flex; background: var(--surface-2); border-radius: 10px; padding: 3px; }
+.seg button { border: 0; background: transparent; border-radius: 8px; padding: 5px 12px; font-weight: 700; font-size: 13px; color: var(--text-2); }
+.seg button[aria-pressed="true"] { background: var(--surface); color: var(--text); box-shadow: 0 1px 3px rgb(0 0 0 / 12%); }
+.kbd { font-family: var(--font-data); font-size: 11px; border: 1px solid var(--line); border-bottom-width: 2px; border-radius: 5px; padding: 0 5px; color: var(--text-2); }
+.chips { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+.chip { border: 1px solid var(--line); background: transparent; border-radius: 99px; padding: 5px 12px; font-size: 13px; color: var(--text-2); font-weight: 600; }
+.chip:hover { border-color: var(--line-2); color: var(--text); }
+
+.answer { margin-top: 14px; background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); padding: 16px 18px; display: grid; gap: 12px; }
+.answer-head { display: flex; justify-content: space-between; gap: 12px; align-items: baseline; flex-wrap: wrap; }
+.hit { display: grid; gap: 4px; padding-top: 12px; border-top: 1px solid var(--line); }
+.hit:first-of-type { border-top: 0; padding-top: 0; }
+.hit p { font-weight: 600; }
+.cite { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 6px; border: 0; background: none; padding: 0; text-align: left; color: var(--text-2); font-size: 13px; }
+.cite:hover { color: var(--text); }
+.cite .data { color: var(--gold-text); }
+.tag { display: inline-flex; align-items: center; gap: 5px; font-size: 11.5px; font-weight: 700; padding: 2px 8px; border-radius: 99px; border: 1px solid var(--line); color: var(--text-2); white-space: nowrap; }
+.tag.ok { color: var(--ok); border-color: color-mix(in srgb, var(--ok) 40%, transparent); }
+.tag.attn { color: var(--attn); border-color: color-mix(in srgb, var(--attn) 40%, transparent); }
+.tag.info { color: var(--info); border-color: color-mix(in srgb, var(--info) 40%, transparent); }
+.tag.gold { color: var(--gold-text); border-color: color-mix(in srgb, var(--signal) 55%, transparent); background: var(--signal-soft); }
+
+.section { margin-top: 36px; display: grid; gap: 14px; }
+.section-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.section-head h2 { font-size: 19px; letter-spacing: -.015em; font-weight: 750; }
+
+.brief { display: grid; gap: 12px; }
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); padding: 18px 20px; display: grid; gap: 12px; }
+.card-top { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.card h3 { font-size: 17.5px; font-weight: 700; letter-spacing: -.01em; line-height: 1.35; }
+.card .why { color: var(--text-2); font-size: 14px; }
+.before { font-size: 14px; color: var(--text-2); }
+.before s { text-decoration-color: var(--attn); }
+.evidence { display: grid; gap: 8px; }
+.quote { border: 0; background: var(--surface-2); border-radius: 10px; padding: 10px 12px; text-align: left; display: grid; gap: 4px; font-size: 14px; width: 100%; }
+.quote:hover { background: var(--canvas-warm); }
+.quote q { quotes: "\201C" "\201D"; }
+.quote .src { font-size: 12.5px; color: var(--text-2); display: flex; flex-wrap: wrap; gap: 4px 8px; }
+.actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.fix { display: grid; gap: 8px; }
+.fix textarea, .field { width: 100%; border: 1px solid var(--line-2); border-radius: 10px; background: var(--surface); padding: 10px 12px; font-size: 15px; resize: vertical; }
+.fix textarea:focus, .field:focus { outline: 2px solid var(--focus); outline-offset: 0; border-color: transparent; }
+
+.quiet { border: 1px dashed var(--line-2); border-radius: var(--r); padding: 26px 22px; display: flex; gap: 18px; align-items: center; }
+.quiet .ring { width: 44px; height: 44px; flex: none; border-radius: 50%; border: 2px solid var(--ok); display: grid; place-items: center; color: var(--ok); font-weight: 800; }
+.quiet h3 { font-size: 17px; }
+
+.projects { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 12px; }
+.proj { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); padding: 16px 18px; display: grid; gap: 10px; align-content: start; }
+.proj-name { border: 0; background: none; padding: 0; text-align: left; font-size: 16.5px; font-weight: 750; letter-spacing: -.01em; }
+.proj-name:hover { text-decoration: underline; text-underline-offset: 3px; }
+.proj .meta { font-size: 13px; color: var(--text-2); }
+.proj .row { display: flex; justify-content: space-between; align-items: center; gap: 10px; padding-top: 10px; border-top: 1px solid var(--line); font-size: 13px; }
+
+.switch { display: inline-flex; align-items: center; gap: 9px; border: 0; background: none; padding: 0; font-size: 13px; font-weight: 600; color: var(--text-2); }
+.switch .track { width: 36px; height: 21px; border-radius: 99px; background: var(--line-2); position: relative; flex: none; transition: background .2s; }
+.switch .track::after { content: ""; position: absolute; top: 3px; left: 3px; width: 15px; height: 15px; border-radius: 50%; background: var(--surface); transition: transform .2s; }
+.switch[aria-checked="true"] .track { background: var(--primary); }
+.switch[aria-checked="true"] .track::after { transform: translateX(15px); background: var(--signal); }
+
+.steps { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); }
+.step { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); padding: 18px; display: grid; gap: 10px; align-content: start; }
+.step .n { font-family: var(--font-data); font-size: 12px; color: var(--gold-text); }
+.step h3 { font-size: 16px; }
+pre.code { margin: 0; background: var(--surface-2); border-radius: 10px; padding: 10px 12px; font-family: var(--font-data); font-size: 12.5px; overflow-x: auto; white-space: pre; }
+
+/* Your brain */
+.brain { display: grid; grid-template-columns: 200px minmax(0, 1fr); gap: 28px; }
+.plist { display: grid; gap: 4px; align-content: start; }
+.plist button { border: 0; background: none; text-align: left; padding: 9px 12px; border-radius: 10px; font-weight: 600; color: var(--text-2); display: flex; justify-content: space-between; gap: 8px; }
+.plist button:hover { background: var(--surface-2); color: var(--text); }
+.plist button[aria-current="true"] { background: var(--surface); color: var(--text); box-shadow: inset 0 0 0 1px var(--line); }
+.plist .count { font-family: var(--font-data); font-size: 12px; color: var(--text-3); }
+.ptitle { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 12px; align-items: flex-start; }
+.ptitle h1 { font-size: clamp(26px, 3.6vw, 34px); letter-spacing: -.03em; font-weight: 750; }
+.list { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); }
+.item { padding: 14px 18px; border-top: 1px solid var(--line); display: grid; gap: 6px; }
+.item:first-child { border-top: 0; }
+.item-row { display: flex; justify-content: space-between; gap: 12px; align-items: flex-start; }
+.item p.t { font-weight: 600; }
+.empty { padding: 16px 18px; color: var(--text-2); font-size: 14px; }
+.timeline .item { grid-template-columns: 92px minmax(0, 1fr); align-items: baseline; gap: 4px 14px; }
+.timeline .when { font-family: var(--font-data); font-size: 12px; color: var(--text-3); }
+.src-btn { border: 0; background: none; padding: 0; text-align: left; font-weight: 600; }
+.src-btn:hover { text-decoration: underline; text-underline-offset: 3px; }
+.search { display: flex; gap: 8px; margin-bottom: 20px; }
+.search input { flex: 1; min-width: 0; }
+
+/* Connections */
+.agents { display: grid; gap: 12px; }
+.agent { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); padding: 16px 18px; display: grid; grid-template-columns: 44px minmax(0, 1fr) auto; gap: 14px; align-items: center; }
+.agent .logo { width: 44px; height: 44px; border-radius: 12px; display: grid; place-items: center; font-weight: 800; font-size: 15px; background: var(--surface-2); border: 1px solid var(--line); }
+.agent h3 { font-size: 16px; }
+.agent .meta { font-size: 13px; color: var(--text-2); }
+.agent .confirm { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; padding-top: 12px; border-top: 1px solid var(--line); font-size: 14px; }
+.drop { border: 1.5px dashed var(--line-2); border-radius: var(--r); padding: 22px; display: grid; gap: 10px; justify-items: start; }
+.drop.over { background: var(--signal-soft); }
+
+/* Settings */
+.set { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); }
+.set-row { display: flex; justify-content: space-between; gap: 16px; align-items: center; padding: 16px 18px; border-top: 1px solid var(--line); flex-wrap: wrap; }
+.set-row:first-child { border-top: 0; }
+.set-row > div { min-width: 0; flex: 1 1 260px; }
+.set-row h3 { font-size: 15px; }
+.set-row p { font-size: 13.5px; color: var(--text-2); }
+.money { display: inline-flex; align-items: center; gap: 6px; }
+.money input { width: 80px; }
+.meter { height: 6px; border-radius: 99px; background: var(--surface-2); overflow: hidden; margin-top: 8px; max-width: 320px; }
+.meter i { display: block; height: 100%; background: var(--signal); }
+.plans { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 12px; }
+.plan { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); padding: 18px; display: grid; gap: 8px; align-content: start; }
+.plan.current { border-color: var(--text); }
+.plan .price { font-size: 26px; font-weight: 800; letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
+.plan .price small { font-size: 14px; font-weight: 600; color: var(--text-2); }
+.rules { display: grid; gap: 0; }
+.rules li { padding: 12px 0; border-top: 1px solid var(--line); }
+.rules li:first-child { border-top: 0; }
+.rules { list-style: none; margin: 0; padding: 4px 18px; background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); }
+.rules b { display: block; }
+.rules span { color: var(--text-2); font-size: 14px; }
+
+/* Drawer, modal, toast */
+.scrim { position: fixed; inset: 0; background: rgb(10 8 4 / 38%); z-index: 40; }
+.drawer {
+  position: fixed; top: 0; right: 0; bottom: 0; z-index: 41; width: min(560px, 100%);
+  background: var(--surface); border-left: 1px solid var(--line); box-shadow: var(--shadow);
+  display: flex; flex-direction: column;
+  padding-top: env(safe-area-inset-top, 0px); padding-bottom: env(safe-area-inset-bottom, 0px); padding-right: env(safe-area-inset-right, 0px);
+}
+.drawer header { display: flex; justify-content: space-between; gap: 12px; align-items: flex-start; padding: 18px 20px; border-bottom: 1px solid var(--line); }
+.drawer header h2 { font-size: 19px; letter-spacing: -.01em; }
+.drawer .body { overflow-y: auto; padding: 18px 20px 28px; display: grid; gap: 22px; align-content: start; }
+.original { white-space: pre-wrap; font-size: 15.5px; line-height: 1.65; background: var(--surface-2); border-radius: 12px; padding: 14px 16px; }
+mark { background: var(--mark); color: inherit; border-radius: 3px; padding: 0 2px; }
+.hist { display: grid; gap: 10px; }
+.hist div { display: grid; grid-template-columns: 34px minmax(0, 1fr); gap: 10px; font-size: 14px; }
+.hist .v { font-family: var(--font-data); font-size: 12px; color: var(--gold-text); padding-top: 2px; }
+.modal-wrap { position: fixed; inset: 0; z-index: 41; display: grid; place-items: center; padding: 16px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+.modal { width: min(560px, 100%); max-height: calc(100% - 32px); overflow-y: auto; background: var(--surface); border-radius: 18px; box-shadow: var(--shadow); border: 1px solid var(--line); padding: 22px; display: grid; gap: 18px; }
+.modal h2 { font-size: 21px; letter-spacing: -.02em; }
+fieldset { border: 0; padding: 0; margin: 0; display: grid; gap: 8px; }
+legend { font-weight: 700; font-size: 14px; margin-bottom: 6px; }
+.opt { display: flex; gap: 10px; align-items: flex-start; border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; cursor: pointer; }
+.opt:has(input:checked) { border-color: var(--text); background: var(--signal-soft); }
+.opt input { margin-top: 4px; accent-color: var(--primary); }
+.opt small { display: block; color: var(--text-2); font-size: 13px; }
+.progress { display: grid; gap: 10px; }
+.progress div { display: flex; gap: 10px; align-items: center; font-size: 14.5px; }
+.progress .s { width: 22px; height: 22px; border-radius: 50%; display: grid; place-items: center; font-size: 12px; font-weight: 800; border: 1.5px solid var(--line-2); flex: none; }
+.progress .done .s { background: var(--ok); border-color: var(--ok); color: var(--surface); }
+.progress .now .s { border-color: var(--signal); border-top-color: transparent; animation: spin 1s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+details summary { cursor: pointer; font-weight: 600; font-size: 13.5px; color: var(--text-2); }
+details[open] summary { margin-bottom: 8px; }
+.toast {
+  position: fixed; left: 50%; transform: translateX(-50%); z-index: 50;
+  bottom: calc(24px + env(safe-area-inset-bottom, 0px));
+  background: var(--primary); color: var(--on-primary); border-radius: 12px; padding: 10px 12px 10px 16px;
+  display: flex; gap: 14px; align-items: center; box-shadow: var(--shadow); font-size: 14px; font-weight: 600;
+  max-width: calc(100% - 32px);
+}
+.toast button { border: 0; background: var(--signal); color: #111; border-radius: 8px; padding: 5px 11px; font-weight: 800; font-size: 13px; }
+.sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+
+/* Phone */
+@media (max-width: 820px) {
+  .shell { grid-template-columns: minmax(0, 1fr); padding-block: 18px 110px; }
+  .rail {
+    position: fixed; top: auto; left: 0; right: 0; bottom: 0; z-index: 30; flex-direction: row; justify-content: space-around; gap: 0;
+    background: var(--surface); border-top: 1px solid var(--line);
+    padding: 6px max(8px, env(safe-area-inset-right, 0px)) calc(6px + env(safe-area-inset-bottom, 0px)) max(8px, env(safe-area-inset-left, 0px));
+  }
+  .rail button { flex-direction: column; gap: 3px; font-size: 11.5px; padding: 6px 8px; flex: 1; align-items: center; position: relative; }
+  .rail .badge { position: absolute; top: 0; right: calc(50% - 22px); margin: 0; min-width: 17px; height: 17px; font-size: 10px; }
+  .rail .sep, .rail .foot { display: none; }
+  .brain { grid-template-columns: minmax(0, 1fr); gap: 16px; }
+  .plist { display: flex; overflow-x: auto; gap: 6px; padding-bottom: 4px; }
+  .plist button { white-space: nowrap; flex: none; }
+  .timeline .item { grid-template-columns: minmax(0, 1fr); }
+  .agent { grid-template-columns: 40px minmax(0, 1fr); }
+  .agent > .actions { grid-column: 1 / -1; }
+  .top .state .txt { display: none; }
+  .quiet { flex-direction: column; align-items: flex-start; }
+  .toast { bottom: calc(84px + env(safe-area-inset-bottom, 0px)); }
+}
+@media (max-width: 420px) { .sample { display: none; } .bar textarea { font-size: 16px; } }
+</style>
+
+<header class="top">
+  <a class="brand" href="#today" data-act="nav" data-view="today" aria-label="BiBrain, go to Today">
+    <span class="plate" aria-hidden="true">
+      <svg viewBox="0 0 96 96"><path fill="#111111" d="M48 8H27C14.6 8 7 15.9 7 28.1c0 9.8 6.2 16.8 18.2 19.9C13.2 51.1 7 58.2 7 68.1 7 80.4 15.4 88 28.4 88H48V8Z"/><path fill="#FABC08" d="M48 8h21c12.4 0 20 7.9 20 20.1 0 9.8-6.2 16.8-18.2 19.9C82.8 51.1 89 58.2 89 68.1 89 80.4 80.6 88 67.6 88H48V8Z"/><path fill="#FAF8F2" d="M45.9 44.6c-5.4-8.3-10.2-13.8-18-15.1-6.3-1.1-10.4 1.2-10.4 6.4 0 5.6 4.5 8.4 11.8 9.5 6.6.9 11.8 3.4 16.7 7.7l-.1-8.5Z"/><path fill="#FAF8F2" d="M45.9 51.4c-5.4 8.3-10.2 13.8-18 15.1-6.3 1.1-10.4-1.2-10.4-6.4 0-5.6 4.5-8.4 11.8-9.5 6.6-.9 11.8-3.4 16.7-7.7l-.1 8.5Z"/><path fill="#FAF8F2" d="M50.1 44.6c5.4-8.3 10.2-13.8 18-15.1 6.3-1.1 10.4 1.2 10.4 6.4 0 5.6-4.5 8.4-11.8 9.5-6.6.9-11.8 3.4-16.7 7.7l.1-8.5Z"/><path fill="#FAF8F2" d="M50.1 51.4c5.4 8.3 10.2 13.8 18 15.1 6.3 1.1 10.4-1.2 10.4-6.4 0-5.6-4.5-8.4-11.8-9.5-6.6-.9-11.8-3.4-16.7-7.7l.1 8.5Z"/></svg>
+    </span>
+    <span>Bi<b>Brain</b></span>
+  </a>
+  <span class="sample" title="Everything here is made-up sample data. Nothing connects to a real agent.">Prototype · sample data</span>
+  <span class="spacer"></span>
+  <span id="state" class="state" role="status"></span>
+  <button class="icon-btn" data-act="theme" id="theme-btn" aria-label="Change appearance">Auto</button>
+</header>
+
+<div class="shell">
+  <nav class="rail" aria-label="Primary">
+    <button data-act="nav" data-view="today"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>Today<span class="badge" id="badge" hidden></span></button>
+    <button data-act="nav" data-view="brain"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><rect x="4" y="3" width="16" height="18" rx="2"/><path d="M8 8h8M8 12h8M8 16h5"/></svg>Your brain</button>
+    <button data-act="nav" data-view="connections"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1"/><path d="M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1"/></svg>Connections</button>
+    <div class="sep"></div>
+    <button data-act="nav" data-view="settings"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M4 7h10M18 7h2M4 17h4M12 17h8"/><circle cx="16" cy="7" r="2"/><circle cx="10" cy="17" r="2"/></svg>Settings</button>
+    <p class="foot" id="rail-foot"></p>
+  </nav>
+  <main id="view" tabindex="-1"></main>
+</div>
+<div id="overlay"></div>
+<div id="toast-root" aria-live="polite"></div>
+
+<script>
+(function () {
+  "use strict";
+
+  // ---------- Sample data (synthetic) ----------
+  function sample() {
+    return {
+      view: "today",
+      project: "p1",
+      projects: [
+        { id: "p1", name: "Northstar launch", desc: "Private beta for builders who switch between agents.", folder: "~/code/northstar" },
+        { id: "p2", name: "Memory thesis", desc: "Research on how agents should remember.", folder: "~/thesis" },
+        { id: "inbox", name: "Inbox", desc: "Saved things that have no project yet.", folder: "" }
+      ],
+      watch: { p1: true, p2: false },
+      sources: [
+        { id: "s1", project: "p1", kind: "Agent session", from: "Claude Code", title: "Pricing page build", when: "Today 9:42", order: 9,
+          body: "Session note from Claude Code in northstar/web.\nDecided: the pricing page ships with one plan, Personal at $12 a month or $120 a year.\nOpen question: do we show the self-hosted edition on the same page?\nNext step: wire the annual toggle and run the billing tests." },
+        { id: "s3", project: "p1", kind: "Interview note", from: "You", title: "Interview with Marco, researcher", when: "Oct 22", order: 8,
+          body: "Marco does not want to grant agent access on day one. He wants to see one useful result from a single conversation, then decide whether to connect Codex." },
+        { id: "s2", project: "p1", kind: "Interview note", from: "You", title: "Interview with Priya, indie developer", when: "Oct 21", order: 7,
+          body: "Priya tried three memory tools last month. She gave up on two because they asked her to connect accounts before she saw anything useful. She said she would happily paste one conversation first to see what it does." },
+        { id: "s7", project: "p2", kind: "Agent session", from: "Codex", title: "Literature table", when: "Oct 20", order: 6,
+          body: "Session note from Codex in thesis/notes.\nDecided: compare memory tools on recall with citations, not on the number of stored items.\nOpen question: which benchmark has dated facts?" },
+        { id: "s6", project: "p2", kind: "Note", from: "You", title: "Reading notes on agent memory", when: "Oct 18", order: 5,
+          body: "Most agent memory tools store chat turns. The useful unit is a reviewed fact with a source and the date it became true." },
+        { id: "s5", project: "p1", kind: "Note", from: "You", title: "Beta timeline", when: "Oct 2", order: 4,
+          body: "The private beta opens on November 14 for 50 invited builders." },
+        { id: "s4", project: "p1", kind: "Decision", from: "You", title: "Onboarding decision", when: "Sep 30", order: 3,
+          body: "We decided that people must connect an agent before they get first value, so the brain fills up quickly." }
+      ],
+      facts: [
+        { id: "f1", project: "p1", text: "Beta opens November 14 for 50 invited builders.", src: "s5", quote: "The private beta opens on November 14 for 50 invited builders.", stale: true, checked: "Oct 2",
+          history: [{ v: 1, text: "Beta opens November 14 for 50 invited builders.", note: "You kept this from Beta timeline", when: "Oct 2" }] },
+        { id: "f2", project: "p1", text: "People must connect an agent before they get first value.", src: "s4", quote: "We decided that people must connect an agent before they get first value", checked: "Sep 30",
+          history: [{ v: 1, text: "People must connect an agent before they get first value.", note: "You kept this from Onboarding decision", when: "Sep 30" }] },
+        { id: "f4", project: "p2", text: "The useful memory unit is a reviewed fact with a source and a date.", src: "s6", quote: "The useful unit is a reviewed fact with a source and the date it became true.", checked: "Oct 18",
+          history: [{ v: 1, text: "The useful memory unit is a reviewed fact with a source and a date.", note: "You kept this from Reading notes", when: "Oct 18" }] },
+        { id: "f5", project: "p2", text: "Compare memory tools on recall with citations.", src: "s7", quote: "compare memory tools on recall with citations, not on the number of stored items.", checked: "Oct 20",
+          history: [{ v: 1, text: "Compare memory tools on recall with citations.", note: "You kept this from a Codex session", when: "Oct 20" }] }
+      ],
+      questions: [
+        { id: "q1", project: "p2", text: "Which benchmark has dated facts?", src: "s7" }
+      ],
+      brief: [
+        { id: "b1", kind: "decision", project: "p1", label: "Decision from Claude Code",
+          title: "The pricing page ships with one plan: $12 a month or $120 a year.",
+          why: "Claude Code wrote this down at the end of its session in northstar/web this morning.",
+          evidence: [{ src: "s1", quote: "Decided: the pricing page ships with one plan, Personal at $12 a month or $120 a year." }],
+          keepLabel: "Keep as true" },
+        { id: "b2", kind: "change", project: "p1", label: "An earlier decision may be out of date",
+          title: "Let people try one conversation before they connect an agent.",
+          before: "People must connect an agent before they get first value.",
+          why: "Two interviews from this week disagree with what you decided on Sep 30.",
+          evidence: [
+            { src: "s2", quote: "She said she would happily paste one conversation first to see what it does." },
+            { src: "s3", quote: "He wants to see one useful result from a single conversation, then decide whether to connect Codex." }
+          ],
+          keepLabel: "Update the decision" },
+        { id: "b3", kind: "stale", project: "p1", label: "Still true?",
+          title: "Beta opens November 14 for 50 invited builders.",
+          why: "Last confirmed on Oct 2. Three agent sessions since then mention the beta without a date.",
+          evidence: [{ src: "s5", quote: "The private beta opens on November 14 for 50 invited builders." }],
+          keepLabel: "Still true" }
+      ],
+      agents: [
+        { id: "claude", name: "Claude Code", mark: "CC", status: "connected", projects: ["p1"], access: "suggest", last: "Today 9:42", file: ".mcp.json" },
+        { id: "codex", name: "Codex", mark: "Cx", status: "found", projects: [], access: "suggest", last: "", file: ".codex/config.toml" },
+        { id: "cursor", name: "Cursor", mark: "Cu", status: "found", projects: [], access: "suggest", last: "", file: ".cursor/mcp.json" }
+      ],
+      bg: true,
+      cap: 5,
+      spent: 38,
+      bar: "",
+      mode: "save",
+      answer: null,
+      receipt: null,
+      fixing: null,
+      editingFact: null,
+      drawer: null,
+      modal: null,
+      revoking: null,
+      query: "",
+      confirmDelete: false,
+      seq: 100
+    };
+  }
+
+  let S = sample();
+  let undoSnap = null;
+  let toastTimer = null;
+  let lastFocus = null;
+
+  // ---------- Helpers ----------
+  const $ = (sel) => document.querySelector(sel);
+  const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+  const proj = (id) => S.projects.find((p) => p.id === id);
+  const src = (id) => S.sources.find((s) => s.id === id);
+  const fact = (id) => S.facts.find((f) => f.id === id);
+  const nid = (p) => p + (++S.seq);
+  function snapshot() { undoSnap = JSON.stringify(S); }
+  function agentsFor(pid) { return S.agents.filter((a) => a.status === "connected" && a.projects.includes(pid)); }
+
+  function toast(msg, undoable) {
+    const root = $("#toast-root");
+    root.innerHTML = '<div class="toast"><span>' + esc(msg) + "</span>" + (undoable ? '<button data-act="undo">Undo</button>' : "") + "</div>";
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => { root.innerHTML = ""; if (undoable) undoSnap = null; }, 6000);
+  }
+
+  function cite(sid, extra) {
+    const s = src(sid);
+    if (!s) return "";
+    return '<button class="cite" data-act="source" data-src="' + s.id + '"' + (extra ? ' data-fact="' + extra + '"' : "") + '>' +
+      '<span class="data">' + esc(s.kind) + "</span><span>" + esc(s.title) + " · " + esc(s.when) + "</span></button>";
+  }
+
+  // ---------- Header state ----------
+  function renderChrome() {
+    const n = S.brief.length;
+    const st = $("#state");
+    if (!S.sources.length) { st.className = "state"; st.innerHTML = '<span class="dot"></span><span class="txt">Empty brain</span>'; }
+    else if (!S.bg) { st.className = "state"; st.innerHTML = '<span class="dot"></span><span class="txt">Background help off</span>'; }
+    else if (n) { st.className = "state live"; st.innerHTML = '<span class="dot"></span><span class="txt">' + n + (n === 1 ? " thing" : " things") + " to look at</span>"; }
+    else { st.className = "state calm"; st.innerHTML = '<span class="dot"></span><span class="txt">Caught up</span>'; }
+    const b = $("#badge");
+    b.hidden = !n; b.textContent = n;
+    document.querySelectorAll(".rail button[data-view]").forEach((btn) => {
+      if (btn.dataset.view === S.view) btn.setAttribute("aria-current", "page"); else btn.removeAttribute("aria-current");
+    });
+    const c = S.agents.filter((a) => a.status === "connected").length;
+    $("#rail-foot").textContent = c ? c + (c === 1 ? " agent keeps" : " agents keep") + " this brain current." : "No agent connected yet.";
+  }
+
+  // ---------- Today ----------
+  function viewToday() {
+    let h = '<div class="hello"><h1>' + (S.sources.length ? "Good morning." : "Welcome to BiBrain.") + '</h1><span class="data faint">Fri 23 Oct · sample day</span></div>';
+    h += barHtml();
+    if (S.answer) h += answerHtml();
+    else if (S.receipt) h += receiptHtml();
+    if (!S.sources.length) return h + onboardingHtml();
+
+    h += '<section class="section" aria-labelledby="brief-h"><div class="section-head"><h2 id="brief-h">Since you were last here</h2>' +
+      '<span class="faint" style="font-size:13px">At most three. Nothing changes until you choose.</span></div>';
+    if (!S.bg) {
+      h += '<div class="quiet"><div class="ring" style="border-color:var(--line-2);color:var(--text-2)">II</div><div><h3>Background help is off</h3><p class="muted">BiBrain still saves and answers. It will not look for changes until you turn it back on.</p></div><button class="btn sm" data-act="toggle-bg">Turn on</button></div>';
+    } else if (!S.brief.length) {
+      h += '<div class="quiet"><div class="ring" aria-hidden="true">✓</div><div><h3>You are caught up.</h3><p class="muted">BiBrain will speak up when an agent records something new or a fact goes stale. Quiet is normal.</p></div></div>';
+    } else {
+      h += '<div class="brief">' + S.brief.map(briefCard).join("") + "</div>";
+    }
+    h += "</section>";
+
+    h += '<section class="section" aria-labelledby="proj-h"><div class="section-head"><h2 id="proj-h">Projects</h2><button class="link" data-act="new-project">New project</button></div><div class="projects">';
+    h += S.projects.filter((p) => p.id !== "inbox").map(projCard).join("");
+    const inboxN = S.sources.filter((s) => s.project === "inbox").length;
+    if (inboxN) h += '<div class="proj"><button class="proj-name" data-act="open-project" data-p="inbox">Inbox</button><p class="meta">' + inboxN + " saved, not in a project yet.</p></div>";
+    h += "</div></section>";
+    return h;
+  }
+
+  function barHtml() {
+    const ask = S.mode === "ask";
+    return '<form class="bar" id="bar-form" role="search">' +
+      '<label class="sr" for="bar">' + (ask ? "Ask your brain" : "Save to your brain") + "</label>" +
+      '<div class="bar-row"><textarea id="bar" rows="1" placeholder="' + (ask ? "Ask what your brain knows…" : "Paste a note, a decision, or a conversation…") + '">' + esc(S.bar) + "</textarea>" +
+      '<button class="btn primary" type="submit" id="bar-go">' + (ask ? "Ask" : "Save") + "</button></div>" +
+      '<div class="bar-foot"><div class="seg" role="group" aria-label="What the bar does">' +
+      '<button type="button" data-act="mode" data-mode="save" aria-pressed="' + !ask + '">Save</button>' +
+      '<button type="button" data-act="mode" data-mode="ask" aria-pressed="' + ask + '">Ask</button></div>' +
+      '<span class="faint" style="font-size:12.5px"><span class="kbd">/</span> to focus · <span class="kbd">Enter</span> to ' + (ask ? "ask" : "save") + " · ending with ? switches to Ask</span></div></form>" +
+      (S.sources.length ? '<div class="chips">' + ["When does the beta open?", "What did we decide about pricing?", "Which benchmark has dated facts?"].map((q) => '<button class="chip" data-act="ask-example" data-q="' + esc(q) + '">' + esc(q) + "</button>").join("") + "</div>" : "");
+  }
+
+  function answerHtml() {
+    const a = S.answer;
+    let h = '<div class="answer" aria-live="polite"><div class="answer-head"><span class="eyebrow">From your brain</span><button class="btn ghost sm" data-act="clear-answer">Close</button></div>';
+    h += '<p class="muted" style="font-size:14px">You asked: <b style="color:var(--text)">' + esc(a.q) + "</b></p>";
+    if (!a.hits.length) {
+      h += '<p>Nothing in your brain answers that yet.</p><p class="muted" style="font-size:14px">Save a note about it, or ask a connected agent to record what it finds.</p>';
+    } else {
+      a.hits.forEach((x) => {
+        if (x.type === "fact") {
+          const f = fact(x.id);
+          h += '<div class="hit"><div class="card-top"><span class="tag ok">Reviewed</span>' + (f.stale ? '<span class="tag attn">Not checked since ' + esc(f.checked) + "</span>" : "") + "</div><p>" + esc(f.text) + "</p>" + cite(f.src, f.id) + "</div>";
+        } else {
+          const s = src(x.id);
+          h += '<div class="hit"><div class="card-top"><span class="tag">Original, not reviewed yet</span></div><p>' + esc(snippet(s.body, a.q)) + "</p>" + cite(s.id) + "</div>";
+        }
+      });
+    }
+    return h + '<p class="faint" style="font-size:12.5px">Answers come only from what is saved here. In this prototype the matching is simple word overlap.</p></div>';
+  }
+
+  function briefCard(b) {
+    const p = proj(b.project);
+    const tagCls = b.kind === "change" ? "attn" : b.kind === "stale" ? "info" : "gold";
+    let h = '<article class="card" aria-labelledby="t-' + b.id + '"><div class="card-top"><span class="tag ' + tagCls + '">' + esc(b.label) + '</span><span class="faint" style="font-size:13px">' + esc(p ? p.name : "") + "</span></div>";
+    if (S.fixing === b.id) {
+      h += '<div class="fix"><label for="fix-' + b.id + '" class="eyebrow">Your wording</label><textarea id="fix-' + b.id + '" rows="2">' + esc(b.title) + "</textarea></div>";
+    } else {
+      h += '<h3 id="t-' + b.id + '">' + esc(b.title) + "</h3>";
+    }
+    if (b.before) h += '<p class="before">Replaces: <s>' + esc(b.before) + "</s></p>";
+    h += '<p class="why">' + esc(b.why) + "</p>";
+    h += '<div class="evidence">' + b.evidence.map((e) => {
+      const s = src(e.src);
+      return '<button class="quote" data-act="source" data-src="' + s.id + '" data-quote="' + esc(e.quote) + '"><q>' + esc(e.quote) + '</q><span class="src"><span class="data">' + esc(s.kind) + "</span><span>" + esc(s.title) + " · " + esc(s.when) + "</span></span></button>";
+    }).join("") + "</div>";
+    if (S.fixing === b.id) {
+      h += '<div class="actions"><button class="btn primary" data-act="fix-save" data-id="' + b.id + '">Save my version</button><button class="btn ghost" data-act="fix-cancel">Cancel</button></div>';
+    } else if (b.kind === "file") {
+      h += '<div class="actions"><button class="btn primary" data-act="keep" data-id="' + b.id + '">Move to ' + esc(proj(b.target).name) + '</button><button class="btn ghost" data-act="dismiss" data-id="' + b.id + '">Leave in Inbox</button></div>';
+    } else {
+      h += '<div class="actions"><button class="btn primary" data-act="keep" data-id="' + b.id + '">' + esc(b.keepLabel) + '</button><button class="btn" data-act="fix" data-id="' + b.id + '">Fix</button><button class="btn ghost" data-act="dismiss" data-id="' + b.id + '">Dismiss</button></div>';
+    }
+    return h + "</article>";
+  }
+
+  function projCard(p) {
+    const facts = S.facts.filter((f) => f.project === p.id).length;
+    const qs = S.questions.filter((q) => q.project === p.id).length;
+    const ag = agentsFor(p.id);
+    const on = !!S.watch[p.id];
+    return '<div class="proj"><button class="proj-name" data-act="open-project" data-p="' + p.id + '">' + esc(p.name) + '</button>' +
+      '<p class="meta">' + facts + (facts === 1 ? " fact" : " facts") + " · " + qs + (qs === 1 ? " open question" : " open questions") + "</p>" +
+      '<p class="meta">' + (ag.length ? esc(ag.map((a) => a.name).join(", ")) + " connected · last used " + esc(ag[0].last) : "No agent connected") + "</p>" +
+      '<div class="row"><button class="switch" role="switch" aria-checked="' + on + '" data-act="watch" data-p="' + p.id + '"><span class="track"></span>Watch for changes</button></div></div>';
+  }
+
+  function onboardingHtml() {
+    return '<section class="section"><div class="section-head"><h2>Three ways to fill your brain</h2><span class="faint" style="font-size:13px">Pick any one. The others can wait.</span></div><div class="steps">' +
+      '<div class="step"><span class="n">Fastest</span><h3>Plug in an agent</h3><p class="muted" style="font-size:14px">Claude Code, Codex or Cursor will write down decisions and open questions as they work.</p><button class="btn primary sm" data-act="nav" data-view="connections">Choose an agent</button></div>' +
+      '<div class="step"><span class="n">One minute</span><h3>Paste something</h3><p class="muted" style="font-size:14px">A note, a decision, or a whole conversation. The original is kept exactly as you saved it.</p><button class="btn sm" data-act="focus-bar">Use the bar above</button></div>' +
+      '<div class="step"><span class="n">Bring history</span><h3>Import a folder</h3><p class="muted" style="font-size:14px">Text and Markdown files. You review what comes in before anything counts as true.</p><button class="btn sm" data-act="nav" data-view="connections">Import files</button></div>' +
+      '</div><button class="link" data-act="reset" style="justify-self:start">Bring back the sample brain</button></section>';
+  }
+
+  // ---------- Your brain ----------
+  function viewBrain() {
+    let h = '<div class="search"><label class="sr" for="q">Search your brain</label><input class="field" id="q" placeholder="Search facts and originals" value="' + esc(S.query) + '"></div>';
+    if (S.query.trim()) return h + searchResults();
+    h += '<div class="brain"><nav class="plist" aria-label="Projects">' + S.projects.map((p) => {
+      const n = S.sources.filter((s) => s.project === p.id).length;
+      return '<button data-act="open-project" data-p="' + p.id + '" aria-current="' + (S.project === p.id) + '"><span>' + esc(p.name) + '</span><span class="count">' + n + "</span></button>";
+    }).join("") + '</nav><div style="min-width:0">' + projectDetail(proj(S.project)) + "</div></div>";
+    return h;
+  }
+
+  function projectDetail(p) {
+    const facts = S.facts.filter((f) => f.project === p.id);
+    const qs = S.questions.filter((q) => q.project === p.id);
+    const srcs = S.sources.filter((s) => s.project === p.id).sort((a, b) => b.order - a.order);
+    const ag = agentsFor(p.id);
+    let h = '<div class="ptitle"><div style="display:grid;gap:6px;min-width:0"><h1>' + esc(p.name) + '</h1><p class="muted">' + esc(p.desc) + "</p>" +
+      (p.id !== "inbox" ? '<p class="faint" style="font-size:13px">' + (ag.length ? esc(ag.map((a) => a.name).join(", ")) + " keeps this current" : "No agent connected") + (p.folder ? ' · <span class="data">' + esc(p.folder) + "</span>" : "") + "</p>" : "") + "</div>" +
+      '<div class="actions">' + (p.id !== "inbox" ? '<button class="switch" role="switch" aria-checked="' + !!S.watch[p.id] + '" data-act="watch" data-p="' + p.id + '"><span class="track"></span>Watch</button>' : "") +
+      '<button class="btn sm" data-act="handoff" data-p="' + p.id + '">Copy handoff</button></div></div>';
+
+    h += '<section class="section"><div class="section-head"><h2>True now</h2><span class="faint" style="font-size:13px">Each fact links to its original</span></div><div class="list">';
+    if (!facts.length) h += '<p class="empty">No reviewed facts yet. Keep something from the Brief or from an original.</p>';
+    facts.forEach((f) => {
+      if (S.editingFact === f.id) {
+        h += '<div class="item"><div class="fix"><label class="eyebrow" for="ef-' + f.id + '">Edit fact</label><textarea id="ef-' + f.id + '" rows="2">' + esc(f.text) + '</textarea><div class="actions"><button class="btn primary sm" data-act="save-fact" data-id="' + f.id + '">Save as version ' + (f.history.length + 1) + '</button><button class="btn ghost sm" data-act="cancel-edit">Cancel</button></div><p class="faint" style="font-size:12.5px">The original stays as it was. Earlier versions stay in history.</p></div></div>';
+      } else {
+        h += '<div class="item"><div class="item-row"><p class="t">' + esc(f.text) + '</p><button class="btn ghost sm" data-act="edit-fact" data-id="' + f.id + '">Edit</button></div><div class="card-top">' +
+          (f.stale ? '<span class="tag attn">Not checked since ' + esc(f.checked) + "</span>" : '<span class="tag ok">Checked ' + esc(f.checked) + "</span>") +
+          '<span class="data faint">v' + f.history.length + "</span>" + cite(f.src, f.id) + "</div></div>";
+      }
+    });
+    h += "</div></section>";
+
+    h += '<section class="section"><div class="section-head"><h2>Open questions</h2></div><div class="list">';
+    if (!qs.length) h += '<p class="empty">Nothing open. BiBrain adds questions when an agent or a note leaves one unanswered.</p>';
+    qs.forEach((q) => { h += '<div class="item"><div class="item-row"><p class="t">' + esc(q.text) + '</p><button class="btn ghost sm" data-act="close-q" data-id="' + q.id + '">Mark answered</button></div>' + cite(q.src) + "</div>"; });
+    h += "</div></section>";
+
+    h += '<section class="section"><div class="section-head"><h2>Originals</h2><span class="faint" style="font-size:13px">Kept exactly as saved</span></div><div class="list timeline">';
+    if (!srcs.length) h += '<p class="empty">Nothing saved here yet.</p>';
+    srcs.forEach((s) => { h += '<div class="item"><span class="when">' + esc(s.when) + '</span><div style="display:grid;gap:2px;min-width:0"><button class="src-btn" data-act="source" data-src="' + s.id + '">' + esc(s.title) + '</button><span class="faint" style="font-size:13px">' + esc(s.kind) + (s.from !== "You" ? " from " + esc(s.from) : "") + "</span></div></div>"; });
+    h += "</div></section>";
+    return h;
+  }
+
+  function searchResults() {
+    const hits = search(S.query, 12);
+    let h = '<div class="section-head" style="margin-bottom:12px"><h2>' + hits.length + (hits.length === 1 ? " match" : " matches") + '</h2><button class="link" data-act="clear-query">Clear search</button></div><div class="list">';
+    if (!hits.length) h += '<p class="empty">No matches. Try a different word, or save something new.</p>';
+    hits.forEach((x) => {
+      if (x.type === "fact") { const f = fact(x.id); h += '<div class="item"><div class="card-top"><span class="tag ok">Fact</span><span class="faint" style="font-size:13px">' + esc(proj(f.project).name) + '</span></div><p class="t">' + esc(f.text) + "</p>" + cite(f.src, f.id) + "</div>"; }
+      else { const s = src(x.id); h += '<div class="item"><div class="card-top"><span class="tag">Original</span><span class="faint" style="font-size:13px">' + esc(proj(s.project).name) + '</span></div><p>' + esc(snippet(s.body, S.query)) + "</p>" + cite(s.id) + "</div>"; }
+    });
+    return h + "</div>";
+  }
+
+  // ---------- Connections ----------
+  function viewConnections() {
+    let h = '<div class="ptitle"><div style="display:grid;gap:6px"><h1>Connections</h1><p class="muted">Agents that read your brain and write back what they learn. Each one sees only the projects you pick.</p></div></div>';
+    h += '<section class="section"><div class="section-head"><h2>Agents</h2><span class="faint" style="font-size:13px">Found on this computer</span></div><div class="agents">';
+    S.agents.forEach((a) => {
+      let status, meta, act;
+      if (a.status === "connected") {
+        status = '<span class="tag ok">Connected</span>';
+        meta = "Reads " + esc(a.projects.map((id) => proj(id).name).join(", ")) + " · " + (a.access === "suggest" ? "suggests memories" : "read only") + " · last used " + esc(a.last);
+        act = '<button class="btn sm danger" data-act="revoke" data-id="' + a.id + '">Revoke</button>';
+      } else if (a.status === "waiting") {
+        status = '<span class="tag info">Waiting for first call</span>';
+        meta = "Set up. Becomes Connected when " + esc(a.name) + " checks in.";
+        act = '<button class="btn sm ghost" disabled>Waiting…</button>';
+      } else if (a.status === "revoked") {
+        status = '<span class="tag">Revoked</span>';
+        meta = "No access. If it tries again, it will be refused.";
+        act = '<button class="btn sm" data-act="add-agent" data-id="' + a.id + '">Add again</button>';
+      } else {
+        status = '<span class="tag">Not connected</span>';
+        meta = "Installed. One step to add.";
+        act = '<button class="btn primary sm" data-act="add-agent" data-id="' + a.id + '">Add to ' + esc(a.name) + "</button>";
+      }
+      h += '<div class="agent"><div class="logo" aria-hidden="true">' + a.mark + '</div><div style="min-width:0;display:grid;gap:3px"><div class="card-top"><h3>' + esc(a.name) + "</h3>" + status + '</div><p class="meta">' + meta + '</p></div><div class="actions">' + act + "</div>";
+      if (S.revoking === a.id) h += '<div class="confirm"><span>Revoke ' + esc(a.name) + "? It loses access on its next call, even if it is open right now.</span><span class=\"actions\"><button class=\"btn sm danger\" data-act=\"revoke-yes\" data-id=\"" + a.id + '">Revoke now</button><button class="btn sm ghost" data-act="revoke-no">Cancel</button></span></div>';
+      h += "</div>";
+    });
+    h += '<div class="agent"><div class="logo" aria-hidden="true">+</div><div style="min-width:0;display:grid;gap:3px"><h3>Any other agent</h3><p class="meta">Copy a handoff of one project and paste it in. It gives no ongoing access.</p></div><div class="actions"><button class="btn sm" data-act="handoff" data-p="' + S.project + '">Copy handoff</button></div></div>';
+    h += "</div></section>";
+
+    h += '<section class="section"><div class="section-head"><h2>Bring in files</h2></div><div class="drop" id="drop"><p><b>Drop text or Markdown files here</b></p><p class="muted" style="font-size:14px">They go to the Inbox as originals. Nothing counts as true until you keep it.</p>' +
+      '<label class="btn sm" for="files">Choose files</label><input id="files" type="file" accept=".txt,.md,text/plain,text/markdown" multiple class="sr"></div></section>';
+    return h;
+  }
+
+  // ---------- Settings ----------
+  function viewSettings() {
+    const pct = Math.min(100, Math.round((S.spent / (S.cap * 100 || 1)) * 100));
+    let h = '<div class="ptitle"><div style="display:grid;gap:6px"><h1>Settings</h1><p class="muted">Set your limits once. BiBrain stays inside them.</p></div></div>';
+    h += '<section class="section"><div class="set">' +
+      '<div class="set-row"><div><h3>Background help</h3><p>Look for changes in watched projects and add them to the Brief.</p></div><button class="switch" role="switch" aria-checked="' + S.bg + '" data-act="toggle-bg"><span class="track"></span>' + (S.bg ? "On" : "Off") + "</button></div>" +
+      '<div class="set-row"><div><h3>Monthly spending cap</h3><p>For AI processing BiBrain pays for. When it is reached, saving and search keep working.</p><div class="meter" aria-hidden="true"><i style="width:' + pct + '%"></i></div><p class="data faint" style="margin-top:6px">$' + (S.spent / 100).toFixed(2) + " used of $" + Number(S.cap).toFixed(2) + ' this month · sample</p></div><label class="money" for="cap">$<input class="field" id="cap" type="number" min="0" max="100" step="1" value="' + esc(S.cap) + '"></label></div>' +
+      '<div class="set-row"><div><h3>Appearance</h3><p>Follow the system, or pick light or dark.</p></div><button class="btn sm" data-act="theme">' + themeLabel() + "</button></div>" +
+      "</div></section>";
+
+    h += '<section class="section"><div class="section-head"><h2>Plan</h2></div><div class="plans">' +
+      '<div class="plan current"><span class="tag ok" style="justify-self:start">Current</span><h3>Self-hosted</h3><p class="price">$0</p><p class="muted" style="font-size:14px">Open source. Runs on your computer or server. Bring your own model key, or use a local model.</p></div>' +
+      '<div class="plan"><h3>BiBrain Personal</h3><p class="price">$12 <small>a month</small></p><p class="muted" style="font-size:14px">or $120 a year, two months free. Always on, on every device, with AI processing included up to your cap. Prices before tax.</p><button class="btn sm" disabled title="Checkout is not part of this prototype">Not available in prototype</button></div>' +
+      "</div></section>";
+
+    h += '<section class="section"><div class="section-head"><h2>Your data</h2></div><div class="set">' +
+      '<div class="set-row"><div><h3>Export everything</h3><p>Every original, fact and version as one file you own.</p></div><button class="btn sm" data-act="export">Copy export</button></div>' +
+      '<div class="set-row"><div><h3>Delete everything</h3><p>Removes all originals, facts and agent access from this brain.</p></div>' +
+      (S.confirmDelete ? '<span class="actions"><button class="btn sm danger" data-act="delete-yes">Delete all</button><button class="btn sm ghost" data-act="delete-no">Cancel</button></span>' : '<button class="btn sm danger" data-act="delete">Delete…</button>') + "</div></div></section>";
+
+    h += '<section class="section" id="control"><div class="section-head"><h2>How you stay in control</h2></div><ul class="rules">' +
+      "<li><b>Originals never change.</b><span>What you or an agent saved stays exactly as saved. Edits create a new version.</span></li>" +
+      "<li><b>Nothing becomes true without you.</b><span>Agent notes and suggestions wait in the Brief until you keep or fix them.</span></li>" +
+      "<li><b>Every fact shows where it came from.</b><span>Open any fact to see the passage it rests on and its history.</span></li>" +
+      "<li><b>Agents see only what you pick.</b><span>Access is per project and can be revoked at once. A revoked agent is refused on its next call.</span></li>" +
+      "<li><b>BiBrain never acts outside.</b><span>It does not send messages, buy, publish or delete anything in other services.</span></li>" +
+      "<li><b>Quiet is on purpose.</b><span>At most three items in the Brief. No feed. Spending stays under your cap.</span></li>" +
+      "</ul></section>";
+    return h;
+  }
+
+  // ---------- Overlay: drawer and modal ----------
+  function renderOverlay() {
+    const o = $("#overlay");
+    if (S.drawer) {
+      const s = src(S.drawer.src);
+      const f = S.drawer.fact ? fact(S.drawer.fact) : null;
+      const quotes = [];
+      if (S.drawer.quote) quotes.push(S.drawer.quote);
+      if (f && f.quote) quotes.push(f.quote);
+      S.facts.filter((x) => x.src === s.id && x.quote).forEach((x) => quotes.push(x.quote));
+      let body = esc(s.body);
+      [...new Set(quotes)].forEach((q) => { const e = esc(q); if (e && body.includes(e)) body = body.replace(e, "<mark>" + e + "</mark>"); });
+      const used = S.facts.filter((x) => x.src === s.id);
+      let h = '<div class="scrim" data-act="close-overlay"></div><aside class="drawer" role="dialog" aria-modal="true" aria-labelledby="dr-h"><header><div style="display:grid;gap:4px;min-width:0"><span class="eyebrow">' + esc(s.kind) + (s.from !== "You" ? " from " + esc(s.from) : "") + '</span><h2 id="dr-h">' + esc(s.title) + '</h2><span class="data faint">' + esc(s.when) + " · " + esc(proj(s.project).name) + " · original, version 1</span></div>" +
+        '<button class="icon-btn" data-act="close-overlay" aria-label="Close">✕</button></header><div class="body">';
+      h += '<div style="display:grid;gap:8px"><span class="eyebrow">Original</span><div class="original">' + body + "</div></div>";
+      if (f) {
+        h += '<div style="display:grid;gap:10px"><span class="eyebrow">History of this fact</span><div class="hist">' + f.history.slice().reverse().map((x) => '<div><span class="v">v' + x.v + "</span><span><b>" + esc(x.text) + '</b><br><span class="faint" style="font-size:13px">' + esc(x.note) + " · " + esc(x.when) + "</span></span></div>").join("") + "</div></div>";
+      }
+      h += '<div style="display:grid;gap:8px"><span class="eyebrow">Facts taken from this</span>' + (used.length ? '<div class="list">' + used.map((x) => '<div class="item"><p class="t">' + esc(x.text) + "</p></div>").join("") + "</div>" : '<p class="muted" style="font-size:14px">None yet.</p>') + "</div>";
+      h += "</div></aside>";
+      o.innerHTML = h;
+      return;
+    }
+    if (S.modal) {
+      const m = S.modal; const a = S.agents.find((x) => x.id === m.agent);
+      const pp = S.projects.filter((p) => p.id !== "inbox");
+      const folder = (proj(m.projects[0]) || pp[0]).folder;
+      let h = '<div class="scrim" data-act="close-overlay"></div><div class="modal-wrap"><div class="modal" role="dialog" aria-modal="true" aria-labelledby="m-h">';
+      if (m.step === "review") {
+        h += '<div style="display:grid;gap:6px"><h2 id="m-h">Add BiBrain to ' + esc(a.name) + '</h2><p class="muted" style="font-size:14px">' + esc(a.name) + " will recall what is true in the projects you pick and write back a short note when it finishes. Its notes wait for your review.</p></div>" +
+          '<fieldset><legend>Which projects?</legend>' + pp.map((p) => '<label class="opt"><input type="checkbox" data-act="m-proj" value="' + p.id + '"' + (m.projects.includes(p.id) ? " checked" : "") + "><span>" + esc(p.name) + "<small>" + esc(p.folder) + "</small></span></label>").join("") + "</fieldset>" +
+          '<fieldset><legend>What may it do?</legend>' +
+          '<label class="opt"><input type="radio" name="acc" value="suggest" data-act="m-acc"' + (m.access === "suggest" ? " checked" : "") + '><span>Read and suggest<small>Recommended. Suggestions wait in your Brief.</small></span></label>' +
+          '<label class="opt"><input type="radio" name="acc" value="read" data-act="m-acc"' + (m.access === "read" ? " checked" : "") + "><span>Read only<small>Recall facts. Never writes anything.</small></span></label></fieldset>" +
+          '<details><summary>See the file BiBrain will add</summary><pre class="code">' + esc(configFor(a, folder)) + "</pre><p class=\"faint\" style=\"font-size:12.5px;margin-top:6px\">The access key is stored by BiBrain on this computer, never in this file. An existing file is never overwritten.</p></details>" +
+          '<div class="actions"><button class="btn primary" data-act="m-go"' + (m.projects.length ? "" : " disabled") + '>Add to ' + esc(a.name) + '</button><button class="btn ghost" data-act="close-overlay">Cancel</button></div>';
+      } else {
+        const done = m.step === "done";
+        h += '<div style="display:grid;gap:6px"><h2 id="m-h">' + (done ? esc(a.name) + " is connected" : "Adding " + esc(a.name) + "…") + '</h2><p class="muted" style="font-size:14px">' + (done ? "It made its first call just now. You can revoke it from Connections at any time." : "Open " + esc(a.name) + " in " + esc(folder) + ". It counts as connected only after its first real call.") + "</p></div>" +
+          '<div class="progress"><div class="done"><span class="s">✓</span>Wrote ' + esc(a.file) + " in " + esc(folder) + '</div><div class="' + (done ? "done" : "now") + '"><span class="s">' + (done ? "✓" : "") + "</span>" + (done ? "First call received" : "Waiting for " + esc(a.name) + " to check in") + "</div></div>" +
+          '<p class="faint" style="font-size:12.5px">Simulated in this prototype. No file is written and no agent is contacted.</p>' +
+          '<div class="actions"><button class="btn ' + (done ? "primary" : "") + '" data-act="close-overlay">' + (done ? "Done" : "Close and keep waiting") + "</button></div>";
+      }
+      o.innerHTML = h + "</div></div>";
+      return;
+    }
+    o.innerHTML = "";
+  }
+
+  function configFor(a, folder) {
+    const slug = (proj(S.modal.projects[0]) || { name: "project" }).name.toLowerCase().replace(/[^a-z0-9]+/g, "-");
+    if (a.id === "codex") return "# " + folder + "/.codex/config.toml\n[mcp_servers.bibrain]\ncommand = \"npx\"\nargs = [\"bibrain\", \"connect\", \"--project\", \"" + slug + "\"]";
+    return "// " + folder + "/" + a.file + "\n{\n  \"mcpServers\": {\n    \"bibrain\": {\n      \"command\": \"npx\",\n      \"args\": [\"bibrain\", \"connect\", \"--project\", \"" + slug + "\"]\n    }\n  }\n}";
+  }
+
+  // ---------- Search (simple word overlap over sample data) ----------
+  const STOP = new Set("the a an and or of to in on for is are was were be do does did what when which who how we our you your it this that with about from at by not have has had any before after out into then than also more just one can will would should there their them they its get got".split(" "));
+  function words(t) { return String(t).toLowerCase().match(/[a-z0-9$]+/g)?.filter((w) => w.length > 2 && !STOP.has(w)).map((w) => w.replace(/s$/, "")) || []; }
+  function score(q, text) { const t = new Set(words(text)); return q.reduce((n, w) => n + (t.has(w) ? 1 : 0), 0); }
+  function search(query, limit) {
+    const q = [...new Set(words(query))];
+    if (!q.length) return [];
+    const out = [];
+    S.facts.forEach((f) => { const n = score(q, f.text); if (n) out.push({ type: "fact", id: f.id, n: n + 0.5, src: f.src }); });
+    S.sources.forEach((s) => { const n = score(q, s.title + " " + s.body); if (n) out.push({ type: "source", id: s.id, n }); });
+    out.sort((a, b) => b.n - a.n);
+    const seen = new Set(); const res = [];
+    for (const x of out) {
+      const key = x.type === "fact" ? x.src : x.id;
+      if (x.type === "source" && seen.has(key)) continue;
+      seen.add(key); res.push(x);
+      if (res.length >= limit) break;
+    }
+    return res;
+  }
+  function snippet(body, query) {
+    const q = words(query);
+    const parts = body.split(/(?<=[.?!])\s+|\n/).filter(Boolean);
+    let best = parts[0] || body, n = -1;
+    parts.forEach((p) => { const k = score(q, p); if (k > n) { n = k; best = p; } });
+    return best.length > 220 ? best.slice(0, 217) + "…" : best;
+  }
+
+  // ---------- Mutations ----------
+  function keepBrief(id, editedText) {
+    const b = S.brief.find((x) => x.id === id);
+    if (!b) return;
+    snapshot();
+    const text = editedText || b.title;
+    const note = editedText ? "Your wording" : "Kept from the Brief";
+    if (b.kind === "decision") {
+      S.facts.unshift({ id: nid("f"), project: b.project, text, src: b.evidence[0].src, quote: b.evidence[0].quote, checked: "Today",
+        history: [{ v: 1, text, note: note + ", from a Claude Code session", when: "Today" }] });
+      if (!S.questions.some((q) => q.src === "s1")) S.questions.unshift({ id: nid("q"), project: b.project, text: "Do we show the self-hosted edition on the pricing page?", src: "s1" });
+      toast("Kept as a fact in " + proj(b.project).name + ". Its open question was added too.", true);
+    } else if (b.kind === "change") {
+      const f = fact("f2");
+      if (f) { f.text = text; f.src = b.evidence[1].src; f.quote = b.evidence[1].quote; f.checked = "Today"; f.history.push({ v: f.history.length + 1, text, note: note + ", based on two interviews", when: "Today" }); }
+      toast("Decision updated to version " + (f ? f.history.length : 2) + ". The earlier one stays in history.", true);
+    } else if (b.kind === "stale") {
+      const f = fact("f1");
+      if (f) { f.stale = false; f.checked = "Today"; if (editedText) { f.text = text; f.history.push({ v: f.history.length + 1, text, note, when: "Today" }); } }
+      toast(editedText ? "Fact updated. The earlier version stays in history." : "Marked as still true today.", true);
+    } else if (b.kind === "file") {
+      const s = src(b.evidence[0].src); if (s) s.project = b.target;
+      toast("Moved to " + proj(b.target).name + ".", true);
+    }
+    S.brief = S.brief.filter((x) => x.id !== id);
+    S.fixing = null;
+  }
+
+  function saveCapture(text) {
+    text = text.trim();
+    if (!text) { toast("Type or paste something first."); return; }
+    if (text.length > 100000) { toast("That is over 100,000 characters. Split it into smaller notes."); return; }
+    const dup = S.sources.find((s) => s.body === text);
+    if (dup) { toast("You already saved this in " + proj(dup.project).name + " (" + dup.when + ")."); return; }
+    const title = text.split("\n")[0].slice(0, 60) + (text.split("\n")[0].length > 60 ? "…" : "");
+    const s = { id: nid("s"), project: "inbox", kind: /\bdecided\b/i.test(text) ? "Decision" : "Note", from: "You", title, when: "Just now", order: 100 + S.seq, body: text };
+    S.sources.push(s);
+    S.bar = "";
+    const target = guessProject(text);
+    S.receipt = { src: s.id, step: S.bg ? "sorting" : "plain", target: null };
+    if (S.bg) {
+      setTimeout(() => {
+        if (!S.receipt || S.receipt.src !== s.id) return;
+        S.receipt.step = target ? "suggest" : "nomatch";
+        S.receipt.target = target;
+        if (S.view === "today") render();
+      }, 1300);
+    }
+  }
+
+  function receiptHtml() {
+    const r = S.receipt; const s = src(r.src);
+    if (!s) return "";
+    let h = '<div class="answer" aria-live="polite"><div class="answer-head"><span class="eyebrow">Saved</span><button class="btn ghost sm" data-act="clear-receipt">Close</button></div>' +
+      '<p><b>' + esc(s.title) + '</b></p><p class="muted" style="font-size:14px">In ' + esc(proj(s.project).name) + '. The original is kept exactly as you wrote it. <button class="link" data-act="source" data-src="' + s.id + '">Open it</button></p>';
+    if (r.step === "sorting") h += '<div class="progress"><div class="now"><span class="s"></span>Checking which project this belongs to</div></div>';
+    else if (r.step === "suggest") h += '<div class="hit" style="padding-top:12px;border-top:1px solid var(--line)"><p>This looks like part of ' + esc(r.target.name) + '.</p><p class="muted" style="font-size:14px">It mentions ' + r.target.words.map((w) => "“" + esc(w) + "”").join(" and ") + ', which come up often there.</p><div class="actions" style="margin-top:6px"><button class="btn primary sm" data-act="file-move">Move to ' + esc(r.target.name) + '</button><button class="btn ghost sm" data-act="file-stay">Leave in Inbox</button></div></div>';
+    else if (r.step === "nomatch") h += '<p class="faint" style="font-size:13px">No project matched, so it stays in the Inbox.</p>';
+    else if (r.step === "moved") h += '<p class="faint" style="font-size:13px">Moved. It now counts as an original in that project.</p>';
+    return h + "</div>";
+  }
+
+  function guessProject(text) {
+    const t = new Set(words(text));
+    let best = null;
+    S.projects.filter((p) => p.id !== "inbox").forEach((p) => {
+      const vocab = new Set(words(S.sources.filter((s) => s.project === p.id).map((s) => s.title + " " + s.body).join(" ") + " " + p.name + " " + p.desc));
+      const hit = [...t].filter((w) => vocab.has(w) && w.length > 3);
+      if (hit.length >= 2 && (!best || hit.length > best.words.length)) best = { id: p.id, name: p.name, words: hit.slice(0, 2) };
+    });
+    return best;
+  }
+
+  function handoffText(pid) {
+    const p = proj(pid);
+    const f = S.facts.filter((x) => x.project === pid);
+    const q = S.questions.filter((x) => x.project === pid);
+    return "Project: " + p.name + "\n" + p.desc + "\n\nTrue now:\n" + (f.map((x) => "- " + x.text + " (source: " + src(x.src).title + ", " + src(x.src).when + ")").join("\n") || "- Nothing reviewed yet") +
+      "\n\nOpen questions:\n" + (q.map((x) => "- " + x.text).join("\n") || "- None") + "\n\nFrom BiBrain. Only reviewed facts are included.";
+  }
+
+  function copy(text, okMsg) {
+    const fallback = () => {
+      S.modal = null; S.drawer = null;
+      const o = $("#overlay");
+      o.innerHTML = '<div class="scrim" data-act="close-overlay"></div><div class="modal-wrap"><div class="modal" role="dialog" aria-modal="true" aria-labelledby="cp-h"><h2 id="cp-h">Copy this text</h2><p class="muted" style="font-size:14px">Your browser blocked automatic copying. The text is selected. Press Ctrl+C or Cmd+C.</p><textarea class="field" id="copy-area" rows="10" readonly>' + esc(text) + '</textarea><div class="actions"><button class="btn" data-act="close-overlay">Done</button></div></div></div>';
+      const ta = $("#copy-area"); ta.focus(); ta.select();
+    };
+    try {
+      navigator.clipboard.writeText(text).then(() => toast(okMsg), fallback);
+    } catch (e) { fallback(); }
+  }
+
+  // ---------- Render ----------
+  const VIEWS = { today: viewToday, brain: viewBrain, connections: viewConnections, settings: viewSettings };
+  function render() {
+    const active = document.activeElement;
+    const id = active && active.id;
+    const pos = active && "selectionStart" in active ? active.selectionStart : null;
+    $("#view").innerHTML = VIEWS[S.view]();
+    renderChrome();
+    renderOverlay();
+    if (id && document.getElementById(id) && !S.drawer && !S.modal) {
+      const el = document.getElementById(id);
+      el.focus();
+      if (pos != null && el.setSelectionRange) try { el.setSelectionRange(pos, pos); } catch (e) {}
+    }
+    autosize();
+    bindInputs();
+  }
+  function autosize() { const t = $("#bar"); if (t) { t.style.height = "auto"; t.style.height = Math.min(t.scrollHeight, 220) + "px"; } }
+
+  function bindInputs() {
+    const bar = $("#bar");
+    if (bar) {
+      bar.oninput = () => {
+        S.bar = bar.value; autosize();
+        const wantAsk = /\?\s*$/.test(bar.value);
+        if (wantAsk && S.mode !== "ask") { S.mode = "ask"; syncMode(); }
+      };
+      bar.onkeydown = (e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); submitBar(); } };
+      $("#bar-form").onsubmit = (e) => { e.preventDefault(); submitBar(); };
+    }
+    const q = $("#q");
+    if (q) q.oninput = () => { S.query = q.value; render(); };
+    const cap = $("#cap");
+    if (cap) cap.onchange = () => { const v = Math.max(0, Math.min(100, Math.round(Number(cap.value) || 0))); S.cap = v; render(); toast("Monthly cap set to $" + v + "."); };
+    const files = $("#files");
+    if (files) files.onchange = () => importFiles(files.files);
+    const drop = $("#drop");
+    if (drop) {
+      drop.ondragover = (e) => { e.preventDefault(); drop.classList.add("over"); };
+      drop.ondragleave = () => drop.classList.remove("over");
+      drop.ondrop = (e) => { e.preventDefault(); drop.classList.remove("over"); importFiles(e.dataTransfer.files); };
+    }
+  }
+  function syncMode() {
+    const ask = S.mode === "ask";
+    document.querySelectorAll('.seg button').forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.mode === S.mode)));
+    const go = $("#bar-go"); if (go) go.textContent = ask ? "Ask" : "Save";
+    const bar = $("#bar"); if (bar) bar.placeholder = ask ? "Ask what your brain knows…" : "Paste a note, a decision, or a conversation…";
+  }
+  function submitBar() {
+    const text = S.bar.trim();
+    if (S.mode === "ask") {
+      if (!text) { toast("Type a question first."); return; }
+      S.answer = { q: text, hits: search(text, 3) };
+      S.bar = ""; S.mode = "save"; S.receipt = null;
+      render();
+    } else {
+      S.answer = null; saveCapture(S.bar); render();
+    }
+  }
+  function importFiles(list) {
+    const ok = [...list].filter((f) => /\.(txt|md|markdown)$/i.test(f.name) && f.size <= 1048576);
+    const skipped = list.length - ok.length;
+    if (!ok.length) { toast("Only .txt and .md files up to 1 MB can come in."); return; }
+    let left = ok.length;
+    ok.forEach((f) => {
+      const r = new FileReader();
+      r.onload = () => {
+        S.sources.push({ id: nid("s"), project: "inbox", kind: "Imported file", from: "You", title: f.name, when: "Just now", order: 100 + S.seq, body: String(r.result).slice(0, 100000) });
+        if (--left === 0) { render(); toast(ok.length + (ok.length === 1 ? " file" : " files") + " added to Inbox" + (skipped ? ", " + skipped + " skipped" : "") + ". They stay in this tab only."); }
+      };
+      r.onerror = () => { if (--left === 0) render(); toast("Could not read " + f.name + "."); };
+      r.readAsText(f);
+    });
+  }
+
+  // ---------- Actions ----------
+  function themeLabel() { const t = document.documentElement.dataset.theme; return t === "dark" ? "Dark" : t === "light" ? "Light" : "Auto"; }
+  const ACT = {
+    nav: (d) => { S.view = d.view; S.answer = S.view === "today" ? S.answer : null; S.fixing = null; S.editingFact = null; S.revoking = null; S.confirmDelete = false; render(); $("#view").focus({ preventScroll: true }); window.scrollTo(0, 0); },
+    "focus-bar": () => { const b = $("#bar"); if (b) b.focus(); },
+    mode: (d) => { S.mode = d.mode; syncMode(); const b = $("#bar"); if (b) b.focus(); },
+    "ask-example": (d) => { S.answer = { q: d.q, hits: search(d.q, 3) }; render(); },
+    "clear-answer": () => { S.answer = null; render(); },
+    "clear-receipt": () => { S.receipt = null; render(); },
+    "file-move": () => { const r = S.receipt; if (!r || !r.target) return; snapshot(); src(r.src).project = r.target.id; r.step = "moved"; render(); toast("Moved to " + r.target.name + ".", true); },
+    "file-stay": () => { S.receipt = null; render(); toast("Left in Inbox."); },
+    keep: (d) => { keepBrief(d.id); render(); },
+    fix: (d) => { S.fixing = d.id; render(); const t = $("#fix-" + d.id); if (t) { t.focus(); t.setSelectionRange(t.value.length, t.value.length); } },
+    "fix-save": (d) => { const t = $("#fix-" + d.id); const v = t ? t.value.trim() : ""; if (!v) { toast("Write your version first."); return; } keepBrief(d.id, v); render(); },
+    "fix-cancel": () => { S.fixing = null; render(); },
+    dismiss: (d) => { snapshot(); const b = S.brief.find((x) => x.id === d.id); S.brief = S.brief.filter((x) => x.id !== d.id); render(); toast(b && b.kind === "file" ? "Left in Inbox." : "Dismissed. It returns only if new evidence appears.", true); },
+    undo: () => { if (!undoSnap) return; const view = S.view; S = JSON.parse(undoSnap); S.view = view; undoSnap = null; $("#toast-root").innerHTML = ""; render(); toast("Undone."); },
+    source: (d, el) => { lastFocus = el; S.drawer = { src: d.src, fact: d.fact || null, quote: d.quote || null }; render(); const c = document.querySelector(".drawer .icon-btn"); if (c) c.focus(); },
+    "close-overlay": () => { const wasModal = S.modal; S.drawer = null; S.modal = null; renderOverlay(); if (wasModal) render(); if (lastFocus && document.body.contains(lastFocus)) lastFocus.focus(); },
+    "open-project": (d) => { S.project = d.p; S.view = "brain"; S.query = ""; S.editingFact = null; render(); window.scrollTo(0, 0); },
+    "new-project": () => { snapshot(); const id = nid("p"); S.projects.splice(S.projects.length - 1, 0, { id, name: "New project", desc: "Rename this when you know what it is.", folder: "" }); S.watch[id] = false; S.project = id; S.view = "brain"; render(); toast("Project created.", true); },
+    watch: (d) => { S.watch[d.p] = !S.watch[d.p]; render(); toast(S.watch[d.p] ? "Watching " + proj(d.p).name + "." : "Stopped watching " + proj(d.p).name + "."); },
+    "edit-fact": (d) => { S.editingFact = d.id; render(); const t = $("#ef-" + d.id); if (t) t.focus(); },
+    "cancel-edit": () => { S.editingFact = null; render(); },
+    "save-fact": (d) => { const t = $("#ef-" + d.id); const v = t ? t.value.trim() : ""; const f = fact(d.id); if (!v) { toast("A fact cannot be empty. Use Undo to bring back an older version."); return; } if (v === f.text) { S.editingFact = null; render(); return; } snapshot(); f.text = v; f.checked = "Today"; f.stale = false; f.history.push({ v: f.history.length + 1, text: v, note: "Your edit", when: "Today" }); S.editingFact = null; render(); toast("Saved as version " + f.history.length + ".", true); },
+    "close-q": (d) => { snapshot(); S.questions = S.questions.filter((q) => q.id !== d.id); render(); toast("Marked answered.", true); },
+    "clear-query": () => { S.query = ""; render(); },
+    handoff: (d) => copy(handoffText(d.p), "Handoff for " + proj(d.p).name + " copied. Paste it into any agent."),
+    "add-agent": (d) => { lastFocus = document.activeElement; S.modal = { agent: d.id, projects: [S.project !== "inbox" ? S.project : "p1"].filter((id) => proj(id)), access: "suggest", step: "review" }; renderOverlay(); const f = document.querySelector(".modal input"); if (f) f.focus(); },
+    "m-proj": (d, el) => { const m = S.modal; m.projects = el.checked ? [...new Set([...m.projects, el.value])] : m.projects.filter((x) => x !== el.value); const keep = document.activeElement && document.activeElement.value; renderOverlay(); const again = document.querySelector('.modal input[value="' + keep + '"]'); if (again) again.focus(); },
+    "m-acc": (d, el) => { S.modal.access = el.value; },
+    "m-go": () => {
+      const m = S.modal; const a = S.agents.find((x) => x.id === m.agent);
+      a.status = "waiting"; a.projects = m.projects.slice(); a.access = m.access; m.step = "waiting";
+      render();
+      setTimeout(() => {
+        if (a.status !== "waiting") return;
+        a.status = "connected"; a.last = "Just now";
+        if (S.modal && S.modal.agent === a.id) S.modal.step = "done";
+        render();
+        if (!S.modal) toast(a.name + " made its first call and is now connected.");
+      }, 2600);
+    },
+    revoke: (d) => { S.revoking = d.id; render(); },
+    "revoke-no": () => { S.revoking = null; render(); },
+    "revoke-yes": (d) => { snapshot(); const a = S.agents.find((x) => x.id === d.id); a.status = "revoked"; a.projects = []; S.revoking = null; render(); toast(a.name + " no longer has access.", true); },
+    "toggle-bg": () => { S.bg = !S.bg; render(); toast(S.bg ? "Background help is on." : "Background help is off. Saving and search still work."); },
+    theme: () => { const r = document.documentElement; const t = r.dataset.theme; if (!t) r.dataset.theme = "light"; else if (t === "light") r.dataset.theme = "dark"; else delete r.dataset.theme; try { localStorage.setItem("bb-theme", r.dataset.theme || ""); } catch (e) {} $("#theme-btn").textContent = themeLabel(); if (S.view === "settings") render(); },
+    export: () => copy(JSON.stringify({ exported: "sample", projects: S.projects, sources: S.sources, facts: S.facts, questions: S.questions }, null, 2), "Export copied. Paste it into a file to keep it."),
+    delete: () => { S.confirmDelete = true; render(); },
+    "delete-no": () => { S.confirmDelete = false; render(); },
+    "delete-yes": () => { snapshot(); S.sources = []; S.facts = []; S.questions = []; S.brief = []; S.agents.forEach((a) => { if (a.status !== "found") { a.status = "found"; a.projects = []; } }); S.confirmDelete = false; S.view = "today"; S.answer = null; render(); toast("Everything was deleted from this sample brain.", true); },
+    reset: () => { const view = S.view; S = sample(); S.view = view; render(); toast("Sample brain restored."); }
+  };
+
+  document.addEventListener("click", (e) => {
+    const t = e.target.closest("[data-act]");
+    if (!t) return;
+    const fn = ACT[t.dataset.act];
+    if (!fn) return;
+    if (t.tagName === "A") e.preventDefault();
+    if (t.tagName === "INPUT") { fn(t.dataset, t); return; }
+    fn(t.dataset, t);
+  });
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && (S.drawer || S.modal || $("#copy-area"))) { ACT["close-overlay"](); return; }
+    if (e.key === "/" && !/^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement.tagName)) {
+      e.preventDefault();
+      if (S.view !== "today") ACT.nav({ view: "today" });
+      const b = $("#bar"); if (b) b.focus();
+    }
+  });
+
+  try { const t = localStorage.getItem("bb-theme"); if (t) document.documentElement.dataset.theme = t; } catch (e) {}
+  $("#theme-btn").textContent = themeLabel();
+  const start = (location.hash || "").replace("#", "");
+  if (VIEWS[start]) S.view = start;
+  render();
+})();
+</script>
