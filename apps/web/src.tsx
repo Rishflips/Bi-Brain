@@ -1,4 +1,10 @@
-import React, { useState, useEffect, useRef, useCallback } from "react";
+import React, {
+  useState,
+  useEffect,
+  useRef,
+  useCallback,
+  useMemo,
+} from "react";
 import { createRoot } from "react-dom/client";
 import type {
   Entity,
@@ -7,20 +13,12 @@ import type {
   Evidence,
 } from "../../packages/contracts/index.ts";
 import sample from "../../fixtures/beta-launch.json" with { type: "json" };
-import {
-  BrainPulse,
-  BrainQuickFind,
-  EvidenceList,
-  ProposalCard,
-  CurrentKnowledge,
-} from "./components.tsx";
-import {
-  FirstNoteComposer,
-  FirstNoteSaved,
-  type FirstNote,
-} from "./first-note.tsx";
+import { EvidenceList, CurrentKnowledge } from "./components.tsx";
+import { type FirstNote } from "./first-note.tsx";
 import { SignIn, ConnectionUnavailable, type RuntimeMode } from "./sign-in.tsx";
 import { BrandLockup } from "./brand.tsx";
+import { TodayView } from "./today/TodayView.tsx";
+import "./today/today.css";
 import {
   AgentContinuityWorkspace,
   AgentClientPicker,
@@ -28,11 +26,6 @@ import {
   agentSetupCommand,
   type AgentClient,
 } from "./agent-connection.tsx";
-import {
-  FirstSessionJourney,
-  type FirstSessionMemoryState,
-} from "./first-session.tsx";
-import { ProactiveGoal, type ProactiveGoalState } from "./proactive-goal.tsx";
 import { ProjectFocus, ProjectOverview } from "./project-focus.tsx";
 import "@fontsource-variable/manrope/wght.css";
 import "./style.css";
@@ -372,6 +365,16 @@ function App() {
   const [searchResults, setSearchResults] = useState<Source[]>([]);
   const [knowledgePages, setKnowledgePages] = useState<any[]>([]);
   const [knowledgeProject, setKnowledgeProject] = useState("");
+  const [_briefCount, setBriefCount] = useState(0);
+  // Connections reports no client name, so a verified grant is shown generically.
+  const agentNamesByProject = useMemo(() => {
+    const map: Record<string, string[]> = {};
+    for (const g of grants)
+      if (g.last_verified_at && !g.revoked_at)
+        for (const id of g.projects ?? [])
+          (map[id] ??= []).push("A connected agent");
+    return map;
+  }, [grants]);
   const [gateQueue, setGateQueue] = useState<Entity[]>([]);
   const [queryPage, setQueryPage] = useState(0);
   const [adapterSelection, setAdapterSelection] = useState<any>(null);
@@ -947,62 +950,6 @@ function App() {
         : current,
     );
   }
-  async function saveFirstNote(draft: { body: string }) {
-    const generation = authGeneration;
-    const title =
-      draft.body.trim().split("\n")[0].slice(0, 80) || "Untitled note";
-    const saved = await api<{
-      source_id: string;
-      duplicate?: boolean;
-      quarantined?: boolean;
-      warning?: string;
-    }>("/sources", {
-      title,
-      body: draft.body,
-      project_id: "inbox",
-      visibility: "project",
-      separate: false,
-    });
-    if (generation !== authGeneration) return;
-    // A 201 response carries the real persisted `source_id`: acknowledge the
-    // durable save immediately, before any read or refresh can fail.
-    firstNoteReadSeq.current += 1;
-    setFirstNote({
-      sourceId: saved.source_id,
-      duplicate: !!saved.duplicate,
-      quarantined: !!saved.quarantined,
-      warning: saved.warning,
-      source: null,
-      sourceError: null,
-      removed: false,
-    });
-    void loadFirstNoteSource(saved.source_id, generation);
-    // A refresh failure (or a queued/failed worker) must never change the
-    // saved acknowledgement; the background poll retries on its own.
-    void refresh().catch(() => {});
-  }
-  function retryFirstNoteSource() {
-    if (!firstNote) return;
-    setFirstNote((current) =>
-      current ? { ...current, sourceError: null } : current,
-    );
-    void loadFirstNoteSource(firstNote.sourceId, authGeneration);
-  }
-  function findFirstNote() {
-    const loaded = firstNote?.source;
-    // Inline capture always writes to Inbox. Even when the source read failed,
-    // the known trusted scope is Inbox: clear any older project/search selection
-    // so the view is never an unrelated project or a stale query. The raw draft
-    // is never used as a fallback.
-    setScope(loaded ? loaded.project_id : "inbox");
-    setSearch(loaded ? loaded.title : "");
-    setQueryPage(0);
-    setNav("Your brain");
-  }
-  function openFirstNote() {
-    if (!firstNote?.source) return;
-    void openSource(firstNote.source.id);
-  }
   /**
    * Revalidates the receipt's original on every refresh (including another tab
    * or a correction/withdrawal made elsewhere). It clears the retained body on a
@@ -1024,34 +971,6 @@ function App() {
    * brief that cites other notes can never have its clauses shown as this note's
    * preview. A stale (non-current) brief is never shown.
    */
-  const firstNoteBrief =
-    firstNote?.source != null
-      ? (today.briefs.find(
-          (b: Entity) =>
-            b.project_id === firstNote.source!.project_id &&
-            b.data.status === "current",
-        ) ?? null)
-      : null;
-  const firstNotePreviewItems =
-    firstNote?.source && !firstNote.sourceError && !firstNote.removed
-      ? (firstNoteBrief?.data.items ?? []).filter((item: any) => {
-          const evidence = item.evidence ?? [];
-          // Keep the item ONLY when all of its citations are this exact saved
-          // source/version. A mixed-source clause is suppressed rather than
-          // stripped of its inconvenient citations.
-          return (
-            evidence.length > 0 &&
-            evidence.every(
-              (e: any) =>
-                e.source_id === firstNote!.source!.id &&
-                e.source_version === firstNote!.source!.version,
-            )
-          );
-        })
-      : [];
-  const firstNotePreviewMode = firstNotePreviewItems.length
-    ? (firstNoteBrief?.data.mode ?? null)
-    : null;
   async function openSource(id: string) {
     await act(async () => {
       setSource(await api(`/sources/${id}`));
@@ -1067,46 +986,10 @@ function App() {
   const ready = today.proposals.filter(
     (p: Entity) => p.data.status === "ready",
   );
-  const hasActiveJobs = today.status.jobs.some((job: any) =>
-    ["queued", "leased"].includes(job.status),
-  );
-  const hasStaleUnderstanding = today.briefs.some(
-    (item: Entity) => item.data.status !== "current",
-  );
-  const firstSessionProject = notes[0]?.project_id ?? "inbox";
-  const firstSessionSourceId = notes[0]?.id;
-  const firstSessionKnowledgeInScope =
-    (scope || "inbox") === firstSessionProject;
   const scopedKnowledgePages =
     knowledgeProject === (scope || "inbox") ? knowledgePages : [];
   const scopedGateQueue =
     knowledgeProject === (scope || "inbox") ? gateQueue : [];
-  const firstSessionMemoryState: FirstSessionMemoryState =
-    firstSessionKnowledgeInScope &&
-    scopedKnowledgePages.some((page) =>
-      page.current?.some((claim: Entity) =>
-        (claim.data.evidence ?? []).some(
-          (evidence: Evidence) => evidence.source_id === firstSessionSourceId,
-        ),
-      ),
-    )
-      ? "accepted"
-      : firstSessionKnowledgeInScope &&
-          scopedGateQueue.some(
-            (item) =>
-              item.data.status === "queued" &&
-              (item.data.evidence ?? []).some(
-                (evidence: Evidence) =>
-                  evidence.source_id === firstSessionSourceId,
-              ),
-          )
-        ? "pending"
-        : "searchable";
-  const firstSessionConnected = grants.some(
-    (grant) =>
-      grant.status === "Connected" &&
-      grant.projects?.includes(firstSessionProject),
-  );
   const target = scope || "inbox";
   const focusProject = scope || "inbox";
   const focusSources = notes.filter((item) => item.project_id === focusProject);
@@ -1182,46 +1065,6 @@ function App() {
       ).length,
     };
   });
-  const proactiveProject = scope || "inbox";
-  const proactiveGoal =
-    today.goals.find(
-      (goal: Entity) =>
-        goal.project_id === proactiveProject && goal.data.status === "active",
-    ) ??
-    today.goals.find(
-      (goal: Entity) =>
-        goal.project_id === proactiveProject && goal.data.status === "paused",
-    );
-  const proactiveReady = proactiveGoal
-    ? ready.some((item: Entity) => item.data.goal_id === proactiveGoal.id)
-    : false;
-  const proactivePreparing = proactiveGoal
-    ? today.status.jobs.some(
-        (job: any) =>
-          job.project_id === proactiveGoal.project_id &&
-          job.kind === "review_changed_assumption" &&
-          ["queued", "running", "leased", "retry_wait"].includes(job.status),
-      )
-    : false;
-  const hasUsefulUnderstanding =
-    scopedKnowledgePages.some((page) => page.current?.length > 0) ||
-    today.briefs.some(
-      (item: Entity) =>
-        item.project_id === proactiveProject && item.data.status === "current",
-    );
-  const proactiveState: ProactiveGoalState = !proactiveGoal
-    ? "choose"
-    : proactiveGoal.data.status === "paused"
-      ? "paused"
-      : proactivePreparing
-        ? "preparing"
-        : proactiveGoal.data.preparation_enabled
-          ? "watching"
-          : "selected";
-  const showProactiveGoal =
-    notes.length >= 2 &&
-    !proactiveReady &&
-    (!!proactiveGoal || hasUsefulUnderstanding);
   const field = (label: string, child: React.ReactNode) => (
     <label className="field">
       {label}
@@ -1236,16 +1079,6 @@ function App() {
   // recovery state. It makes the unavailable boundary legible and preserves
   // the safety contract that a runtime discovery failure can never look paired.
   const showProductShell = paired || demo || phase === "unknown";
-  function reviewProposal(item: Entity) {
-    setProposal(item);
-    setArtifact(item.data.artifact);
-    setDialog("review");
-  }
-  function snoozeProposal(item: Entity) {
-    setProposal(item);
-    setSnooze("");
-    setDialog("snooze");
-  }
   async function importFile(file?: File) {
     if (!file) return;
     if (file.size > 4 * 1048576)
@@ -1391,360 +1224,24 @@ function App() {
               </article>
             </section>
           ) : nav === "Today" ? (
-            <section className="today-view">
-              <div className="today-hero">
-                <div className="today-intro">
-                  <p className="eyebrow">
-                    {new Intl.DateTimeFormat("en", { weekday: "long" })
-                      .format(new Date())
-                      .toUpperCase()}{" "}
-                    · YOUR PRIVATE SPACE
-                  </p>
-                  <h1>
-                    {notes.length
-                      ? "Welcome back."
-                      : "What do you want to pick up later?"}
-                  </h1>
-                  <p className="lede">
-                    {notes.length
-                      ? "Everything you saved is ready to continue—here or with a connected agent."
-                      : "Drop in anything worth keeping. BiBrain will hold the thread."}
-                  </p>
-                </div>
-                <BrainPulse
-                  hasSavedWork={notes.length > 0}
-                  readyCount={ready.length}
-                  hasActiveJobs={hasActiveJobs}
-                  hasStaleUnderstanding={hasStaleUnderstanding}
-                  preparationEnabled={!!prefs?.enabled}
-                  workerOnline={!!today.status.worker_online}
-                />
-              </div>
-              {notes.length ? (
-                <BrainQuickFind
-                  onFind={(query) => {
-                    setSearch(query);
-                    setQueryPage(0);
-                    setNav("Your brain");
-                  }}
-                />
-              ) : null}
-              {firstNote ? (
-                <FirstNoteSaved
-                  note={firstNote}
-                  projectName={projectName}
-                  previewMode={firstNotePreviewMode}
-                  previewItems={firstNotePreviewItems}
-                  workerOnline={!!today.status.worker_online}
-                  onRetryOpen={retryFirstNoteSource}
-                  onFind={findFirstNote}
-                  onOpen={openFirstNote}
-                  onOpenEvidence={(id) => void openSource(id)}
-                  onSaveAnother={() => setFirstNote(null)}
-                />
-              ) : !notes.length ? (
-                <FirstNoteComposer
-                  providerEnabled={!!prefs?.provider_enabled}
-                  onSave={saveFirstNote}
-                  onTryExample={() => setDemo(true)}
-                />
-              ) : null}
-              {notes.length === 1 ? (
-                <FirstSessionJourney
-                  memoryState={firstSessionMemoryState}
-                  connected={firstSessionConnected}
-                  shareable={notes[0].visibility === "project"}
-                  onOpenMemory={() => {
-                    setScope(firstSessionProject);
-                    setNav("Your brain");
-                  }}
-                  onFind={() => {
-                    setScope(firstSessionProject);
-                    setSearch(notes[0].title);
-                    setQueryPage(0);
-                    setNav("Your brain");
-                  }}
-                  onConnect={() => {
-                    setScope(firstSessionProject);
-                    setNav("Connections");
-                  }}
-                />
-              ) : null}
-              {notes.length && ready.length ? (
-                <>
-                  {today.pings?.some(
-                    (ping: Entity) => ping.data.proposal_id === ready[0].id,
-                  ) ? (
-                    <p className="status">
-                      One next step from a goal you chose is ready to review.
-                    </p>
-                  ) : null}
-                  <ProposalCard
-                    item={ready[0]}
-                    project={projectName(ready[0].project_id)}
-                    onReview={reviewProposal}
-                    onSnooze={snoozeProposal}
-                  />
-                  {ready.length > 1 ? (
-                    <details>
-                      <summary>More ready for you ({ready.length - 1})</summary>
-                      {ready.slice(1, 3).map((p: Entity) => (
-                        <ProposalCard
-                          key={p.id}
-                          item={p}
-                          project={projectName(p.project_id)}
-                          onReview={reviewProposal}
-                          onSnooze={snoozeProposal}
-                        />
-                      ))}
-                    </details>
-                  ) : null}
-                </>
-              ) : null}
-              {showProactiveGoal ? (
-                <ProactiveGoal
-                  state={proactiveState}
-                  goalTitle={proactiveGoal?.data.title}
-                  projectTitle={projectName(proactiveProject)}
-                  stayAhead={!!prefs?.enabled}
-                  workerOnline={!!today.status.worker_online}
-                  onChoose={() => {
-                    setCaptureScope(proactiveProject);
-                    setDialog("goal");
-                  }}
-                  onPrepare={() => {
-                    if (!proactiveGoal) return;
-                    void act(async () => {
-                      if (!proactiveGoal.data.preparation_enabled)
-                        await api(
-                          `/goals/${proactiveGoal.id}`,
-                          {
-                            expected_version: proactiveGoal.version,
-                            preparation_enabled: true,
-                          },
-                          "PATCH",
-                        );
-                      try {
-                        await api(`/goals/${proactiveGoal.id}/prepare`, {});
-                      } finally {
-                        // The goal opt-in may already be durable if the enqueue
-                        // request fails. Refresh so the UI never hides that
-                        // partial, retryable state behind stale local data.
-                        await refresh();
-                      }
-                      setNotice(
-                        "Review requested. Nothing changes until you approve it.",
-                      );
-                    });
-                  }}
-                  onEnableStayAhead={() =>
-                    void act(async () => {
-                      setPrefs(
-                        await api(
-                          "/preferences/background",
-                          backgroundPatchBody({ enabled: true }),
-                          "PATCH",
-                        ),
-                      );
-                      await refresh();
-                      setNotice(
-                        "Stay ahead is on for goals you explicitly selected.",
-                      );
-                    })
-                  }
-                  onResume={() => {
-                    if (!proactiveGoal) return;
-                    void act(async () => {
-                      await api(
-                        `/goals/${proactiveGoal.id}`,
-                        {
-                          expected_version: proactiveGoal.version,
-                          status: "active",
-                        },
-                        "PATCH",
-                      );
-                      await refresh();
-                      setNotice("Goal resumed. No preparation was requested.");
-                    });
-                  }}
-                  onViewGoal={() => setNav("Your brain")}
-                />
-              ) : null}
-              {notes.length && !firstNote ? (
-                <>
-                  <div className="section-heading">
-                    <p className="eyebrow">ADD TO YOUR BRAIN</p>
-                  </div>
-                  <FirstNoteComposer
-                    providerEnabled={!!prefs?.provider_enabled}
-                    onSave={saveFirstNote}
-                    onTryExample={() => setDemo(true)}
-                  />
-                </>
-              ) : null}
-              {notes.length ? (
-                <>
-                  <div className="section-heading">
-                    <p className="eyebrow">PICK UP WHERE YOU LEFT OFF</p>
-                    <button
-                      className="link"
-                      onClick={() => setNav("Your brain")}
-                    >
-                      View your brain →
-                    </button>
-                  </div>
-                  {today.briefs.slice(0, 3).map((b: Entity) => (
-                    <article className="resume row" key={b.id}>
-                      <div>
-                        <span className="muted">
-                          {projectName(b.project_id)}
-                        </span>
-                        <h3>{b.data.title}</h3>
-                        <p>
-                          {b.data.status === "current"
-                            ? b.data.mode
-                            : "Updating understanding · earlier context is stale"}
-                        </p>
-                      </div>
-                      <button
-                        disabled={b.data.status !== "current"}
-                        onClick={() => {
-                          setBrief(b);
-                          setDialog("continue");
-                        }}
-                      >
-                        Use with an agent
-                      </button>
-                    </article>
-                  ))}
-                </>
-              ) : null}
-              {today.receipts
-                .filter((r: Entity) => r.data.outcome === "accepted")
-                .map((r: Entity) => (
-                  <article key={r.id}>
-                    <h3>
-                      {r.data.reverted ? "Plan change undone" : "Plan accepted"}
-                    </h3>
-                    <p>
-                      Your reviewed plan is saved in {projectName(r.project_id)}
-                      .
-                    </p>
-                    {!r.data.reverted ? (
-                      <button
-                        onClick={() =>
-                          void act(async () => {
-                            try {
-                              await api(`/receipts/${r.id}/undo`, {
-                                expected_version: r.data.applied_version,
-                              });
-                            } catch (err) {
-                              if (
-                                !(err instanceof ApiError) ||
-                                err.code !== "VERSION_CONFLICT"
-                              )
-                                throw err;
-                              const current = await api("/today");
-                              setToday(current);
-                              const goal = current.goals.find(
-                                (g: Entity) => g.id === r.data.goal_id,
-                              );
-                              if (!goal) throw err;
-                              setComparison({ receipt: r, goal });
-                              setDialog("compare");
-                              return;
-                            }
-                            await refresh();
-                            setNotice("Acceptance undone with a new revision.");
-                          })
-                        }
-                      >
-                        Undo acceptance
-                      </button>
-                    ) : null}
-                  </article>
-                ))}
-              {today.proposals.some(
-                (p: Entity) => p.data.status !== "prepared",
-              ) ? (
-                <details>
-                  <summary>Earlier preparation</summary>
-                  {today.proposals
-                    .filter((p: Entity) => p.data.status !== "prepared")
-                    .slice(0, 20)
-                    .map((p: Entity) => (
-                      <article key={p.id}>
-                        <h3>{projectName(p.project_id)}</h3>
-                        <p>
-                          {p.data.status === "invalidated"
-                            ? "Evidence changed. This suggestion is no longer current."
-                            : p.data.status === "snoozed"
-                              ? `Snoozed until ${new Date(p.data.until).toLocaleString()}.`
-                              : p.data.status === "dismissed"
-                                ? "Dismissed by you."
-                                : p.data.status === "accepted"
-                                  ? "Accepted by you."
-                                  : p.data.status === "reverted"
-                                    ? "Acceptance undone."
-                                    : "This preparation is no longer active."}
-                        </p>
-                      </article>
-                    ))}
-                </details>
-              ) : null}
-              {today.receipts.some(
-                (r: Entity) => r.data.outcome !== "accepted",
-              ) ? (
-                <details>
-                  <summary>What changed</summary>
-                  {today.receipts
-                    .filter((r: Entity) => r.data.outcome !== "accepted")
-                    .slice(0, 20)
-                    .map((r: Entity) => (
-                      <p key={r.id}>
-                        {projectName(r.project_id)}:{" "}
-                        {r.data.outcome === "no_change"
-                          ? "Nothing new to review."
-                          : r.data.outcome === "failed"
-                            ? "Preparation failed. Your saved work remains available."
-                            : r.data.outcome === "abstained"
-                              ? "Not enough reliable context to prepare a suggestion."
-                              : "A check completed; review your current context."}
-                      </p>
-                    ))}
-                </details>
-              ) : null}
-              <div className="background row">
-                <div>
-                  <h3>Stay ahead is {prefs?.enabled ? "on" : "paused"}</h3>
-                  <p>
-                    {today.status.worker_online
-                      ? "This computer is ready to prepare selected work."
-                      : "Preparation is offline. Start the worker to prepare saved work."}
-                  </p>
-                  <small>
-                    Chosen goals only · at most one in-app prompt per local day
-                    · no external sending
-                  </small>
-                </div>
-                <button
-                  className="link"
-                  onClick={() =>
-                    void act(async () => {
-                      setPrefs(
-                        await api(
-                          "/preferences/background",
-                          backgroundPatchBody({ enabled: !prefs?.enabled }),
-                          "PATCH",
-                        ),
-                      );
-                    })
-                  }
-                >
-                  {prefs?.enabled ? "Pause" : "Turn on"}
-                </button>
-              </div>
-            </section>
+            <TodayView
+              api={api}
+              projects={projects.map((p: any) => ({
+                id: p.id,
+                title: p.title,
+              }))}
+              sourceCount={notes.length}
+              backgroundOn={!!prefs?.enabled}
+              agentNamesByProject={agentNamesByProject}
+              onOpenSource={(id) => void openSource(id)}
+              onOpenProject={(id) => {
+                setKnowledgeProject(id);
+                setNav("Your brain");
+              }}
+              onNavigate={(to) => setNav(to)}
+              onChanged={() => void refresh()}
+              onBriefCount={setBriefCount}
+            />
           ) : nav === "Your brain" ? (
             <section className="brain-view" data-ui="brain-library">
               <p className="eyebrow">SAVE → CONTINUE</p>
