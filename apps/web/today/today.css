@@ -259,3 +259,146 @@
     transition: none !important;
   }
 }
+
+/* Save or ask bar */
+.tv-sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+.tv-bar-wrap {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+}
+.tv-bar {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  padding: 12px;
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+}
+.tv-bar:focus-within {
+  border-color: var(--green);
+}
+.tv-bar-row {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  min-width: 0;
+}
+.tv-bar-row textarea {
+  flex: 1;
+  min-width: 0;
+  resize: vertical;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 15px;
+  line-height: 1.5;
+  outline: none;
+}
+.tv-bar-foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 14px;
+}
+.tv-bar-foot select {
+  font: inherit;
+  font-size: 13px;
+  max-width: 100%;
+}
+.tv-seg {
+  display: inline-flex;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  overflow: hidden;
+}
+.tv-seg button {
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 700;
+  padding: 5px 12px;
+  cursor: pointer;
+}
+.tv-seg button[aria-pressed="true"] {
+  background: var(--green-deep);
+  color: var(--on-green);
+}
+.tv-seg button:focus-visible {
+  outline: 2px solid var(--green);
+  outline-offset: -2px;
+}
+.tv-panel {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  padding: 16px 18px;
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+}
+.tv-panel p {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.tv-eyebrow {
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--green);
+}
+.tv-hit {
+  display: grid;
+  gap: 6px;
+  padding-top: 10px;
+  border-top: 1px solid var(--line);
+  justify-items: start;
+}
+.tv-tag.tv-ok {
+  color: var(--green);
+  border-color: var(--green);
+}
+.tv-cite {
+  border: 0;
+  background: none;
+  padding: 0;
+  text-align: left;
+  font: inherit;
+  font-size: 13px;
+  color: var(--muted);
+  font-style: italic;
+  cursor: pointer;
+  overflow-wrap: anywhere;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.tv-cite:focus-visible {
+  outline: 2px solid var(--green);
+  outline-offset: 2px;
+}
+.tv-btn.tv-ghost {
+  background: transparent;
+  padding: 4px 10px;
+  font-size: 13px;
+}
+@media (max-width: 420px) {
+  .tv-bar-row {
+    flex-direction: column;
+  }
+  .tv-bar-row textarea,
+  .tv-bar-row .tv-btn {
+    width: 100%;
+  }
+}

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import { SaveAskBar } from "./SaveAskBar.tsx";
 import type { Brief, TodayProps } from "./types.ts";
 
 export function TodayView(props: TodayProps) {
@@ -26,12 +27,33 @@ export function TodayView(props: TodayProps) {
     return () => window.removeEventListener("focus", onFocus);
   }, [loadBrief, sourceCount]);
 
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const tag = (document.activeElement as HTMLElement | null)?.tagName ?? "";
+      if (e.key === "/" && !/^(INPUT|TEXTAREA|SELECT)$/u.test(tag)) {
+        e.preventDefault();
+        document.getElementById("tv-bar")?.focus();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
+
   if (sourceCount === 0)
     return (
       <section className="tv" aria-labelledby="tv-h">
         <h1 id="tv-h" className="tv-title">
           Welcome to BiBrain.
         </h1>
+        <SaveAskBar
+          api={api}
+          projects={props.projects}
+          onOpenSource={props.onOpenSource}
+          onSaved={() => {
+            props.onChanged();
+            void loadBrief();
+          }}
+        />
         <div className="tv-section">
           <div className="tv-section-head">
             <h2>Three ways to fill your brain</h2>
@@ -90,6 +112,15 @@ export function TodayView(props: TodayProps) {
       <h1 id="tv-h" className="tv-title">
         Good to see you.
       </h1>
+      <SaveAskBar
+        api={api}
+        projects={props.projects}
+        onOpenSource={props.onOpenSource}
+        onSaved={() => {
+          props.onChanged();
+          void loadBrief();
+        }}
+      />
       <div className="tv-section" aria-labelledby="tv-brief-h">
         <div className="tv-section-head">
           <h2 id="tv-brief-h">Since you were last here</h2>

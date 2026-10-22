@@ -46,3 +46,65 @@ test("a brain with saved work and nothing to review says it is quiet", async ({
   ).toBeVisible();
   await expect(page.getByText(/things to look at/i)).toHaveCount(0);
 });
+
+test("saving from the bar keeps the original across reload", async ({
+  page,
+}) => {
+  await pair(page);
+  await page
+    .getByLabel("Save to your brain")
+    .fill(
+      "Northstar launch checklist: invites, pricing page, onboarding copy.",
+    );
+  await page.getByRole("button", { name: "Save", exact: true }).first().click();
+  await expect(page.getByText(/kept exactly as you wrote it/i)).toBeVisible();
+  await page.reload();
+  await page
+    .getByRole("link", { name: /your brain/i })
+    .or(page.getByRole("button", { name: /your brain/i }))
+    .first()
+    .click();
+  await expect(
+    page.getByText("Northstar launch checklist", { exact: false }).first(),
+  ).toBeVisible();
+});
+
+test("a failed save keeps the draft and claims nothing", async ({ page }) => {
+  await pair(page);
+  await page.route("**/api/v1/sources", (route) =>
+    route.request().method() === "POST" ? route.abort() : route.continue(),
+  );
+  const bar = page.getByLabel("Save to your brain");
+  await bar.fill("Draft that must survive");
+  await page.getByRole("button", { name: "Save", exact: true }).first().click();
+  await expect(page.getByRole("alert")).toContainText(/not saved/i);
+  await expect(bar).toHaveValue("Draft that must survive");
+  await expect(page.getByText(/kept exactly as you wrote it/i)).toHaveCount(0);
+});
+
+test("asking answers from saved material, says when nothing matches, and validates input", async ({
+  page,
+}) => {
+  await pair(page);
+  await page
+    .getByLabel("Save to your brain")
+    .fill("The private beta opens on November 14 for 50 invited builders.");
+  await page.getByRole("button", { name: "Save", exact: true }).first().click();
+  await expect(page.getByText(/kept exactly as you wrote it/i)).toBeVisible();
+  const bar = page.getByLabel(/save to your brain|ask your brain/i);
+  await bar.fill("When does the beta open?");
+  await expect(
+    page.getByRole("button", { name: "Ask", exact: true }).first(),
+  ).toBeVisible();
+  await page.keyboard.press("Enter");
+  await expect(page.getByText("From your brain")).toBeVisible();
+  await expect(page.getByText(/November 14/).first()).toBeVisible();
+  await bar.fill("quantum gravity?");
+  await page.keyboard.press("Enter");
+  await expect(
+    page.getByText("Nothing in your brain answers that yet."),
+  ).toBeVisible();
+  await bar.fill("??");
+  await page.keyboard.press("Enter");
+  await expect(page.getByRole("alert")).toContainText(/a few words/i);
+});
