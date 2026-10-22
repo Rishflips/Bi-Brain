@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { Api, BriefItem } from "./types.ts";
 
 type Props = {
@@ -28,6 +28,16 @@ const KEEP: Record<BriefItem["kind"], string> = {
   stale: "Still true",
 };
 
+export function friendlyError(
+  e: unknown,
+  fallback = "Your brain is unavailable.",
+): string {
+  const message = e instanceof Error ? e.message : fallback;
+  return /SOURCE_STALE|no longer active/iu.test(message)
+    ? "The original changed. This suggestion was removed."
+    : message;
+}
+
 export function BriefCard({
   item,
   projectTitle,
@@ -41,6 +51,14 @@ export function BriefCard({
   const [wording, setWording] = useState("");
   const [busy, setBusy] = useState(false);
   const lock = useRef(false);
+  const fixBox = useRef<HTMLTextAreaElement>(null);
+  const keepBtn = useRef<HTMLButtonElement>(null);
+  const wasFixing = useRef(false);
+  useEffect(() => {
+    if (fixing) fixBox.current?.focus();
+    else if (wasFixing.current) keepBtn.current?.focus();
+    wasFixing.current = fixing;
+  }, [fixing]);
   const t = item.target;
   const gate = t.type === "gate";
   const proposal = t.type === "proposal";
@@ -54,13 +72,7 @@ export function BriefCard({
     try {
       await action();
     } catch (e) {
-      const message =
-        e instanceof Error ? e.message : "Your brain is unavailable.";
-      onError(
-        /SOURCE_STALE|no longer active/iu.test(message)
-          ? "The original changed. This suggestion was removed."
-          : message,
-      );
+      onError(friendlyError(e));
     } finally {
       lock.current = false;
       setBusy(false);
@@ -90,16 +102,16 @@ export function BriefCard({
           },
         );
       } else if (proposal) {
-        const r = await api<{ receipt: { id: string; version: number } }>(
-          `/proposals/${t.id}/accept`,
-          {
-            expected_version: t.version,
-            ...(value ? { edited_artifact: value } : {}),
-          },
-        );
+        const r = await api<{
+          receipt: { id: string };
+          goal: { data: { plan_version: number } };
+        }>(`/proposals/${t.id}/accept`, {
+          expected_version: t.version,
+          ...(value ? { edited_artifact: value } : {}),
+        });
         onDone("Plan kept. The earlier plan stays in history.", async () => {
           await api(`/receipts/${r.receipt.id}/undo`, {
-            expected_version: r.receipt.version,
+            expected_version: r.goal.data.plan_version,
           });
         });
       } else if (t.type === "claim") {
@@ -140,7 +152,8 @@ export function BriefCard({
             expected_version: t.version,
           })
       : proposal
-        ? () => api(`/proposals/${t.id}/dismiss`, {})
+        ? () =>
+            api(`/proposals/${t.id}/dismiss`, { expected_version: t.version })
         : () => api("/brief/dismiss", { signature: item.signature });
     onDeferredDismiss(item, send);
   };
@@ -158,6 +171,7 @@ export function BriefCard({
             Your wording
           </label>
           <textarea
+            ref={fixBox}
             id={`tv-fix-${item.signature}`}
             rows={proposal ? 6 : 2}
             value={wording}
@@ -208,6 +222,7 @@ export function BriefCard({
         ) : (
           <>
             <button
+              ref={keepBtn}
               type="button"
               className="tv-btn tv-primary"
               disabled={busy}

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { BriefCard } from "./BriefCard.tsx";
+import { BriefCard, friendlyError } from "./BriefCard.tsx";
 import { SaveAskBar } from "./SaveAskBar.tsx";
 import type { Brief, TodayProps } from "./types.ts";
 import { useUndoToast } from "./useUndoToast.tsx";
@@ -16,7 +16,7 @@ export function TodayView(props: TodayProps) {
     new Map<string, { timer: number; send: () => Promise<unknown> }>(),
   );
   const listRef = useRef<HTMLDivElement>(null);
-  const hadFocus = useRef(false);
+  const focusIndex = useRef<number | null>(null);
 
   const loadBrief = useCallback(async () => {
     try {
@@ -53,14 +53,22 @@ export function TodayView(props: TodayProps) {
     : [];
   const visibleKey = visible.map((i) => i.signature).join("|");
 
+  // When the card that held focus goes away, focus its replacement, or the
+  // Brief heading when no card is left (the list itself may be gone).
   useEffect(() => {
+    const index = focusIndex.current;
+    if (index === null) return;
     const list = listRef.current;
-    if (!list || !hadFocus.current) return;
     const active = document.activeElement;
-    if (active && active !== document.body && list.contains(active)) return;
-    hadFocus.current = false;
-    const next = list.querySelector<HTMLElement>("article button");
-    (next ?? document.getElementById("tv-brief-h"))?.focus();
+    if (list && active && active !== document.body && list.contains(active))
+      return;
+    focusIndex.current = null;
+    const cards = list ? Array.from(list.querySelectorAll("article")) : [];
+    const card = cards[Math.min(index, cards.length - 1)];
+    (
+      card?.querySelector<HTMLElement>("button") ??
+      document.getElementById("tv-brief-h")
+    )?.focus();
   }, [visibleKey]);
 
   useEffect(() => {
@@ -207,11 +215,15 @@ export function TodayView(props: TodayProps) {
           <div
             className="tv-brief"
             ref={listRef}
-            onFocusCapture={() => {
-              hadFocus.current = true;
+            onFocusCapture={(e) => {
+              const card = (e.target as HTMLElement).closest("article");
+              const cards = Array.from(
+                listRef.current?.querySelectorAll("article") ?? [],
+              );
+              focusIndex.current = card ? cards.indexOf(card) : null;
             }}
             onBlurCapture={(e) => {
-              if (e.relatedTarget) hadFocus.current = false;
+              if (e.relatedTarget) focusIndex.current = null;
             }}
           >
             {visible.map((item) => (
@@ -230,9 +242,15 @@ export function TodayView(props: TodayProps) {
                     message,
                     undo
                       ? async () => {
-                          await undo();
-                          await loadBrief();
-                          props.onChanged();
+                          try {
+                            await undo();
+                          } catch (e) {
+                            setActionError(friendlyError(e));
+                            throw e;
+                          } finally {
+                            await loadBrief();
+                            props.onChanged();
+                          }
                         }
                       : undefined,
                   );
@@ -253,9 +271,7 @@ export function TodayView(props: TodayProps) {
                       await send();
                     } catch (e) {
                       if (mounted.current)
-                        setActionError(
-                          e instanceof Error ? e.message : "Could not dismiss.",
-                        );
+                        setActionError(friendlyError(e, "Could not dismiss."));
                     }
                     await loadBrief();
                     if (mounted.current) release();

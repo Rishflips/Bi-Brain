@@ -270,3 +270,201 @@ test("a double click on Keep sends one request", async ({ page }) => {
   await expect(page.getByText(/kept as a fact/i)).toBeVisible();
   expect(sent).toBe(1);
 });
+
+// Request-contract tests. The Brief and the action routes are served by the
+// test with obviously fake ids, so they check the exact path and body each
+// button sends. They do not prove the server accepts those requests.
+type Call = { path: string; body: any };
+const fakeItem = (kind: string, target: any, extra: any = {}) => ({
+  signature: `${target.type}:${target.id}:${target.version}`,
+  kind,
+  project_id: "inbox",
+  title: `Fake ${kind} item`,
+  why: "A synthetic item for a request-contract test.",
+  evidence: [
+    { source_id: "src-fake-1", source_version: 1, quote: "fake quote" },
+  ],
+  target,
+  created_at: "2026-10-22T09:00:00Z",
+  ...extra,
+});
+
+async function contract(page: Page, items: any[]) {
+  const calls: Call[] = [];
+  let live = items;
+  await page.route("**/api/v1/brief", (route) =>
+    route.fulfill({ json: { items: live, waiting: 0 } }),
+  );
+  const record =
+    (reply: unknown, clear = true) =>
+    (route: any) => {
+      const url = new URL(route.request().url());
+      calls.push({
+        path: url.pathname.replace("/api/v1", ""),
+        body: route.request().postDataJSON(),
+      });
+      if (clear)
+        live = live.filter((i) => !url.pathname.includes(`/${i.target.id}/`));
+      return route.fulfill({ json: reply });
+    };
+  await page.route(
+    "**/api/v1/proposals/*/accept",
+    record({
+      receipt: { id: "rcpt-fake-1", version: 1 },
+      goal: { data: { plan_version: 7 } },
+    }),
+  );
+  await page.route("**/api/v1/proposals/*/dismiss", record({}));
+  await page.route("**/api/v1/receipts/*/undo", record({}, false));
+  await page.route("**/api/v1/claims/*/confirm", record({}));
+  await page.route("**/api/v1/jobs/*/retry", record({}));
+  await page.route("**/api/v1/brief/dismiss", record({}));
+  await pair(page);
+  await page.evaluate(async () => {
+    const session = await (await fetch("/api/v1/session")).json();
+    await fetch("/api/v1/sources", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-Brain-CSRF": session.csrf,
+        "Idempotency-Key": crypto.randomUUID(),
+      },
+      body: JSON.stringify({
+        title: "Contract seed",
+        body: "Seed note so Today shows the Brief.",
+        project_id: "inbox",
+        visibility: "private",
+      }),
+    });
+  });
+  await page.reload();
+  return calls;
+}
+
+test("request contract: proposal Keep, then Undo with the goal plan version", async ({
+  page,
+}) => {
+  const calls = await contract(page, [
+    fakeItem("proposal", { type: "proposal", id: "prop-fake-1", version: 3 }),
+  ]);
+  const card = page.getByRole("article").filter({ hasText: "Fake proposal" });
+  await card.getByRole("button", { name: "Keep this plan" }).click();
+  await expect(page.getByText(/plan kept/i)).toBeVisible();
+  await page.getByRole("button", { name: "Undo" }).click();
+  await expect(page.getByText(/undone/i)).toBeVisible();
+  expect(calls).toEqual([
+    { path: "/proposals/prop-fake-1/accept", body: { expected_version: 3 } },
+    { path: "/receipts/rcpt-fake-1/undo", body: { expected_version: 7 } },
+  ]);
+});
+
+test("request contract: proposal Dismiss is sent after the undo window with its version", async ({
+  page,
+}) => {
+  const calls = await contract(page, [
+    fakeItem("proposal", { type: "proposal", id: "prop-fake-2", version: 4 }),
+  ]);
+  const card = page.getByRole("article").filter({ hasText: "Fake proposal" });
+  await card.getByRole("button", { name: "Dismiss" }).click();
+  await expect(card).toHaveCount(0);
+  expect(calls).toEqual([]);
+  await expect.poll(() => calls.length, { timeout: 9000 }).toBe(1);
+  expect(calls[0]).toEqual({
+    path: "/proposals/prop-fake-2/dismiss",
+    body: { expected_version: 4 },
+  });
+});
+
+test("request contract: stale Still true and failed job Try again", async ({
+  page,
+}) => {
+  const calls = await contract(page, [
+    fakeItem(
+      "stale",
+      { type: "claim", id: "claim-fake-1", version: 2 },
+      { aspect: "statement" },
+    ),
+    fakeItem(
+      "failed_job",
+      { type: "job", id: "job-fake-1", version: 1 },
+      {
+        evidence: [],
+        source_id: "src-fake-1",
+      },
+    ),
+  ]);
+  const stale = page.getByRole("article").filter({ hasText: "Fake stale" });
+  const failed = page
+    .getByRole("article")
+    .filter({ hasText: "Fake failed_job" });
+  await expect(
+    failed.getByRole("button", { name: "Open the original" }),
+  ).toBeVisible();
+  await expect(
+    stale.getByRole("button", { name: "Open the original" }).first(),
+  ).toBeVisible();
+  await failed.getByRole("button", { name: "Try again" }).click();
+  await expect(page.getByText(/trying again/i)).toBeVisible();
+  await stale.getByRole("button", { name: "Still true" }).click();
+  await expect(page.getByText(/still true today/i)).toBeVisible();
+  expect(calls.map((c) => c.path).sort()).toEqual([
+    "/claims/claim-fake-1/confirm",
+    "/jobs/job-fake-1/retry",
+  ]);
+});
+
+test("request contract: a failed job without an original has no Open the original button", async ({
+  page,
+}) => {
+  await contract(page, [
+    fakeItem(
+      "failed_job",
+      { type: "job", id: "job-fake-2", version: 1 },
+      { evidence: [] },
+    ),
+  ]);
+  const card = page.getByRole("article").filter({ hasText: "Fake failed_job" });
+  await expect(card.getByRole("button", { name: "Try again" })).toBeVisible();
+  await expect(
+    card.getByRole("button", { name: "Open the original" }),
+  ).toHaveCount(0);
+});
+
+test("a failed Undo shows a plain alert and focus moves to the Brief heading when the last card goes", async ({
+  page,
+}) => {
+  await contract(page, [
+    fakeItem("proposal", { type: "proposal", id: "prop-fake-3", version: 1 }),
+  ]);
+  await page.route("**/api/v1/receipts/*/undo", (route) =>
+    route.fulfill({
+      status: 409,
+      json: {
+        error: { code: "CONFLICT", message: "This changed since you kept it." },
+      },
+    }),
+  );
+  const card = page.getByRole("article").filter({ hasText: "Fake proposal" });
+  await card.getByRole("button", { name: "Keep this plan" }).click();
+  await expect(card).toHaveCount(0);
+  await expect(page.locator("#tv-brief-h")).toBeFocused();
+  await page.getByRole("button", { name: "Undo" }).click();
+  await expect(page.getByRole("alert")).toContainText("changed since");
+});
+
+test("Fix puts the cursor in the wording box and Cancel returns to Keep", async ({
+  page,
+}) => {
+  await pair(page);
+  await page
+    .getByLabel("Save to your brain")
+    .fill("We decided that Corvus rollout is staged.");
+  await page.getByRole("button", { name: "Save", exact: true }).click();
+  const card = page.getByRole("article").filter({ hasText: "staged" });
+  await card.getByRole("button", { name: "Fix" }).click();
+  await expect(card.getByLabel("Your wording")).toBeFocused();
+  await card.getByRole("button", { name: "Cancel" }).click();
+  await expect(
+    card.getByRole("button", { name: "Keep as true" }),
+  ).toBeFocused();
+});
