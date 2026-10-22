@@ -74,3 +74,33 @@ describe("brief routes", () => {
     expect((await req("GET", "/api/v1/brief", undefined, headers)).json().items).toEqual([]);
   });
 });
+
+describe("Brain.ask", () => {
+  it("answers only from saved material and validates input", () => {
+    const { b } = setup();
+    b.capture(owner, { title: "Beta timeline", body: "The private beta opens on November 14 for 50 invited builders." });
+    const out = b.ask(owner, { q: "When does the beta open?" });
+    expect(out.answered).toBe(true);
+    expect(out.hits[0]).toMatchObject({ type: "original", title: "Beta timeline" });
+    expect(b.ask(owner, { q: "quantum gravity?" })).toMatchObject({ answered: false, hits: [] });
+    expect(() => b.ask(owner, { q: "?!" })).toThrow(/words/i);
+    expect(() => b.ask(owner, { q: "x".repeat(501) })).toThrow();
+  });
+
+  it("is owner-only over HTTP and returns hits for the paired owner", async () => {
+    const { b } = setup();
+    const app = await createApp(b, { pairSecret: "test-code", static: false });
+    cleanup.push(() => void app.close());
+    const req = (method: any, url: string, payload?: any, headers: Record<string, string> = {}) =>
+      app.inject({ method, url, headers: { host: "127.0.0.1:4317", ...headers }, payload });
+    expect((await req("GET", "/api/v1/ask?q=beta")).statusCode).toBe(401);
+    const pairing = await req("POST", "/api/v1/session/pair", { secret: "test-code" });
+    const cookie = pairing.cookies[0];
+    const headers = { cookie: `${cookie.name}=${cookie.value}`, "x-brain-csrf": pairing.json().csrf };
+    await req("POST", "/api/v1/sources", { title: "Beta timeline", body: "The private beta opens on November 14." }, headers);
+    const res = await req("GET", "/api/v1/ask?q=When%20does%20the%20beta%20open%3F", undefined, headers);
+    expect(res.statusCode).toBe(200);
+    expect(res.json().hits[0]).toMatchObject({ type: "original", title: "Beta timeline" });
+    expect((await req("GET", "/api/v1/ask?q=%3F%21", undefined, headers)).statusCode).toBe(400);
+  });
+});

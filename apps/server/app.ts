@@ -686,6 +686,7 @@ export async function createApp(
   app.post("/api/v1/claims/:id/confirm", (req) =>
     req.brain.confirmClaim(req.principal, params(req)),
   );
+  app.get("/api/v1/ask", (req) => req.brain.ask(req.principal, req.query));
   app.get("/api/v1/today", (req) => {
     req.brain.owner(req.principal);
     return {

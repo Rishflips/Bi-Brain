@@ -46,6 +46,7 @@ import {
 } from "./decision-advisory.ts";
 import { extractReviewableMemory } from "./memory-understanding.ts";
 import { buildBrief, type BriefJob } from "./brief.ts";
+import { questionWords, rankAnswers } from "./ask.ts";
 import {
   attemptReferencesSource,
   claimDecisionAttempt,
@@ -3742,6 +3743,17 @@ export class Brain {
     const map = this.store.setting<Record<string, string>>("claim_confirmations", {});
     this.store.set("claim_confirmations", { ...map, [id]: confirmed_at });
     return { id, confirmed_at };
+  }
+  ask(p: Principal, input: unknown) {
+    this.owner(p);
+    const v = z.object({ q: z.string().trim().min(1).max(500) }).strict().parse(input);
+    if (!questionWords(v.q).length)
+      throw new BrainError("INVALID_INPUT", "Ask with a few words, for example: When does the beta open?");
+    const projects = this.projects(p) as { id: string }[];
+    const claims = projects.flatMap((project) => this.currentClaims(p, project.id));
+    const sources = projects.flatMap((project) => this.sources(p, project.id));
+    const hits = rankAnswers(v.q, claims, sources, 3);
+    return { question: v.q, hits, answered: hits.length > 0 };
   }
   status(p: Principal) {
     this.owner(p);
