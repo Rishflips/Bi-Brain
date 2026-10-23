@@ -1,5 +1,5 @@
 import { existsSync, lstatSync, mkdirSync, realpathSync, statSync, unlinkSync, writeFileSync } from "node:fs";
-import { isAbsolute, join, relative } from "node:path";
+import { isAbsolute, join, relative, sep } from "node:path";
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import type { Principal } from "../../packages/contracts/index.ts";
@@ -34,6 +34,7 @@ export type AgentsStatus = {
 export type AgentPreview = { connection_id: string; file: string; contents: string; exists: boolean };
 export type AgentConnected = { connection_id: string; file: string; contents: string };
 
+export const LOCAL_ONLY_REASON = "Adding agents in one step works in the BiBrain app on your computer.";
 const ONE_STEP_DAYS = 90;
 const clientSchema = z.enum(AGENT_CLIENTS);
 const previewSchema = z.object({ client: clientSchema, project_id: z.string().min(1).max(100), folder: z.string().max(1100) }).strict();
@@ -57,9 +58,25 @@ export function agentConnect(brain: Brain, config: AgentConnectConfig) {
     if (!statSync(real).isDirectory()) throw new BrainError("INVALID_INPUT", "That path is a file. Choose the project folder.", 400);
     const data = realpathSync(config.dataDir);
     const rel = relative(data, real);
-    if (rel === "" || (!rel.startsWith("..") && !isAbsolute(rel)))
+    if (rel === "" || (rel !== ".." && !rel.startsWith(".." + sep) && !isAbsolute(rel)))
       throw new BrainError("INVALID_INPUT", "Choose your project folder, not BiBrain's own data folder.", 400);
     return real;
+  };
+  /** Refuses a config folder that is a link or not a folder. A missing one is fine. */
+  const checkConfigDir = (client: AgentClient, real: string) => {
+    const dir = configTarget(client).dir;
+    if (!dir) return;
+    let info;
+    try {
+      info = lstatSync(join(real, dir));
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") return;
+      throw new BrainError("INVALID_INPUT", `BiBrain cannot check the ${dir} folder. Add the BiBrain lines yourself.`, 400);
+    }
+    if (info.isSymbolicLink())
+      throw new BrainError("INVALID_INPUT", `BiBrain will not write through a linked ${dir} folder. Add the BiBrain lines yourself.`, 400);
+    if (!info.isDirectory())
+      throw new BrainError("INVALID_INPUT", `That folder has a file named ${dir} where BiBrain needs a folder.`, 409);
   };
   const target = (client: AgentClient, real: string) => join(real, ...configTarget(client).file);
   const contentsFor = (client: AgentClient, connectionId: string) =>
@@ -89,6 +106,7 @@ export function agentConnect(brain: Brain, config: AgentConnectConfig) {
       const v = previewSchema.parse(input);
       brain.access(p, v.project_id);
       const real = realFolder(v.folder);
+      checkConfigDir(v.client, real);
       const connection_id = randomUUID();
       const file = target(v.client, real);
       return { connection_id, file, contents: contentsFor(v.client, connection_id), exists: existsSync(file) };
@@ -98,6 +116,7 @@ export function agentConnect(brain: Brain, config: AgentConnectConfig) {
       requireLocal();
       const v = connectSchema.parse(input);
       const real = realFolder(v.folder);
+      checkConfigDir(v.client, real);
       const file = target(v.client, real);
       const name = configTarget(v.client).file.join("/");
       if (existsSync(file))
@@ -113,18 +132,27 @@ export function agentConnect(brain: Brain, config: AgentConnectConfig) {
         folder: real,
       });
       const contents = contentsFor(v.client, grant.id);
+      let wroteKey = false;
+      let step: "key" | "folder" | "file" = "key";
       try {
-        mkdirSync(join(config.dataDir, "agent-keys"), { recursive: true });
+        mkdirSync(join(config.dataDir, "agent-keys"), { recursive: true, mode: 0o700 });
         writeFileSync(keyFile(grant.id), JSON.stringify({ api: config.apiOrigin, key: grant.token }), { mode: 0o600, flag: "wx" });
+        wroteKey = true;
+        step = "folder";
         const dir = configTarget(v.client).dir;
         if (dir) mkdirSync(join(real, dir), { recursive: true });
+        step = "file";
         writeFileSync(file, contents, { flag: "wx" });
       } catch (error) {
-        brain.revoke(p, grant.id);
+        if (wroteKey) {
+          try {
+            unlinkSync(keyFile(grant.id));
+          } catch {}
+        }
         try {
-          unlinkSync(keyFile(grant.id));
+          brain.revoke(p, grant.id);
         } catch {}
-        if ((error as NodeJS.ErrnoException).code === "EEXIST")
+        if (step === "file" && (error as NodeJS.ErrnoException).code === "EEXIST")
           throw new BrainError("FILE_EXISTS", `BiBrain will not change your existing ${name}. Add the BiBrain lines to it yourself.`, 409);
         throw new BrainError("WRITE_FAILED", `BiBrain could not write ${name} in that folder.`, 500);
       }

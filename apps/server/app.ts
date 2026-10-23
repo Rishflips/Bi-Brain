@@ -22,7 +22,7 @@ import { deploymentPolicy } from "./deployment.ts";
 import type { PaddleBillingService } from "../../packages/runtime/paddle-billing.ts";
 import type { DodoBillingService } from "../../packages/runtime/dodo-billing.ts";
 import { registerBillingRoutes } from "./billing-routes.ts";
-import { agentConnect, type AgentConnectConfig } from "./agent-connect.ts";
+import { agentConnect, LOCAL_ONLY_REASON, type AgentConnectConfig } from "./agent-connect.ts";
 
 const LOGIN_PATH = "/auth/login";
 const CORRELATION_COOKIE = "brain_login";
@@ -155,8 +155,7 @@ export async function createApp(
   const agents = localBrain
     ? agentConnect(localBrain, {
         available: !managed && !deployment.secure,
-        reason:
-          "Adding agents in one step works in the BiBrain app on your computer.",
+        reason: LOCAL_ONLY_REASON,
         dataDir: dirname(localBrain.store.path),
         apiOrigin: deployment.origin ?? `http://127.0.0.1:${localPort}`,
         node: process.execPath,
@@ -908,7 +907,7 @@ export async function createApp(
   });
   const agentsUnavailable = {
     available: false,
-    reason: "Adding agents in one step works in the BiBrain app on your computer.",
+    reason: LOCAL_ONLY_REASON,
     clients: [],
   };
   app.get("/api/v1/agents", (req) => {

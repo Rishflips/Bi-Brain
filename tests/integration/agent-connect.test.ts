@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { Storage } from "../../packages/storage/index.ts";
 import { Brain } from "../../packages/domain/service.ts";
 import { agentConnect } from "../../apps/server/agent-connect.ts";
@@ -85,9 +85,49 @@ describe("agentConnect", () => {
     const { b, svc, folder, dataDir } = setup();
     const file = join(folder, "notes.txt");
     writeFileSync(file, "x");
-    for (const bad of ["northstar", join(folder, "missing"), file, dataDir])
-      expect(() => svc.preview(owner, { client: "codex", project_id: "inbox", folder: bad })).toThrow();
+    mkdirSync(join(dataDir, "inner"));
+    const cases: [string, RegExp][] = [
+      ["northstar", /full path/i],
+      [join(folder, "missing"), /cannot find that folder/i],
+      [file, /is a file/i],
+      [dataDir, /data folder/i],
+      [join(dataDir, "inner"), /data folder/i],
+    ];
+    for (const [bad, message] of cases)
+      expect(() => svc.preview(owner, { client: "codex", project_id: "inbox", folder: bad })).toThrow(message);
     expect(b.connections(owner)).toEqual([]);
+  });
+
+  it("accepts a folder whose name merely starts with two dots", () => {
+    const { svc, folder } = setup();
+    const odd = join(folder, "..x");
+    mkdirSync(odd);
+    expect(svc.preview(owner, { client: "codex", project_id: "inbox", folder: odd }).file).toBe(join(odd, ".codex", "config.toml"));
+  });
+
+  it("will not write through a linked or non-folder config directory", () => {
+    const { b, svc, folder, dataDir } = setup();
+    const elsewhere = join(dirname(folder), "elsewhere");
+    mkdirSync(elsewhere);
+    symlinkSync(elsewhere, join(folder, ".cursor"), "junction");
+    expect(() => svc.preview(owner, { client: "cursor", project_id: "inbox", folder })).toThrow(/linked \.cursor folder/);
+    const id = "11111111-1111-4111-8111-111111111111";
+    expect(() => svc.connect(owner, { connection_id: id, client: "cursor", project_id: "inbox", folder, access: "suggest" })).toThrow(/linked \.cursor folder/);
+    expect(readdirSync(elsewhere)).toEqual([]);
+    writeFileSync(join(folder, ".codex"), "x");
+    expect(() => svc.connect(owner, { connection_id: id, client: "codex", project_id: "inbox", folder, access: "suggest" })).toThrow(/file named \.codex/);
+    expect(b.connections(owner)).toEqual([]);
+    expect(existsSync(join(dataDir, "agent-keys", `${id}.json`))).toBe(false);
+  });
+
+  it("rolls back exactly when the key cannot be stored", () => {
+    const { b, svc, folder, dataDir } = setup();
+    writeFileSync(join(dataDir, "agent-keys"), "in the way");
+    const pv = svc.preview(owner, { client: "codex", project_id: "inbox", folder });
+    expect(() => svc.connect(owner, { connection_id: pv.connection_id, client: "codex", project_id: "inbox", folder, access: "suggest" })).toThrow(/could not write/i);
+    expect(b.connections(owner).map((c) => c.status)).toEqual(["Revoked"]);
+    expect(existsSync(join(folder, ".codex"))).toBe(false);
+    expect(readFileSync(join(dataDir, "agent-keys"), "utf8")).toBe("in the way");
   });
 
   it("grants read only when asked, and forgets the key on revoke", () => {
@@ -135,6 +175,8 @@ describe("agent routes", () => {
     expect((await req("POST", "/api/v1/agents/preview", { client: "codex", project_id: "inbox", folder: "relative" }, headers)).statusCode).toBe(400);
     const pv = (await req("POST", "/api/v1/agents/preview", { client: "codex", project_id: "inbox", folder }, headers)).json();
     expect(JSON.stringify(pv)).not.toMatch(/[0-9a-f]{64}/);
+    const noCsrf = { cookie: headers.cookie };
+    expect((await req("POST", "/api/v1/agents/preview", { client: "codex", project_id: "inbox", folder }, noCsrf)).statusCode).toBe(403);
     const done = await req("POST", "/api/v1/agents/connect", { connection_id: pv.connection_id, client: "codex", project_id: "inbox", folder, access: "suggest" }, headers);
     expect(done.statusCode).toBe(200);
     expect(JSON.stringify(done.json())).not.toMatch(/[0-9a-f]{64}/);
@@ -142,6 +184,7 @@ describe("agent routes", () => {
     const { key } = JSON.parse(readFileSync(keyFile, "utf8"));
     expect((await req("POST", "/api/v1/agent/verify", {}, { authorization: `Bearer ${key}` })).statusCode).toBe(200);
     expect(b.connections(owner)[0].status).toBe("Connected");
+    expect((await req("POST", "/api/v1/agents/preview", { client: "codex", project_id: "inbox", folder }, { authorization: `Bearer ${key}` })).statusCode).toBe(403);
     expect((await req("DELETE", `/api/v1/agent-grants/${pv.connection_id}`, {}, headers)).statusCode).toBe(200);
     expect(existsSync(keyFile)).toBe(false);
     expect((await req("POST", "/api/v1/agent/verify", {}, { authorization: `Bearer ${key}` })).statusCode).toBe(401);
