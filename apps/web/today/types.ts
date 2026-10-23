@@ -3,6 +3,12 @@ export type Api = <T = any>(
   body?: unknown,
   method?: string,
 ) => Promise<T>;
+export type OpenSourceOptions = {
+  /** An exact passage to highlight in the original. */
+  quote?: string;
+  /** The fact this original was opened from, so its history is shown. */
+  factId?: string;
+};
 export type BriefEvidence = {
   source_id: string;
   source_version: number;
@@ -59,7 +65,7 @@ export type TodayProps = {
   retiredSourceIds: string[];
   backgroundOn: boolean;
   agentNamesByProject: Record<string, string[]>;
-  onOpenSource: (id: string) => void;
+  onOpenSource: (id: string, opts?: OpenSourceOptions) => void;
   onOpenProject: (projectId: string) => void;
   onNavigate: (to: "Your brain" | "Connections") => void;
   onChanged: () => void;

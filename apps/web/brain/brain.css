@@ -1,0 +1,35 @@
+/* Your brain v2. Layout classes are prefixed yb-. Buttons, links, tags, alerts and the toast reuse the tv- classes from today.css. */
+.yb { display: grid; gap: 24px; min-width: 0; }
+.yb .tv-section-head h3 { margin: 0; font-size: 18px; }
+.yb-layout { display: grid; grid-template-columns: minmax(150px, 220px) minmax(0, 1fr); gap: 28px; align-items: start; }
+.yb-plist { display: grid; gap: 10px; min-width: 0; }
+.yb-plist ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; }
+.yb-plist li button { width: 100%; text-align: left; font: inherit; padding: 8px 10px; border-radius: 8px; border: 1px solid transparent; background: none; color: inherit; cursor: pointer; overflow-wrap: anywhere; }
+.yb-plist li button:hover { border-color: var(--line); }
+.yb-plist li button[aria-current="page"] { background: var(--surface); border-color: var(--line); font-weight: 700; }
+.yb-plist button:focus-visible, .yb-src:focus-visible, .yb-hit:focus-visible, .yb-field:focus-visible { outline: 2px solid var(--green); outline-offset: 2px; }
+.yb-detail { display: grid; gap: 24px; min-width: 0; }
+.yb-head { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: flex-start; gap: 12px; }
+.yb-head-text { display: grid; gap: 4px; min-width: 0; }
+.yb-head h2 { margin: 0; font-size: 26px; letter-spacing: -0.02em; overflow-wrap: anywhere; }
+.yb-waiting { margin: 0; display: flex; flex-wrap: wrap; gap: 6px 12px; align-items: baseline; }
+.yb-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
+.yb-item { display: grid; gap: 8px; min-width: 0; padding: 12px 14px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); }
+.yb-item-row { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; }
+.yb-fact { margin: 0; min-width: 0; overflow-wrap: anywhere; }
+.yb-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; }
+.yb-eyebrow { margin: 0; font-size: 12px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); }
+.yb-timeline { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
+.yb-timeline li { display: grid; grid-template-columns: 72px minmax(0, 1fr); gap: 12px; align-items: baseline; }
+.yb-when { color: var(--muted); font-size: 13px; font-variant-numeric: tabular-nums; }
+.yb-orig { display: grid; gap: 2px; min-width: 0; }
+.yb-src { justify-self: start; text-align: left; font: inherit; font-weight: 650; padding: 0; border: 0; background: none; color: inherit; cursor: pointer; text-decoration: underline; text-underline-offset: 3px; overflow-wrap: anywhere; }
+.yb-details summary { cursor: pointer; font-weight: 650; }
+.yb-details[open] summary { margin-bottom: 10px; }
+.yb-original { margin: 0; font: inherit; line-height: 1.55; white-space: pre-wrap; overflow-wrap: anywhere; }
+@media (max-width: 720px) {
+  .yb-layout { grid-template-columns: minmax(0, 1fr); gap: 16px; }
+  .yb-plist ul { display: flex; flex-wrap: wrap; gap: 6px; }
+  .yb-plist li button { width: auto; border-color: var(--line); }
+  .yb-timeline li { grid-template-columns: minmax(0, 1fr); gap: 2px; }
+}

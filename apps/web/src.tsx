@@ -13,11 +13,13 @@ import type {
   Evidence,
 } from "../../packages/contracts/index.ts";
 import sample from "../../fixtures/beta-launch.json" with { type: "json" };
-import { EvidenceList, CurrentKnowledge } from "./components.tsx";
+import { EvidenceList } from "./components.tsx";
 import { SignIn, ConnectionUnavailable, type RuntimeMode } from "./sign-in.tsx";
 import { BrandLockup } from "./brand.tsx";
 import { TodayView } from "./today/TodayView.tsx";
 import "./today/today.css";
+import { BrainView } from "./brain/BrainView.tsx";
+import "./brain/brain.css";
 import {
   AgentContinuityWorkspace,
   AgentClientPicker,
@@ -25,7 +27,6 @@ import {
   agentSetupCommand,
   type AgentClient,
 } from "./agent-connection.tsx";
-import { ProjectFocus, ProjectOverview } from "./project-focus.tsx";
 import "@fontsource-variable/manrope/wght.css";
 import "./style.css";
 import "./refinement.css";
@@ -272,7 +273,6 @@ function App() {
     [scope, setScope] = useState(
       () => localStorage.getItem("brain-project") ?? "inbox",
     ),
-    [search, setSearch] = useState(""),
     [dialog, setDialog] = useState<string | null>(null),
     [source, setSource] = useState<Source | null>(null),
     [proposal, setProposal] = useState<Entity | null>(null),
@@ -310,7 +310,6 @@ function App() {
     receipt: Entity;
     goal: Entity;
   } | null>(null);
-  const [searchResults, setSearchResults] = useState<Source[]>([]);
   const [knowledgePages, setKnowledgePages] = useState<any[]>([]);
   const [knowledgeProject, setKnowledgeProject] = useState("");
   const [briefCount, setBriefCount] = useState<number | null | "unavailable">(
@@ -339,8 +338,6 @@ function App() {
           (map[id] ??= []).push("A connected agent");
     return map;
   }, [grants]);
-  const [gateQueue, setGateQueue] = useState<Entity[]>([]);
-  const [queryPage, setQueryPage] = useState(0);
   const [adapterSelection, setAdapterSelection] = useState<any>(null);
   const [adapterPreview, setAdapterPreview] = useState<any>(null);
   const [forgetProof, setForgetProof] = useState<any>(null);
@@ -386,9 +383,6 @@ function App() {
     // Do not let a stale local scope or search from another visitor bleed into
     // a managed session.
     setScope("inbox");
-    setSearch("");
-    setSearchResults([]);
-    setQueryPage(0);
     try {
       localStorage.removeItem("brain-project");
     } catch {
@@ -443,15 +437,10 @@ function App() {
     knowledgeReadSeq.current += 1;
     setKnowledgeProject("");
     setKnowledgePages([]);
-    setGateQueue([]);
     setGrants([]);
     setBilling(null);
     setScope("inbox");
-    setSearch("");
-    setSearchResults([]);
-    setQueryPage(0);
     setKnowledgePages([]);
-    setGateQueue([]);
     setIdentityDisclosure(null);
     setDialog(null);
     setConfirmation("");
@@ -625,45 +614,22 @@ function App() {
   }, [paired, demo, refresh]);
   useEffect(() => {
     if (!paired || demo) return;
-    let current = true;
-    const timer = setTimeout(() => {
-      api<Source[]>(
-        `/search?q=${encodeURIComponent(search)}&offset=${queryPage * 50}${scope ? `&project_id=${encodeURIComponent(scope)}` : ""}`,
-      )
-        .then((results) => {
-          if (current) setSearchResults(results);
-        })
-        .catch(() => {});
-    }, 150);
-    return () => {
-      current = false;
-      clearTimeout(timer);
-    };
-  }, [paired, demo, search, scope, queryPage, today]);
-  useEffect(() => {
-    if (!paired || demo) return;
     const project = scope || "inbox";
     const read = ++knowledgeReadSeq.current;
     if (knowledgeProject !== project) {
       setKnowledgeProject(project);
       setKnowledgePages([]);
-      setGateQueue([]);
     }
-    Promise.all([
-      api<any[]>(
-        `/pages?project_id=${encodeURIComponent(project)}&include_retired=true`,
-      ),
-      api<Entity[]>(`/gates?project_id=${encodeURIComponent(project)}`),
-    ])
-      .then(([pages, gates]) => {
+    api<any[]>(
+      `/pages?project_id=${encodeURIComponent(project)}&include_retired=true`,
+    )
+      .then((pages) => {
         if (read !== knowledgeReadSeq.current) return;
         setKnowledgePages(pages);
-        setGateQueue(gates);
       })
       .catch(() => {
         if (read !== knowledgeReadSeq.current) return;
         setKnowledgePages([]);
-        setGateQueue([]);
       });
   }, [paired, demo, scope, today]);
   useEffect(() => {
@@ -860,35 +826,8 @@ function App() {
   const currentBrief = source
     ? today.briefs.find((b: Entity) => b.project_id === source.project_id)
     : null;
-  const visibleNotes = searchResults;
-  const ready = today.proposals.filter(
-    (p: Entity) => p.data.status === "ready",
-  );
   const scopedKnowledgePages =
     knowledgeProject === (scope || "inbox") ? knowledgePages : [];
-  const scopedGateQueue =
-    knowledgeProject === (scope || "inbox") ? gateQueue : [];
-  const target = scope || "inbox";
-  const focusProject = scope || "inbox";
-  const focusSources = notes.filter((item) => item.project_id === focusProject);
-  const focusBrief =
-    today.briefs.find(
-      (item: Entity) =>
-        item.project_id === focusProject && item.data.status === "current",
-    ) ?? null;
-  const focusGoal =
-    today.goals.find(
-      (item: Entity) =>
-        item.project_id === focusProject && item.data.status === "active",
-    ) ??
-    today.goals.find(
-      (item: Entity) =>
-        item.project_id === focusProject && item.data.status === "paused",
-    ) ??
-    null;
-  const focusReadyReviews = ready.filter(
-    (item: Entity) => item.project_id === focusProject,
-  ).length;
   const connectionProject = scope || "inbox";
   const connectionSources = notes.filter(
     (item) => item.project_id === connectionProject,
@@ -928,21 +867,6 @@ function App() {
   ).length;
   const connectionHasReviewedContext =
     connectionMemories > 0 || !!connectionActiveGoal;
-  const projectSummaries = projects.map((project) => {
-    const projectBrief = today.briefs.find(
-      (item: Entity) =>
-        item.project_id === project.id && item.data.status === "current",
-    );
-    return {
-      id: project.id,
-      title: project.title,
-      openQuestions: projectBrief?.data.unknowns?.length ?? 0,
-      activeGoals: today.goals.filter(
-        (item: Entity) =>
-          item.project_id === project.id && item.data.status === "active",
-      ).length,
-    };
-  });
   const field = (label: string, child: React.ReactNode) => (
     <label className="field">
       {label}
@@ -1128,292 +1052,76 @@ function App() {
               onBriefCount={setBriefCount}
             />
           ) : nav === "Your brain" ? (
-            <section className="brain-view" data-ui="brain-library">
-              <p className="eyebrow">SAVE → CONTINUE</p>
-              <h1>Your brain</h1>
-              <p className="lede">
-                Originals, understanding, and the work you want to return to.
-              </p>
-              <div className="toolbar">
-                {field(
-                  "Search saved material",
-                  <input
-                    type="search"
-                    placeholder="Find a note or conversation…"
-                    value={search}
-                    onChange={(e) => {
-                      setQueryPage(0);
-                      setSearch(e.target.value);
-                    }}
-                  />,
-                )}
-                {field(
-                  "Project",
-                  <select
-                    value={scope}
-                    onChange={(e) => {
-                      setQueryPage(0);
-                      setScope(e.target.value);
-                    }}
-                  >
-                    <option value="">All projects</option>
-                    {projects.map((p) => (
-                      <option key={p.id} value={p.id}>
-                        {p.title}
-                      </option>
-                    ))}
-                  </select>,
-                )}
-                <button onClick={() => setDialog("project")}>
-                  New project
-                </button>
-              </div>
-              {scope ? (
-                <>
-                  {!search.trim() ? (
-                    <ProjectFocus
-                      projectTitle={projectName(focusProject)}
-                      sources={focusSources}
-                      pages={scopedKnowledgePages}
-                      brief={focusBrief}
-                      goal={focusGoal}
-                      readyReviews={focusReadyReviews}
-                      onSave={saveDialog}
-                      onOpenSource={(id) => void openSource(id)}
-                      onPreviewHandoff={() =>
-                        void act(async () => {
-                          setHandoff(
-                            await api("/handoffs", {
-                              project_id: focusProject,
-                            }),
-                          );
-                          setDialog("handoff");
-                        })
-                      }
-                      onChooseGoal={() => {
-                        setCaptureScope(focusProject);
-                        setDialog("goal");
-                      }}
-                      onViewGoal={() =>
-                        document
-                          .getElementById("chosen-goals")
-                          ?.scrollIntoView({
-                            behavior: "smooth",
-                            block: "start",
-                          })
-                      }
-                    />
-                  ) : null}
-                  <CurrentKnowledge
-                    pages={scopedKnowledgePages}
-                    gates={scopedGateQueue}
-                    openSource={(id) => void openSource(id)}
-                    review={(id, version, action) =>
-                      void act(async () => {
-                        await api(`/proposals/gate/${id}/review`, {
-                          expected_version: version,
-                          action,
-                        });
-                        await refresh();
-                        setNotice(
-                          action === "undo"
-                            ? "Correction undone without erasing history."
-                            : action === "accept"
-                              ? "Reviewed change saved."
-                              : "Earlier understanding kept. Original retained without promoting a claim.",
-                        );
-                      })
+            <BrainView
+              key={accountId ?? "local"}
+              api={api}
+              projects={projects.map((p: any) => ({ id: p.id, title: p.title }))}
+              projectId={scope || "inbox"}
+              onSelectProject={(id) => setScope(id)}
+              agentNamesByProject={agentNamesByProject}
+              goals={today.goals}
+              busy={busy}
+              refreshKey={today}
+              onOpenSource={(id) => void openSource(id)}
+              onNewProject={() => setDialog("project")}
+              onSave={saveDialog}
+              onPreviewHandoff={(projectId) =>
+                void act(async () => {
+                  setHandoff(await api("/handoffs", { project_id: projectId }));
+                  setDialog("handoff");
+                })
+              }
+              onNavigate={(to) => setNav(to)}
+              goalActions={{
+                choose: (projectId) => {
+                  setCaptureScope(projectId);
+                  setDialog("goal");
+                },
+                setPreparation: (g, enabled) => {
+                  setToday((current: any) => ({
+                    ...current,
+                    goals: current.goals.map((goal: Entity) =>
+                      goal.id === g.id
+                        ? { ...goal, data: { ...goal.data, preparation_enabled: enabled } }
+                        : goal,
+                    ),
+                  }));
+                  void act(async () => {
+                    try {
+                      await api(
+                        `/goals/${g.id}`,
+                        { expected_version: g.version, preparation_enabled: enabled },
+                        "PATCH",
+                      );
+                    } finally {
+                      await refresh();
                     }
-                  />
-                </>
-              ) : (
-                <ProjectOverview
-                  projects={projectSummaries}
-                  onSelect={(projectId) => setScope(projectId)}
-                  onCreate={() => setDialog("project")}
-                />
-              )}
-              <div className="section-heading">
-                <h2>
-                  Saved material{" "}
-                  <span className="count">{visibleNotes.length}</span>
-                </h2>
-                <button className="link" onClick={saveDialog}>
-                  Save something
-                </button>
-              </div>
-              {visibleNotes.length ? (
-                visibleNotes.map((s) => (
-                  <button
-                    key={s.id}
-                    className="note"
-                    onClick={() => void openSource(s.id)}
-                  >
-                    <span className="note-icon">▤</span>
-                    <span>
-                      <strong>{s.title}</strong>
-                      <span className="note-preview">
-                        {s.body.slice(0, 150)}
-                      </span>
-                      <small>
-                        {projectName(s.project_id)} ·{" "}
-                        {new Date(s.captured_at).toLocaleDateString()} ·{" "}
-                        {s.visibility === "private"
-                          ? "Private"
-                          : "Shareable within project"}{" "}
-                        · v{s.version}
-                      </small>
-                    </span>
-                    <span aria-hidden="true">↗</span>
-                  </button>
-                ))
-              ) : (
-                <article className="quiet">
-                  <h2>
-                    {search
-                      ? "No matching notes."
-                      : "A clear space for your work."}
-                  </h2>
-                  <p>
-                    {search
-                      ? "Try a different word or save something new."
-                      : "Save a note to begin. You can organize it later."}
-                  </p>
-                </article>
-              )}
-              <div className="actions">
-                {queryPage > 0 ? (
-                  <button onClick={() => setQueryPage(queryPage - 1)}>
-                    Previous notes
-                  </button>
-                ) : null}
-                {visibleNotes.length === 50 ? (
-                  <button onClick={() => setQueryPage(queryPage + 1)}>
-                    More notes
-                  </button>
-                ) : null}
-              </div>
-              <div className="section-heading" id="chosen-goals">
-                <h2>Chosen goals</h2>
-                <button
-                  onClick={() => {
-                    setCaptureScope(target);
-                    setDialog("goal");
-                  }}
-                >
-                  Choose a goal
-                </button>
-              </div>
-              {today.goals
-                .filter((g: Entity) => !scope || g.project_id === scope)
-                .map((g: Entity) => (
-                  <article key={g.id}>
-                    <span className="muted">
-                      {projectName(g.project_id)} · {g.data.status}
-                    </span>
-                    <h3>{g.data.title}</h3>
-                    <p>{g.data.success_criteria}</p>
-                    {g.data.plan ? (
-                      <>
-                        <h4>
-                          {g.data.plan_stale
-                            ? "Earlier plan · sources changed; review before reuse"
-                            : "Current plan · your accepted understanding"}
-                        </h4>
-                        <pre>{g.data.plan}</pre>
-                      </>
-                    ) : null}
-                    <div className="actions">
-                      <label>
-                        <input
-                          type="checkbox"
-                          checked={g.data.preparation_enabled}
-                          disabled={busy}
-                          onChange={(e) => {
-                            const enabled = e.target.checked;
-                            setToday((current: any) => ({
-                              ...current,
-                              goals: current.goals.map((goal: Entity) =>
-                                goal.id === g.id
-                                  ? {
-                                      ...goal,
-                                      data: {
-                                        ...goal.data,
-                                        preparation_enabled: enabled,
-                                      },
-                                    }
-                                  : goal,
-                              ),
-                            }));
-                            void act(async () => {
-                              try {
-                                await api(
-                                  `/goals/${g.id}`,
-                                  {
-                                    expected_version: g.version,
-                                    preparation_enabled: enabled,
-                                  },
-                                  "PATCH",
-                                );
-                              } finally {
-                                await refresh();
-                              }
-                            });
-                          }}
-                        />{" "}
-                        Keep this up to date
-                      </label>
-                      <button
-                        disabled={
-                          !g.data.preparation_enabled ||
-                          g.data.status !== "active"
-                        }
-                        onClick={() =>
-                          void act(async () => {
-                            await api(`/goals/${g.id}/prepare`, {});
-                            setNotice(
-                              "Preparation requested. It will appear in Today when ready.",
-                            );
-                          })
-                        }
-                      >
-                        Prepare now
-                      </button>
-                      <button
-                        onClick={() =>
-                          void act(async () => {
-                            await api(
-                              `/goals/${g.id}`,
-                              {
-                                expected_version: g.version,
-                                status:
-                                  g.data.status === "active"
-                                    ? "paused"
-                                    : "active",
-                              },
-                              "PATCH",
-                            );
-                            await refresh();
-                          })
-                        }
-                      >
-                        {g.data.status === "active"
-                          ? "Pause goal"
-                          : "Resume goal"}
-                      </button>
-                      <button
-                        onClick={() => {
-                          setProposal(g);
-                          setArtifact(g.data.plan);
-                          setDialog("plan");
-                        }}
-                      >
-                        Edit plan
-                      </button>
-                    </div>
-                  </article>
-                ))}
-            </section>
+                  });
+                },
+                prepare: (g) =>
+                  void act(async () => {
+                    await api(`/goals/${g.id}/prepare`, {});
+                    setNotice("Preparation requested. It will appear in Today when ready.");
+                  }),
+                toggleStatus: (g) =>
+                  void act(async () => {
+                    await api(
+                      `/goals/${g.id}`,
+                      {
+                        expected_version: g.version,
+                        status: g.data.status === "active" ? "paused" : "active",
+                      },
+                      "PATCH",
+                    );
+                    await refresh();
+                  }),
+                editPlan: (g) => {
+                  setProposal(g);
+                  setArtifact(g.data.plan);
+                  setDialog("plan");
+                },
+              }}
+            />
           ) : nav === "Connections" ? (
             <section className="connections-view" data-ui="connections">
               <p className="eyebrow">YOUR BRAIN, ANY AGENT</p>
