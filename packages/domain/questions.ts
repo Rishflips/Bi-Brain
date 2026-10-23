@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { detectSecrets } from "../storage/secrets.ts";
 
 export const QUESTION_LIMIT = 20;
@@ -78,14 +79,14 @@ function parts(body: string): Part[] {
   return out;
 }
 
-/** The same question written twice, or with different spacing, gets one signature. */
+/** The same question written twice, or with different spacing, gets one signature. Hashed so stored answers keep none of its words. */
 export function questionSignature(text: string): string {
-  return text
+  const normal = text
     .toLocaleLowerCase()
     .replace(/\s+/gu, " ")
     .replace(/[\s?.!]+$/u, "")
-    .trim()
-    .slice(0, 300);
+    .trim();
+  return normal ? createHash("sha256").update(normal).digest("hex") : "";
 }
 
 export function findOpenQuestions(

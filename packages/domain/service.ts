@@ -45,7 +45,7 @@ import {
   type AdvisoryRecord,
 } from "./decision-advisory.ts";
 import { extractReviewableMemory } from "./memory-understanding.ts";
-import { buildBrief, gateFitsBrief, type BriefJob } from "./brief.ts";
+import { buildBrief, gateFitsBrief, type BriefInput, type BriefJob } from "./brief.ts";
 import { buildProjectView } from "./project-view.ts";
 import { questionWords, rankAnswers } from "./ask.ts";
 import {
@@ -3679,6 +3679,9 @@ export class Brain {
   }
   brief(p: Principal) {
     this.owner(p);
+    return buildBrief(this.briefInput(p), this.clock());
+  }
+  briefInput(p: Principal): BriefInput {
     const projects = this.projects(p) as { id: string }[];
     const current = (project: string, list: unknown) =>
       Array.isArray(list) && list.length > 0 && (list as Evidence[]).every((e) => this.evidenceCurrent(project, e));
@@ -3726,19 +3729,16 @@ export class Brain {
     const agentNames = Object.fromEntries(
       (this.connections(p) as unknown as { id: string }[]).map((g) => [g.id, "A connected agent"]),
     );
-    return buildBrief(
-      {
-        gates,
-        proposals,
-        claims,
-        failedJobs,
-        sources,
-        dismissed: this.store.setting<string[]>("brief_dismissed", []),
-        confirmations: this.store.setting<Record<string, string>>("claim_confirmations", {}),
-        agentNames,
-      },
-      this.clock(),
-    );
+    return {
+      gates,
+      proposals,
+      claims,
+      failedJobs,
+      sources,
+      dismissed: this.store.setting<string[]>("brief_dismissed", []),
+      confirmations: this.store.setting<Record<string, string>>("claim_confirmations", {}),
+      agentNames,
+    };
   }
   dismissBriefItem(p: Principal, input: unknown) {
     this.owner(p);
@@ -3769,17 +3769,22 @@ export class Brain {
       "SELECT id,title FROM projects WHERE id=?",
       project,
     )!;
-    const current = (list: unknown) =>
-      Array.isArray(list) &&
-      list.length > 0 &&
-      (list as Evidence[]).every((e) => this.evidenceCurrent(project, e));
     const gates = this.entities(p, "gate").filter((g) => g.project_id === project);
     const queued = gates.filter((g) => g.data.status === "queued");
-    const waiting =
-      queued.filter((g) => gateFitsBrief(g) && current(g.data.evidence)).length +
-      this.entities(p, "proposal").filter(
-        (x) => x.project_id === project && x.data.status === "ready" && current(x.data.evidence),
-      ).length;
+    const input = this.briefInput(p);
+    const mine = <T extends { project_id: string }>(list: T[]) => list.filter((x) => x.project_id === project);
+    const brief = buildBrief(
+      {
+        ...input,
+        gates: mine(input.gates),
+        proposals: mine(input.proposals),
+        claims: mine(input.claims),
+        failedJobs: mine(input.failedJobs),
+        sources: mine(input.sources),
+      },
+      this.clock(),
+    );
+    const waiting = brief.items.length + brief.waiting;
     return buildProjectView(
       {
         project: row,

@@ -90,6 +90,14 @@ describe("Brain.brainProject", () => {
     expect(view.needs_decision[0].data.field).toBeUndefined();
   });
 
+  it("counts the same cards Today shows, so a dismissed card is not waiting", () => {
+    const { b } = setup();
+    b.capture(owner, { title: "Decision", body: DECISION });
+    expect(b.brainProject(owner, "inbox").waiting_for_review).toBe(1);
+    b.dismissBriefItem(owner, { signature: b.brief(owner).items[0].signature });
+    expect(b.brainProject(owner, "inbox").waiting_for_review).toBe(0);
+  });
+
   it("refuses other principals and unknown projects", () => {
     const { b } = setup();
     expect(() => b.brainProject(agent, "inbox")).toThrow();
@@ -107,6 +115,9 @@ describe("Brain.answerQuestion", () => {
       answered: true,
     });
     expect(b.brainProject(owner, "inbox").questions).toEqual([]);
+    const stored = JSON.stringify(b.store.setting("answered_questions:inbox", []));
+    expect(stored).toContain(q.signature);
+    expect(stored).not.toContain("launch post");
     b.answerQuestion(owner, { project_id: "inbox", signature: q.signature, answered: false });
     expect(b.brainProject(owner, "inbox").questions).toHaveLength(1);
     expect(() => b.answerQuestion(agent, { project_id: "inbox", signature: q.signature, answered: true })).toThrow();
