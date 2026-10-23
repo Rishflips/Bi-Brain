@@ -119,6 +119,16 @@ export function BrainView(props: BrainProps) {
         onQuery={setQuery}
         onOpenSource={props.onOpenSource}
       />
+      {loadError && (
+        <p className="tv-error" role="alert">
+          {loadError}
+        </p>
+      )}
+      {actionError && (
+        <p className="tv-error" role="alert">
+          {actionError}
+        </p>
+      )}
       {query.trim() ? null : (
         <div className="yb-layout">
           <ProjectList
@@ -145,16 +155,6 @@ export function BrainView(props: BrainProps) {
                 Preview handoff
               </button>
             </header>
-            {loadError && (
-              <p className="tv-error" role="alert">
-                {loadError}
-              </p>
-            )}
-            {actionError && (
-              <p className="tv-error" role="alert">
-                {actionError}
-              </p>
-            )}
             {!view && !loadError && (
               <p className="tv-faint" role="status">
                 Loading…

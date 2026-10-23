@@ -334,22 +334,53 @@ test("a late answer to an earlier search never replaces newer results", async ({
     await save(page, "Zebra archive note.");
     await openBrain(page);
     let release!: () => void;
+    let arrived = false;
     const held = new Promise<void>((resolve) => (release = resolve));
     await page.route(
       (url) => url.pathname === "/api/v1/brain/search" && url.searchParams.get("q") === "northstar",
       async (route) => {
+        arrived = true;
         await held;
         await route.fallback();
       },
     );
     const search = page.getByLabel("Search your brain");
     await search.fill("northstar");
-    await page.waitForTimeout(400);
+    await expect.poll(() => arrived).toBe(true);
     await search.fill("zebra");
     await expect(page.getByRole("button", { name: /Zebra archive/ })).toBeVisible();
+    const late = page.waitForResponse(
+      (r) => new URL(r.url()).pathname === "/api/v1/brain/search" && r.url().includes("q=northstar"),
+    );
     release();
-    await page.waitForTimeout(500);
+    await late;
     await expect(page.getByRole("button", { name: /Zebra archive/ })).toBeVisible();
     await expect(page.getByRole("button", { name: /Northstar beta/ })).toHaveCount(0);
+  });
+});
+
+test("a failed search says so, then recovers on the next query", async ({ browser }) => {
+  await journey(browser, async (page) => {
+    await save(page, "Northstar beta note.");
+    await openBrain(page);
+    let fail = true;
+    await page.route("**/api/v1/brain/search*", (route) =>
+      fail
+        ? route.fulfill({
+            status: 500,
+            contentType: "application/json",
+            body: JSON.stringify({ error: { code: "INTERNAL", message: "Down." } }),
+          })
+        : route.fallback(),
+    );
+    const search = page.getByLabel("Search your brain");
+    await search.fill("northstar");
+    await expect(page.getByRole("heading", { name: "Search failed" })).toBeVisible();
+    await expect(page.getByRole("alert")).toContainText("Down.");
+    await expect(page.getByRole("heading", { name: "Searching…" })).toHaveCount(0);
+    fail = false;
+    await search.fill("beta");
+    await expect(page.getByRole("button", { name: /Northstar beta/ })).toBeVisible();
+    await expect(page.getByRole("alert")).toHaveCount(0);
   });
 });

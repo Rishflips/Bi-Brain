@@ -11,7 +11,13 @@ type Props = {
   onOpenSource: (id: string, opts?: OpenSourceOptions) => void;
 };
 
-export function BrainSearch({ api, projects, query, onQuery, onOpenSource }: Props) {
+export function BrainSearch({
+  api,
+  projects,
+  query,
+  onQuery,
+  onOpenSource,
+}: Props) {
   const [results, setResults] = useState<SearchResults | null>(null);
   const [error, setError] = useState<string | null>(null);
   // Only the response to the newest query may land.
@@ -42,7 +48,8 @@ export function BrainSearch({ api, projects, query, onQuery, onOpenSource }: Pro
     [],
   );
 
-  const title = (id: string) => projects.find((p) => p.id === id)?.title ?? "Project";
+  const title = (id: string) =>
+    projects.find((p) => p.id === id)?.title ?? "Project";
   const count = results ? results.facts.length + results.originals.length : 0;
   return (
     <div className="yb-search">
@@ -60,10 +67,20 @@ export function BrainSearch({ api, projects, query, onQuery, onOpenSource }: Pro
         onChange={(e) => onQuery(e.target.value)}
       />
       {q && (
-        <section className="tv-section" aria-labelledby="yb-results-h" aria-live="polite">
+        <section
+          className="tv-section"
+          aria-labelledby="yb-results-h"
+          aria-live="polite"
+        >
           <div className="tv-section-head">
             <h2 id="yb-results-h">
-              {q.length < 2 ? "Search" : results ? `${count} ${count === 1 ? "match" : "matches"}` : "Searching…"}
+              {q.length < 2
+                ? "Search"
+                : error
+                  ? "Search failed"
+                  : results
+                    ? `${count} ${count === 1 ? "match" : "matches"}`
+                    : "Searching…"}
             </h2>
             <button
               type="button"
@@ -76,14 +93,18 @@ export function BrainSearch({ api, projects, query, onQuery, onOpenSource }: Pro
               Clear search
             </button>
           </div>
-          {q.length < 2 && <p className="tv-faint">Type at least two letters.</p>}
+          {q.length < 2 && (
+            <p className="tv-faint">Type at least two letters.</p>
+          )}
           {error && (
             <p className="tv-error" role="alert">
               {error}
             </p>
           )}
           {results && count === 0 && (
-            <p className="tv-faint">No matches. Try a different word, or save something new.</p>
+            <p className="tv-faint">
+              No matches. Try a different word, or save something new.
+            </p>
           )}
           {results && results.facts.length > 0 && (
             <>
@@ -102,7 +123,12 @@ export function BrainSearch({ api, projects, query, onQuery, onOpenSource }: Pro
                         <button
                           type="button"
                           className="tv-link"
-                          onClick={() => onOpenSource(e.source_id, { quote: e.quote, factId: f.id })}
+                          onClick={() =>
+                            onOpenSource(e.source_id, {
+                              quote: e.quote,
+                              factId: f.id,
+                            })
+                          }
                         >
                           Open the original
                         </button>
@@ -119,7 +145,11 @@ export function BrainSearch({ api, projects, query, onQuery, onOpenSource }: Pro
               <ul className="yb-list">
                 {results.originals.map((o) => (
                   <li key={o.id}>
-                    <button type="button" className="yb-hit" onClick={() => onOpenSource(o.id)}>
+                    <button
+                      type="button"
+                      className="yb-hit"
+                      onClick={() => onOpenSource(o.id)}
+                    >
                       <span className="yb-hit-title">{o.title}</span>
                       <span className="yb-hit-snippet">{o.snippet}</span>
                       <span className="tv-faint">{title(o.project_id)}</span>
