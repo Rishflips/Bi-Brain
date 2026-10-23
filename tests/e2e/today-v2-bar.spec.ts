@@ -124,6 +124,9 @@ test("an answer that cites a note outside the newest 50 clears when that note is
     .getByRole("button", { name: "Withdraw from active use" })
     .click();
   await expect(page.getByText("From your brain")).toHaveCount(0);
+  // The withdraw starts a background refresh whose /search request may still be
+  // inside the route handler above; release it so the test can end cleanly.
+  await page.unrouteAll({ behavior: "ignoreErrors" });
 });
 
 test("the header says so when the Brief cannot be checked", async ({ page }) => {
