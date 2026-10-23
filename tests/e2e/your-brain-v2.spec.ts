@@ -239,3 +239,38 @@ test("focus still lands when a refresh overlaps the re-read after an answer", as
     await page.unrouteAll({ behavior: "ignoreErrors" });
   });
 });
+
+test("a fact opens its original with the passage highlighted and its history", async ({ browser }) => {
+  await journey(browser, async (page) => {
+    const body = "Kickoff notes.\nWe decided that Northstar beta is invite only.\nEverything else waits.";
+    await save(page, body);
+    await keepOnToday(page, "invite only");
+    await openBrain(page);
+    const facts = page.getByRole("region", { name: "True now" });
+    await facts.getByRole("button", { name: "Edit" }).click();
+    await facts.getByLabel("Edit fact").fill("invite only until launch");
+    await facts.getByRole("button", { name: "Save as version 2" }).click();
+    await expect(page.locator(".tv-toast")).toContainText("Saved as version 2.");
+    await facts.getByRole("button", { name: "Open the original" }).click();
+    const dialog = page.getByRole("dialog");
+    await expect(dialog.getByTestId("original")).toHaveText(body);
+    await expect(dialog.locator("mark")).toHaveCount(1);
+    await expect(dialog.locator("mark")).toContainText("invite only");
+    await expect(dialog.locator("mark")).not.toContainText("Everything else");
+    const history = dialog.getByRole("region", { name: "History of this fact" });
+    await expect(history.getByRole("listitem")).toHaveCount(2);
+    await expect(history.getByRole("listitem").first()).toContainText("You edited this");
+    await expect(history.getByRole("listitem").last()).toContainText("Kept from this original");
+    await expect(dialog.getByRole("region", { name: "Facts taken from this" })).toContainText("invite only until launch");
+    await expect(dialog.getByRole("button", { name: "Correct or move source" })).toBeVisible();
+  });
+});
+
+test("a Brief card's quote opens the original with that passage highlighted", async ({ browser }) => {
+  await journey(browser, async (page) => {
+    await save(page, "Kickoff notes.\nWe decided that Northstar beta is invite only.");
+    const card = page.getByRole("article").filter({ hasText: "invite only" });
+    await card.locator(".tv-quote").first().click();
+    await expect(page.getByRole("dialog").locator("mark")).toContainText("invite only");
+  });
+});

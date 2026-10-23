@@ -43,3 +43,10 @@
 .yb-fix { display: grid; gap: 8px; }
 .yb-fix textarea { width: 100%; box-sizing: border-box; font: inherit; padding: 10px 12px; border-radius: 10px; border: 1px solid var(--line); background: var(--surface); color: inherit; resize: vertical; }
 .yb-fix textarea:focus-visible { outline: 2px solid var(--green); outline-offset: 2px; }
+
+.yb-source { display: grid; gap: 18px; min-width: 0; }
+.yb-drawer-section { display: grid; gap: 8px; min-width: 0; }
+.yb-original mark { background: color-mix(in srgb, var(--green) 24%, transparent); color: inherit; border-radius: 3px; padding: 0 1px; }
+.yb-history { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
+.yb-history li { display: grid; grid-template-columns: 34px minmax(0, 1fr); gap: 10px; }
+.yb-v { color: var(--muted); font-size: 13px; font-variant-numeric: tabular-nums; }
