@@ -132,6 +132,16 @@ and [provider activation design](superpowers/specs/2026-10-16-managed-provider-a
 
 ### Managed subscription boundary (locally implemented, provider proof pending)
 
+**Current provider decision, 2026-10-21:** Dodo Payments replaces Paddle after
+the rejected application. Production startup uses the Dodo adapter and refuses
+old Paddle configuration. Hosted checkout needs no browser SDK. Standard Webhooks
+deliveries establish correlation; independent current Dodo subscription/payment
+reads feed the existing sealed authority. Monthly and annual Dodo products map
+to one logical authority plan family with separate price references. Both stores
+remain isolated; recovery includes `dodo.sqlite` and preserves historical Paddle
+backups. See [Dodo setup](DODO_PAYMENTS.md). The following Paddle paragraphs
+describe the historical implementation, retained for audit and recovery context.
+
 Paddle Billing is an optional managed-only adapter. Configuration is all-or-none and
 environment-bound; local/self-hosted operation has no subscription dependency. The API owns
 one expiring checkout intent per account and a separate `paddle.sqlite` coordination store.

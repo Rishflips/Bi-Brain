@@ -52,7 +52,7 @@ The merged application provides a complete single-owner local workflow:
 
 The repository also contains the browser-first managed foundation: isolated
 accounts, standards-based sign-in, guarded processing authority, recovery
-controls, and a default-off Paddle subscription boundary. These paths have local
+controls, and a default-off Dodo Payments subscription boundary. These paths have local
 synthetic verification, but they are **not a public hosted service** and have not
 processed a real payment.
 
@@ -63,17 +63,17 @@ processed a real payment.
 | Local / self-hosted        | Working single-owner application; no subscription required                                                                                  |
 | Managed accounts           | Implemented foundation with local isolation and recovery evidence                                                                           |
 | Connected model processing | Default off; live quality and cost gate still open                                                                                          |
-| Paddle billing             | Default-off integration boundary; real Sandbox proof still open                                                                             |
-| Agent connections          | Guided Codex/Claude setup, real-use verification and immediate revocation are implemented; native fresh-session certification is still open |
+| Dodo Payments              | Hosted checkout, signed webhook, current payment verification and recovery implemented; real test-mode acceptance still open                 |
+| Agent connections          | Read-only native recall/correction/privacy/revocation verified in Codex 0.156.1 and Claude Code 2.1.283; broader native write workflows remain unverified |
 | Public cloud release       | Not deployed; hosting, legal, support, and human-pilot gates remain open                                                                    |
 
-The merged foundation, guided connection and truthful first-session lifecycles
-passed their recorded integration, broad Vitest, offline evaluation, browser and
-container gates. The current branch adds the guided proactive-goal loop; its
-isolated real-storage journey passes and the complete browser regression passes
-52/52. These are local release gates—not proof of a human usability pilot, live
-model quality, native-agent compatibility, real billing, or target-host
-operations. See
+PR #18's project continuity workspace is merged. Its PR workflow passed the full
+release gate, including 54 browser journeys. The subsequent merged-main security
+audit found Vite/Hono advisories; this delivery updates the pinned dependency
+tree and replaces the rejected Paddle setup with Dodo Payments. See
+[Dodo setup and acceptance](docs/DODO_PAYMENTS.md) for configuration, plan mapping,
+and the real-provider gates. Local tests do not establish a human usability pilot,
+live model quality, native-agent compatibility, real payment, or target-host operations. See
 [BUILD_STATE.md](BUILD_STATE.md) for commands, exact scope, and known limits.
 
 ## Quick start

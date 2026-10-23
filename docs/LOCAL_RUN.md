@@ -97,7 +97,7 @@ Tests use temporary databases, deterministic clocks and clearly synthetic materi
 Dockerfile and compose.yaml provide a pinned Node image, Git, and supervised API/worker with a persistent named volume. Run `docker compose up --build`, then retrieve the owner pairing file from the mounted volume without publishing it. This root compose file maps the host port to loopback only. The container bind is explicit via BRAIN_CONTAINER; default native execution binds loopback. For independent HTTPS hosting use `deploy/compose.yaml` and [SELF_HOSTING.md](SELF_HOSTING.md), which configure one exact public origin, Secure cookies and a persistent TLS proxy. Check BUILD_STATE for actual container and hosted evidence; a supplied compose file is not runtime proof.
 
 The local application does not create a public hosted release. License and
-commercial distribution remain unresolved. A default-off Paddle boundary exists,
+commercial distribution remain unresolved. A default-off Dodo Payments boundary exists,
 but real Sandbox acceptance and activation remain external gates. Managed OAuth
 connectors, notifications outside Today, and automatic external actions are not
 part of the current release.

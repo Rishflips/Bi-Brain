@@ -4,7 +4,7 @@ import type { PaddleTransport } from "./paddle.ts";
 const unavailable = () =>
   new BrainError(
     "UNAVAILABLE",
-    "Paddle Billing is temporarily unavailable.",
+    "Secure billing is temporarily unavailable.",
     503,
   );
 

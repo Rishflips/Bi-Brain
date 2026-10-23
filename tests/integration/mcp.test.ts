@@ -54,6 +54,11 @@ it("official SDK stdio client proposes through gate, fresh-session recalls raw e
     });
     const readOnly = await connect(readGrant.token);
     expect(
+      (await readOnly.listTools()).tools.every(
+        (t) => t.annotations?.readOnlyHint === true,
+      ),
+    ).toBe(true);
+    expect(
       (await readOnly.listTools()).tools.map((t) => t.name).sort(),
     ).toEqual(["brain.search", "brain.get", "brain.ask", "brain.diff"].sort());
     const forbidden = await fetch(
@@ -79,6 +84,14 @@ it("official SDK stdio client proposes through gate, fresh-session recalls raw e
       expires_at: new Date(Date.now() + 86400000).toISOString(),
     });
     const full = await connect(fullGrant.token);
+    expect(
+      (await full.listTools()).tools.find((t) => t.name === "brain.forget")
+        ?.annotations?.destructiveHint,
+    ).toBe(true);
+    expect(
+      (await full.listTools()).tools.find((t) => t.name === "brain.propose")
+        ?.annotations?.readOnlyHint,
+    ).toBe(false);
     expect((await full.listTools()).tools.map((t) => t.name)).toHaveLength(8);
     const first = await connect();
     expect((await first.listTools()).tools.map((t) => t.name).sort()).toEqual(
