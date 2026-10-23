@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { evidenceRanges, findQuote, highlightSegments } from "../../apps/web/brain/highlight.ts";
+import { evidenceRanges, findQuote, highlightSegments, markedRanges } from "../../apps/web/brain/highlight.ts";
 
 describe("highlightSegments", () => {
   it("marks code-point ranges, merging overlaps, and keeps the whole text", () => {
@@ -38,5 +38,17 @@ describe("findQuote and evidenceRanges", () => {
         { start: 0, end: 5, quote: "Other" },
       ]),
     ).toEqual([{ start: 0, end: 5 }]);
+  });
+});
+
+describe("markedRanges", () => {
+  const body = "We decided X. Later. We decided X.";
+  const second = { start: 21, end: 33, quote: "We decided X" };
+  it("marks only the cited occurrence of a repeated sentence", () => {
+    expect(markedRanges(body, [second], "We decided X")).toEqual([{ start: 21, end: 33 }]);
+  });
+  it("falls back to the first match when nothing cited shows the quote", () => {
+    expect(markedRanges(body, [], "We decided X")).toEqual([{ start: 0, end: 12 }]);
+    expect(markedRanges(body, [], "gone")).toEqual([]);
   });
 });

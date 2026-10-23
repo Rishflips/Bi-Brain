@@ -445,6 +445,7 @@ function App() {
     setAdapterSelection(null);
     setAdapterPreview(null);
     setSource(null);
+    setSourceView({});
     setProposal(null);
     setHandoff(null);
     setComparison(null);
@@ -683,6 +684,7 @@ function App() {
   }
   function close() {
     setDialog(null);
+    setSourceView({});
     setConfirmation("");
     setPreview(null);
     setAdapterSelection(null);
@@ -1972,6 +1974,7 @@ function App() {
                       separate,
                     });
                     setSource(await api(`/sources/${saved.source_id}`));
+                    setSourceView({});
                     await refresh();
                     setDialog("source");
                     setNotice(

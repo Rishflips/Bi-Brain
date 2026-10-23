@@ -274,3 +274,23 @@ test("a Brief card's quote opens the original with that passage highlighted", as
     await expect(page.getByRole("dialog").locator("mark")).toContainText("invite only");
   });
 });
+
+test("a new note's dialog does not carry the last fact's history", async ({ browser }) => {
+  await journey(browser, async (page) => {
+    await save(page, "Kickoff notes.\nWe decided that Northstar beta is invite only.");
+    await keepOnToday(page, "invite only");
+    await openBrain(page);
+    await page.getByRole("region", { name: "True now" }).getByRole("button", { name: "Open the original" }).click();
+    const dialog = page.getByRole("dialog");
+    await expect(dialog.getByRole("region", { name: "History of this fact" })).toBeVisible();
+    await dialog.getByRole("button", { name: "Close dialog" }).click();
+    await expect(dialog).toHaveCount(0);
+    await page.getByRole("button", { name: "Save to this project" }).click();
+    await page.getByLabel("Paste something you are working on").fill("A fresh note about something else entirely.");
+    await page.getByRole("dialog").getByRole("button", { name: "Save to my brain" }).click();
+    const next = page.getByRole("dialog");
+    await expect(next.getByTestId("original")).toHaveText("A fresh note about something else entirely.");
+    await expect(next.getByRole("region", { name: "History of this fact" })).toHaveCount(0);
+    await expect(next.getByText("no longer in this original")).toHaveCount(0);
+  });
+});

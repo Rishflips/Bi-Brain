@@ -2,7 +2,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import type { Source } from "../../../packages/contracts/index.ts";
 import { friendlyError } from "../today/BriefCard.tsx";
 import { shortDate } from "./format.ts";
-import { evidenceRanges, findQuote, highlightSegments } from "./highlight.ts";
+import { findQuote, highlightSegments, markedRanges } from "./highlight.ts";
 import type { Api, Fact, FactHistoryEntry, ProjectView } from "./types.ts";
 
 type Props = {
@@ -21,17 +21,19 @@ const from = (origin: string) =>
 function historyNote(h: FactHistoryEntry, first: boolean) {
   if (h.status !== "current") return "No longer current";
   if (first) return h.edited_by_owner ? "Kept in your words" : "Kept from this original";
-  return "You edited this";
+  return h.edited_by_owner ? "You edited this" : "Updated";
 }
 
 export function SourceView({ api, source, quote, factId, projectTitle, actions }: Props) {
   const [facts, setFacts] = useState<Fact[] | null>(null);
   const [history, setHistory] = useState<FactHistoryEntry[] | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [factsFailed, setFactsFailed] = useState(false);
 
   useEffect(() => {
     let live = true;
     setFacts(null);
+    setFactsFailed(false);
     setError(null);
     api<ProjectView>(`/brain/projects/${encodeURIComponent(source.project_id)}`)
       .then((v) => {
@@ -45,6 +47,7 @@ export function SourceView({ api, source, quote, factId, projectTitle, actions }
       .catch((e) => {
         if (!live) return;
         setFacts([]);
+        setFactsFailed(true);
         setError(friendlyError(e));
       });
     return () => {
@@ -71,9 +74,8 @@ export function SourceView({ api, source, quote, factId, projectTitle, actions }
   const cited = (facts ?? []).flatMap((f) =>
     f.evidence.filter((e) => e.source_id === source.id && e.source_version === source.version),
   );
-  const ranges = evidenceRanges(source.body, cited);
   const quoted = quote ? findQuote(source.body, quote) : null;
-  if (quoted) ranges.push(quoted);
+  const ranges = markedRanges(source.body, cited, quote);
   const segments = highlightSegments(source.body, ranges);
 
   return (
@@ -135,6 +137,8 @@ export function SourceView({ api, source, quote, factId, projectTitle, actions }
         </h3>
         {facts === null ? (
           <p className="tv-faint">Loading…</p>
+        ) : factsFailed ? (
+          <p className="tv-faint">These could not be loaded right now.</p>
         ) : facts.length === 0 ? (
           <p className="tv-faint">None yet.</p>
         ) : (

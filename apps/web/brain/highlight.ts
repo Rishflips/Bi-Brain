@@ -47,3 +47,21 @@ export function evidenceRanges(body: string, evidence: { start: number; end: num
     .filter((e) => chars.slice(e.start, e.end).join("") === e.quote)
     .map((e) => ({ start: e.start, end: e.end }));
 }
+
+/**
+ * The ranges to mark: the exact evidence of the cited facts, plus the first
+ * place the quote appears only when no cited evidence already shows that quote.
+ */
+export function markedRanges(
+  body: string,
+  evidence: { start: number; end: number; quote: string }[],
+  quote?: string,
+): Range[] {
+  const ranges = evidenceRanges(body, evidence);
+  if (!quote) return ranges;
+  const chars = Array.from(body);
+  const shown = evidence.some((e) => e.quote === quote && chars.slice(e.start, e.end).join("") === quote);
+  if (shown) return ranges;
+  const found = findQuote(body, quote);
+  return found ? [...ranges, found] : ranges;
+}
