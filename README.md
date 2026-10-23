@@ -26,8 +26,9 @@ you to learn a “second brain” method. The primary experience is simply:
   keeps quiet when nothing is useful, and never silently takes external action.
 - **Local ownership is real.** The self-hosted edition works without an account,
   subscription, model key, or remote telemetry.
-- **The interface reflects real state.** Its compact state card can be ready,
-  organizing, waiting, refreshing, caught up, or quiet—never fake “AI thinking.”
+- **The interface reflects real state.** Today shows a single bar to save or ask
+  and a short Brief; it says plainly when it is caught up, offline, or unable to
+  check—never fake “AI thinking.”
 
 ## What works today
 
@@ -36,16 +37,18 @@ The merged application provides a complete single-owner local workflow:
 1. Pair a browser to the local installation.
 2. Save text, Markdown, notes, decisions, or supported conversation exports.
 3. Keep immutable source versions in SQLite plus the portable Git-backed vault.
-4. Follow one quiet first-session loop from saved original to reviewed meaning,
-   search, and optional agent continuity; it disappears as the brain grows.
+4. Use Today: one bar to save a note or ask what your brain knows, and a Brief
+   of at most three things that changed. Each card shows its evidence and offers
+   Keep, Fix or Dismiss; Keep and Dismiss can be undone. When nothing needs you,
+   it says you are caught up.
 5. Review one clear memory suggested from ordinary language, or teach BiBrain
    the meaning of any exact passage. Nothing becomes current until you approve it.
 6. Search the full retained text and reopen the original.
 7. Copy an exact project handoff, or connect Codex or Claude Code through a
    guided, expiring, project-scoped permission flow.
-8. Move from reviewed understanding into one guided proactive loop: choose a
-   goal, request one source-linked review, then explicitly turn on quiet
-   background preparation if you want it.
+8. Choose a goal in Your brain, request one source-linked review of it, and
+   explicitly turn on quiet background preparation if you want it. Prepared
+   plans reach Today's Brief for you to keep, fix or dismiss.
 9. Open any project as a focused workspace for current understanding, open
    questions, chosen direction, recent originals, and an exact agent handoff.
 10. Back up, restore, withdraw, delete, and revoke access with explicit safeguards.

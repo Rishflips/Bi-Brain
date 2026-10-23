@@ -1,4 +1,3 @@
-import { friendlyError } from "./BriefCard.tsx";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 export function useUndoToast() {
@@ -26,8 +25,8 @@ export function useUndoToast() {
             try {
               await undo();
               show("Undone.");
-            } catch (e) {
-              show(friendlyError(e, "Could not undo."));
+            } catch {
+              // The caller reports a failed undo once, in its alert region.
             }
           }}
         >

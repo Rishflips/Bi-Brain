@@ -6,7 +6,8 @@ type Props = {
   projectTitle: string;
   api: Api;
   onOpenSource: (id: string) => void;
-  onDone: (message: string, undo?: () => Promise<void>) => void;
+  /** Resolves once the Brief has been read again. The card stays busy until then. */
+  onDone: (message: string, undo?: () => Promise<void>) => void | Promise<void>;
   onDeferredDismiss: (item: BriefItem, send: () => Promise<unknown>) => void;
   onError: (message: string) => void;
 };
@@ -90,7 +91,7 @@ export function BriefCard({
             ...(value ? { value } : {}),
           },
         );
-        onDone(
+        await onDone(
           value
             ? `Kept in your wording in ${projectTitle}.`
             : `Kept as a fact in ${projectTitle}.`,
@@ -109,17 +110,17 @@ export function BriefCard({
           expected_version: t.version,
           ...(value ? { edited_artifact: value } : {}),
         });
-        onDone("Plan kept. The earlier plan stays in history.", async () => {
+        await onDone("Plan kept. The earlier plan stays in history.", async () => {
           await api(`/receipts/${r.receipt.id}/undo`, {
             expected_version: r.goal.data.plan_version,
           });
         });
       } else if (t.type === "claim") {
         await api(`/claims/${t.id}/confirm`, {});
-        onDone("Marked as still true today.");
+        await onDone("Marked as still true today.");
       } else {
         await api(`/jobs/${t.id}/retry`, {});
-        onDone("Trying again. It shows here when it finishes.");
+        await onDone("Trying again. It shows here when it finishes.");
       }
     });
 
@@ -139,7 +140,7 @@ export function BriefCard({
       });
       return;
     }
-    setWording(item.title.replace(/^[^:]*:\s*/u, ""));
+    setWording(item.value ?? "");
     setFixing(true);
   };
 

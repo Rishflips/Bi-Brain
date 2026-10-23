@@ -17,7 +17,7 @@ function setup() {
   cleanup.push(() => { try { s.close(); } catch {} });
   let date = new Date("2026-10-23T09:00:00Z");
   const b = new Brain(s, () => date);
-  return { b, advance: (ms: number) => { date = new Date(date.getTime() + ms); } };
+  return { b, s, advance: (ms: number) => { date = new Date(date.getTime() + ms); } };
 }
 
 describe("Brain.brief", () => {
@@ -39,6 +39,36 @@ describe("Brain.brief", () => {
     expect(b.dismissBriefItem(owner, { signature: item.signature })).toEqual({ dismissed: true });
     expect(b.brief(owner).items).toEqual([]);
     expect(() => b.brief({ kind: "agent", grant_id: "nope" } as any)).toThrow();
+  });
+
+  it("drops a failed-preparation card when its note is withdrawn, and keeps jobs with no note", () => {
+    const { b, s } = setup();
+    const saved = b.capture(owner, { title: "Plain", body: "Remember to water the plants." }) as any;
+    s.run("UPDATE jobs SET status='failed', error='boom' WHERE kind='derive_brief'");
+    const failed = b.brief(owner).items.filter((i: any) => i.kind === "failed_job");
+    expect(failed).toHaveLength(1);
+    expect(failed[0].source_id).toBe(saved.source_id);
+    b.removeSource(owner, saved.source_id, 1, false);
+    expect(b.brief(owner).items.filter((i: any) => i.kind === "failed_job")).toEqual([]);
+  });
+
+  it("keeps a failed job that names no note", () => {
+    const { b, s } = setup();
+    b.capture(owner, { title: "Plain", body: "Remember to water the plants." });
+    s.run("UPDATE jobs SET status='failed', error='boom', payload='{}' WHERE kind='derive_brief'");
+    expect(b.brief(owner).items.filter((i: any) => i.kind === "failed_job")).toHaveLength(1);
+  });
+
+  it("skips a memory whose value is missing", () => {
+    const { b } = setup();
+    const gate = b.propose(owner, {
+      project_id: "inbox", title: "Orion", text: "We decided Orion is paused.", type: "decision",
+      entity: "Orion", field: { aspect: "statement", value: "paused" },
+    });
+    expect(gate.disposition).toBe("queue");
+    const g = b.entity(owner, gate.proposal_id);
+    (b as any).store.run("UPDATE entities SET data=? WHERE id=?", JSON.stringify({ ...g.data, field: { aspect: "statement", value: "" } }), g.id);
+    expect(b.brief(owner).items.filter((i: any) => i.kind === "memory")).toEqual([]);
   });
 
   it("confirms a current claim and refuses unknown ids", () => {

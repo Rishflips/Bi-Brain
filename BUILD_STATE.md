@@ -8,25 +8,27 @@ Today is one bar (save or ask), a Brief of at most three cards with Keep, Fix,
 Dismiss and Undo, and project cards. Local V1 only; no real model run and no
 native client check in this slice.
 
-Commands, in order:
-- `npm run typecheck` and `npm run lint` passed.
-- `npm test` (Vitest, alone): 1535 passed, 2 failed, 8 skipped. The 2 are the
-  known load-sensitive process tests (`managed-process`,
-  `managed-decision-advisory-process`); alone, both passed (7 of 7).
-- `npm run build` passed. `npm run brain-eval` passed 4 of 4.
-- `npx playwright test --workers=1`: 75 passed, 0 failed (main, today-v2 and empty-brain projects).
-- Old Today specs ported to the new bar. Retired: `first-session-journey` and
-  `living-brain-review` (cut first-loop rows and state card); single tests
-  "a saved note preview never relabels multi-source synthesis..." (preview cut)
-  and "a delayed pre-purge source read cannot resurrect the retained receipt"
-  (receipt no longer reads the source).
-- Receipt and Ask answer follow the current notes; a purge, withdrawal or
-  correction clears them even if the refresh fails. A quarantined save shows
-  neutral text, never the typed first line.
+Final review fixes: a failed-preparation card goes when its note is purged or
+withdrawn; Undo after Keep returns the card to the Brief; the Ask answer clears
+when any cited note is purged; Fix starts from the proposed wording; an automatic
+Ask goes back to Save when the "?" is deleted; a dismissal still waiting is
+dropped, not sent, when the owner leaves Today. Old Today code and CSS removed.
+
+Commands, in order (final run, nothing else running):
+- `npm run typecheck`, `npm run lint` and `npm run build` passed.
+- `npx playwright test --workers=1`: 78 passed, 0 failed (main, today-v2,
+  today-v2-bar and empty-brain projects; extra projects on ports 4327-4329).
+- `npx vitest run` (alone): 1540 passed, 1 failed, 8 skipped. The failure is
+  `managed-process.test.ts`, which also failed on clean main and failed again when
+  re-run alone. `managed-decision-advisory-process.test.ts` passed this time; it
+  had failed only under load in earlier full runs and passed when re-run alone.
+- Retired earlier: `first-session-journey` and `living-brain-review` specs, the
+  saved-note preview test and the delayed pre-purge read test (those features were cut).
 - Screenshots (synthetic, throwaway database): docs/screenshots/today-v2-*.png.
 
 Limits: no System 1 routing yet (plan 4), no plug-and-play install yet (plan 3),
-no project suggestion after save.
+no project suggestion after save. today-v2.spec.ts is close to the server's
+1000 requests a minute limit; add new Today journeys to today-v2-bar.spec.ts.
 
 ## Active delivery — agent continuity workspace
 

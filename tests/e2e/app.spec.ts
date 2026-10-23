@@ -324,10 +324,11 @@ test("chosen goal prepares a hypothesis and acceptance undo preserves later edit
   });
   expect(edited.ok()).toBe(true);
   await page.getByRole("button", { name: "Undo" }).click();
-  await expect(toast).toHaveText(
-    "This item changed since you opened it. Refresh to compare.",
-  );
-  await expect(toast).not.toContainText("Undone");
+  // A failed Undo is said once, in the alert region, never also in the toast.
+  const changed = "This item changed since you opened it. Refresh to compare.";
+  await expect(page.getByRole("alert").filter({ hasText: changed })).toBeVisible();
+  await expect(page.getByText(changed)).toHaveCount(1);
+  await expect(page.getByText("Undone.")).toHaveCount(0);
   await page.getByRole("button", { name: "Your brain", exact: true }).click();
   await page
     .getByLabel("Project", { exact: true })

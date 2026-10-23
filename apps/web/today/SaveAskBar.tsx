@@ -22,8 +22,10 @@ type Result =
       kind: "answer";
       question: string;
       hits: AskHit[];
-      /** Sources that were current notes when the answer was shown. */
+      /** Every source the answer cites. */
       cited: string[];
+      /** The cited sources that were in the notes list when the answer was shown. */
+      listed: string[];
       retiredBase: number;
     }
   | null;
@@ -48,6 +50,8 @@ export function SaveAskBar({
   const area = useRef<HTMLTextAreaElement>(null);
   const inFlight = useRef(false);
   const latest = useRef("");
+  // True while Ask mode was chosen by the bar itself, not by the owner.
+  const autoAsk = useRef(false);
   const ask = mode === "ask";
   // The receipt and the answer follow the current notes. When a note they show
   // is purged, withdrawn or corrected they go, even if the refresh failed.
@@ -63,9 +67,8 @@ export function SaveAskBar({
         setSeen(false);
       } else if (current && !seen) setSeen(true);
     } else if (
-      result.cited.some(
-        (id) => retiredSince.includes(id) || !notes.some((n) => n.id === id),
-      )
+      result.cited.some((id) => retiredSince.includes(id)) ||
+      result.listed.some((id) => !notes.some((n) => n.id === id))
     )
       setResult(null);
   }, [result, current, seen, notes, retiredSourceIds]);
@@ -75,12 +78,19 @@ export function SaveAskBar({
     setText(value);
     setError(null);
     // Only a short single line that ends in "?" switches to Ask. A pasted note is never turned into a question.
-    if (
+    const question =
       /\?\s*$/u.test(value) &&
       !/[\r\n]/u.test(value.trim()) &&
-      Array.from(value.trim()).length <= QUESTION_LIMIT
-    )
+      Array.from(value.trim()).length <= QUESTION_LIMIT;
+    if (question) {
+      if (!ask) autoAsk.current = true;
       setMode("ask");
+    } else if (ask && autoAsk.current) {
+      // The bar switched to Ask by itself and the text is no longer a question,
+      // so it goes back to Save. A mode the owner chose is never changed.
+      autoAsk.current = false;
+      setMode("save");
+    }
   }
 
   async function submit() {
@@ -117,13 +127,15 @@ export function SaveAskBar({
           kind: "answer",
           question: out.question,
           hits: out.hits,
-          cited: ids.filter((id) => notes.some((n) => n.id === id)),
+          cited: ids,
+          listed: ids.filter((id) => notes.some((n) => n.id === id)),
           retiredBase: retiredSourceIds.length,
         });
         if (latest.current === submitted) {
           latest.current = "";
           setText("");
         }
+        autoAsk.current = false;
         setMode("save");
       } else {
         const firstLine = value.split("\n")[0];
@@ -224,6 +236,7 @@ export function SaveAskBar({
               aria-label="Save mode"
               aria-pressed={!ask}
               onClick={() => {
+                autoAsk.current = false;
                 setMode("save");
                 area.current?.focus();
               }}
@@ -235,6 +248,7 @@ export function SaveAskBar({
               aria-label="Ask mode"
               aria-pressed={ask}
               onClick={() => {
+                autoAsk.current = false;
                 setMode("ask");
                 area.current?.focus();
               }}

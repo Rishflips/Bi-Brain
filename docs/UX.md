@@ -86,7 +86,7 @@ Main content, top to bottom:
 - **The Brief.** At most three things that changed, never a feed. Each card shows
   why it is here, the evidence quote, and a link to the original. Each card has
   Keep, Fix and Dismiss. Keep and Dismiss can be undone for a few seconds; Undo
-  never overwrites a later edit. A decision that replaces an earlier one shows
+  never overwrites a later edit. "Still true" and "Try again" have no Undo. A decision that replaces an earlier one shows
   the earlier wording.
 - **Quiet is normal.** When nothing needs a decision the Brief says "You are
   caught up." If background help is off, it says that instead of pretending to

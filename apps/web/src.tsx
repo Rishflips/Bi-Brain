@@ -14,7 +14,6 @@ import type {
 } from "../../packages/contracts/index.ts";
 import sample from "../../fixtures/beta-launch.json" with { type: "json" };
 import { EvidenceList, CurrentKnowledge } from "./components.tsx";
-import { type FirstNote } from "./first-note.tsx";
 import { SignIn, ConnectionUnavailable, type RuntimeMode } from "./sign-in.tsx";
 import { BrandLockup } from "./brand.tsx";
 import { TodayView } from "./today/TodayView.tsx";
@@ -341,17 +340,8 @@ function App() {
     [agentClient, setAgentClient] = useState<AgentClient>("codex"),
     [preview, setPreview] = useState<any>(null),
     [snooze, setSnooze] = useState(""),
-    [confirmation, setConfirmation] = useState(""),
-    [firstNote, setFirstNote] = useState<FirstNote | null>(null);
+    [confirmation, setConfirmation] = useState("");
   const preferencesDirty = useRef(false);
-  /**
-   * Monotonic receipt-read sequence. Every read captures the current value and
-   * may only apply its result if it is still the latest read AND the receipt has
-   * not been mutated. `remove`/`edit`/new-capture/account-change advance it, so a
-   * delayed pre-mutation GET can never restore old text or resurrect a removed
-   * original.
-   */
-  const firstNoteReadSeq = useRef(0);
   const [consentOverride, setConsentOverride] = useState<boolean | null>(null);
   // An INDEPENDENT override for the separate decision-stage consent. It is never
   // derived from the master override; an omitted field preserves the RAW stored
@@ -508,7 +498,6 @@ function App() {
     setIdentityDisclosure(null);
     setDialog(null);
     setConfirmation("");
-    setFirstNote(null);
     setPreview(null);
     setAdapterSelection(null);
     setAdapterPreview(null);
@@ -545,7 +534,6 @@ function App() {
     setClaimQuote("");
     setBusy(false);
     preferencesDirty.current = false;
-    firstNoteReadSeq.current += 1;
     setConsentOverride(null);
     setDecisionConsentOverride(null);
   }, []);
@@ -894,97 +882,10 @@ function App() {
     setCanWrite(false);
     setDialog("grant");
   }
-  /**
-   * Applies a fresh read of the receipt's source. An explicit NOT_FOUND (404) or
-   * an inactive/withdrawn state removes the retained body immediately; any other
-   * failure keeps the known saved acknowledgement but is marked as a stale view,
-   * so the last loaded text is never presented as the current original.
-   */
-  function applyFirstNoteRead(
-    id: string,
-    loaded: Source | null,
-    failure?: unknown,
-  ) {
-    setFirstNote((current) => {
-      if (!current || current.sourceId !== id) return current;
-      // A terminal removal is never undone by a late read.
-      if (current.removed) return current;
-      if (loaded && loaded.state === "active")
-        return {
-          ...current,
-          source: loaded,
-          sourceError: null,
-          removed: false,
-        };
-      // A non-active state is a real removal.
-      if (loaded)
-        return { ...current, source: null, sourceError: null, removed: true };
-      const gone = failure instanceof ApiError && failure.code === "NOT_FOUND";
-      // An explicit access refusal is treated as removal: the retained body must
-      // never survive a FORBIDDEN/UNAUTHORIZED answer.
-      const denied =
-        failure instanceof ApiError &&
-        (failure.code === "FORBIDDEN" || failure.code === "UNAUTHORIZED");
-      if (gone || denied)
-        return { ...current, source: null, sourceError: null, removed: true };
-      return {
-        ...current,
-        sourceError:
-          failure instanceof Error
-            ? failure.message
-            : "That note could not be opened.",
-      };
-    });
-  }
-  async function loadFirstNoteSource(id: string, generation: number) {
-    const seq = ++firstNoteReadSeq.current;
-    try {
-      const loaded = await api<Source>(`/sources/${id}`);
-      if (generation !== authGeneration || seq !== firstNoteReadSeq.current)
-        return;
-      applyFirstNoteRead(id, loaded);
-    } catch (e) {
-      if (generation !== authGeneration || seq !== firstNoteReadSeq.current)
-        return;
-      applyFirstNoteRead(id, null, e);
-    }
-  }
-  /** Drops the retained body immediately after an edit/withdraw/delete. */
-  function removeFirstNote(id: string) {
+  /** Makes the Today receipt and answer let go of a note right away. */
+  function retireReceipt(id: string) {
     setRetiredReceipts((ids) => [...ids, id]);
-    // Invalidate every in-flight read before clearing the body.
-    firstNoteReadSeq.current += 1;
-    setFirstNote((current) =>
-      current && current.sourceId === id
-        ? { ...current, source: null, sourceError: null, removed: true }
-        : current,
-    );
   }
-  /** Clears the retained body immediately after an edit, then reloads it. */
-  function resetFirstNoteBody(id: string) {
-    // An older read must not repopulate the pre-edit text.
-    firstNoteReadSeq.current += 1;
-    setFirstNote((current) =>
-      current && current.sourceId === id
-        ? { ...current, source: null, sourceError: null, removed: false }
-        : current,
-    );
-  }
-  /**
-   * Revalidates the receipt's original on every refresh (including another tab
-   * or a correction/withdrawal made elsewhere). It clears the retained body on a
-   * 404/inactive source and marks a transient failure as a stale view rather
-   * than claiming it is current.
-   */
-  useEffect(() => {
-    if (!paired || demo) return;
-    const id = firstNote?.sourceId;
-    if (!id || firstNote?.removed) return;
-    void loadFirstNoteSource(id, authGeneration);
-    // Revalidated whenever the fetched workspace changes; the note id/removal
-    // gate the effect so a removed original is never resurrected. The read
-    // sequence fence discards any late pre-mutation response.
-  }, [paired, demo, firstNote?.sourceId, firstNote?.removed, today]);
   /**
    * The preview must be genuinely source-bound. Items are kept only when ALL of
    * their evidence points at this exact source id and version, so a project-wide
@@ -2819,10 +2720,6 @@ function App() {
                       }),
                     );
                     setRetiredReceipts((ids) => [...ids, source.id]);
-                    if (source.id === firstNote?.sourceId) {
-                      resetFirstNoteBody(source.id);
-                      void loadFirstNoteSource(source.id, authGeneration);
-                    }
                     await refresh();
                     setDialog("source");
                     setNotice(
@@ -2975,7 +2872,7 @@ function App() {
                     await api(`/sources/${source.id}/withdraw`, {
                       expected_version: source.version,
                     });
-                    removeFirstNote(source.id);
+                    retireReceipt(source.id);
                     await refresh();
                     close();
                     setNotice("Source withdrawn from active retrieval.");
@@ -3006,14 +2903,14 @@ function App() {
                         failure.code === "FORGET_INCOMPLETE"
                       ) {
                         setForgetNeedsRetry(source.id);
-                        removeFirstNote(source.id);
+                        retireReceipt(source.id);
                       }
                       throw failure;
                     });
                     setForgetNeedsRetry(null);
                     setForgetProof(result.proof ?? null);
                     setSource(null);
-                    removeFirstNote(source.id);
+                    retireReceipt(source.id);
                     await refresh();
                     close();
                     setNotice(
@@ -3043,7 +2940,7 @@ function App() {
                       setForgetProof(proof);
                       setForgetNeedsRetry(null);
                       setSource(null);
-                      removeFirstNote(source.id);
+                      retireReceipt(source.id);
                       await refresh();
                       close();
                       setNotice(

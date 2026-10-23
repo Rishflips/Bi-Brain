@@ -37,17 +37,15 @@ export function TodayView(props: TodayProps) {
     }
   }, [api]);
 
-  // A dismissal the owner chose is sent if they leave before the timer ends.
-  // Nothing here touches state, because the view is gone.
+  // A dismissal waits out its undo window. If the owner leaves first, nothing
+  // was dismissed and the item comes back next time. Nothing here sends or
+  // touches state, because the view (and maybe the account) is gone.
   useEffect(() => {
     mounted.current = true;
     const waiting = pending.current;
     return () => {
       mounted.current = false;
-      for (const { timer, send } of waiting.values()) {
-        window.clearTimeout(timer);
-        void send().catch(() => {});
-      }
+      for (const { timer } of waiting.values()) window.clearTimeout(timer);
       waiting.clear();
     };
   }, []);
@@ -244,7 +242,7 @@ export function TodayView(props: TodayProps) {
                 }
                 api={api}
                 onOpenSource={props.onOpenSource}
-                onDone={(message, undo) => {
+                onDone={async (message, undo) => {
                   setActionError(null);
                   setChanges((n) => n + 1);
                   show(
@@ -254,6 +252,7 @@ export function TodayView(props: TodayProps) {
                           try {
                             await undo();
                           } catch (e) {
+                            // Shown once, in the alert below; the toast stays silent.
                             setActionError(friendlyError(e));
                             throw e;
                           } finally {
@@ -264,8 +263,8 @@ export function TodayView(props: TodayProps) {
                         }
                       : undefined,
                   );
-                  void loadBrief();
                   props.onChanged();
+                  await loadBrief();
                 }}
                 onDeferredDismiss={(it, send) => {
                   setHidden((h) => new Set(h).add(it.signature));

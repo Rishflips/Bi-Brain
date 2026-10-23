@@ -39,6 +39,25 @@ test("a brain with saved work and nothing to review says it is quiet", async ({
     return res.status;
   });
   expect(status).toBe(201);
+  // Turn background help on through the real preferences route, so the quiet
+  // copy under test is the one an owner with help on actually sees.
+  const prefStatus = await page.evaluate(async () => {
+    const session = await (await fetch("/api/v1/session")).json();
+    const current = await (
+      await fetch("/api/v1/preferences/background")
+    ).json();
+    const res = await fetch("/api/v1/preferences/background", {
+      method: "PATCH",
+      headers: {
+        "Content-Type": "application/json",
+        "X-Brain-CSRF": session.csrf,
+        "Idempotency-Key": crypto.randomUUID(),
+      },
+      body: JSON.stringify({ ...current, enabled: true }),
+    });
+    return res.status;
+  });
+  expect(prefStatus).toBe(200);
   await page.reload();
   await expect(
     page.getByRole("heading", { name: "Good to see you." }),
@@ -46,11 +65,8 @@ test("a brain with saved work and nothing to review says it is quiet", async ({
   await expect(
     page.getByRole("heading", { name: "Since you were last here" }),
   ).toBeVisible();
-  await expect(
-    page
-      .getByText("You are caught up.")
-      .or(page.getByText("Background help is off")),
-  ).toBeVisible();
+  await expect(page.getByText("You are caught up.")).toBeVisible();
+  await expect(page.getByText("Background help is off")).toHaveCount(0);
   await expect(page.getByText(/things to look at/i)).toHaveCount(0);
 });
 
@@ -168,6 +184,8 @@ test("a found decision can be kept, undone, and never kept twice", async ({
   await expect(card).toHaveCount(0);
   await page.getByRole("button", { name: "Undo" }).click();
   await expect(page.getByText(/undone/i)).toBeVisible();
+  // Undo puts the suggestion back, so it is still the owner's call.
+  await expect(card).toBeVisible();
   const claims = await (
     await page.request.get("/api/v1/claims?project_id=inbox")
   ).json();
@@ -175,6 +193,15 @@ test("a found decision can be kept, undone, and never kept twice", async ({
     claims.filter((c: any) => JSON.stringify(c.data).includes("invite only"))
       .length,
   ).toBe(0);
+  await card.getByRole("button", { name: "Keep as true" }).click();
+  await expect(page.getByText(/kept as a fact/i)).toBeVisible();
+  const again = await (
+    await page.request.get("/api/v1/claims?project_id=inbox")
+  ).json();
+  expect(
+    again.filter((c: any) => JSON.stringify(c.data).includes("invite only"))
+      .length,
+  ).toBe(1);
 });
 
 test("Fix keeps the owner's own wording", async ({ page }) => {
@@ -460,6 +487,10 @@ test("a failed Undo shows a plain alert and focus moves to the Brief heading whe
   await expect(
     page.getByRole("alert").filter({ hasText: "changed since" }),
   ).toBeVisible();
+  // The failure is said once: the toast does not repeat it.
+  await expect(page.getByText("This changed since you kept it.")).toHaveCount(
+    1,
+  );
 });
 
 test("Fix puts the cursor in the wording box and Cancel returns to Keep", async ({
@@ -534,20 +565,4 @@ test("Today fits a 320px screen in dark appearance", async ({ page }) => {
   await expect(
     page.getByLabel(/save to your brain|ask your brain/i),
   ).toBeVisible();
-});
-
-test("the header says so when the Brief cannot be checked", async ({
-  page,
-}) => {
-  await page.route("**/api/v1/brief", (route) =>
-    route.fulfill({
-      status: 500,
-      contentType: "application/json",
-      body: JSON.stringify({ error: { code: "INTERNAL", message: "Down." } }),
-    }),
-  );
-  await pair(page);
-  await expect(page.locator(".tv-state")).toHaveText(
-    "Couldn't check for changes",
-  );
 });

@@ -15,6 +15,8 @@ export type BriefItem = {
   created_at: string;
   source_id?: string;
   aspect?: string;
+  /** The proposed wording for a memory, so Fix can start from it. */
+  value?: string;
 };
 export type BriefSourceRef = { id: string; project_id: string; body: string; captured_at: string };
 export type BriefJob = { id: string; project_id: string; kind: string; attempts: number; created_at: string; source_id?: string };
@@ -69,6 +71,7 @@ export function buildBrief(input: BriefInput, now: Date): { items: BriefItem[]; 
     const evidence = evidenceOf(g.data.evidence);
     const field = g.data.field;
     if (!evidence.length || !field || !nonEmpty(g.data.entity) || !nonEmpty(field.aspect)) continue;
+    if (field.value === undefined || field.value === null || !text(field.value).trim()) continue;
     const actor = String(g.data.actor ?? "owner");
     const agentKey = actor.startsWith("agent:") ? actor.slice(6) : null;
     const agent = agentKey === null ? null : Object.hasOwn(input.agentNames, agentKey) ? input.agentNames[agentKey] : "A connected agent";
@@ -96,6 +99,7 @@ export function buildBrief(input: BriefInput, now: Date): { items: BriefItem[]; 
       target: { type: "gate", id: g.id, version: g.version },
       created_at: g.created_at,
       aspect: field.aspect,
+      value: text(field.value),
     });
   }
 

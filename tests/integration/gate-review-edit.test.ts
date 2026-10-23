@@ -46,6 +46,19 @@ describe("gate review", () => {
     expect(current(b)).toEqual([]);
   });
 
+  it("brings the card back after Undo, and it can be kept again once", () => {
+    const { b, gateId, version } = setup();
+    const r = b.reviewGate(owner, gateId, { action: "accept", expected_version: version }) as any;
+    const u = b.reviewGate(owner, gateId, { action: "undo", expected_version: r.gate_version }) as any;
+    expect(b.entity(owner, gateId).data.status).toBe("queued");
+    const [item] = b.brief(owner).items;
+    expect(item.target).toMatchObject({ id: gateId, version: u.gate_version });
+    b.reviewGate(owner, gateId, { action: "accept", expected_version: u.gate_version });
+    expect(current(b)).toHaveLength(1);
+    expect(() => b.reviewGate(owner, gateId, { action: "accept", expected_version: u.gate_version })).toThrow(/changed|reviewed/i);
+    expect(current(b)).toHaveLength(1);
+  });
+
   it("will not undo after the kept fact changed", () => {
     const { b, gateId, version } = setup();
     const r = b.reviewGate(owner, gateId, { action: "accept", expected_version: version }) as any;

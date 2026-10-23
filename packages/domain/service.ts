@@ -2428,11 +2428,15 @@ export class Brain {
             retirement_reason: "owner_undo",
           });
         for (const { c, data } of restore) this.revise(c, data);
-        const revertedGate = this.revise(gate, {
-          ...gate.data,
-          status: "reverted",
-          reverted_at: this.now(),
-        });
+        // A plain kept memory goes back to waiting for review so its card
+        // returns; a correction stays reverted (the earlier decision is restored).
+        const { reviewed_at: _reviewedAt, claim_ids: _claimIds, ...rest } = gate.data;
+        const revertedGate = this.revise(
+          gate,
+          gate.data.correction
+            ? { ...gate.data, status: "reverted", reverted_at: this.now() }
+            : { ...rest, status: "queued" },
+        );
         return {
           reviewed: true,
           claim_ids: restore.map(({ c }) => c.id),
@@ -3688,6 +3692,18 @@ export class Brain {
       .all<{ id: string; project_id: string; kind: string; attempts: number; created_at: string; payload: string }>(
         "SELECT id,project_id,kind,attempts,created_at,payload FROM jobs WHERE status='failed' AND kind IN ('derive_brief','review_changed_assumption') ORDER BY created_at DESC LIMIT 20",
       )
+      .filter((job) => {
+        let source_id: unknown;
+        try {
+          source_id = JSON.parse(job.payload)?.source_id;
+        } catch {
+          return true;
+        }
+        if (typeof source_id !== "string") return true;
+        return (
+          this.store.get<{ state: string }>("SELECT state FROM sources WHERE id=?", source_id)?.state === "active"
+        );
+      })
       .map(({ payload, ...job }): BriefJob => {
         let source_id: unknown;
         try {
