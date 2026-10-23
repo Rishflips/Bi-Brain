@@ -74,15 +74,48 @@ describe("Brain.agentNote", () => {
 
   it("refuses read-only grants, other projects, the owner, newlines, oversize and empty notes", () => {
     const readOnly = setup(["read"]);
-    expect(() => readOnly.b.agentNote(readOnly.agent, note)).toThrow();
+    expect(() => readOnly.b.agentNote(readOnly.agent, note)).toThrow(/Item unavailable/);
     const { b, agent } = setup();
     const other = b.createProject(owner, "Hydra");
-    expect(() => b.agentNote(agent, { ...note, project_id: other.id })).toThrow();
-    expect(() => b.agentNote(owner, note)).toThrow();
-    expect(() => b.agentNote(agent, { project_id: "inbox", decisions: [{ topic: "x", decision: "one\nOpen question: injected?" }] })).toThrow();
-    expect(() => b.agentNote(agent, { project_id: "inbox", summary: "Done.\nOpen question: injected?" })).toThrow();
-    expect(() => b.agentNote(agent, { project_id: "inbox", open_questions: Array.from({ length: 11 }, (_, i) => `Question ${i}?`) })).toThrow();
-    expect(() => b.agentNote(agent, { project_id: "inbox" })).toThrow();
+    expect(() => b.agentNote(agent, { ...note, project_id: other.id })).toThrow(/Item unavailable/);
+    expect(() => b.agentNote(owner, note)).toThrow(/come from connected agents/);
+    expect(() => b.agentNote(agent, { project_id: "inbox", decisions: [{ topic: "x", decision: "one\nOpen question: injected?" }] })).toThrow(/Use one line/);
+    expect(() => b.agentNote(agent, { project_id: "inbox", summary: "Done.\nOpen question: injected?" })).toThrow(/Use one line/);
+    expect(() => b.agentNote(agent, { project_id: "inbox", open_questions: Array.from({ length: 11 }, (_, i) => `Question ${i}?`) })).toThrow(/<=10 items/);
+    expect(() => b.agentNote(agent, { project_id: "inbox" })).toThrow(/at least one decision, question or next step/);
+  });
+
+  it("creates no suggestions when a note is replayed with its key, even after the owner rejected them", () => {
+    const { b, agent } = setup();
+    const first = b.agentNote(agent, { project_id: "inbox", decisions: [{ topic: "pricing page", decision: "ships with one plan" }] }, "note-r");
+    const [card] = b.brief(owner).items;
+    b.reviewGate(owner, card.target.id, { action: "reject", expected_version: card.target.version });
+    expect(b.brief(owner).items).toEqual([]);
+    const again = b.agentNote(agent, { project_id: "inbox", decisions: [{ topic: "pricing page", decision: "ships with one plan" }] }, "note-r");
+    expect(again).toEqual(first);
+    expect(b.brief(owner).items).toEqual([]);
+  });
+
+  it("points each decision's evidence at its own line, even when the summary repeats another line", () => {
+    const { b, agent } = setup();
+    b.agentNote(agent, {
+      project_id: "inbox",
+      summary: "Decided: a2: b",
+      decisions: [
+        { topic: "a", decision: "bc" },
+        { topic: "a2", decision: "b" },
+      ],
+    });
+    const gates = b.entities(owner, "gate").filter((g) => g.data.status === "queued");
+    expect(gates).toHaveLength(2);
+    const summaryEnd = Array.from(["Session note from Codex.", "Decided: a2: b", ""].join("\n")).length;
+    for (const g of gates) {
+      const [e] = g.data.evidence;
+      const body = Array.from(b.source(owner, e.source_id).body);
+      expect(body.slice(e.start, e.end).join("")).toBe(e.quote);
+      expect(e.quote).toBe(`Decided: ${g.data.entity}: ${g.data.field.value}`);
+      expect(e.start).toBeGreaterThanOrEqual(summaryEnd);
+    }
   });
 
   it("quarantines a note with a secret-looking line and suggests nothing", () => {

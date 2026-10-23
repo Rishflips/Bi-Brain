@@ -803,14 +803,36 @@ export class Brain {
     );
     const lines = [`Session note from ${name}.`];
     if (v.summary) lines.push(v.summary);
-    const decisionLines = v.decisions.map(
-      (d) => `Decided: ${d.topic}: ${d.decision}`,
-    );
+    // Code-point offset of each decision line, counted while the body is assembled.
+    let offset = lines.reduce((n, l) => n + Array.from(l).length + 1, 0);
+    const decisionLines = v.decisions.map((d) => {
+      const quote = `Decided: ${d.topic}: ${d.decision}`;
+      const at = { quote, start: offset };
+      offset += Array.from(quote).length + 1;
+      return at;
+    });
     lines.push(
-      ...decisionLines,
+      ...decisionLines.map((d) => d.quote),
       ...v.open_questions.map((q) => `Open question: ${q}`),
     );
     if (v.next_step) lines.push(`Next step: ${v.next_step}`);
+    // The first response is stored under the key, so a replay returns it and creates no new suggestions.
+    return this.idempotent(p, `agent_note:${v.project_id}`, key, v, () =>
+      this.writeAgentNote(p, v, name, lines, decisionLines, key),
+    );
+  }
+  private writeAgentNote(
+    p: Extract<Principal, { kind: "agent" }>,
+    v: {
+      project_id: string;
+      decisions: { topic: string; decision: string }[];
+      open_questions: string[];
+    },
+    name: string,
+    lines: string[],
+    decisionLines: { quote: string; start: number }[],
+    key?: string,
+  ) {
     const captured = this.capture(
       p,
       {
@@ -834,14 +856,9 @@ export class Brain {
     let suggestions = 0;
     this.store.transaction(() => {
       v.decisions.forEach((d, i) => {
-        const quote = decisionLines[i];
-        const start = Array.from(
-          source.body.slice(0, source.body.indexOf(quote)),
-        ).length;
+        const { quote, start } = decisionLines[i];
         const end = start + Array.from(quote).length;
-        if (
-          Array.from(source.body).slice(start, end).join("") !== quote
-        )
+        if (Array.from(source.body).slice(start, end).join("") !== quote)
           return;
         // Reads run as the owner (an agent cannot list gates); the gate names the agent as its actor.
         if (
