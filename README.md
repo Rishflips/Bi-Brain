@@ -89,15 +89,18 @@ Requirements: Node.js **24.19 or later in the Node 24 LTS line** and npm 11+.
 
 ```powershell
 npm ci
-npm run db:migrate
-npm run build
-npm start
+npx bibrain
 ```
 
-Open [http://127.0.0.1:4317](http://127.0.0.1:4317). Paste the private pairing
-code from `data/owner-secret` into the first-use screen. A preview or custom
-database folder has its own `owner-secret` beside that database; use the code
-for the server open in your browser. The code is generated locally and is never
+BiBrain opens in your browser already signed in. Connections finds Codex, Claude Code and Cursor and adds each to a project folder with one button.
+
+`npx bibrain` runs from this BiBrain folder (it is not published to npm). It
+builds the app on first use, starts it, and opens a one-time sign-in link that
+works once and expires after two minutes. `npx bibrain open` opens it again
+signed in. To sign in by hand instead, run `npm run db:migrate`, `npm run build`
+and `npm start`, then paste the private pairing code from `data/owner-secret`
+into the first-use screen. A preview or custom database folder has its own
+`owner-secret` beside that database. The code is generated locally and is never
 logged or exported.
 
 No provider key is required. Without one, BiBrain keeps originals, search,
@@ -121,9 +124,10 @@ is not a completed client certification.
   now (editable as versions, with Undo and Still true), open questions, its
   originals, decisions to review, goals, and search over facts and originals.
   Any fact opens on its original with the passage highlighted and its history.
-- **Connections** — one project-centered continuity workspace with exact manual
-  handoffs, guided Codex/Claude setup, bounded live access, real-use status,
-  immediate revocation, past-access history, and reviewed imports.
+- **Connections** — one tile each for Codex, Claude Code and Cursor, with a
+  one-step Add that writes the agent's project file, a status that reads
+  Connected only after the agent's first real call, immediate Revoke, an "Any
+  other agent" tile for a copied handoff or setup by hand, and reviewed imports.
 - **Settings & privacy** — appearance, background help, provider consent,
   spending controls, export, deletion, and managed plan state.
 

@@ -1,5 +1,30 @@
 # Connect a native agent to BiBrain
 
+## One step (recommended)
+
+This works in the local app on your own computer. The hosted edition uses
+[Set up by hand](#set-up-by-hand) below.
+
+1. Run `npx bibrain` in the BiBrain folder. BiBrain opens in your browser already
+   signed in.
+2. Open **Connections** and choose **Add to Codex** (or **Add to Claude Code**
+   or **Add to Cursor**).
+3. Pick the project and the project folder where you open the agent.
+4. Open **See the file BiBrain will add** and check it. BiBrain writes only that
+   one file in the folder. If the file already exists, BiBrain changes nothing and
+   shows the exact lines to add yourself.
+5. Open the agent in that folder and approve BiBrain once.
+6. The tile says **Waiting for its first call** until the agent really uses
+   BiBrain, then **Connected**.
+7. **Revoke** ends access at once, including in an agent that is already open.
+
+The access key is created by BiBrain and rests in BiBrain's data folder
+(`data/agent-keys`), never in the project file and never in the browser. The
+project file holds only the paths needed to start BiBrain's connector and the
+connection id. Revoking deletes the key file. One-step connections can read and
+suggest (the recommended choice) or read only, and last 90 days unless you revoke
+them sooner. Suggestions from agents wait for your review on Today.
+
 Status, 2026-10-21: the bounded read-only workflow below passed in actual fresh
 Codex CLI 0.156.1 and Claude Code 2.1.283 sessions. This does not certify arbitrary
 native write/propose/forget workflows or every future client version.
@@ -32,6 +57,12 @@ read-only/idempotent/destructive hints were added and the documented project
 passed without granting write access or bypassing approval. Claude's fresh run
 used restricted mode, no built-in tools and only the supplied MCP configuration.
 
+This recorded run used the manual setup below. `scripts/native-client-proof.ts`
+now creates its connection through the one-step path (BiBrain writes the client's
+project file in a disposable folder), so a fresh run exercises that path. That
+updated script has not yet been run against native Codex or Claude Code; only
+the owner runs it, because it consumes subscription quota.
+
 Reproduce explicitly (consumes native subscription quota):
 
 ```powershell
@@ -49,7 +80,12 @@ Codex uses GPT-6 Sol for this proof. The observed Claude subscription selected
 `claude-opus-5-5`. These are compatibility observations, not recommendations or
 BiBrain live reasoning quality/cost evidence.
 
-## Before connecting
+## Set up by hand
+
+Use this when the one-step Add is not available (the hosted edition, or a client
+BiBrain does not list), or when you prefer to control each step.
+
+### Before connecting
 
 1. Start BiBrain with `npm start` and keep it running.
 2. In **Connections**, choose **Connect an agent**, select Codex or Claude Code,
@@ -70,7 +106,7 @@ BiBrain live reasoning quality/cost evidence.
 The local adapter rejects remote plaintext addresses, URL credentials and
 redirects. Use an exact trusted HTTPS origin for an independently hosted API.
 
-## Codex
+### Codex
 
 BiBrain includes a token-free project configuration template at
 `.codex/config.toml.example`. Copy it to `.codex/config.toml` in this trusted
@@ -91,7 +127,7 @@ codex mcp add bibrain --env BRAIN_AGENT_TOKEN=$env:BRAIN_AGENT_TOKEN --env BRAIN
 Confirm discovery with `codex mcp list` or `/mcp`. Codex, the Codex IDE
 extension and the ChatGPT desktop app share MCP configuration on the same host.
 
-## Claude Code
+### Claude Code
 
 From the same PowerShell window, add a project-local server without putting the
 key in the command:
@@ -104,7 +140,7 @@ Start Claude Code from that same window so the adapter inherits
 `BRAIN_AGENT_TOKEN` and `BRAIN_API_URL`. The `local` scope keeps this connection
 specific to the current project and out of the shared repository.
 
-## Required native proof
+### Required native proof
 
 Use synthetic content only. Record the exact client version and prove each item
 in a fresh session:
@@ -122,7 +158,7 @@ in a fresh session:
 Do not label a client supported until all five checks pass. Revoke and remove
 the disposable grant after the run.
 
-## Remove the connection
+### Remove the connection
 
 For Codex, run `codex mcp remove bibrain`. For Claude Code, run
 `claude mcp remove --scope local bibrain`. Also revoke the grant in BiBrain.

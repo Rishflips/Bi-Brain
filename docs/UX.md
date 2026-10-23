@@ -170,37 +170,55 @@ Never simulate opening an external agent or report clipboard success if copying 
 
 ## Connections
 
-Open with one selected-project continuity workspace, not setup instructions. Show
-only real counts for reviewed memory, retained originals, current open questions,
-chosen direction, verified agents, and keys waiting for first use. A retained
-original alone is not handoff-ready: direct the owner to review its meaning before
-offering the reviewed handoff. Never treat a generated key as an active agent.
+Open with one tile for each agent BiBrain can add: Codex, Claude Code and Cursor.
+Each tile says plainly whether the agent was found on this computer, and shows
+its current connections. Do not show setup instructions first.
 
-Present two plain-language paths side by side: copy a one-time reviewed handoff,
-which creates no ongoing access, or keep an agent caught up with temporary scoped
-access. Use the same selected project for handoff, connection defaults, identity
-disclosure, and imports so the owner does not have to repeat scope choices.
-Fence in-flight page and review reads when the selected project changes; never
-render the previous project's counts under the new project name.
+**Add.** A tile offers "Add to {agent}" only in the local app. Elsewhere (a
+managed or remotely served BiBrain, or when this computer cannot be checked) the
+tile says why and points to "Set up by hand". Add asks for the project, the
+project folder where the agent is opened, and what it may do: "Read and suggest
+(recommended)" or "Read only". "See the file BiBrain will add" shows the exact
+file before anything is written. BiBrain writes only that file in the folder and
+never changes an existing one; if the file exists it writes nothing and shows the
+lines to add by hand. The access key stays in BiBrain's data folder on this
+computer and is never shown in the page. Focus returns to the Add button on
+cancel.
 
-Separate Knowledge sources from current Agents. Keep revoked access in collapsed
-history instead of presenting it as active; expired access may create a fresh
-grant but does not silently reactivate the old key.
+**Waiting.** After Add, the connection reads "Waiting for its first call", with
+the project, the access level and the folder. A key that exists is never treated
+as an active agent, and a hint tells the person to open the agent in that folder
+and approve BiBrain once.
+
+**Connected.** The status becomes "Connected · last used {date}" only after the
+agent's first real authenticated call.
+
+**Revoke.** Every current connection has a Revoke button that ends access at once,
+including in an agent that is already open. Ended and expired connections move
+into a collapsed "Earlier connections" list; an expired one does not reactivate.
+
+**Any other agent.** The last tile holds "Preview handoff", a one-time reviewed
+copy of one project that creates no ongoing access, and "Set up by hand", the
+guided key flow for hosted use and other clients. Connections whose client has no
+tile of its own are listed here so no live access is hidden.
+
+**Imports.** Below the tiles, "Choose identity details an agent may receive" and
+"Bring more context in" let the person import files, a folder or a chat export
+for the selected project, review what was detected, and then apply it.
+
+Agents write back to a project only as suggestions that wait on Today. Revoked
+access never counts as active. Fence in-flight reads when the selected project
+changes; never render the previous project's data under the new project name.
+
 Status vocabulary: Not connected, Awaiting authorization, Checking, Connected, Needs attention, Revoked.
-A configured token alone does not establish Connected; verify a round trip.
+A configured key alone does not establish Connected; verify a round trip.
 
-The primary agent flow asks where the user wants to continue, which projects the
-agent may read, whether it may only read or also suggest, and how long access
-lasts. Default to one selected project, read only, and one day. Generate the key
-only after this review. Show it once, keep it out of generated commands, and give
-client-specific project-local setup for Codex and Claude Code. Technical setup is
-progressive detail, not the first screen.
-
-After key creation, say that access is ready but not connected. Change to
-Connected only after a real authenticated operation. Show expiry and last
-verification, allow immediate revocation, and verify that an already-open client
-is denied on its next operation. Existing project configuration must not be
-silently overwritten.
+Set up by hand keeps the original flow for hosted use and other clients: choose
+where to continue, which project the agent may read, whether it may only read or
+also suggest, and how long access lasts (default one selected project, read only,
+one day). Generate the key only after this review, show it once, and keep it out
+of generated commands. Existing project configuration must not be silently
+overwritten.
 
 Agent grants: readable projects, ability to propose memories, expiration, last verified access, revoke.
 Source grants: selected folders/files, sync direction, freshness, disconnect, remove retained imports.
