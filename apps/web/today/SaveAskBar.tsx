@@ -10,8 +10,22 @@ type Props = {
   onOpenSource: (id: string) => void;
 };
 type Result =
-  | { kind: "saved"; sourceId: string; title: string; project: string }
-  | { kind: "answer"; question: string; hits: AskHit[] }
+  | {
+      kind: "saved";
+      sourceId: string;
+      /** null when the server kept it protected: no client-built text is shown. */
+      title: string | null;
+      project: string;
+      retiredBase: number;
+    }
+  | {
+      kind: "answer";
+      question: string;
+      hits: AskHit[];
+      /** Sources that were current notes when the answer was shown. */
+      cited: string[];
+      retiredBase: number;
+    }
   | null;
 
 const LIMIT = 100_000;
@@ -35,19 +49,26 @@ export function SaveAskBar({
   const inFlight = useRef(false);
   const latest = useRef("");
   const ask = mode === "ask";
-  // The receipt follows the current notes. Once its note has been seen there and
-  // then goes missing (purged or withdrawn), or is retired (corrected), it goes.
+  // The receipt and the answer follow the current notes. When a note they show
+  // is purged, withdrawn or corrected they go, even if the refresh failed.
   const [seen, setSeen] = useState(false);
   const savedId = result?.kind === "saved" ? result.sourceId : null;
   const current = savedId ? notes.find((n) => n.id === savedId) : undefined;
-  const retired = savedId !== null && retiredSourceIds.includes(savedId);
+  const retiredSince = result ? retiredSourceIds.slice(result.retiredBase) : [];
   useEffect(() => {
-    if (!savedId) return;
-    if (retired || (seen && !current)) {
+    if (!result) return;
+    if (result.kind === "saved") {
+      if (retiredSince.includes(result.sourceId) || (seen && !current)) {
+        setResult(null);
+        setSeen(false);
+      } else if (current && !seen) setSeen(true);
+    } else if (
+      result.cited.some(
+        (id) => retiredSince.includes(id) || !notes.some((n) => n.id === id),
+      )
+    )
       setResult(null);
-      setSeen(false);
-    } else if (current && !seen) setSeen(true);
-  }, [savedId, current, seen, retired]);
+  }, [result, current, seen, notes, retiredSourceIds]);
 
   function change(value: string) {
     latest.current = value;
@@ -89,7 +110,16 @@ export function SaveAskBar({
         const out = await api<{ question: string; hits: AskHit[] }>(
           `/ask?q=${encodeURIComponent(value)}`,
         );
-        setResult({ kind: "answer", question: out.question, hits: out.hits });
+        const ids = out.hits.flatMap((h) =>
+          h.type === "fact" ? h.evidence.map((ev) => ev.source_id) : [h.id],
+        );
+        setResult({
+          kind: "answer",
+          question: out.question,
+          hits: out.hits,
+          cited: ids.filter((id) => notes.some((n) => n.id === id)),
+          retiredBase: retiredSourceIds.length,
+        });
         if (latest.current === submitted) {
           latest.current = "";
           setText("");
@@ -101,16 +131,20 @@ export function SaveAskBar({
           Array.from(firstLine).length > 80
             ? Array.from(firstLine).slice(0, 79).join("") + "…"
             : firstLine;
-        const saved = await api<{ source_id: string }>("/sources", {
-          title,
-          body: value,
-          project_id: project,
-        });
+        const saved = await api<{ source_id: string; quarantined?: boolean }>(
+          "/sources",
+          {
+            title,
+            body: value,
+            project_id: project,
+          },
+        );
         setSeen(false);
         setResult({
           kind: "saved",
           sourceId: saved.source_id,
-          title,
+          title: saved.quarantined ? null : title,
+          retiredBase: retiredSourceIds.length,
           project: projects.find((p) => p.id === project)?.title ?? "Inbox",
         });
         if (latest.current === submitted) {
@@ -236,19 +270,36 @@ export function SaveAskBar({
       {result?.kind === "saved" && (
         <div className="tv-panel" aria-live="polite">
           <span className="tv-eyebrow">Saved</span>
-          <p>
-            <b>{current?.title ?? result.title}</b>
-          </p>
-          <p className="tv-faint">
-            In {result.project}. The original is kept exactly as you wrote it.{" "}
-            <button
-              type="button"
-              className="tv-link"
-              onClick={() => onOpenSource(result.sourceId)}
-            >
-              Open it
-            </button>
-          </p>
+          {result.title === null ? (
+            <p className="tv-faint">
+              Saved privately. It looked like a secret, so it is kept protected
+              and hidden from agents.{" "}
+              <button
+                type="button"
+                className="tv-link"
+                onClick={() => onOpenSource(result.sourceId)}
+              >
+                Open it
+              </button>
+            </p>
+          ) : (
+            <>
+              <p>
+                <b>{current?.title ?? result.title}</b>
+              </p>
+              <p className="tv-faint">
+                In {result.project}. The original is kept exactly as you wrote
+                it.{" "}
+                <button
+                  type="button"
+                  className="tv-link"
+                  onClick={() => onOpenSource(result.sourceId)}
+                >
+                  Open it
+                </button>
+              </p>
+            </>
+          )}
         </div>
       )}
       {result?.kind === "answer" && (

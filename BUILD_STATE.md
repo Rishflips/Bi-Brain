@@ -4,27 +4,29 @@ Updated: 2026-10-23
 
 ## 2026-10-23 — Today v2 verified (branch reframe/today-v2, not pushed)
 
-Today is now one bar (save or ask), a Brief of at most three cards with Keep, Fix,
-Dismiss and Undo, project cards and a header status. Local V1 only; no real model
-run and no native client check was part of this slice.
+Today is one bar (save or ask), a Brief of at most three cards with Keep, Fix,
+Dismiss and Undo, and project cards. Local V1 only; no real model run and no
+native client check in this slice.
 
-Commands run in this worktree, in order:
-- `npm run typecheck` passed. `npm run lint` passed.
-- `npm test` (Vitest, run alone): 144 of 146 files passed, 1535 tests passed, 2
-  failed, 8 skipped. Both failures are the known load-sensitive process tests:
-  `managed-decision-advisory-process` and `managed-process`. Re-run alone, both
-  files passed (7 of 7 tests).
+Commands, in order:
+- `npm run typecheck` and `npm run lint` passed.
+- `npm test` (Vitest, alone): 1535 passed, 2 failed, 8 skipped. The 2 are the
+  known load-sensitive process tests (`managed-process`,
+  `managed-decision-advisory-process`); alone, both passed (7 of 7).
 - `npm run build` passed. `npm run brain-eval` passed 4 of 4.
-- `npx playwright test --workers=1`: 71 passed, 0 failed (main, today-v2 and
-  empty-brain projects). The first run on the old specs had 35 failures.
-- Old Today specs ported to the new bar; `first-session-journey` and
-  `living-brain-review` retired (they tested the cut first-loop rows and state card).
-- Screenshots (synthetic text, throwaway database): docs/screenshots/today-v2-*.png.
+- `npx playwright test --workers=1`: 75 passed, 0 failed (main, today-v2 and empty-brain projects).
+- Old Today specs ported to the new bar. Retired: `first-session-journey` and
+  `living-brain-review` (cut first-loop rows and state card); single tests
+  "a saved note preview never relabels multi-source synthesis..." (preview cut)
+  and "a delayed pre-purge source read cannot resurrect the retained receipt"
+  (receipt no longer reads the source).
+- Receipt and Ask answer follow the current notes; a purge, withdrawal or
+  correction clears them even if the refresh fails. A quarantined save shows
+  neutral text, never the typed first line.
+- Screenshots (synthetic, throwaway database): docs/screenshots/today-v2-*.png.
 
-Fix round: the receipt now follows the current notes, so a purge or correction
-clears it at once (the two `test.fail` tests are normal tests). The unused
-`proactive-goal.tsx` and its CSS are removed. Final `npx playwright test
---workers=1`: 71 passed. The quiet screenshot shows "You are caught up."
+Limits: no System 1 routing yet (plan 4), no plug-and-play install yet (plan 3),
+no project suggestion after save.
 
 ## Active delivery — agent continuity workspace
 

@@ -69,9 +69,9 @@ processed a real payment.
 
 The merged foundation, guided connection and truthful first-session lifecycles
 passed their recorded integration, broad Vitest, offline evaluation, browser and
-container gates. The current branch adds the guided proactive-goal loop; its
-isolated real-storage journey passes and the complete browser regression passes
-52/52. These are local release gates—not proof of a human usability pilot, live
+container gates. The current branch replaces Today with one bar that saves or asks and a Brief of
+at most three items; its browser regression passes 75/75 (see BUILD_STATE.md).
+These are local release gates—not proof of a human usability pilot, live
 model quality, native-agent compatibility, real billing, or target-host
 operations. See
 [BUILD_STATE.md](BUILD_STATE.md) for commands, exact scope, and known limits.
@@ -123,9 +123,9 @@ Technical terms such as models, queues, tokens, classifiers, and MCP stay out of
 the primary flow. Every visible control either works or states why it is
 unavailable.
 
-![BiBrain first useful loop — synthetic item with owner-reviewed meaning](docs/screenshots/first-session.png)
+![BiBrain Today — asking the bar a question; the answer quotes the saved original (synthetic sample)](docs/screenshots/today-v2-ask.png)
 
-![BiBrain guided proactive goal — synthetic chosen goal before any preparation](docs/screenshots/proactive-goal.png)
+![BiBrain Today at 320px in dark appearance — the Brief card with its evidence (synthetic sample)](docs/screenshots/today-v2-brief-320-dark.png)
 
 ![BiBrain Project Focus — synthetic reviewed memory, goal, and retained original](docs/screenshots/project-focus.png)
 

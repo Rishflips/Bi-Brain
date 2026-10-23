@@ -951,6 +951,7 @@ function App() {
   }
   /** Drops the retained body immediately after an edit/withdraw/delete. */
   function removeFirstNote(id: string) {
+    setRetiredReceipts((ids) => [...ids, id]);
     // Invalidate every in-flight read before clearing the body.
     firstNoteReadSeq.current += 1;
     setFirstNote((current) =>

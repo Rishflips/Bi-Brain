@@ -324,7 +324,9 @@ test("chosen goal prepares a hypothesis and acceptance undo preserves later edit
   });
   expect(edited.ok()).toBe(true);
   await page.getByRole("button", { name: "Undo" }).click();
-  await expect(toast).toContainText(/later edit|changed|cannot/i);
+  await expect(toast).toHaveText(
+    "This item changed since you opened it. Refresh to compare.",
+  );
   await expect(toast).not.toContainText("Undone");
   await page.getByRole("button", { name: "Your brain", exact: true }).click();
   await page

@@ -57,3 +57,36 @@ test("a committed correction invalidates its old receipt even when workspace ref
     await f.close();
   }
 });
+
+test("saving the same text as a corrected note still shows a receipt", async ({
+  page,
+  context,
+}) => {
+  const f = await firstNoteFixture(context);
+  const corrected = "SYNTHETIC_CORRECTED_THEN_SAVED_AGAIN";
+  try {
+    await f.open(page);
+    const bar = page.getByLabel("Save to your brain");
+    await bar.fill("SYNTHETIC_BEFORE_SECOND_CORRECTION");
+    await page.getByRole("button", { name: "Save", exact: true }).click();
+    await page.getByRole("button", { name: "Open it", exact: true }).click();
+    await page
+      .getByRole("button", { name: "Correct or move source", exact: true })
+      .click();
+    await page.getByLabel("Title", { exact: true }).fill(corrected);
+    await page.getByLabel("Source text", { exact: true }).fill(corrected);
+    await page
+      .getByRole("button", { name: "Save correction", exact: true })
+      .click();
+    await page.getByRole("button", { name: "Close dialog" }).click();
+    await page.getByRole("button", { name: "Today", exact: true }).click();
+    await expect(page.locator("main")).not.toContainText(
+      "kept exactly as you wrote it",
+    );
+    await bar.fill(corrected);
+    await page.getByRole("button", { name: "Save", exact: true }).click();
+    await expect(page.getByText(/kept exactly as you wrote it/i)).toBeVisible();
+  } finally {
+    await f.close();
+  }
+});

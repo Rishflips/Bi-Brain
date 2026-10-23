@@ -97,16 +97,36 @@ async function purgeSavedOriginal(
   page: Page,
   context: BrowserContext,
   original: string,
+  options: { askFirst?: string; todayFails?: boolean } = {},
 ) {
   const f = await fixture(context);
   await page.goto(MANAGED_ORIGIN);
   await saveInline(page, original);
-  await page.getByRole("button", { name: "Open it", exact: true }).click();
+  if (options.askFirst) {
+    await page.getByRole("button", { name: "Ask mode" }).click();
+    await page.getByLabel("Ask your brain").fill(options.askFirst);
+    await page.getByRole("button", { name: "Ask", exact: true }).click();
+    await expect(page.getByText("From your brain")).toBeVisible();
+    await expect(page.locator("main")).toContainText(original);
+    await page.getByRole("button", { name: new RegExp(original) }).click();
+  } else {
+    await page.getByRole("button", { name: "Open it", exact: true }).click();
+  }
   await expect(page.getByTestId("original")).toHaveText(original);
   await page
     .getByRole("button", { name: "Delete / withdraw", exact: true })
     .click();
   await page.getByLabel("Type DELETE to permanently purge").fill("DELETE");
+  if (options.todayFails)
+    await context.route(`${MANAGED_ORIGIN}/api/v1/today`, (route) =>
+      route.fulfill({
+        status: 503,
+        contentType: "application/json",
+        body: JSON.stringify({
+          error: { code: "UNAVAILABLE", message: "Refresh unavailable." },
+        }),
+      }),
+    );
   await page
     .getByRole("button", { name: "Permanently delete", exact: true })
     .click();
@@ -142,6 +162,60 @@ test("a purged original disappears from Today without a reload", async ({
   }
 });
 
+test("a purged original disappears from an Ask answer on Today", async ({
+  page,
+  context,
+}) => {
+  const original = "SYNTHETIC kiwimarmalade cited original MUST_DISAPPEAR";
+  const f = await purgeSavedOriginal(page, context, original, {
+    askFirst: "kiwimarmalade",
+  });
+  try {
+    await page.getByRole("button", { name: "Today", exact: true }).click();
+    await expect(page.locator("main")).not.toContainText("kiwimarmalade");
+  } finally {
+    await f.close();
+  }
+});
+
+test("a purged original disappears from Today even when the workspace refresh fails", async ({
+  page,
+  context,
+}) => {
+  const original = "SYNTHETIC_PURGED_WHILE_REFRESH_FAILS";
+  const f = await purgeSavedOriginal(page, context, original, {
+    todayFails: true,
+  });
+  try {
+    await page.getByRole("button", { name: "Today", exact: true }).click();
+    await expect(page.locator("main")).not.toContainText(original);
+  } finally {
+    await f.close();
+  }
+});
+
+test("a credential on the first line is never shown in the receipt", async ({
+  page,
+  context,
+}) => {
+  const f = await fixture(context);
+  const sentinel = "sk-SYNTHETICQUARANTINEONLY1234567890";
+  try {
+    await page.route("**/api/v1/search*", (route) => route.abort());
+    await page.goto(MANAGED_ORIGIN);
+    await composer(page).fill(`${sentinel}
+second line of a synthetic note`);
+    await save(page).click();
+    await expect(page.getByText(/Saved privately\./)).toBeVisible();
+    await expect(page.locator("main")).not.toContainText(sentinel);
+    await expect(page.locator("main")).not.toContainText(
+      "kept exactly as you wrote it",
+    );
+  } finally {
+    await f.close();
+  }
+});
+
 test("a 320px saved receipt keeps long originals usable in dark appearance", async ({
   page,
   context,
@@ -151,9 +225,10 @@ test("a 320px saved receipt keeps long originals usable in dark appearance", asy
     await page.setViewportSize({ width: 320, height: 820 });
     await page.addInitScript(() => localStorage.setItem("brain-theme", "dark"));
     await page.goto(MANAGED_ORIGIN);
-    const original = "SYNTHETIC_MOBILE_RECEIPT\n" + "unbroken".repeat(80);
+    const original = "unbroken".repeat(10) + "\nSYNTHETIC_MOBILE_RECEIPT";
     await saveInline(page, original);
     await expect(receipt(page)).toBeVisible();
+    await expect(page.locator("main")).toContainText("unbroken".repeat(10));
     await page.getByRole("button", { name: "Open it", exact: true }).click();
     await expect(page.getByTestId("original")).toHaveText(original);
     await page.getByRole("button", { name: "Close dialog" }).click();
@@ -247,7 +322,9 @@ test("quarantined capture never echoes the suspected credential into a saved pre
     expect(source.visibility).toBe("private");
     expect(source.body).not.toContain(sentinel);
     await expect(
-      page.getByText(/suspected secret|quarantin/i).first(),
+      page.getByText(
+        "Saved privately. It looked like a secret, so it is kept protected and hidden from agents.",
+      ),
     ).toBeVisible();
     // Rendering draft text instead of the retained safe source is a leak.
     await expect(page.locator("body")).not.toContainText(sentinel);
