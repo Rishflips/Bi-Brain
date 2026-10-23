@@ -48,6 +48,7 @@ import { extractReviewableMemory } from "./memory-understanding.ts";
 import { buildBrief, gateFitsBrief, type BriefInput, type BriefJob } from "./brief.ts";
 import { buildProjectView } from "./project-view.ts";
 import { questionWords, rankAnswers } from "./ask.ts";
+import { factText } from "./facts.ts";
 import {
   attemptReferencesSource,
   claimDecisionAttempt,
@@ -3817,6 +3818,55 @@ export class Brain {
     if (v.answered) list.push(v.signature);
     this.store.set(key, list.slice(-500));
     return { signature: v.signature, answered: v.answered };
+  }
+  reviseClaim(p: Principal, id: string, input: unknown) {
+    this.owner(p);
+    id = z.string().min(1).max(100).parse(id);
+    const v = z
+      .object({
+        expected_version: z.number().int().positive(),
+        value: z.string().trim().min(1).max(1000),
+      })
+      .strict()
+      .parse(input);
+    return this.store.transaction(() => {
+      const c = this.entity(p, id);
+      if (c.kind !== "claim") throw new BrainError("NOT_FOUND", "Fact unavailable.", 404);
+      requireVersion(c.version, v.expected_version);
+      if (c.data.status !== "current")
+        throw new BrainError(
+          "VERSION_CONFLICT",
+          "This fact was replaced or retired. Refresh to see the current one.",
+          409,
+        );
+      if (c.data.aspect !== "statement")
+        throw new BrainError("INVALID_INPUT", "Only a fact written as a sentence can be edited here.");
+      this.checkEvidence(p, c.project_id, c.data.evidence ?? []);
+      if (v.value === c.data.value) return { id: c.id, version: c.version, unchanged: true };
+      this.revise(c, { ...c.data, value: v.value, edited_by_owner: true, edited_at: this.now() });
+      return { id: c.id, version: c.version + 1, unchanged: false };
+    });
+  }
+  claimHistory(p: Principal, id: string) {
+    this.owner(p);
+    id = z.string().min(1).max(100).parse(id);
+    const c = this.entity(p, id);
+    if (c.kind !== "claim") throw new BrainError("NOT_FOUND", "Fact unavailable.", 404);
+    return this.store
+      .all<{ version: number; data: string; created_at: string }>(
+        "SELECT version,data,created_at FROM entity_versions WHERE entity_id=? ORDER BY version",
+        id,
+      )
+      .map((row) => {
+        const data = JSON.parse(row.data);
+        return {
+          version: row.version,
+          text: factText(String(data.entity), String(data.aspect), data.value),
+          status: String(data.status),
+          edited_by_owner: data.edited_by_owner === true,
+          at: row.created_at,
+        };
+      });
   }
   ask(p: Principal, input: unknown) {
     this.owner(p);
