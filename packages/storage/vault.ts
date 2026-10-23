@@ -15,6 +15,8 @@ import { createHash, randomUUID } from "node:crypto";
 import { execFileSync } from "node:child_process";
 import { detectSecrets, scannerVersion } from "./secrets.ts";
 const GIT_OPERATION_TIMEOUT_MS = 60_000;
+const STALE_GIT_LOCK_MS = 2_000;
+const MAX_STALE_GIT_LOCKS = 3;
 export type PortableState = {
   projects: any[];
   sources: any[];
@@ -53,6 +55,59 @@ export class Vault {
     });
   }
   git(...args: string[]) {
+    for (let cleared = 0; ; cleared++) {
+      try {
+        return this.runGit(args);
+      } catch (error) {
+        // Each retry follows removal of one distinct crash-leftover lock (a
+        // commit can leave both the index and a ref lock behind).
+        if (cleared < MAX_STALE_GIT_LOCKS && this.clearStaleGitLock(error))
+          continue;
+        throw error;
+      }
+    }
+  }
+  /**
+   * A forced stop (SIGKILL, power loss, Windows TerminateProcess) during
+   * `git add`/`git commit` kills git too and leaves its own `.lock` file, which
+   * makes every later write fail with "Unable to create '….lock': File exists"
+   * and wedges journal recovery. Callers hold the vault write lock, so no Bi
+   * Brain writer can own such a file; one that outlives a short grace period
+   * (an owner's own git command may hold it briefly) is a crash leftover.
+   * Returns true when the failed command is worth retrying once.
+   */
+  private clearStaleGitLock(error: any): boolean {
+    if (!this.lockDepth) return false;
+    const reported = /'([^']*[\\/]\.git[\\/][^']*\.lock)'/.exec(
+      `${error?.stderr ?? ""}${error?.message ?? ""}`,
+    )?.[1];
+    if (!reported) return false;
+    // Rebuild the path under this vault's own .git; never trust the reported
+    // prefix or any traversal in it.
+    const inside = reported.replace(/\\/g, "/").split("/.git/").pop()!;
+    const parts = inside.split("/");
+    if (parts.some((part) => !part || part === "." || part === ".."))
+      return false;
+    const lock = join(this.root, ".git", ...parts);
+    const deadline = Date.now() + STALE_GIT_LOCK_MS;
+    while (Date.now() < deadline) {
+      let age: number;
+      try {
+        age = Date.now() - statSync(lock).mtimeMs;
+      } catch {
+        return true; // released on its own; just retry
+      }
+      if (age >= STALE_GIT_LOCK_MS) break;
+      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 25);
+    }
+    try {
+      rmSync(lock, { force: true });
+    } catch {
+      return false; // surface git's own error rather than the removal's
+    }
+    return true;
+  }
+  private runGit(args: string[]) {
     try {
       return execFileSync(
         "git",
