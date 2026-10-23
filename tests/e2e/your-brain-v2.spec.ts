@@ -186,3 +186,56 @@ test("an open question can be marked answered and brought back", async ({ browse
     await expect(questions).toContainText("Nothing open.");
   });
 });
+
+test("answering one of two questions moves focus to the next one", async ({ browser }) => {
+  await journey(browser, async (page) => {
+    await save(page, "Launch notes\nOpen question: who writes the launch post?\nOpen question: when do invites go out?");
+    await openBrain(page);
+    const questions = page.getByRole("region", { name: "Open questions" });
+    const buttons = questions.getByRole("button", { name: "Mark answered" });
+    await expect(buttons).toHaveCount(2);
+    const first = questions.getByRole("listitem").filter({ hasText: "who writes the launch post?" });
+    await first.getByRole("button", { name: "Mark answered" }).click();
+    await expect(first).toHaveCount(0);
+    await expect(buttons).toHaveCount(1);
+    await expect(buttons.first()).toBeFocused();
+  });
+});
+
+test("focus still lands when a refresh overlaps the re-read after an answer", async ({ browser }) => {
+  await journey(browser, async (page) => {
+    await save(page, "Launch notes\nOpen question: who writes the launch post?");
+    await openBrain(page);
+    const questions = page.getByRole("region", { name: "Open questions" });
+    const item = questions.getByRole("listitem").filter({ hasText: "who writes the launch post?" });
+    await expect(item).toBeVisible();
+    // The app is served through a context route, so these handlers hand on with fallback().
+    // After the answer is stored: hold the first read until a second read starts, then let the
+    // first finish while the second is still in flight.
+    let armed = false;
+    let reads = 0;
+    let secondStarted!: () => void;
+    const second = new Promise<void>((r) => (secondStarted = r));
+    await page.route("**/api/v1/questions/answer", async (route) => {
+      await route.fallback();
+      armed = true;
+    });
+    await page.route("**/api/v1/brain/projects/*", async (route) => {
+      if (!armed) return route.fallback();
+      reads += 1;
+      if (reads === 1) {
+        await second;
+        return route.fallback();
+      }
+      if (reads === 2) {
+        secondStarted();
+        await new Promise((r) => setTimeout(r, 500));
+      }
+      return route.fallback();
+    });
+    await item.getByRole("button", { name: "Mark answered" }).click();
+    await expect(item).toHaveCount(0, { timeout: 12_000 });
+    await expect(questions.getByRole("heading", { name: "Open questions" })).toBeFocused({ timeout: 12_000 });
+    await page.unrouteAll({ behavior: "ignoreErrors" });
+  });
+});

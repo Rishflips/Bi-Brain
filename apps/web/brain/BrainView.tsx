@@ -9,6 +9,16 @@ import { ProjectList } from "./ProjectList.tsx";
 import { TrueNow } from "./TrueNow.tsx";
 import type { BrainProps, Done, ProjectView } from "./types.ts";
 
+// Wait for the newest read, and for any that replaced it meanwhile. Reads never reject.
+async function newest(latest: { current: Promise<void> | null }, own: Promise<void> | undefined) {
+  let n = latest.current;
+  while (n && n !== own) {
+    await n;
+    if (latest.current === n) return;
+    n = latest.current;
+  }
+}
+
 export function BrainView(props: BrainProps) {
   const { api, projectId, refreshKey } = props;
   const [view, setView] = useState<ProjectView | null>(null);
@@ -18,17 +28,32 @@ export function BrainView(props: BrainProps) {
   // Only the newest read may land, and none after the view is gone.
   const seq = useRef(0);
 
-  const load = useCallback(async () => {
+  // The newest read in flight. A read that was overtaken waits for it, so whoever awaited
+  // the older read resumes only once a view at least as new as theirs has been set.
+  const latest = useRef<Promise<void> | null>(null);
+
+  const load = useCallback((): Promise<void> => {
     const mine = ++seq.current;
-    try {
-      const next = await api<ProjectView>(`/brain/projects/${encodeURIComponent(projectId)}`);
-      if (mine !== seq.current) return;
-      setView(next);
-      setLoadError(null);
-    } catch (e) {
-      if (mine !== seq.current) return;
-      setLoadError(friendlyError(e));
-    }
+    const self: { p?: Promise<void> } = {};
+    self.p = (async () => {
+      try {
+        const next = await api<ProjectView>(`/brain/projects/${encodeURIComponent(projectId)}`);
+        if (mine !== seq.current) {
+          await newest(latest, self.p);
+          return;
+        }
+        setView(next);
+        setLoadError(null);
+      } catch (e) {
+        if (mine !== seq.current) {
+          await newest(latest, self.p);
+          return;
+        }
+        setLoadError(friendlyError(e));
+      }
+    })();
+    latest.current = self.p;
+    return self.p;
   }, [api, projectId]);
 
   useEffect(() => {
