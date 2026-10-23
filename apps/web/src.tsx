@@ -301,6 +301,7 @@ function App() {
     [demo, setDemo] = useState(false),
     [projects, setProjects] = useState<any[]>([]),
     [notes, setNotes] = useState<Source[]>([]),
+    [retiredReceipts, setRetiredReceipts] = useState<string[]>([]),
     [today, setToday] = useState<any>({
       briefs: [],
       goals: [],
@@ -481,6 +482,7 @@ function App() {
   const resetPersonalState = useCallback(() => {
     setProjects([]);
     setNotes([]);
+    setRetiredReceipts([]);
     setToday({
       briefs: [],
       goals: [],
@@ -1253,6 +1255,8 @@ function App() {
                 title: p.title,
               }))}
               sourceCount={notes.length}
+              notes={notes.map((n) => ({ id: n.id, title: n.title }))}
+              retiredSourceIds={retiredReceipts}
               backgroundOn={!!prefs?.enabled}
               agentNamesByProject={agentNamesByProject}
               onOpenSource={(id) => void openSource(id)}
@@ -2813,6 +2817,7 @@ function App() {
                         visibility,
                       }),
                     );
+                    setRetiredReceipts((ids) => [...ids, source.id]);
                     if (source.id === firstNote?.sourceId) {
                       resetFirstNoteBody(source.id);
                       void loadFirstNoteSource(source.id, authGeneration);

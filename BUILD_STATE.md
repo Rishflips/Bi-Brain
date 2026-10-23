@@ -21,10 +21,10 @@ Commands run in this worktree, in order:
   `living-brain-review` retired (they tested the cut first-loop rows and state card).
 - Screenshots (synthetic text, throwaway database): docs/screenshots/today-v2-*.png.
 
-Known gaps: after a purge or a correction, the receipt under the bar keeps the old
-first line until a reload (pinned by two `test.fail` tests). The quiet screenshot
-shows "Background help is off", not "You are caught up", because background help
-was off on the check server.
+Fix round: the receipt now follows the current notes, so a purge or correction
+clears it at once (the two `test.fail` tests are normal tests). The unused
+`proactive-goal.tsx` and its CSS are removed. Final `npx playwright test
+--workers=1`: 71 passed. The quiet screenshot shows "You are caught up."
 
 ## Active delivery — agent continuity workspace
 

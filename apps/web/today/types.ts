@@ -52,6 +52,10 @@ export type TodayProps = {
   api: Api;
   projects: { id: string; title: string }[];
   sourceCount: number;
+  /** The current saved notes. The receipt follows these, never its own copy. */
+  notes: { id: string; title: string }[];
+  /** Sources whose receipt must go now (for example after a correction). */
+  retiredSourceIds: string[];
   backgroundOn: boolean;
   agentNamesByProject: Record<string, string[]>;
   onOpenSource: (id: string) => void;

@@ -542,71 +542,6 @@ article {
   font-weight: 650;
 }
 
-.proactive-goal {
-  display: grid;
-  grid-template-columns: minmax(0, 1.5fr) minmax(220px, 0.8fr);
-  gap: 24px 40px;
-  align-items: end;
-  max-width: 900px;
-  margin: 32px 0 6px;
-  padding: 26px 0;
-  border-top: 3px solid #e3b500;
-  border-bottom: 1px solid var(--line);
-}
-
-.proactive-goal-copy {
-  max-width: 620px;
-}
-
-.proactive-goal h2 {
-  margin: 0 0 8px;
-  font-size: clamp(24px, 2.6vw, 32px);
-  letter-spacing: -0.035em;
-}
-
-.proactive-goal-copy > p:last-child {
-  margin: 0;
-  color: var(--muted);
-}
-
-.proactive-goal-selection {
-  display: grid;
-  gap: 5px;
-  align-self: stretch;
-  padding: 16px 18px;
-  border-left: 1px solid var(--line-strong);
-}
-
-.proactive-goal-selection span {
-  color: var(--muted);
-  font-size: 11px;
-}
-
-.proactive-goal-selection strong {
-  font-size: 15px;
-  line-height: 1.4;
-}
-
-.proactive-goal-actions {
-  display: flex;
-  grid-column: 1 / -1;
-  gap: 14px;
-  align-items: center;
-}
-
-.proactive-goal-status {
-  display: inline-flex;
-  align-items: center;
-  min-height: 42px;
-  color: #765900;
-  font-size: 13px;
-  font-weight: 700;
-}
-
-.proactive-goal[data-state="preparing"] {
-  border-top-color: #181817;
-}
-
 .project-overview,
 .project-focus {
   max-width: 980px;
@@ -1863,21 +1798,6 @@ footer {
   .first-session-journey li > .journey-state {
     grid-column: 2;
     justify-self: start;
-  }
-
-  .proactive-goal {
-    grid-template-columns: 1fr;
-    gap: 18px;
-  }
-
-  .proactive-goal-selection {
-    padding: 0 0 0 14px;
-  }
-
-  .proactive-goal-actions {
-    grid-column: auto;
-    align-items: flex-start;
-    flex-direction: column;
   }
 
   .project-focus-heading {

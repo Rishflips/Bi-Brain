@@ -1,9 +1,11 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { Api, AskHit } from "./types.ts";
 
 type Props = {
   api: Api;
   projects: { id: string; title: string }[];
+  notes: { id: string; title: string }[];
+  retiredSourceIds: string[];
   onSaved: (sourceId: string) => void;
   onOpenSource: (id: string) => void;
 };
@@ -15,7 +17,14 @@ type Result =
 const LIMIT = 100_000;
 const QUESTION_LIMIT = 500;
 
-export function SaveAskBar({ api, projects, onSaved, onOpenSource }: Props) {
+export function SaveAskBar({
+  api,
+  projects,
+  notes,
+  retiredSourceIds,
+  onSaved,
+  onOpenSource,
+}: Props) {
   const [text, setText] = useState("");
   const [mode, setMode] = useState<"save" | "ask">("save");
   const [project, setProject] = useState("inbox");
@@ -26,6 +35,19 @@ export function SaveAskBar({ api, projects, onSaved, onOpenSource }: Props) {
   const inFlight = useRef(false);
   const latest = useRef("");
   const ask = mode === "ask";
+  // The receipt follows the current notes. Once its note has been seen there and
+  // then goes missing (purged or withdrawn), or is retired (corrected), it goes.
+  const [seen, setSeen] = useState(false);
+  const savedId = result?.kind === "saved" ? result.sourceId : null;
+  const current = savedId ? notes.find((n) => n.id === savedId) : undefined;
+  const retired = savedId !== null && retiredSourceIds.includes(savedId);
+  useEffect(() => {
+    if (!savedId) return;
+    if (retired || (seen && !current)) {
+      setResult(null);
+      setSeen(false);
+    } else if (current && !seen) setSeen(true);
+  }, [savedId, current, seen, retired]);
 
   function change(value: string) {
     latest.current = value;
@@ -84,6 +106,7 @@ export function SaveAskBar({ api, projects, onSaved, onOpenSource }: Props) {
           body: value,
           project_id: project,
         });
+        setSeen(false);
         setResult({
           kind: "saved",
           sourceId: saved.source_id,
@@ -214,7 +237,7 @@ export function SaveAskBar({ api, projects, onSaved, onOpenSource }: Props) {
         <div className="tv-panel" aria-live="polite">
           <span className="tv-eyebrow">Saved</span>
           <p>
-            <b>{result.title}</b>
+            <b>{current?.title ?? result.title}</b>
           </p>
           <p className="tv-faint">
             In {result.project}. The original is kept exactly as you wrote it.{" "}

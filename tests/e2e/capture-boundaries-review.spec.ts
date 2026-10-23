@@ -128,23 +128,19 @@ test("after a reload, a purged original is gone from Today", async ({
   }
 });
 
-// KNOWN Today v2 BUG, reported in the Task 9 report: the receipt in the bar keeps
-// the purged note's first line on screen until a reload. `test.fail` keeps this
-// honest: it passes while the bug exists and fails (so it must be switched to a
-// normal test) once the receipt is cleared on purge.
-test.fail(
-  "a purged original disappears from Today without a reload",
-  async ({ page, context }) => {
-    const original = "SYNTHETIC_PURGED_INLINE_RECEIPT_MUST_DISAPPEAR";
-    const f = await purgeSavedOriginal(page, context, original);
-    try {
-      await page.getByRole("button", { name: "Today", exact: true }).click();
-      await expect(page.locator("main")).not.toContainText(original);
-    } finally {
-      await f.close();
-    }
-  },
-);
+test("a purged original disappears from Today without a reload", async ({
+  page,
+  context,
+}) => {
+  const original = "SYNTHETIC_PURGED_INLINE_RECEIPT_MUST_DISAPPEAR";
+  const f = await purgeSavedOriginal(page, context, original);
+  try {
+    await page.getByRole("button", { name: "Today", exact: true }).click();
+    await expect(page.locator("main")).not.toContainText(original);
+  } finally {
+    await f.close();
+  }
+});
 
 test("a 320px saved receipt keeps long originals usable in dark appearance", async ({
   page,

@@ -106,6 +106,8 @@ export function TodayView(props: TodayProps) {
         <SaveAskBar
           api={api}
           projects={props.projects}
+          notes={props.notes}
+          retiredSourceIds={props.retiredSourceIds}
           onOpenSource={props.onOpenSource}
           onSaved={() => {
             props.onChanged();
@@ -173,6 +175,8 @@ export function TodayView(props: TodayProps) {
       <SaveAskBar
         api={api}
         projects={props.projects}
+        notes={props.notes}
+        retiredSourceIds={props.retiredSourceIds}
         onOpenSource={props.onOpenSource}
         onSaved={() => {
           props.onChanged();
