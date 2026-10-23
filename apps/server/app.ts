@@ -1039,6 +1039,9 @@ export async function createApp(
   app.post("/api/v1/agent/propose", (req) =>
     req.brain.propose(req.principal, req.body, key(req)),
   );
+  app.post("/api/v1/agent/note", (req) =>
+    req.brain.agentNote(req.principal, req.body, key(req)),
+  );
   app.post("/api/v1/agent/link", (req) =>
     req.brain.agentLink(req.principal, req.body),
   );

@@ -92,13 +92,14 @@ it("official SDK stdio client proposes through gate, fresh-session recalls raw e
       (await full.listTools()).tools.find((t) => t.name === "brain.propose")
         ?.annotations?.readOnlyHint,
     ).toBe(false);
-    expect((await full.listTools()).tools.map((t) => t.name)).toHaveLength(8);
+    expect((await full.listTools()).tools.map((t) => t.name)).toHaveLength(9);
     const first = await connect();
     expect((await first.listTools()).tools.map((t) => t.name).sort()).toEqual(
       [
         "brain.search",
         "brain.get",
         "brain.propose",
+        "brain.note",
         "brain.link",
         "brain.ask",
         "brain.intent",
