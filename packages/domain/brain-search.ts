@@ -17,15 +17,52 @@ export type OriginalHit = {
   snippet: string;
 };
 
-const fold = (text: string) => text.toLocaleLowerCase();
+// Fold one code point at a time so folded positions map back to original code points.
+const fold = (text: string) => Array.from(text, (ch) => ch.toLocaleLowerCase()).join("");
 
-/** The sentence or line that matched, cut to 240 code points. */
+const SNIPPET_MAX = 240;
+
+/** Code-point range of the first case-insensitive match, or null. */
+function locate(text: string, folded: string): { start: number; length: number } | null {
+  const points = Array.from(text);
+  const lowered = points.map((ch) => ch.toLocaleLowerCase());
+  const index = lowered.join("").indexOf(folded);
+  if (index < 0) return null;
+  let offset = 0;
+  let start = 0;
+  while (start < points.length && offset < index) offset += lowered[start++].length;
+  let length = 0;
+  for (let end = offset; end < index + folded.length && start + length < points.length; length++)
+    end += lowered[start + length].length;
+  return { start, length };
+}
+
+function windowAround(text: string, folded: string): string | null {
+  const found = locate(text, folded);
+  if (!found) return null;
+  const points = Array.from(text);
+  const back = Math.max(0, Math.min(80, SNIPPET_MAX - 2 - found.length));
+  const from = Math.max(0, found.start - back);
+  const lead = from > 0 ? 1 : 0;
+  let to = from + SNIPPET_MAX - lead;
+  const trail = to < points.length;
+  if (trail) to -= 1;
+  return (lead ? "…" : "") + points.slice(from, Math.min(to, points.length)).join("") + (trail ? "…" : "");
+}
+
+/** The sentence or line that matched, or a window of up to 240 code points around the match. */
 export function snippetFor(body: string, title: string, query: string): string {
-  const q = fold(query);
+  const q = fold(query.trim());
   const parts = body.split(/(?<=[.?!])\s+|\n+/u).filter((part) => part.trim());
-  const hit = parts.find((part) => fold(part).includes(q)) ?? parts[0] ?? title;
-  const points = Array.from(hit.trim());
-  return points.length > 240 ? points.slice(0, 237).join("") + "…" : points.join("");
+  const part = parts.find((candidate) => fold(candidate).includes(q));
+  if (part) {
+    const text = part.trim();
+    return Array.from(text).length <= SNIPPET_MAX ? text : (windowAround(text, q) ?? text);
+  }
+  const spanning = windowAround(body.replace(/\s*\n+\s*/g, " ").trim(), q);
+  if (spanning) return spanning;
+  const first = Array.from((parts[0] ?? title).trim());
+  return first.length > SNIPPET_MAX ? first.slice(0, SNIPPET_MAX - 1).join("") + "…" : first.join("");
 }
 
 export function findInBrain(

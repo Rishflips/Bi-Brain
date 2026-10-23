@@ -54,8 +54,22 @@ describe("findInBrain", () => {
     expect(findInBrain("   ", [], [src("a", "x", "y")])).toEqual({ facts: [], originals: [] });
     const long = "🧠".repeat(300) + " needle";
     const snippet = snippetFor(long, "t", "needle");
-    expect(Array.from(snippet).length).toBe(238);
+    expect(Array.from(snippet).length).toBeLessThanOrEqual(240);
+    expect(snippet).toContain("needle");
+    expect(snippet.startsWith("…")).toBe(true);
+  });
+
+  it("shows a query that spans a sentence break", () => {
+    expect(snippetFor("Intro.\nWe met Dr. Smith today.", "t", "Dr. Smith")).toContain("Dr. Smith");
+  });
+
+  it("windows around a match in the middle of a long line", () => {
+    const line = "a".repeat(500) + " Needle " + "b".repeat(500);
+    const snippet = snippetFor(line, "t", "needle");
+    expect(Array.from(snippet).length).toBeLessThanOrEqual(240);
+    expect(snippet.startsWith("…")).toBe(true);
     expect(snippet.endsWith("…")).toBe(true);
+    expect(snippet).toContain("Needle");
   });
 });
 
