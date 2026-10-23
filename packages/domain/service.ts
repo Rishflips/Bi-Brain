@@ -1973,7 +1973,16 @@ export class Brain {
   connections(p: Principal) {
     this.owner(p);
     return this.store
-      .all(
+      .all<{
+        id: string;
+        projects: string;
+        operations: string;
+        expires_at: string;
+        revoked_at: string | null;
+        last_verified_at: string | null;
+        client: string | null;
+        folder: string | null;
+      }>(
         "SELECT id,projects,operations,expires_at,revoked_at,last_verified_at,client,folder FROM grants",
       )
       .map((g) => ({
