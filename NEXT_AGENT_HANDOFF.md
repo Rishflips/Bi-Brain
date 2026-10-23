@@ -10,6 +10,23 @@ user request and `AGENTS.md`; use the available skills where applicable.
 
 ## Latest continuation checkpoint — 2026-10-21
 
+**Superseding active work:** PR #18 is merged at
+`37507b3e5079e261444279b6ea03430810fdbc4d`. Local main was synchronized before
+branch `codex/dodo-payments`. The owner explicitly requested all remaining work
+in safe order and Dodo Payments instead of rejected Paddle. Current work patches
+Vite/Hono advisories and implements the Dodo hosted checkout/webhook/evidence/
+authority/recovery vertical flow; 24 focused checks, all 54 browser journeys,
+4 offline evaluations, typecheck/lint/build and a zero-vulnerability audit pass.
+The broad backend run passed 1,518 tests plus 8 expected skips; the added final
+retry regression passes in the affected set. Fresh final-tree CI is pending.
+The bounded read-only native workflow passes in Codex 0.156.1 and Claude Code
+2.1.283, including reviewed cited recall, correction, private/cross-project
+denials and same-session revocation. Existing subscription auth and synthetic
+data were used; global configuration was unchanged. Read the top
+BUILD_STATE entry and `docs/DODO_PAYMENTS.md`. Payment,
+model and hosted activation remain default-off; do not infer external evidence
+from local tests. Earlier checkpoints below are historical.
+
 The owner merged
 [PR #17](https://github.com/Rishflips/Bi-Brain/pull/17) into `main` at
 `e492e34d41a3c573d1e6280ff2686118bf815de6`. Desktop `main` was fast-forwarded to that exact merge before

@@ -4,6 +4,25 @@ This page records what BiBrain can ship today, what each verification result pro
 
 ## Current release candidate, 2026-10-21
 
+**Superseding candidate: Dodo Payments migration and dependency repair.**
+PR #18 is merged at `37507b3`; its post-merge audit failed on Vite/Hono advisories.
+Branch `codex/dodo-payments` patches those dependencies and replaces production
+Paddle setup with Dodo hosted checkout, raw Standard Webhooks, independently
+verified current payment evidence and cold recovery integration. Focused checks
+pass 24/24, all 54 browser journeys and 4 offline evaluations pass, and the
+dependency audit reports zero vulnerabilities. The broad backend run passed
+1,518 tests plus 8 expected skips; the final retry case passes in the affected set.
+Final-tree GitHub/container verification is pending. Actual Dodo test-mode
+acceptance and public hosting remain open. See [Dodo setup](DODO_PAYMENTS.md).
+
+Actual bounded read-only native acceptance passes in Codex CLI 0.156.1 and
+Claude Code 2.1.283: discovery, review-only cited recall, correction, privacy
+denial and same-session revocation. Subscription quota was used; no owner data,
+global client configuration or BiBrain paid-provider activation was used.
+See [native acceptance](NATIVE_CLIENT_SETUP.md) for the exact scope and runner.
+
+The following describes the prior PR #18 candidate:
+
 Merged [PR #17](https://github.com/Rishflips/Bi-Brain/pull/17) is synchronized
 on desktop and GitHub `main` at
 `e492e34d41a3c573d1e6280ff2686118bf815de6`. The current branch adds a

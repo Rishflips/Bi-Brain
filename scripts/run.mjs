@@ -8,9 +8,9 @@ const entries = [
     : []),
 ];
 // Secret-bearing service variables never reach the dev frontend child. The
-// decision key remains worker-only; Paddle backend credentials are available to
+// decision key remains worker-only; billing backend credentials are available to
 // the API server and worker because both validate the same all-or-none managed
-// config. Public client tokens are served through authenticated billing status.
+// config. Dodo hosted checkout requires no browser payment token.
 const isWorker = (args) => args[args.length - 1] === "apps/worker/main.ts";
 const isServer = (args) => args[args.length - 1] === "apps/server/main.ts";
 const children = entries.map((args) => {
@@ -21,6 +21,8 @@ const children = entries.map((args) => {
   if (!isWorker(args)) delete env.BRAIN_DECISION_API_KEY;
   if (!isServer(args) && !isWorker(args)) delete env.BRAIN_PADDLE_API_KEY;
   if (!isServer(args) && !isWorker(args)) delete env.BRAIN_PADDLE_WEBHOOK_SECRET;
+  if (!isServer(args) && !isWorker(args)) delete env.BRAIN_DODO_API_KEY;
+  if (!isServer(args) && !isWorker(args)) delete env.BRAIN_DODO_WEBHOOK_SECRET;
   if (!isServer(args) && !isWorker(args)) delete env.BRAIN_OIDC_CLIENT_SECRET;
   return spawn(process.execPath, args, { stdio: "inherit", env });
 });

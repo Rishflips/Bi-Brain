@@ -139,11 +139,11 @@ type BillingStatus =
   | {
       available: true;
       mode: "sandbox" | "live";
-      client_token: string;
+      provider: "dodo";
       state: "not_started" | "confirming" | "active" | "attention";
       cadence: "monthly" | "annual" | null;
       subscription_status: string | null;
-      transaction_ref: string | null;
+      checkout_url: string | null;
       management_available: boolean;
     }
   | { available: false; state: "unavailable"; reason: string };
@@ -153,67 +153,24 @@ const isRuntimeMeta = (value: any): value is RuntimeMeta =>
   (value.mode === "local" || value.mode === "managed");
 const isSessionInfo = (value: any): value is SessionInfo =>
   !!value && typeof value === "object" && typeof value.csrf === "string";
-type PaddleBrowser = {
-  Environment: { set(mode: "sandbox"): void };
-  Initialize(input: { token: string }): void;
-  Checkout: {
-    open(input: {
-      transactionId: string;
-      settings: { successUrl: string; theme: "light" | "dark" };
-    }): void;
-  };
-};
-let paddleLoad: Promise<PaddleBrowser> | null = null;
-let paddleToken = "";
-function paddleBrowser(status: Extract<BillingStatus, { available: true }>) {
-  if (!paddleLoad) {
-    const installed = (window as unknown as { Paddle?: PaddleBrowser }).Paddle;
-    paddleLoad = installed
-      ? Promise.resolve(installed)
-      : new Promise<PaddleBrowser>((resolve, reject) => {
-          const script = document.createElement("script");
-          script.src = "https://cdn.paddle.com/paddle/v2/paddle.js";
-          script.async = true;
-          script.crossOrigin = "anonymous";
-          script.onload = () => {
-            const paddle = (window as unknown as { Paddle?: PaddleBrowser })
-              .Paddle;
-            if (!paddle)
-              return reject(new Error("Secure checkout could not be opened."));
-            resolve(paddle);
-          };
-          script.onerror = () =>
-            reject(new Error("Secure checkout could not be opened."));
-          document.head.appendChild(script);
-        });
-  }
-  return paddleLoad.then((paddle) => {
-    if (!paddleToken) {
-      if (status.mode === "sandbox") paddle.Environment.set("sandbox");
-      paddle.Initialize({ token: status.client_token });
-      paddleToken = status.client_token;
-    } else if (paddleToken !== status.client_token) {
-      throw new Error(
-        "Checkout configuration changed. Reload BiBrain and try again.",
-      );
-    }
-    return paddle;
-  });
-}
-
-async function openBillingCheckout(
+function openBillingCheckout(
   status: Extract<BillingStatus, { available: true }>,
-  transactionRef: string,
-  dark: boolean,
+  checkoutUrl: string,
 ) {
-  const paddle = await paddleBrowser(status);
-  paddle.Checkout.open({
-    transactionId: transactionRef,
-    settings: {
-      successUrl: new URL("/?billing_return=1", location.origin).toString(),
-      theme: dark ? "dark" : "light",
-    },
-  });
+  const url = new URL(checkoutUrl);
+  const host =
+    status.mode === "sandbox"
+      ? "test.checkout.dodopayments.com"
+      : "checkout.dodopayments.com";
+  if (
+    url.protocol !== "https:" ||
+    url.host !== host ||
+    url.username ||
+    url.password ||
+    url.hash
+  )
+    throw new Error("Secure checkout could not be opened.");
+  location.assign(url.toString());
 }
 function download(name: string, value: string, type = "text/markdown") {
   const url = URL.createObjectURL(new Blob([value], { type }));
@@ -1765,11 +1722,11 @@ function App() {
                   ) : billing.state === "confirming" ? (
                     <>
                       <p role="status">
-                        BiBrain is checking the payment directly with the
-                        billing provider. No paid allowance is enabled from a
-                        return page or browser message.
+                        BiBrain is confirming your payment. Your plan starts
+                        only after confirmation. Your saved work is available
+                        while you wait.
                       </p>
-                      {billing.transaction_ref ? (
+                      {billing.checkout_url ? (
                         <button
                           disabled={busy}
                           onClick={() =>
@@ -1777,8 +1734,7 @@ function App() {
                               const generation = authGeneration;
                               await openBillingCheckout(
                                 billing,
-                                billing.transaction_ref!,
-                                dark,
+                                billing.checkout_url!,
                               );
                               if (generation !== authGeneration) return;
                             })
@@ -1819,8 +1775,9 @@ function App() {
                   ) : (
                     <>
                       <p>
-                        Choose how often to renew. The secure checkout shows the
-                        current price, taxes, and currency before you pay.
+                        Choose how often to renew. Secure checkout opens with
+                        Dodo Payments and shows the price, taxes, and currency
+                        before you pay.
                       </p>
                       {billing.mode === "sandbox" ? (
                         <p className="status" role="status">
@@ -1836,7 +1793,7 @@ function App() {
                               void act(async () => {
                                 const generation = authGeneration;
                                 const checkout = await api<{
-                                  transaction_ref: string;
+                                  checkout_url: string;
                                   status: "confirming";
                                 }>("/billing/checkout-intent", { cadence });
                                 if (generation !== authGeneration) return;
@@ -1844,12 +1801,11 @@ function App() {
                                   ...billing,
                                   state: "confirming",
                                   cadence,
-                                  transaction_ref: checkout.transaction_ref,
+                                  checkout_url: checkout.checkout_url,
                                 });
                                 await openBillingCheckout(
                                   billing,
-                                  checkout.transaction_ref,
-                                  dark,
+                                  checkout.checkout_url,
                                 );
                                 if (generation !== authGeneration) return;
                               })
