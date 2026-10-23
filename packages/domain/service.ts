@@ -2138,6 +2138,7 @@ export class Brain {
           ),
       );
       const canCommit =
+        p.kind === "owner" &&
         v.type === "fact" &&
         classification.supported &&
         evidence.length > 0 &&
@@ -2176,13 +2177,13 @@ export class Brain {
           value: v.field!.value,
           source_id: source.id,
           source_version: source.version,
-          agent: p.kind === "owner" ? "owner" : `agent:${p.grant_id}`,
+          agent: "owner",
           ts: source.captured_at,
           valid_from: v.valid_from ?? this.now(),
           valid_to: v.valid_to,
           recorded_at: this.now(),
           status: "current",
-          authority: p.kind === "owner" ? "owner_literal" : "agent_literal",
+          authority: "owner_literal",
           evidence,
           supersedes: [],
           conflicts_with: [],
