@@ -40,3 +40,6 @@
   :root:root nav.yb-plist li button { width: auto; border-color: var(--line); }
   .yb-timeline li { grid-template-columns: minmax(0, 1fr); gap: 2px; }
 }
+.yb-fix { display: grid; gap: 8px; }
+.yb-fix textarea { width: 100%; box-sizing: border-box; font: inherit; padding: 10px 12px; border-radius: 10px; border: 1px solid var(--line); background: var(--surface); color: inherit; resize: vertical; }
+.yb-fix textarea:focus-visible { outline: 2px solid var(--green); outline-offset: 2px; }

@@ -5,6 +5,7 @@ import { GoalsSection } from "./GoalsSection.tsx";
 import { Originals } from "./Originals.tsx";
 import { PendingReview } from "./PendingReview.tsx";
 import { ProjectList } from "./ProjectList.tsx";
+import { TrueNow } from "./TrueNow.tsx";
 import type { BrainProps, Done, ProjectView } from "./types.ts";
 
 export function BrainView(props: BrainProps) {
@@ -122,7 +123,13 @@ export function BrainView(props: BrainProps) {
                   </button>
                 </p>
               )}
-              {/* Task 6 adds TrueNow here. */}
+              <TrueNow
+                api={api}
+                facts={view.facts}
+                onOpenSource={props.onOpenSource}
+                onDone={done}
+                onError={setActionError}
+              />
               {/* Task 7 adds OpenQuestions here. */}
               <Originals
                 originals={view.originals}
