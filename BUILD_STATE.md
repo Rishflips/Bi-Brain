@@ -2,6 +2,38 @@
 
 Updated: 2026-10-23
 
+## 2026-10-23 — Your brain v2 (branch reframe/your-brain-v2)
+
+- Your brain is a project list plus one page per project: header with Preview
+  handoff and "{n} things to look at on Today.", True now (versioned edits,
+  Undo, Still true), Open questions (Mark answered, Undo), Originals, Needs a
+  decision here with Reviewed decision history, and Goals. Search covers facts
+  and originals.
+- Any fact opens on its original with the cited passage highlighted, its
+  history and the facts taken from it. The source dialog no longer shows
+  Current understanding, Edit understanding, Continue in another agent, Copy
+  brief or Rebuild preview.
+- New server pieces: pure modules facts, questions, project-view and
+  brain-search; owner-only Brain methods brainProject, answerQuestion,
+  reviseClaim, claimHistory, searchBrain (and briefInput shared with brief());
+  five routes under /api/v1. Removed project-focus.tsx, CurrentKnowledge and
+  their CSS. Local V1 only; no real model run.
+
+Verified in this worktree:
+
+- `npm run typecheck`: clean. `npm run lint`: clean. `npm run build`: clean.
+- `npm run brain-eval`: 4/4 passed.
+- `npx vitest run --reporter=dot`: 153 files passed, 1604 tests passed, 8
+  skipped (1612), EXIT=0, 881s. No flaky test failed in this run.
+- `npx playwright test --workers=1` (after `npm run build`): 92 passed across
+  the four projects, 3.7m.
+
+Known limits:
+
+- Goals remain until Watch in plan 4.
+- Open questions are found by rule, not by a model.
+- Search is substring only until plan 5.
+
 ## 2026-10-23 — Today v2 verified (branch reframe/today-v2, PR #20)
 
 PR #20 CI repair: patched vite 8.3.4, vitest 5.0.5, fastify 5.12.7, hono 4.13.13

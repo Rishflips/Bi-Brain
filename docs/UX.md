@@ -43,7 +43,7 @@ After save:
 1. Confirm durable capture immediately.
 2. Display source with a preparation state.
 3. Show the resulting brief, or an extractive preview when no provider is configured.
-4. Offer Edit understanding and Continue in another agent.
+4. Offer the project's Preview handoff, and editing the new facts in Your brain.
 5. Offer Keep this up to date only after the first useful result.
 
 While exactly one active item exists, Today may show a restrained **first useful
@@ -138,8 +138,8 @@ Open a source to view the retained original and derived claims.
 Search respects access scope and deletion before ranking and snippets.
 No-result state: No matching notes. Try a different word or save something new.
 
-The selected project opens as **Project Focus**, a compact command center built
-only from authorized saved state:
+The selected project opens as a compact page built only from authorized saved
+state:
 
 - Current understanding prefers owner-reviewed claims, with the current
   source-linked brief as a labeled fallback.
@@ -152,19 +152,19 @@ only from authorized saved state:
   claims to open or message an external agent.
 
 When All projects is selected, show a small overview with real counts rather
-than mixing project claims. While the owner searches, hide Project Focus so each
+than mixing project claims. While the owner searches, hide the project page so each
 matching source appears only once and search remains the primary task. Inbox is
 the no-setup default for real sessions.
 
 Editing source content creates a new source version; it never rewrites a prior source version in place.
-Editing derived understanding creates a user revision and invalidates dependent briefs.
+Editing a fact in True now creates a new version of that fact; the original passage and earlier versions stay in its history.
 Display pending rebuilds as updating, not current.
 
-## Continue in another agent
+## Preview handoff
 
 Show a preview of the exact context being shared: goal, relevant decisions, open questions, selected evidence, and next step.
 Default to the current project only.
-Provide Copy brief and Download Markdown.
+Provide Copy and Download Markdown in the Project handoff dialog, opened by the project's Preview handoff.
 Native agent actions appear only after a verified connection. Otherwise explain manual transfer.
 Never simulate opening an external agent or report clipboard success if copying failed.
 

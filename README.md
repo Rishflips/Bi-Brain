@@ -75,7 +75,9 @@ merged; Dodo replaces the rejected Paddle setup (see
 [Dodo setup and acceptance](docs/DODO_PAYMENTS.md) for configuration, plan
 mapping, and the real-provider gates). The current branch replaces Today with
 one bar that saves or asks and a Brief of at most three items; its browser
-regression passes 78/78 (see BUILD_STATE.md). These are local release gates,
+regression passes 78/78 (see BUILD_STATE.md). Your brain shows each project's
+facts that are true now, its open questions and its originals, and opens any
+fact on its original with the passage highlighted and its history. These are local release gates,
 not proof of a human usability pilot, live model quality, native-agent
 compatibility, real payment, or target-host operations. See
 [BUILD_STATE.md](BUILD_STATE.md) for commands, exact scope, and known limits.
@@ -114,9 +116,10 @@ is not a completed client certification.
 - **Today** — one bar that saves or asks, a Brief of at most three things that
   changed (each with its quote and Keep, Fix, Dismiss and Undo), project cards, and
   a quiet state when nothing needs you.
-- **Your brain** — a real-state Project Focus workspace plus sources, accepted
-  understanding, open questions, history, corrections, search, goals, and
-  evidence.
+- **Your brain** — a project list and, for each project, the facts that are true
+  now (editable as versions, with Undo and Still true), open questions, its
+  originals, decisions to review, goals, and search over facts and originals.
+  Any fact opens on its original with the passage highlighted and its history.
 - **Connections** — one project-centered continuity workspace with exact manual
   handoffs, guided Codex/Claude setup, bounded live access, real-use status,
   immediate revocation, past-access history, and reviewed imports.
