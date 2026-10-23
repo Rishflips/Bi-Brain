@@ -45,7 +45,8 @@ import {
   type AdvisoryRecord,
 } from "./decision-advisory.ts";
 import { extractReviewableMemory } from "./memory-understanding.ts";
-import { buildBrief, type BriefJob } from "./brief.ts";
+import { buildBrief, gateFitsBrief, type BriefJob } from "./brief.ts";
+import { buildProjectView } from "./project-view.ts";
 import { questionWords, rankAnswers } from "./ask.ts";
 import {
   attemptReferencesSource,
@@ -3759,6 +3760,58 @@ export class Brain {
     const map = this.store.setting<Record<string, string>>("claim_confirmations", {});
     this.store.set("claim_confirmations", { ...map, [id]: confirmed_at });
     return { id, confirmed_at };
+  }
+  brainProject(p: Principal, project: string) {
+    this.owner(p);
+    project = z.string().min(1).max(100).parse(project);
+    this.access(p, project);
+    const row = this.store.get<{ id: string; title: string }>(
+      "SELECT id,title FROM projects WHERE id=?",
+      project,
+    )!;
+    const current = (list: unknown) =>
+      Array.isArray(list) &&
+      list.length > 0 &&
+      (list as Evidence[]).every((e) => this.evidenceCurrent(project, e));
+    const gates = this.entities(p, "gate").filter((g) => g.project_id === project);
+    const queued = gates.filter((g) => g.data.status === "queued");
+    const waiting =
+      queued.filter((g) => gateFitsBrief(g) && current(g.data.evidence)).length +
+      this.entities(p, "proposal").filter(
+        (x) => x.project_id === project && x.data.status === "ready" && current(x.data.evidence),
+      ).length;
+    return buildProjectView(
+      {
+        project: row,
+        claims: this.currentClaims(p, project),
+        confirmations: this.store.setting<Record<string, string>>("claim_confirmations", {}),
+        sources: this.sources(p, project),
+        answered: new Set(this.store.setting<string[]>(`answered_questions:${project}`, [])),
+        waiting,
+        needsDecision: queued.filter((g) => !gateFitsBrief(g)),
+        decisionHistory: gates.filter(
+          (g) => g.data.correction === true && ["accepted", "rejected", "reverted"].includes(g.data.status),
+        ),
+      },
+      this.clock(),
+    );
+  }
+  answerQuestion(p: Principal, input: unknown) {
+    this.owner(p);
+    const v = z
+      .object({
+        project_id: z.string().min(1).max(100),
+        signature: z.string().trim().min(1).max(300),
+        answered: z.boolean(),
+      })
+      .strict()
+      .parse(input);
+    this.access(p, v.project_id);
+    const key = `answered_questions:${v.project_id}`;
+    const list = this.store.setting<string[]>(key, []).filter((s) => s !== v.signature);
+    if (v.answered) list.push(v.signature);
+    this.store.set(key, list.slice(-500));
+    return { signature: v.signature, answered: v.answered };
   }
   ask(p: Principal, input: unknown) {
     this.owner(p);
