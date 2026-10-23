@@ -687,6 +687,21 @@ export async function createApp(
   app.post("/api/v1/claims/:id/confirm", (req) =>
     req.brain.confirmClaim(req.principal, params(req)),
   );
+  app.get("/api/v1/brain/projects/:id", (req) =>
+    req.brain.brainProject(req.principal, params(req)),
+  );
+  app.post("/api/v1/questions/answer", (req) =>
+    req.brain.answerQuestion(req.principal, req.body),
+  );
+  app.post("/api/v1/claims/:id/revise", (req) =>
+    req.brain.reviseClaim(req.principal, params(req), req.body),
+  );
+  app.get("/api/v1/claims/:id/history", (req) =>
+    req.brain.claimHistory(req.principal, params(req)),
+  );
+  app.get("/api/v1/brain/search", (req) =>
+    req.brain.searchBrain(req.principal, req.query),
+  );
   app.get("/api/v1/ask", (req) => req.brain.ask(req.principal, req.query));
   app.get("/api/v1/today", (req) => {
     req.brain.owner(req.principal);

@@ -4,7 +4,7 @@ import { Brain } from "../../packages/domain/service.ts";
 import { buildPack, validatePack } from "../../packages/domain/binding.ts";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { CurrentKnowledge } from "../../apps/web/components.tsx";
+import { PendingReview } from "../../apps/web/brain/PendingReview.tsx";
 import { createApp } from "../../apps/server/app.ts";
 import { Worker } from "../../apps/worker/engine.ts";
 import { mkdtempSync, rmSync } from "node:fs";
@@ -150,7 +150,7 @@ it("owner can undo an approved correction without erasing original or approved r
     store.close();
   }
 });
-it("review UI cites both exact passages, names the proposed correction and exposes authenticated version-safe undo", async () => {
+it("reviewed correction history exposes authenticated version-safe undo", async () => {
   const store = new Storage(":memory:");
   const brain = new Brain(store, clock);
   const app = await createApp(brain, {
@@ -161,19 +161,7 @@ it("review UI cites both exact passages, names the proposed correction and expos
     const first = save(brain, "Beta pricing: free");
     accept(brain, first.gate!.id);
     const next = save(brain, "Beta pricing: paid");
-    const html = renderToStaticMarkup(
-      createElement(CurrentKnowledge, {
-        pages: [],
-        gates: [next.gate!],
-        openSource: () => {},
-        review: () => {},
-      }),
-    );
-    expect(html).toContain("Beta pricing: free");
-    expect(html).toContain("Beta pricing: paid");
-    expect(html).toContain("Approve exact correction");
-    expect(html).toContain("Keep earlier decision");
-    expect(html).toContain("passage 0–18");
+    // The proposed correction is reviewed on Today; Your brain keeps its history.
     const headers = {
       host: "127.0.0.1:4317",
       origin: "http://127.0.0.1:4317",
@@ -209,11 +197,13 @@ it("review UI cites both exact passages, names the proposed correction and expos
     });
     expect(
       renderToStaticMarkup(
-        createElement(CurrentKnowledge, {
-          pages: [],
-          gates: [approved],
-          openSource: () => {},
-          review: () => {},
+        createElement(PendingReview, {
+          api: (async () => ({})) as never,
+          needsDecision: [],
+          history: [approved],
+          onOpenSource: () => {},
+          onDone: async () => {},
+          onError: () => {},
         }),
       ),
     ).toContain("Undo correction");

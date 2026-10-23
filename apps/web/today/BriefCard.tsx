@@ -1,11 +1,11 @@
 import { useEffect, useRef, useState } from "react";
-import type { Api, BriefItem } from "./types.ts";
+import type { Api, BriefItem, OpenSourceOptions } from "./types.ts";
 
 type Props = {
   item: BriefItem;
   projectTitle: string;
   api: Api;
-  onOpenSource: (id: string) => void;
+  onOpenSource: (id: string, opts?: OpenSourceOptions) => void;
   /** Resolves once the Brief has been read again. The card stays busy until then. */
   onDone: (message: string, undo?: () => Promise<void>) => void | Promise<void>;
   onDeferredDismiss: (item: BriefItem, send: () => Promise<unknown>) => void;
@@ -127,7 +127,8 @@ export function BriefCard({
   const startFix = () => {
     if (t.type === "claim") {
       const source = item.evidence[0]?.source_id;
-      if (source) onOpenSource(source);
+      if (source)
+        onOpenSource(source, { quote: item.evidence[0]?.quote, factId: t.id });
       return;
     }
     if (proposal) {
@@ -193,7 +194,7 @@ export function BriefCard({
               type="button"
               key={`${e.source_id}:${e.quote}`}
               className="tv-quote"
-              onClick={() => onOpenSource(e.source_id)}
+              onClick={() => onOpenSource(e.source_id, { quote: e.quote })}
             >
               <q>{e.quote}</q>
               <span className="tv-faint">Open the original</span>

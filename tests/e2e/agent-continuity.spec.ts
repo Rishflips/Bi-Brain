@@ -24,13 +24,12 @@ test("Connections carries one real project into a reviewed handoff", async ({
     await continuity
       .getByRole("button", { name: "Review before sharing" })
       .click();
-    await page.getByRole("button", { name: "Your brain", exact: true }).click();
-    const memory = page.locator("article").filter({
-      has: page.getByRole("heading", {
-        name: marker.toLowerCase(),
-      }),
-    });
-    await memory.getByRole("button", { name: "Accept reviewed claim" }).click();
+    await page.getByRole("button", { name: "Today", exact: true }).click();
+    const memory = page
+      .getByRole("article")
+      .filter({ hasText: marker.toLowerCase() });
+    await memory.getByRole("button", { name: "Keep as true" }).click();
+    await expect(memory).toHaveCount(0);
 
     await page
       .getByRole("button", { name: "Connections", exact: true })

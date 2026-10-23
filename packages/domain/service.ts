@@ -45,8 +45,11 @@ import {
   type AdvisoryRecord,
 } from "./decision-advisory.ts";
 import { extractReviewableMemory } from "./memory-understanding.ts";
-import { buildBrief, type BriefJob } from "./brief.ts";
+import { buildBrief, gateFitsBrief, type BriefInput, type BriefJob } from "./brief.ts";
+import { buildProjectView } from "./project-view.ts";
 import { questionWords, rankAnswers } from "./ask.ts";
+import { factText } from "./facts.ts";
+import { SEARCH_LIMIT, findInBrain } from "./brain-search.ts";
 import {
   attemptReferencesSource,
   claimDecisionAttempt,
@@ -3678,6 +3681,9 @@ export class Brain {
   }
   brief(p: Principal) {
     this.owner(p);
+    return buildBrief(this.briefInput(p), this.clock());
+  }
+  briefInput(p: Principal): BriefInput {
     const projects = this.projects(p) as { id: string }[];
     const current = (project: string, list: unknown) =>
       Array.isArray(list) && list.length > 0 && (list as Evidence[]).every((e) => this.evidenceCurrent(project, e));
@@ -3725,19 +3731,16 @@ export class Brain {
     const agentNames = Object.fromEntries(
       (this.connections(p) as unknown as { id: string }[]).map((g) => [g.id, "A connected agent"]),
     );
-    return buildBrief(
-      {
-        gates,
-        proposals,
-        claims,
-        failedJobs,
-        sources,
-        dismissed: this.store.setting<string[]>("brief_dismissed", []),
-        confirmations: this.store.setting<Record<string, string>>("claim_confirmations", {}),
-        agentNames,
-      },
-      this.clock(),
-    );
+    return {
+      gates,
+      proposals,
+      claims,
+      failedJobs,
+      sources,
+      dismissed: this.store.setting<string[]>("brief_dismissed", []),
+      confirmations: this.store.setting<Record<string, string>>("claim_confirmations", {}),
+      agentNames,
+    };
   }
   dismissBriefItem(p: Principal, input: unknown) {
     this.owner(p);
@@ -3759,6 +3762,119 @@ export class Brain {
     const map = this.store.setting<Record<string, string>>("claim_confirmations", {});
     this.store.set("claim_confirmations", { ...map, [id]: confirmed_at });
     return { id, confirmed_at };
+  }
+  brainProject(p: Principal, project: string) {
+    this.owner(p);
+    project = z.string().min(1).max(100).parse(project);
+    this.access(p, project);
+    const row = this.store.get<{ id: string; title: string }>(
+      "SELECT id,title FROM projects WHERE id=?",
+      project,
+    )!;
+    const gates = this.entities(p, "gate").filter((g) => g.project_id === project);
+    const queued = gates.filter((g) => g.data.status === "queued");
+    const input = this.briefInput(p);
+    const mine = <T extends { project_id: string }>(list: T[]) => list.filter((x) => x.project_id === project);
+    const brief = buildBrief(
+      {
+        ...input,
+        gates: mine(input.gates),
+        proposals: mine(input.proposals),
+        claims: mine(input.claims),
+        failedJobs: mine(input.failedJobs),
+        sources: mine(input.sources),
+      },
+      this.clock(),
+    );
+    const waiting = brief.items.length + brief.waiting;
+    return buildProjectView(
+      {
+        project: row,
+        claims: this.currentClaims(p, project),
+        confirmations: this.store.setting<Record<string, string>>("claim_confirmations", {}),
+        sources: this.sources(p, project),
+        answered: new Set(this.store.setting<string[]>(`answered_questions:${project}`, [])),
+        waiting,
+        needsDecision: queued.filter((g) => !gateFitsBrief(g)),
+        decisionHistory: gates.filter(
+          (g) => g.data.correction === true && ["accepted", "rejected", "reverted"].includes(g.data.status),
+        ),
+      },
+      this.clock(),
+    );
+  }
+  answerQuestion(p: Principal, input: unknown) {
+    this.owner(p);
+    const v = z
+      .object({
+        project_id: z.string().min(1).max(100),
+        signature: z.string().trim().min(1).max(300),
+        answered: z.boolean(),
+      })
+      .strict()
+      .parse(input);
+    this.access(p, v.project_id);
+    const key = `answered_questions:${v.project_id}`;
+    const list = this.store.setting<string[]>(key, []).filter((s) => s !== v.signature);
+    if (v.answered) list.push(v.signature);
+    this.store.set(key, list.slice(-500));
+    return { signature: v.signature, answered: v.answered };
+  }
+  reviseClaim(p: Principal, id: string, input: unknown) {
+    this.owner(p);
+    id = z.string().min(1).max(100).parse(id);
+    const v = z
+      .object({
+        expected_version: z.number().int().positive(),
+        value: z.string().trim().min(1).max(1000),
+      })
+      .strict()
+      .parse(input);
+    return this.store.transaction(() => {
+      const c = this.entity(p, id);
+      if (c.kind !== "claim") throw new BrainError("NOT_FOUND", "Fact unavailable.", 404);
+      requireVersion(c.version, v.expected_version);
+      if (c.data.status !== "current")
+        throw new BrainError(
+          "VERSION_CONFLICT",
+          "This fact was replaced or retired. Refresh to see the current one.",
+          409,
+        );
+      if (c.data.aspect !== "statement")
+        throw new BrainError("INVALID_INPUT", "Only a fact written as a sentence can be edited here.");
+      this.checkEvidence(p, c.project_id, c.data.evidence ?? []);
+      if (v.value === c.data.value) return { id: c.id, version: c.version, unchanged: true };
+      this.revise(c, { ...c.data, value: v.value, edited_by_owner: true, edited_at: this.now() });
+      return { id: c.id, version: c.version + 1, unchanged: false };
+    });
+  }
+  claimHistory(p: Principal, id: string) {
+    this.owner(p);
+    id = z.string().min(1).max(100).parse(id);
+    const c = this.entity(p, id);
+    if (c.kind !== "claim") throw new BrainError("NOT_FOUND", "Fact unavailable.", 404);
+    return this.store
+      .all<{ version: number; data: string; created_at: string }>(
+        "SELECT version,data,created_at FROM entity_versions WHERE entity_id=? ORDER BY version",
+        id,
+      )
+      .map((row) => {
+        const data = JSON.parse(row.data);
+        return {
+          version: row.version,
+          text: factText(String(data.entity), String(data.aspect), data.value),
+          status: String(data.status),
+          edited_by_owner: data.edited_by_owner === true,
+          at: row.created_at,
+        };
+      });
+  }
+  searchBrain(p: Principal, input: unknown) {
+    this.owner(p);
+    const v = z.object({ q: z.string().trim().min(2).max(200) }).strict().parse(input);
+    const projects = this.projects(p) as { id: string }[];
+    const claims = projects.flatMap((project) => this.currentClaims(p, project.id));
+    return findInBrain(v.q, claims, this.sources(p), SEARCH_LIMIT);
   }
   ask(p: Principal, input: unknown) {
     this.owner(p);

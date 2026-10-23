@@ -43,7 +43,7 @@ After save:
 1. Confirm durable capture immediately.
 2. Display source with a preparation state.
 3. Show the resulting brief, or an extractive preview when no provider is configured.
-4. Offer Edit understanding and Continue in another agent.
+4. Offer Open it, which shows the saved original. Facts found in it appear in Your brain, and the project page has Preview handoff.
 5. Offer Keep this up to date only after the first useful result.
 
 While exactly one active item exists, Today may show a restrained **first useful
@@ -132,39 +132,39 @@ Not useful removes the item from the active queue and optionally records a reaso
 
 ## Your brain
 
-Searchable list of projects and saved material with familiar titles and dates.
-Open a project to view Summary, Decisions, Open questions, and Sources.
-Open a source to view the retained original and derived claims.
-Search respects access scope and deletion before ranking and snippets.
+The project list sits on the left. Open a project to see True now, Open questions, Originals, Needs a decision here and Goals.
+Open a fact or an original to view the retained original with the cited passage highlighted, the fact's history and the facts taken from it.
+Search covers facts and originals. It respects access scope and deletion before matching and snippets.
 No-result state: No matching notes. Try a different word or save something new.
 
-The selected project opens as **Project Focus**, a compact command center built
-only from authorized saved state:
+The selected project opens as a compact page built only from authorized saved
+state:
 
-- Current understanding prefers owner-reviewed claims, with the current
-  source-linked brief as a labeled fallback.
-- Open questions are copied from the current brief, never generated in the
-  browser.
-- Chosen direction reflects the real active or paused goal and its accepted plan
-  state.
+- True now lists only current facts that have evidence. A fact is edited as a
+  new version, with Undo, and Still true confirms a stale one.
+- Open questions are found by rule in the originals: lines that start with
+  "Open question:", "Question:", "Unclear:" or "Still unclear:", and questions
+  in an original that has at most three of them. Mark answered hides one, and
+  Undo brings it back.
+- Goals shows the real goal for the project and its plan state.
 - Recent originals open the retained source directly.
 - Preview agent handoff uses the existing server-built project handoff; it never
   claims to open or message an external agent.
 
-When All projects is selected, show a small overview with real counts rather
-than mixing project claims. While the owner searches, hide Project Focus so each
-matching source appears only once and search remains the primary task. Inbox is
-the no-setup default for real sessions.
+Your brain always shows one project, and Inbox is the no-setup default for real
+sessions. The counts for every project live on Today's project cards. While the
+owner searches, hide the project page so each match appears once and search
+remains the primary task.
 
 Editing source content creates a new source version; it never rewrites a prior source version in place.
-Editing derived understanding creates a user revision and invalidates dependent briefs.
+Editing a fact in True now creates a new version of that fact; the original passage and earlier versions stay in its history.
 Display pending rebuilds as updating, not current.
 
-## Continue in another agent
+## Preview handoff
 
 Show a preview of the exact context being shared: goal, relevant decisions, open questions, selected evidence, and next step.
 Default to the current project only.
-Provide Copy brief and Download Markdown.
+Provide Copy handoff and Download Markdown in the Project handoff dialog, opened by the project's Preview handoff.
 Native agent actions appear only after a verified connection. Otherwise explain manual transfer.
 Never simulate opening an external agent or report clipboard success if copying failed.
 

@@ -192,7 +192,7 @@ async function capture(page: Page, title: string, body: string): Promise<void> {
 
 async function searchBrain(page: Page, query: string): Promise<void> {
   await page.getByRole("button", { name: "Your brain", exact: true }).click();
-  await page.getByLabel("Search saved material").fill(query);
+  await page.getByLabel("Search your brain").fill(query);
 }
 
 async function expectNoteVisible(page: Page, marker: string): Promise<void> {
@@ -205,7 +205,7 @@ async function expectNoteVisible(page: Page, marker: string): Promise<void> {
 async function expectNoteMissing(page: Page, marker: string): Promise<void> {
   await searchBrain(page, marker);
   await expect(
-    page.getByRole("heading", { name: "No matching notes." }),
+    page.getByText("No matches. Try a different word, or save something new."),
   ).toBeVisible();
 }
 

@@ -71,8 +71,8 @@ Unicode: 🧠 café — “quoted” ✓`;
   // A genuine reload must still find and reopen the same original in Your brain.
   await page.reload();
   await page.getByRole("button", { name: "Your brain", exact: true }).click();
-  await expect(page.getByLabel("Search saved material")).toBeVisible();
-  await page.getByLabel("Search saved material").fill(marker);
+  await expect(page.getByLabel("Search your brain")).toBeVisible();
+  await page.getByLabel("Search your brain").fill(marker);
   const afterReload = page
     .getByRole("button", { name: new RegExp(marker) })
     .first();

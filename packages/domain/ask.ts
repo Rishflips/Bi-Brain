@@ -1,5 +1,6 @@
 import type { Entity, Source } from "../contracts/index.ts";
 import type { BriefEvidence } from "./brief.ts";
+import { factText } from "./facts.ts";
 
 export type AskHit =
   | { type: "fact"; id: string; project_id: string; text: string; evidence: BriefEvidence[] }
@@ -36,7 +37,7 @@ export function rankAnswers(question: string, claims: Entity[], sources: Source[
   if (!words.length) return [];
   const facts = claims
     .map((c) => {
-      const text = c.data.aspect === "status" ? `${c.data.entity} is ${c.data.value}.` : `${c.data.entity}: ${c.data.value}`;
+      const text = factText(String(c.data.entity), String(c.data.aspect), c.data.value);
       return { c, text, n: overlap(words, text) };
     })
     .filter((x) => x.n > 0 && (x.c.data.evidence ?? []).length > 0)

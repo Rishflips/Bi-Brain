@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import type { Api, AskHit } from "./types.ts";
+import type { Api, AskHit, OpenSourceOptions } from "./types.ts";
 
 type Props = {
   api: Api;
@@ -7,7 +7,7 @@ type Props = {
   notes: { id: string; title: string }[];
   retiredSourceIds: string[];
   onSaved: (sourceId: string) => void;
-  onOpenSource: (id: string) => void;
+  onOpenSource: (id: string, opts?: OpenSourceOptions) => void;
 };
 type Result =
   | {
@@ -354,7 +354,14 @@ export function SaveAskBar({
                   <button
                     type="button"
                     className="tv-cite"
-                    onClick={() => onOpenSource(quote ? quote.source_id : h.id)}
+                    onClick={() =>
+                      quote
+                        ? onOpenSource(quote.source_id, {
+                            quote: quote.quote,
+                            factId: h.id,
+                          })
+                        : onOpenSource(h.id)
+                    }
                   >
                     {quote
                       ? `“${quote.quote}”`
