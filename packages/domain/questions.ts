@@ -82,7 +82,8 @@ function parts(body: string): Part[] {
 /** The same question written twice, or with different spacing, gets one signature. Hashed so stored answers keep none of its words. */
 export function questionSignature(text: string): string {
   const normal = text
-    .toLocaleLowerCase()
+    .normalize("NFC")
+    .toLowerCase()
     .replace(/\s+/gu, " ")
     .replace(/[\s?.!]+$/u, "")
     .trim();

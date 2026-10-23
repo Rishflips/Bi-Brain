@@ -77,6 +77,7 @@ describe("findOpenQuestions", () => {
     const answered = new Set([first.items[0].signature]);
     expect(findOpenQuestions([older, newer], answered).items).toEqual([]);
     expect(questionSignature("Do we ship it?")).toBe(questionSignature("do we   ship it"));
+    expect(questionSignature("Is the café open?")).toBe(questionSignature("Is the café open?"));
   });
 
   it("ignores withdrawn originals, quarantine placeholders, secret-looking lines and very short questions", () => {

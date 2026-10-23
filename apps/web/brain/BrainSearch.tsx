@@ -11,6 +11,9 @@ type Props = {
   onOpenSource: (id: string, opts?: OpenSourceOptions) => void;
 };
 
+// Mirrors SEARCH_LIMIT in packages/domain/brain-search.ts: each list stops at this many.
+const SEARCH_LIMIT = 20;
+
 export function BrainSearch({
   api,
   projects,
@@ -51,6 +54,7 @@ export function BrainSearch({
   const title = (id: string) =>
     projects.find((p) => p.id === id)?.title ?? "Project";
   const count = results ? results.facts.length + results.originals.length : 0;
+  const capped = !!results && (results.facts.length >= SEARCH_LIMIT || results.originals.length >= SEARCH_LIMIT);
   return (
     <div className="yb-search">
       <label className="tv-sr" htmlFor="yb-q">
@@ -79,7 +83,9 @@ export function BrainSearch({
                 : error
                   ? "Search failed"
                   : results
-                    ? `${count} ${count === 1 ? "match" : "matches"}`
+                    ? capped
+                      ? `Showing the first ${SEARCH_LIMIT} of each`
+                      : `${count} ${count === 1 ? "match" : "matches"}`
                     : "Searching…"}
             </h2>
             <button

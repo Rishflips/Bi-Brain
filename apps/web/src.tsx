@@ -386,6 +386,14 @@ function App() {
       /* storage may be unavailable */
     }
   }, [runtime?.mode]);
+  const scopeChecked = useRef(false);
+  useEffect(() => {
+    // Once, when the first list loads: a saved project that no longer exists would leave Your
+    // brain on "Item unavailable." Later changes are the person's own and may precede a re-read.
+    if (scopeChecked.current || !projects.length) return;
+    scopeChecked.current = true;
+    if (scope !== "inbox" && !projects.some((p) => p.id === scope)) setScope("inbox");
+  }, [projects, scope]);
   useEffect(() => {
     document.documentElement.dataset.theme = dark ? "dark" : "light";
     localStorage.setItem("brain-theme", dark ? "dark" : "light");

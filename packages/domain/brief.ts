@@ -141,10 +141,12 @@ export function buildBrief(input: BriefInput, now: Date): { items: BriefItem[]; 
     const name = typeof c.data.entity === "string" ? c.data.entity.trim() : "";
     if (!evidence.length || name.length < 3) continue;
     if (corrected.has(factKey(name, c.data.aspect))) continue;
-    const checkedAt = [input.confirmations[c.id], c.data.recorded_at, c.created_at]
+    // The latest valid time, as on Your brain, so an owner edit counts as a check. The creation time is the fallback.
+    const times = [input.confirmations[c.id], c.data.recorded_at, c.data.edited_at]
       .map((v) => (typeof v === "string" ? Date.parse(v) : NaN))
-      .find((t) => !Number.isNaN(t));
-    if (checkedAt === undefined || !(checkedAt < staleBefore)) continue;
+      .filter((t) => !Number.isNaN(t));
+    const checkedAt = times.length ? Math.max(...times) : Date.parse(c.created_at);
+    if (Number.isNaN(checkedAt) || !(checkedAt < staleBefore)) continue;
     const word = new RegExp(`(?<![\\p{L}\\p{N}])${escapeRegExp(name)}(?![\\p{L}\\p{N}])`, "iu");
     const mentions = input.sources.filter(
       (s) => s.project_id === c.project_id && Date.parse(s.captured_at) > checkedAt && word.test(s.body),

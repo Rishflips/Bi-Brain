@@ -23,6 +23,16 @@ export function OpenQuestions({ api, projectId, questions, total, onOpenSource, 
   const lock = useRef(false);
   const heading = useRef<HTMLHeadingElement>(null);
   const buttons = useRef(new Map<string, HTMLButtonElement>());
+  // Set by Undo; focus moves to the restored question's button once it is back in the list.
+  const [restored, setRestored] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!restored) return;
+    const target = buttons.current.get(restored);
+    if (!target) return;
+    target.focus();
+    setRestored(null);
+  }, [restored, questions]);
 
   // Runs once the re-read has rendered. Only the question this person just answered moves
   // focus, so an unrelated refresh never does.
@@ -46,6 +56,7 @@ export function OpenQuestions({ api, projectId, questions, total, onOpenSource, 
       await api("/questions/answer", { project_id: projectId, signature: q.signature, answered: true });
       await onDone("Marked as answered.", async () => {
         await api("/questions/answer", { project_id: projectId, signature: q.signature, answered: false });
+        setRestored(q.signature);
       });
       setPending({ answered: q.signature, next: neighbour?.signature ?? null });
     } catch (e) {

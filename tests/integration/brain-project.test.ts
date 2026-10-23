@@ -66,6 +66,23 @@ describe("Brain.brainProject", () => {
     expect(b.brainProject(owner, "inbox").facts[0].stale).toBe(false);
   });
 
+  it("treats an edited fact as freshly checked on Your brain and on Today", () => {
+    const { b, advance } = setup();
+    b.capture(owner, { title: "Decision", body: DECISION });
+    const claim = keepFirst(b);
+    advance(22 * 86_400_000);
+    b.capture(owner, { title: "Update one", body: "Northstar beta came up again today." });
+    b.capture(owner, { title: "Update two", body: "More on Northstar beta this week." });
+    const before = b.brainProject(owner, "inbox");
+    expect(before.facts[0].stale).toBe(true);
+    expect(before.waiting_for_review).toBeGreaterThan(0);
+    b.reviseClaim(owner, claim.id, { expected_version: 1, value: "invite only until launch" });
+    const after = b.brainProject(owner, "inbox");
+    expect(after.facts[0].stale).toBe(false);
+    expect(after.waiting_for_review).toBe(0);
+    expect(b.brief(owner).items.some((i) => i.kind === "stale")).toBe(false);
+  });
+
   it("drops the facts and questions of a withdrawn original", () => {
     const { b } = setup();
     const saved = b.capture(owner, { title: "Decision", body: DECISION + "\nOpen question: who signs off?" }) as any;

@@ -161,6 +161,12 @@ describe("buildBrief", () => {
       expect(buildBrief(input, now).items).toEqual([]);
     });
 
+    it("treats an owner edit as a fresh check", () => {
+      const input = staleInput();
+      input.claims = [claim({ edited_at: "2026-10-15T09:00:00Z" })];
+      expect(buildBrief(input, now).items).toEqual([]);
+    });
+
     it("needs at least two mentions", () => {
       const input = staleInput();
       input.sources.pop();

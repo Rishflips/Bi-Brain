@@ -64,6 +64,16 @@ test("a suggestion is counted here and reviewed on Today", async ({ browser }) =
   });
 });
 
+test("a saved project that no longer exists falls back to the Inbox", async ({ browser }) => {
+  await journey(browser, async (page) => {
+    await page.evaluate(() => localStorage.setItem("brain-project", crypto.randomUUID()));
+    await page.reload();
+    await openBrain(page);
+    await expect(page.getByRole("heading", { name: "Inbox", level: 2 })).toBeVisible();
+    await expect(page.getByRole("alert")).toHaveCount(0);
+  });
+});
+
 test("Your brain fits a 320px screen in dark appearance", async ({ browser }) => {
   await journey(browser, async (page) => {
     await save(page, "A note with a long unbroken word Supercalifragilisticexpialidocious_and_more_words_here.");
@@ -102,6 +112,7 @@ test("a kept fact shows under True now and can be edited, with Undo", async ({ b
     await expect(toast).toContainText("Undone.");
     await expect(facts).not.toContainText("until launch");
     await expect(facts.getByRole("listitem").filter({ hasText: "invite only" })).toContainText("version 3");
+    await expect(row.getByRole("button", { name: "Edit" })).toBeFocused();
     await page.getByRole("button", { name: "Preview handoff" }).click();
     await expect(page.getByRole("dialog", { name: "Project handoff" })).toContainText("invite only");
   });
@@ -181,6 +192,7 @@ test("an open question can be marked answered and brought back", async ({ browse
     await expect(questions.getByRole("heading", { name: "Open questions" })).toBeFocused();
     await toast.getByRole("button", { name: "Undo" }).click();
     await expect(item).toHaveCount(1);
+    await expect(item.getByRole("button", { name: "Mark answered" })).toBeFocused();
     await item.getByRole("button", { name: "Mark answered" }).click();
     await expect(item).toHaveCount(0);
     await page.reload();

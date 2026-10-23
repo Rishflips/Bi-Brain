@@ -44,6 +44,14 @@ function FactRow({ fact, api, onOpenSource, onDone, onError }: Omit<Props, "fact
   const box = useRef<HTMLTextAreaElement>(null);
   const editBtn = useRef<HTMLButtonElement>(null);
   const wasEditing = useRef(false);
+  // Set by Undo; the Edit button takes focus once the undone version has been read back.
+  // It holds the version the edit created, so focus waits for the re-read to move past it.
+  const [undone, setUndone] = useState<number | null>(null);
+  useEffect(() => {
+    if (undone === null || editing || fact.version === undone) return;
+    editBtn.current?.focus();
+    setUndone(null);
+  }, [undone, editing, fact.version]);
   const heldFocus = useRef<HTMLElement | null>(null);
 
   // Open: focus the box. Closed by Save, Cancel or Escape: back to this fact's Edit button,
@@ -92,6 +100,7 @@ function FactRow({ fact, api, onOpenSource, onDone, onError }: Omit<Props, "fact
       }
       await onDone(`Saved as version ${r.version}.`, async () => {
         await api(`/claims/${fact.id}/revise`, { expected_version: r.version, value: before });
+        setUndone(r.version);
       });
     });
 
