@@ -152,6 +152,7 @@ export function createBillingAdmissionFixture(
     correlation?: BillingCorrelationSource | null;
     source?: EvidenceSource | null;
     enrolled?: boolean;
+    catalog?: BillingOperatorPolicy["catalog"];
   } = {},
 ): BillingAdmissionFixture {
   const now = input.now ?? DEFAULT_NOW;
@@ -186,10 +187,14 @@ export function createBillingAdmissionFixture(
     expected_commitment: commitment,
   });
 
-  const policy = syntheticPolicy({
+  const defaultPolicy = syntheticPolicy({
     epoch: epoch.epoch,
     root_nonce: epoch.nonce,
     key_commitment: commitment,
+  });
+  const policy = validateBillingOperatorPolicy({
+    ...defaultPolicy,
+    catalog: input.catalog ?? defaultPolicy.catalog,
   });
   control.db
     .prepare(
@@ -287,11 +292,10 @@ export function createBillingAdmissionFixture(
     tenant_incarnation: incarnation.incarnation,
     provisioning_generation: incarnation.provisioning_generation,
     mode: policy.mode,
-    product_ref: "SYNTHETIC-product",
-    price_ref:
-      cadence === "annual"
-        ? "SYNTHETIC-price-annual"
-        : "SYNTHETIC-price-monthly",
+    product_ref: policy.catalog.find((plan) => plan.cadence === cadence)!
+      .product_ref,
+    price_ref: policy.catalog.find((plan) => plan.cadence === cadence)!
+      .price_ref,
     cadence,
     customer_ref: `SYNTHETIC-customer-${randomUUID()}`,
     subscription_ref: `SYNTHETIC-subscription-${randomUUID()}`,

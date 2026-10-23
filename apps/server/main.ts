@@ -10,12 +10,14 @@ import {
   managedDecisionCapability,
 } from "./startup-gates.ts";
 import { BoundedFetchTransport } from "../../packages/providers/bounded-fetch.ts";
-import { PaddleClient } from "../../packages/providers/paddle.ts";
-import { PaddleBillingService } from "../../packages/runtime/paddle-billing.ts";
+import { DodoClient } from "../../packages/providers/dodo.ts";
+import { DodoBillingService } from "../../packages/runtime/dodo-billing.ts";
 
 // Fail closed before any storage or adapter is constructed: an unknown mode or
 // a missing managed field throws here rather than silently serving local data.
 const config = loadConfig();
+if (config.mode === "managed" && config.paddle)
+  throw new Error("Paddle is retired. Configure BRAIN_DODO_* instead.");
 
 const host = process.env.BRAIN_CONTAINER === "1" ? "0.0.0.0" : "127.0.0.1";
 const port = Number(process.env.BRAIN_PORT ?? 4317);
@@ -67,26 +69,22 @@ if (config.mode === "managed") {
     return { available: c.available, reason: c.reason };
   };
   const login = new ManagedLogin(runtime, oidc);
-  const billing = config.paddle
-    ? new PaddleBillingService(
+  const billing = config.dodo
+    ? new DodoBillingService(
         runtime.root,
-        new PaddleClient({
-          mode: config.paddle.mode,
-          api_key: config.paddle.apiKey,
-          product_ref: config.paddle.productRef,
-          monthly_price_ref: config.paddle.monthlyPriceRef,
-          annual_price_ref: config.paddle.annualPriceRef,
-          allowed_currencies: config.paddle.allowedCurrencies,
+        new DodoClient({
+          mode: config.dodo.mode,
+          api_key: config.dodo.apiKey,
+          business_id: config.dodo.businessId,
+          monthly_product_ref: config.dodo.monthlyProductRef,
+          annual_product_ref: config.dodo.annualProductRef,
+          allowed_currencies: config.dodo.allowedCurrencies,
           transport: new BoundedFetchTransport(),
         }),
         {
-          mode: config.paddle.mode,
           public_origin: config.publicOrigin,
-          checkout_path: config.paddle.checkoutPath,
-          client_token: config.paddle.clientToken,
-          webhook_secret: Buffer.from(config.paddle.webhookSecret, "utf8"),
-          webhook_endpoint_ref: config.paddle.webhookEndpointRef,
-          portal_origin: config.paddle.portalOrigin,
+          webhook_secret: config.dodo.webhookSecret,
+          webhook_endpoint_ref: config.dodo.webhookEndpointRef,
         },
       )
     : undefined;

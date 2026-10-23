@@ -95,3 +95,8 @@ export function createBillingAuthorityForPaddle(input: {
     return null;
   }
 }
+
+// The coordinator is provider-neutral; legacy exports preserve historical tests.
+export { PaddleBillingWorker as ProviderBillingWorker };
+export const createBillingAuthorityForProvider =
+  createBillingAuthorityForPaddle;

@@ -99,6 +99,7 @@ const manifestSchema = z
     files: z.array(fileSchema).max(1_000_000),
     root_marker: z.string().min(1).max(4096).nullable().optional(),
     paddle_store: z.literal("paddle.sqlite").nullable().optional(),
+    dodo_store: z.literal("dodo.sqlite").nullable().optional(),
     billing_authority: z
       .object({
         key_path: z.literal(".protected/billing-authority.key"),
@@ -121,6 +122,7 @@ export interface ManagedBundleManifest {
   files: { path: string; sha256: string; size: number }[];
   root_marker?: string | null;
   paddle_store?: "paddle.sqlite" | null;
+  dodo_store?: "dodo.sqlite" | null;
   billing_authority?: {
     key_path: ".protected/billing-authority.key";
     key_commitment: string;
@@ -552,6 +554,7 @@ function assertBundleTopLevel(
     "activation.json",
     "decision-activation.json",
     "paddle.sqlite",
+    "dodo.sqlite",
   ]);
   for (const account of manifest.accounts) allowed.add(account.account_id);
   for (const name of readdirSync(bundle)) {
@@ -802,6 +805,12 @@ export async function writeManagedBackup(
       join(staging, "control.sqlite"),
     );
     const paddleStorePresent = existsSync(join(root, "paddle.sqlite"));
+    const dodoStorePresent = existsSync(join(root, "dodo.sqlite"));
+    if (dodoStorePresent)
+      await snapshotSqlite(
+        join(root, "dodo.sqlite"),
+        join(staging, "dodo.sqlite"),
+      );
     if (paddleStorePresent)
       await snapshotSqlite(
         join(root, "paddle.sqlite"),
@@ -846,8 +855,8 @@ export async function writeManagedBackup(
       copyTree(join(dir, "vault-protected"), join(staged, "vault-protected"));
     }
     assertSqliteHealthy(join(staging, "control.sqlite"));
-    if (paddleStorePresent)
-      assertSqliteHealthy(join(staging, "paddle.sqlite"));
+    if (dodoStorePresent) assertSqliteHealthy(join(staging, "dodo.sqlite"));
+    if (paddleStorePresent) assertSqliteHealthy(join(staging, "paddle.sqlite"));
     for (const account of inventory)
       assertSqliteHealthy(join(staging, account.account_id, "brain.sqlite"));
     const files = walkFiles(staging)
@@ -864,6 +873,7 @@ export async function writeManagedBackup(
       files,
       root_marker: rootMarker ? MANAGED_ROOT_MARKER : null,
       paddle_store: paddleStorePresent ? "paddle.sqlite" : null,
+      dodo_store: dodoStorePresent ? "dodo.sqlite" : null,
       billing_authority: (() => {
         const keyPath = join(root, ".protected", "billing-authority.key");
         if (!existsSync(keyPath)) return null;
@@ -938,6 +948,13 @@ export async function restoreManagedBackup(
       "The Paddle store presence does not match its manifest declaration.",
     );
   if (bundledPaddlePresent) assertSqliteHealthy(bundledPaddlePath);
+  const bundledDodoPath = join(bundle, "dodo.sqlite");
+  const bundledDodoPresent = existsSync(bundledDodoPath);
+  if (bundledDodoPresent !== (manifest.dodo_store === "dodo.sqlite"))
+    throw recoveryError(
+      "The Dodo store does not match its manifest declaration.",
+    );
+  if (bundledDodoPresent) assertSqliteHealthy(bundledDodoPath);
 
   // The portable bundle never carries the authority key. If it declares a key,
   // prove the current operator still possesses that exact protected key before
@@ -1041,6 +1058,8 @@ export async function restoreManagedBackup(
   let replayed = 0;
   try {
     copyTree(bundleControl, join(staged, "control.sqlite"));
+    if (bundledDodoPresent)
+      copyTree(bundledDodoPath, join(staged, "dodo.sqlite"));
     if (bundledPaddlePresent)
       copyTree(bundledPaddlePath, join(staged, "paddle.sqlite"));
     if (bundleActivation.present)
@@ -1083,8 +1102,12 @@ export async function restoreManagedBackup(
     >();
     try {
       applyControlRestoreBarrier(stagingControl, clock);
-      if (bundledPaddlePresent) {
-        const paddle = new DatabaseSync(join(staged, "paddle.sqlite"));
+      for (const providerFile of [
+        bundledPaddlePresent ? "paddle.sqlite" : null,
+        bundledDodoPresent ? "dodo.sqlite" : null,
+      ]) {
+        if (!providerFile) continue;
+        const paddle = new DatabaseSync(join(staged, providerFile));
         try {
           const restoredAt = clock().toISOString();
           paddle.exec("BEGIN IMMEDIATE");

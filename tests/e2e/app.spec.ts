@@ -5,14 +5,10 @@ test.beforeEach(async ({ page }) => {
   await page.getByRole("button", { name: "Open my brain" }).click();
   await expect(
     page
-      .getByRole("heading", { name: "What do you want to pick up later?" })
-      .or(page.getByRole("heading", { name: "Welcome back." })),
+      .getByRole("heading", { name: "Welcome to BiBrain." })
+      .or(page.getByRole("heading", { name: "Good to see you." })),
   ).toBeVisible();
-  await expect(page.locator('[data-ui="living-field"]')).toBeVisible();
-  await expect(page.locator(".brain-network, .brain-pulse-core")).toHaveCount(
-    0,
-  );
-  await expect(page.locator(".brain-state-dot")).toHaveCount(1);
+  await expect(page.getByLabel("Save to your brain")).toBeVisible();
 });
 
 test("ordinary capture becomes reviewed current truth and agent retrieval", async ({
@@ -148,7 +144,9 @@ test("chat JSON import is previewed and saved through Connections", async ({
     page.getByRole("dialog", { name: "Review import" }),
   ).toContainText(marker);
   await page.getByRole("button", { name: "Save selected items" }).click();
-  await expect(page.getByRole("status")).toContainText("1 saved");
+  await expect(
+    page.getByRole("status").filter({ hasText: "1 saved" }),
+  ).toBeVisible();
   await page.getByRole("button", { name: "Your brain", exact: true }).click();
   await page.getByPlaceholder("Find a note or conversation…").fill(marker);
   await expect(page.getByText(marker, { exact: true })).toBeVisible();
@@ -170,7 +168,9 @@ test("chat JSON import is previewed and saved through Connections", async ({
     page.getByRole("dialog", { name: "Review import" }),
   ).toContainText("dropped.md");
   await page.getByRole("button", { name: "Save selected items" }).click();
-  await expect(page.getByRole("status")).toContainText("1 saved");
+  await expect(
+    page.getByRole("status").filter({ hasText: "1 saved" }),
+  ).toBeVisible();
 });
 test("real capture, evidence, editable understanding, download, correction, delete and reload", async ({
   page,
@@ -294,35 +294,45 @@ test("chosen goal prepares a hypothesis and acceptance undo preserves later edit
   await expect(page.getByRole("button", { name: "Prepare now" })).toBeEnabled();
   await page.getByRole("button", { name: "Prepare now" }).click();
   await page.getByRole("button", { name: "Today", exact: true }).click();
-  await page.getByRole("button", { name: "Review the plan" }).click();
-  await expect(
-    page.getByText("No accepted plan yet.", { exact: true }),
-  ).toBeVisible();
+  await page.reload();
+  const card = page
+    .getByRole("article")
+    .filter({ hasText: "Prepared for your goal" })
+    .filter({ hasText: "Beta onboarding" });
+  // The worker prepares the plan in the background, so check again until it lands.
+  await expect(async () => {
+    await page.reload();
+    await expect(card).toBeVisible({ timeout: 2000 });
+  }).toPass({ timeout: 25000 });
+  await card.getByRole("button", { name: "Fix" }).click();
   await page
-    .getByLabel("Proposed plan — edit before accepting")
+    .getByLabel("Your wording")
     .fill("Run a small paste-first beta experiment.");
-  await page
-    .getByRole("button", { name: "Keep this plan", exact: true })
-    .click();
-  await expect(
-    page.getByRole("heading", { name: "Plan accepted", exact: true }),
-  ).toBeVisible();
+  await card.getByRole("button", { name: "Save my version" }).click();
+  const toast = page.locator(".tv-toast");
+  await expect(toast).toContainText(/plan kept/i);
+  // A later edit made inside the undo window must survive the undo.
+  const session = await (await page.request.get("/api/v1/session")).json();
+  const today = await (await page.request.get("/api/v1/today")).json();
+  const goal = today.goals.find((g: any) => g.data.title === "Beta onboarding");
+  const edited = await page.request.patch(`/api/v1/goals/${goal.id}`, {
+    headers: { "X-Brain-CSRF": session.csrf },
+    data: {
+      expected_version: goal.version,
+      plan: "My later plan edit must survive.",
+    },
+  });
+  expect(edited.ok()).toBe(true);
+  await page.getByRole("button", { name: "Undo" }).click();
+  // A failed Undo is said once, in the alert region, never also in the toast.
+  const changed = "This item changed since you opened it. Refresh to compare.";
+  await expect(page.getByRole("alert").filter({ hasText: changed })).toBeVisible();
+  await expect(page.getByText(changed)).toHaveCount(1);
+  await expect(page.getByText("Undone.")).toHaveCount(0);
   await page.getByRole("button", { name: "Your brain", exact: true }).click();
-  await page.getByRole("button", { name: "Edit plan", exact: true }).click();
   await page
-    .getByLabel("Plan", { exact: true })
-    .fill("My later plan edit must survive.");
-  await page.getByRole("button", { name: "Save plan revision" }).click();
-  await page.getByRole("button", { name: "Today", exact: true }).click();
-  await page.getByRole("button", { name: "Undo acceptance" }).click();
-  await expect(page.getByRole("dialog")).toContainText(
-    "My later plan edit must survive.",
-  );
-  await expect(page.getByRole("dialog")).toContainText(
-    "Undo cannot replace a later edit.",
-  );
-  await page.getByRole("button", { name: "Keep current plan" }).click();
-  await page.getByRole("button", { name: "Your brain", exact: true }).click();
+    .getByLabel("Project", { exact: true })
+    .selectOption({ label: "Beta browser test" });
   await page.getByRole("button", { name: "Edit plan", exact: true }).click();
   await expect(page.getByLabel("Plan", { exact: true })).toHaveValue(
     "My later plan edit must survive.",

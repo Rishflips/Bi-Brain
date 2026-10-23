@@ -18,6 +18,7 @@ import {
 } from "../../packages/identity/managed-login.ts";
 import { deploymentPolicy } from "./deployment.ts";
 import type { PaddleBillingService } from "../../packages/runtime/paddle-billing.ts";
+import type { DodoBillingService } from "../../packages/runtime/dodo-billing.ts";
 import { registerBillingRoutes } from "./billing-routes.ts";
 
 const LOGIN_PATH = "/auth/login";
@@ -100,8 +101,8 @@ export async function createApp(
      * reason only. Absent => false.
      */
     decisionCapability?: () => { available: boolean; reason: string };
-    /** Closed, managed-only Paddle orchestration. Absent means billing is off. */
-    billing?: PaddleBillingService;
+    /** Closed managed billing. Legacy Paddle injection supports historical tests. */
+    billing?: PaddleBillingService | DodoBillingService;
   } = {},
 ) {
   const managed = options.managed;
@@ -278,7 +279,7 @@ export async function createApp(
     if (process.env.NODE_ENV === "production")
       reply.header(
         "Content-Security-Policy",
-        options.billing
+        options.billing && !("provider" in options.billing)
           ? "default-src 'self'; script-src 'self' https://cdn.paddle.com; style-src 'self'; img-src 'self' data: https://*.paddle.com; connect-src 'self' https://*.paddle.com; frame-src https://*.paddle.com; frame-ancestors 'none'; base-uri 'none'; object-src 'none'; form-action 'self' https://*.paddle.com"
           : "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; object-src 'none'; form-action 'self'",
       );
@@ -679,6 +680,14 @@ export async function createApp(
   app.post("/api/v1/goals/:id/prepare", (req) =>
     req.brain.prepare(req.principal, params(req)),
   );
+  app.get("/api/v1/brief", (req) => req.brain.brief(req.principal));
+  app.post("/api/v1/brief/dismiss", (req) =>
+    req.brain.dismissBriefItem(req.principal, req.body),
+  );
+  app.post("/api/v1/claims/:id/confirm", (req) =>
+    req.brain.confirmClaim(req.principal, params(req)),
+  );
+  app.get("/api/v1/ask", (req) => req.brain.ask(req.principal, req.query));
   app.get("/api/v1/today", (req) => {
     req.brain.owner(req.principal);
     return {

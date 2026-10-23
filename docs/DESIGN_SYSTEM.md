@@ -108,7 +108,7 @@ states use plain language and never imply successful background intelligence.
 
 ## Production evidence
 
-`docs/screenshots/first-use.png` shows the current paired Today surface and
+`docs/screenshots/today-v2-brief.png` shows the current paired Today surface and
 `docs/screenshots/source-preview.png` shows the source workflow. Both are generated
 from real browser journeys using synthetic data. Older files under `design/` are
 concept references only; the implemented interface and UX specification remain

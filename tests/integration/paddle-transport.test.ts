@@ -33,7 +33,7 @@ describe("bounded provider transport", () => {
     });
     await expect(transport.request(request)).rejects.toMatchObject({
       code: "UNAVAILABLE",
-      message: "Paddle Billing is temporarily unavailable.",
+      message: "Secure billing is temporarily unavailable.",
     });
   });
 

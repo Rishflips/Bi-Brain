@@ -1,6 +1,94 @@
 # Build state
 
-Updated: 2026-10-21
+Updated: 2026-10-23
+
+## 2026-10-23 — Today v2 verified (branch reframe/today-v2, PR #20)
+
+PR #20 CI repair: patched vite 8.3.4, vitest 5.0.5, fastify 5.12.7, hono 4.13.13
+and ip-address 10.7.4 (`npm audit`: 0 vulnerabilities), then merged main after
+PR #19 (Dodo). Counts below are from the run before that merge.
+
+Today is one bar (save or ask), a Brief of at most three cards with Keep, Fix,
+Dismiss and Undo, and project cards. Local V1 only; no real model run and no
+native client check in this slice.
+
+Final review fixes: a failed-preparation card goes when its note is purged or
+withdrawn; Undo after Keep returns the card to the Brief; the Ask answer clears
+when any cited note is purged; Fix starts from the proposed wording; an automatic
+Ask goes back to Save when the "?" is deleted; a dismissal still waiting is
+dropped, not sent, when the owner leaves Today. Old Today code and CSS removed.
+
+Commands, in order (final run, nothing else running):
+- `npm run typecheck`, `npm run lint` and `npm run build` passed.
+- `npx playwright test --workers=1`: 78 passed, 0 failed (main, today-v2,
+  today-v2-bar and empty-brain projects; extra projects on ports 4327-4329).
+- `npx vitest run` (alone): 1540 passed, 1 failed, 8 skipped. The failure is
+  `managed-process.test.ts`, which also failed on clean main and failed again when
+  re-run alone. `managed-decision-advisory-process.test.ts` passed this time; it
+  had failed only under load in earlier full runs and passed when re-run alone.
+- Retired earlier: `first-session-journey` and `living-brain-review` specs, the
+  saved-note preview test and the delayed pre-purge read test (those features were cut).
+- Screenshots (synthetic, throwaway database): docs/screenshots/today-v2-*.png.
+
+Limits: no System 1 routing yet (plan 4), no plug-and-play install yet (plan 3),
+no project suggestion after save. today-v2.spec.ts is close to the server's
+1000 requests a minute limit; add new Today journeys to today-v2-bar.spec.ts.
+
+## Active delivery — Dodo Payments and dependency repair
+
+PR #18 merged at `37507b3e5079e261444279b6ea03430810fdbc4d`; local `main`
+was fast-forwarded to that merge before `codex/dodo-payments` was created. Its
+PR workflow passed, but merged-main run `39510130119` failed at the registry
+security audit (Vite high, Hono moderate). The pinned Vite version is now 8.3.4
+and the lockfile resolves patched Hono; clean `npm ci --ignore-scripts` reports
+zero vulnerabilities. The sandboxed clean install stalled and was stopped;
+the normal local install completed successfully.
+
+The owner selected Dodo Payments after Paddle application rejection. Production
+server/worker startup now uses Dodo and refuses old Paddle configuration. The
+managed-only adapter creates hosted checkout, verifies Standard Webhooks on raw
+bytes, binds successful payment metadata to a durable account intent, and reads
+current subscription/payment service periods before passing facts to the existing
+BillingAuthority. Two cadence products map to one logical plan family; monetary
+authority, equal monthly caps, no rollover, and no automatic overages remain intact.
+No browser payment SDK or public client token is required. Historical Paddle code
+and recovery files remain available for historical verification, not production
+activation. `dodo.sqlite` participates in cold backup and restore barriers.
+
+Focused Dodo verification passes 24/24 across two files, including actual SQLite,
+managed HTTP authorization, both cadence flows through the real authority,
+refund/cancellation denial, exact raw signature checks, replay/conflict handling,
+ambiguity locks, independent evidence checks and cold recovery. The initial
+sandbox run passed the first file but blocked the second's transform-cache access;
+the same two-file run passed outside the sandbox. The finalized Dodo/transport
+set passes 27/27, and Dodo plus actual launcher-child secret isolation passes
+26/26. Typecheck, lint, production build, whitespace and the registry-backed
+zero-vulnerability audit pass. The complete Chromium suite passes 54/54 in
+4.7 minutes. Offline evaluation passes 4/4; its first sandbox attempt passed 3/4
+because Git initialization in Windows temporary storage was denied, and the
+identical normal-local command passed. The broad backend run passes **1,518 tests,
+8 expected platform skips, 144 files** in 1,088.77 seconds. That run began before
+the final same-checkout retry regression was added; the finalized affected Dodo
+files separately pass 24/24. The fresh GitHub run must verify the complete final
+tree, including the additional retry case.
+
+Actual native acceptance passes in Codex CLI 0.156.1 (GPT-6 Sol) and Claude Code
+2.1.283 (subscription selected claude-opus-5-5). The explicit operator runner
+`scripts/native-client-proof.ts` uses ephemeral client configuration, disposable
+SQLite, a read-only grant and no owner data or paid API credentials. Both clients
+observed pending abstention, approved cited memory, current correction,
+private/other-project 404s and same-session post-revocation 401s. Subscription quota
+was used. The initial Codex run correctly refused invocation under its approval
+policy; truthful MCP annotations and the documented project writes-approval setting
+repaired compatibility without granting write access. The real SDK annotation
+regression passes 1/1. The bounded G6 read-only gate is closed; broader native write
+workflows remain unverified. Details are in docs/NATIVE_CLIENT_SETUP.md.
+
+No Dodo account credentials, BiBrain paid-provider request, customer payment or
+public deployment was used. Actual Dodo test acceptance, selected prices and
+allowances, capped BiBrain live-model quality, human pilot,
+target-host operations, and legal/license/support decisions remain open. See
+[DODO_PAYMENTS.md](docs/DODO_PAYMENTS.md).
 
 ## Active delivery — agent continuity workspace
 

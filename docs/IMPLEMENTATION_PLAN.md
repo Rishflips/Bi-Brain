@@ -2,6 +2,18 @@
 
 Complete milestones in dependency order. A polished mockup is not a substitute for a persistent vertical slice. Check boxes only after attaching evidence in BUILD_STATE.md.
 
+## Today v2 — 2026-10-23
+
+Plan: `docs/superpowers/plans/2026-10-23-today-v2.md`. Evidence: BUILD_STATE.md, top entry.
+
+- [x] Tasks 1-2: Brief ranking and the Today brief/dismiss/confirm service.
+- [x] Tasks 3-4: keep memories in the owner's words with undo; answer questions from reviewed facts and originals.
+- [x] Tasks 5-6: Today shell with quiet and empty states; one bar that saves or asks.
+- [x] Tasks 7-8: Brief cards with Keep, Fix, Dismiss and Undo; project cards and header status.
+- [x] Task 9: old Today browser tests ported or retired, full verification run (typecheck, lint, Vitest, build, brain-eval, Playwright), screenshots and docs. Vitest: 2 known load-sensitive process tests failed in the full run and passed alone.
+- [x] Receipt under the bar follows the current notes: a purge or correction clears it at once.
+- [ ] Not in this slice: System 1 routing (plan 4), plug-and-play agent install (plan 3), project suggestion after save.
+
 ## M0 — Runnable foundation
 
 - [x] Inspect project and preserve existing work.
@@ -202,8 +214,10 @@ Gate: synthetic beta-launch scenario produces a reviewable proposal with correct
       and connection state, routes unreviewed originals back through review,
       and separates revoked history. Full production-browser regression passes
       54/54; native clients remain a separate evidence gate.
-- [ ] Codex fresh-session remember/recall/correction/revocation evidence.
-- [ ] Second supported client repeats the workflow.
+- [x] Codex 0.156.1 fresh-session reviewed-memory recall/correction/privacy and
+      same-session revocation proof with synthetic data and a read-only grant.
+- [x] Claude Code 2.1.283 repeats the same read-only workflow. Native write/propose
+      permissions are not certified by these runs. See NATIVE_CLIENT_SETUP.md.
 - [x] Connection UI reflects real verification state.
 
 Gate: same authorized project knowledge is available in two clients; unrelated/private data and revoked access remain unavailable. Record exact client/SDK versions. Do not replace unavailable-client evidence with a green badge.
@@ -233,6 +247,20 @@ Gate: same authorized project knowledge is available in two clients; unrelated/p
 Gate: complete local end-to-end flow passes; release checklist in docs/RELEASE.md has evidence. A public launch still needs a license decision.
 
 ## H1 — Managed personal suite
+
+Provider decision updated 2026-10-21: Dodo Payments supersedes Paddle after the
+owner reported rejection. Historical B0 authority work remains valid. Historical
+Paddle B1 checks do not prove Dodo test-mode acceptance. Follow
+[DODO_PAYMENTS.md](DODO_PAYMENTS.md) for the current adapter and remaining gates.
+
+- [x] Dodo hosted checkout, raw signed webhook projection, durable correlation,
+      current payment evidence and backup/restore integration implemented.
+- [x] Dodo local regression recorded: 24 focused Dodo checks, affected transport
+      and launcher secrecy checks, 54 Chromium journeys, 4 offline evaluations,
+      typecheck/lint/build/audit and broad 1,518-test run. Final fresh CI remains a
+      separate gate because one retry case was added during the broad local run.
+- [ ] Real Dodo test-mode checkout, renewal, cancellation, refund/dispute and portal
+      acceptance with account-owned credentials and selected prices/allowances.
 
 The 2026-10-16 owner direction brings managed personal delivery into the primary product target. Historical local milestones above are not completion of managed requirements. Follow [the approved release design](superpowers/specs/2026-10-16-managed-suite-design.md) and [foundation plan](superpowers/plans/2026-10-16-managed-foundation.md).
 
@@ -264,9 +292,15 @@ The 2026-10-16 owner direction brings managed personal delivery into the primary
 - [ ] G5: Ordinary-prose understanding/recall/correction and goal-linked preparation with live evidence.
   - [x] Deterministic, single-statement ordinary-language suggestions; exact Unicode evidence; owner-taught meaning for arbitrary passages; review-only acceptance, correction and safe undo; quiet ambiguity behavior. Locally verified on 2026-10-19.
   - [ ] Goal-linked semantic preparation and held-out live-model quality/cost evidence.
-- [ ] G6: Two named native integrations with fresh-session correction/privacy/revocation evidence.
+- [x] G6: Two named native integrations with fresh-session correction/privacy/revocation evidence (bounded read-only workflow, 2026-10-21).
+  - [x] Explicit opt-in operator runner for a disposable synthetic native session,
+        owner-reviewed correction, privacy denial and same-session revocation.
   - [x] Token-free project Codex template, project-local Claude setup, revocation instructions and a five-part synthetic proof checklist.
-  - [ ] Run the checklist in fresh native Codex and Claude Code sessions with explicit owner authorization; record recall, correction, privacy and immediate revocation evidence.
+  - [x] Checklist passed in fresh native Codex and Claude Code sessions under the
+        owner's instruction to proceed through all gates in safe order. Both
+        returned citations after review, current correction, private/other-project
+        404s, and same-session post-revocation 401. Writable native grants remain
+        outside this certification.
 - [ ] G7: Subscription/webhook reconciliation, allowances, cancellation and payment-independent export/deletion.
   - [x] Owner selected Paddle Billing for an India-based individual/sole proprietor, monthly+annual plans and monthly no-rollover allowance without automatic overages. No customer price or allowance amount selected.
   - [x] B0 renewal-safe financial-authority written design approved by the owner's "okay go ahead".
