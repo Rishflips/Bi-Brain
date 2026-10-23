@@ -294,3 +294,62 @@ test("a new note's dialog does not carry the last fact's history", async ({ brow
     await expect(next.getByText("no longer in this original")).toHaveCount(0);
   });
 });
+
+test("search finds facts and originals and opens them; one letter sends nothing", async ({ browser }) => {
+  await journey(browser, async (page) => {
+    await save(page, "We decided that Northstar beta is invite only.");
+    await keepOnToday(page, "invite only");
+    await save(page, "Long retained passage. ".repeat(60) + "ZEBRA_SENTINEL lives at the end.");
+    await openBrain(page);
+    let sent = 0;
+    await page.route("**/api/v1/brain/search*", (route) => {
+      sent += 1;
+      return route.fallback();
+    });
+    const search = page.getByLabel("Search your brain");
+    await search.fill("n");
+    await expect(page.getByText("Type at least two letters.")).toBeVisible();
+    await page.waitForTimeout(400);
+    expect(sent).toBe(0);
+    await search.fill("northstar");
+    await expect(page.getByRole("heading", { name: "Facts" })).toBeVisible();
+    await expect(page.getByRole("region", { name: /match/ })).toContainText("invite only");
+    await search.fill("ZEBRA_SENTINEL");
+    const hit = page.getByRole("button", { name: /ZEBRA_SENTINEL/ });
+    await expect(hit).toBeVisible();
+    await hit.click();
+    await expect(page.getByTestId("original")).toContainText("ZEBRA_SENTINEL lives at the end.");
+    await page.getByRole("button", { name: "Close dialog" }).click();
+    await search.fill("nothing-like-this-anywhere");
+    await expect(page.getByText("No matches. Try a different word, or save something new.")).toBeVisible();
+    await page.getByRole("button", { name: "Clear search" }).click();
+    await expect(page.getByRole("heading", { name: "Inbox", level: 2 })).toBeVisible();
+    await expect(search).toBeFocused();
+  });
+});
+
+test("a late answer to an earlier search never replaces newer results", async ({ browser }) => {
+  await journey(browser, async (page) => {
+    await save(page, "Northstar beta note.");
+    await save(page, "Zebra archive note.");
+    await openBrain(page);
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => (release = resolve));
+    await page.route(
+      (url) => url.pathname === "/api/v1/brain/search" && url.searchParams.get("q") === "northstar",
+      async (route) => {
+        await held;
+        await route.fallback();
+      },
+    );
+    const search = page.getByLabel("Search your brain");
+    await search.fill("northstar");
+    await page.waitForTimeout(400);
+    await search.fill("zebra");
+    await expect(page.getByRole("button", { name: /Zebra archive/ })).toBeVisible();
+    release();
+    await page.waitForTimeout(500);
+    await expect(page.getByRole("button", { name: /Zebra archive/ })).toBeVisible();
+    await expect(page.getByRole("button", { name: /Northstar beta/ })).toHaveCount(0);
+  });
+});

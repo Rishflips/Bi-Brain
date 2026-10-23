@@ -50,3 +50,8 @@
 .yb-history { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
 .yb-history li { display: grid; grid-template-columns: 34px minmax(0, 1fr); gap: 10px; }
 .yb-v { color: var(--muted); font-size: 13px; font-variant-numeric: tabular-nums; }
+.yb-search { display: grid; gap: 14px; min-width: 0; }
+.yb-field { width: 100%; box-sizing: border-box; font: inherit; padding: 11px 14px; border-radius: 10px; border: 1px solid var(--line); background: var(--surface); color: inherit; }
+.yb-hit { width: 100%; display: grid; gap: 4px; min-width: 0; text-align: left; font: inherit; padding: 12px 14px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); color: inherit; cursor: pointer; }
+.yb-hit-title { font-weight: 700; overflow-wrap: anywhere; }
+.yb-hit-snippet { overflow-wrap: anywhere; }
