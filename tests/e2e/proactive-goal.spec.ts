@@ -25,12 +25,12 @@ test("a chosen goal in Your brain becomes one reviewed next step on Today", asyn
     await saveBtn.click();
     await expect(bar).toHaveValue("");
 
-    await page.getByRole("button", { name: "Your brain", exact: true }).click();
-    const memory = page
-      .locator("article")
-      .filter({ has: page.getByRole("heading", { name: marker }) });
-    await memory.getByRole("button", { name: "Accept reviewed claim" }).click();
+    await page.getByRole("button", { name: "Today", exact: true }).click();
+    const memory = page.getByRole("article").filter({ hasText: marker });
+    await memory.getByRole("button", { name: "Keep as true" }).click();
+    await expect(memory).toHaveCount(0);
 
+    await page.getByRole("button", { name: "Your brain", exact: true }).click();
     await page
       .getByRole("button", { name: "Choose a goal", exact: true })
       .click();

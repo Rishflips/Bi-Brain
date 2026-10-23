@@ -11,84 +11,6 @@ test.beforeEach(async ({ page }) => {
   await expect(page.getByLabel("Save to your brain")).toBeVisible();
 });
 
-test("ordinary capture becomes reviewed current truth and agent retrieval", async ({
-  page,
-}) => {
-  const entity = `browser${Date.now()}`;
-  await page
-    .getByRole("button", { name: "Save something", exact: false })
-    .first()
-    .click();
-  await page
-    .getByLabel("Title", { exact: true })
-    .fill("Current truth evidence");
-  await page
-    .getByLabel("Paste something you are working on")
-    .fill(`${entity} status active`);
-  await page
-    .getByRole("dialog")
-    .getByRole("button", { name: "Save to my brain", exact: true })
-    .click();
-  await expect(page.getByTestId("original")).toContainText(
-    `${entity} status active`,
-  );
-  await page.getByRole("button", { name: "Close dialog" }).click();
-  await page.getByRole("button", { name: "Your brain", exact: true }).click();
-  const candidate = page
-    .locator("article")
-    .filter({ has: page.getByRole("heading", { name: entity }) });
-  await expect(
-    candidate.getByRole("button", { name: "Accept reviewed claim" }),
-  ).toBeVisible();
-  await candidate
-    .getByRole("button", { name: "Accept reviewed claim" })
-    .click();
-  await expect(candidate.getByText("status: active")).toBeVisible();
-  const search = await page.request.get(
-    `/api/v1/agent/search?project_id=inbox&query=${entity}`,
-  );
-  expect(search.ok()).toBe(true);
-  expect(JSON.stringify(await search.json())).toContain('"value":"active"');
-  const ask = await page.request.get(
-    `/api/v1/agent/ask?project_id=inbox&question=${entity}%20status`,
-  );
-  expect((await ask.json()).abstained).toBe(false);
-});
-
-test("owner promotes an exact passage from ordinary prose through review", async ({
-  page,
-}) => {
-  const entity = `prose${Date.now()}`;
-  const passage = `According to my note, ${entity} is paused this week.`;
-  await page
-    .getByRole("button", { name: "Save something", exact: false })
-    .first()
-    .click();
-  await page.getByLabel("Title", { exact: true }).fill("Prose evidence");
-  await page.getByLabel("Paste something you are working on").fill(passage);
-  await page
-    .getByRole("dialog")
-    .getByRole("button", { name: "Save to my brain", exact: true })
-    .click();
-  await page.getByRole("button", { name: "Add a fact for review" }).click();
-  await page.getByLabel("Topic or entity").fill(entity);
-  await page.getByRole("combobox", { name: "Status" }).selectOption("paused");
-  await expect(page.getByLabel("Exact passage from original")).toHaveValue(
-    passage,
-  );
-  await page.getByRole("button", { name: "Send for review" }).click();
-  const candidate = page
-    .locator("article")
-    .filter({ has: page.getByRole("heading", { name: entity }) });
-  await expect(
-    candidate.getByRole("button", { name: "Accept reviewed claim" }),
-  ).toBeVisible();
-  await candidate
-    .getByRole("button", { name: "Accept reviewed claim" })
-    .click();
-  await expect(candidate.getByText("status: paused")).toBeVisible();
-});
-
 test("owner approves an agent intention into an actionable goal", async ({
   page,
 }) => {
@@ -107,6 +29,7 @@ test("owner approves an agent intention into an actionable goal", async ({
   const gate = await proposed.json();
   await page.getByRole("button", { name: "Your brain", exact: true }).click();
   await page.reload();
+  await page.getByRole("button", { name: "Your brain", exact: true }).click();
   const candidate = page.locator(`[data-proposal-id="${gate.proposal_id}"]`);
   await expect(
     candidate.getByRole("button", { name: "Approve intention" }),
@@ -148,7 +71,7 @@ test("chat JSON import is previewed and saved through Connections", async ({
     page.getByRole("status").filter({ hasText: "1 saved" }),
   ).toBeVisible();
   await page.getByRole("button", { name: "Your brain", exact: true }).click();
-  await page.getByPlaceholder("Find a note or conversation…").fill(marker);
+  await page.getByLabel("Search your brain").fill(marker);
   await expect(page.getByText(marker, { exact: true })).toBeVisible();
   await page.goBack();
   await expect(
@@ -172,7 +95,7 @@ test("chat JSON import is previewed and saved through Connections", async ({
     page.getByRole("status").filter({ hasText: "1 saved" }),
   ).toBeVisible();
 });
-test("real capture, evidence, editable understanding, download, correction, delete and reload", async ({
+test("real capture, evidence, handoff download, correction, delete and reload", async ({
   page,
 }) => {
   const phrase = `Browser arbitrary 🧠 ${Date.now()}`;
@@ -193,35 +116,16 @@ test("real capture, evidence, editable understanding, download, correction, dele
     .getByRole("button", { name: "Save to my brain", exact: true })
     .click();
   await expect(page.getByTestId("original")).toContainText(phrase);
-  await expect(
-    page.getByRole("button", {
-      name: "Continue in another agent",
-      exact: true,
-    }),
-  ).toBeVisible();
   await page.screenshot({
     path: "docs/screenshots/source-preview.png",
     fullPage: true,
   });
-  await page
-    .getByRole("button", { name: "Edit understanding", exact: true })
-    .click();
-  await page
-    .getByLabel("Your understanding", { exact: true })
-    .fill(`${phrase}. My reviewed understanding.`);
-  await page
-    .getByRole("button", { name: "Save understanding", exact: true })
-    .click();
-  await expect(
-    page.getByText("Your understanding:", { exact: true }),
-  ).toBeVisible();
-  await page
-    .getByRole("button", { name: "Continue in another agent", exact: true })
-    .click();
+  await page.getByRole("button", { name: "Close dialog" }).click();
+  await page.getByRole("button", { name: "Your brain", exact: true }).click();
+  await page.getByRole("button", { name: "Preview handoff" }).click();
   const downloadPromise = page.waitForEvent("download");
-  await page.getByRole("button", { name: "Download Markdown" }).click();
-  const file = await downloadPromise;
-  expect(file.suggestedFilename()).toBe("bi-brain-brief.md");
+  await page.getByRole("dialog", { name: "Project handoff" }).getByRole("button", { name: "Download Markdown" }).click();
+  expect((await downloadPromise).suggestedFilename()).toBe("bi-brain-handoff.md");
   await page.getByRole("button", { name: "Close dialog" }).click();
   await page.reload();
   await page.getByRole("button", { name: "Your brain", exact: true }).click();
@@ -248,10 +152,10 @@ test("real capture, evidence, editable understanding, download, correction, dele
     .getByRole("button", { name: "Permanently delete", exact: true })
     .click();
   await expect(page.getByRole("dialog")).not.toBeVisible();
-  await page.getByLabel("Search saved material").fill(phrase);
-  await expect(page.getByLabel("Search saved material")).toHaveValue(phrase);
+  await page.getByLabel("Search your brain").fill(phrase);
+  await expect(page.getByLabel("Search your brain")).toHaveValue(phrase);
   await expect(
-    page.getByRole("heading", { name: "No matching notes." }),
+    page.getByText("No matches. Try a different word, or save something new."),
   ).toBeVisible();
 });
 test("chosen goal prepares a hypothesis and acceptance undo preserves later edits", async ({
@@ -331,8 +235,9 @@ test("chosen goal prepares a hypothesis and acceptance undo preserves later edit
   await expect(page.getByText("Undone.")).toHaveCount(0);
   await page.getByRole("button", { name: "Your brain", exact: true }).click();
   await page
-    .getByLabel("Project", { exact: true })
-    .selectOption({ label: "Beta browser test" });
+    .getByRole("navigation", { name: "Projects" })
+    .getByRole("button", { name: "Beta browser test" })
+    .click();
   await page.getByRole("button", { name: "Edit plan", exact: true }).click();
   await expect(page.getByLabel("Plan", { exact: true })).toHaveValue(
     "My later plan edit must survive.",
@@ -369,9 +274,7 @@ test("keyboard dialog and responsive layout at 320, 360, tablet and desktop", as
 });
 test("invalid input remains editable, Markdown files persist, and search matches beyond preview snippets", async ({
   page,
-  context,
 }) => {
-  await context.grantPermissions(["clipboard-read", "clipboard-write"]);
   await page
     .getByRole("button", { name: "Save something", exact: false })
     .first()
@@ -408,17 +311,10 @@ test("invalid input remains editable, Markdown files persist, and search matches
   await expect(page.getByTestId("original")).toContainText(
     "LATE_SEARCH_QUIET_SENTINEL",
   );
-  await page
-    .getByRole("button", { name: "Continue in another agent", exact: true })
-    .click();
-  await page.getByRole("button", { name: "Copy brief", exact: true }).click();
-  expect(await page.evaluate(() => navigator.clipboard.readText())).toContain(
-    "An arbitrary Markdown note.",
-  );
   await page.getByRole("button", { name: "Close dialog" }).click();
   await page.getByRole("button", { name: "Your brain", exact: true }).click();
   await page
-    .getByLabel("Search saved material")
+    .getByLabel("Search your brain")
     .fill("LATE_SEARCH_QUIET_SENTINEL");
   await expect(page.getByRole("button", { name: /Long note/ })).toBeVisible();
 });

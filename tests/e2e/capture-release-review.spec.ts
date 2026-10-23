@@ -40,7 +40,7 @@ async function reopenInBrain(page: Page, marker: string): Promise<void> {
   await expect(
     page.getByRole("heading", { name: "Your brain", exact: true }),
   ).toBeVisible();
-  await page.getByLabel("Search saved material").fill(marker);
+  await page.getByLabel("Search your brain").fill(marker);
   const result = page
     .getByRole("button", {
       name: new RegExp(marker.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")),

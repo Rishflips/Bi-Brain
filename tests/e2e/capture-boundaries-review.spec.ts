@@ -285,7 +285,7 @@ test("a committed capture remains acknowledged when the original cannot yet be r
     await context.unroute(`${MANAGED_ORIGIN}/api/v1/sources/*`);
     await page.getByRole("button", { name: "Your brain", exact: true }).click();
     await page
-      .getByLabel("Search saved material")
+      .getByLabel("Search your brain")
       .fill("SYNTHETIC_POST_SAVE_READ_FAILURE");
     await page
       .getByRole("button", { name: /SYNTHETIC_POST_SAVE_READ_FAILURE/ })
