@@ -136,3 +136,30 @@ test("an edit from a second tab is refused and keeps the draft", async ({ browse
     await fixture.close();
   }
 });
+
+test("editing a fact is complete by keyboard and keeps focus in place", async ({ browser }) => {
+  await journey(browser, async (page) => {
+    await save(page, "We decided that Northstar beta is invite only.");
+    await keepOnToday(page, "invite only");
+    await openBrain(page);
+    const facts = page.getByRole("region", { name: "True now" });
+    const edit = facts.getByRole("button", { name: "Edit", exact: true });
+    const box = facts.getByLabel("Edit fact");
+    await edit.focus();
+    await page.keyboard.press("Enter");
+    await expect(box).toBeFocused();
+    await page.keyboard.type(" for now");
+    await page.keyboard.press("Escape");
+    await expect(box).toHaveCount(0);
+    await expect(edit).toBeFocused();
+    await page.keyboard.press("Enter");
+    await expect(box).toBeFocused();
+    await box.fill("invite only until launch");
+    await page.keyboard.press("Tab");
+    await expect(facts.getByRole("button", { name: "Save as version 2" })).toBeFocused();
+    await page.keyboard.press("Enter");
+    await expect(facts).toContainText("invite only until launch");
+    await expect(box).toHaveCount(0);
+    await expect(edit).toBeFocused();
+  });
+});

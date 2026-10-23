@@ -1,5 +1,5 @@
 // apps/web/brain/TrueNow.tsx
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { friendlyError } from "../today/BriefCard.tsx";
 import { shortDate } from "./format.ts";
 import type { Api, Done, Fact, OpenSourceOptions } from "./types.ts";
@@ -41,10 +41,28 @@ function FactRow({ fact, api, onOpenSource, onDone, onError }: Omit<Props, "fact
   const [busy, setBusy] = useState(false);
   const lock = useRef(false);
   const evidence = fact.evidence[0];
+  const box = useRef<HTMLTextAreaElement>(null);
+  const editBtn = useRef<HTMLButtonElement>(null);
+  const wasEditing = useRef(false);
+  const heldFocus = useRef<HTMLElement | null>(null);
+
+  // Open: focus the box. Closed by Save, Cancel or Escape: back to this fact's Edit button,
+  // once the save has settled and the button is enabled again.
+  useEffect(() => {
+    if (busy) return;
+    if (editing) {
+      if (!wasEditing.current) box.current?.focus();
+      else if (heldFocus.current?.isConnected) heldFocus.current.focus();
+      heldFocus.current = null;
+    } else if (wasEditing.current) editBtn.current?.focus();
+    wasEditing.current = editing;
+  }, [editing, busy]);
 
   async function run(fn: () => Promise<void>) {
     if (lock.current) return;
     lock.current = true;
+    const active = document.activeElement;
+    heldFocus.current = active instanceof HTMLElement ? active : null;
     setBusy(true);
     onError(null);
     try {
@@ -86,19 +104,22 @@ function FactRow({ fact, api, onOpenSource, onDone, onError }: Omit<Props, "fact
   if (editing)
     return (
       <li className="yb-item">
-        <div className="yb-fix">
+        <div
+          className="yb-fix"
+          onKeyDown={(e) => {
+            if (e.key === "Escape" && !busy) setEditing(false);
+          }}
+        >
           <label className="yb-eyebrow" htmlFor={`yb-ef-${fact.id}`}>
             Edit fact
           </label>
           <textarea
+            ref={box}
             id={`yb-ef-${fact.id}`}
             rows={2}
             maxLength={1000}
             value={draft}
             onChange={(e) => setDraft(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Escape") setEditing(false);
-            }}
           />
           <div className="tv-actions">
             <button type="button" className="tv-btn tv-primary tv-sm" disabled={busy} onClick={() => void save()}>
@@ -119,8 +140,10 @@ function FactRow({ fact, api, onOpenSource, onDone, onError }: Omit<Props, "fact
         <p className="yb-fact">{fact.text}</p>
         {fact.editable && (
           <button
+            ref={editBtn}
             type="button"
             className="tv-btn tv-ghost tv-sm"
+            disabled={busy}
             onClick={() => {
               setDraft(fact.value);
               setBase({ version: fact.version, value: fact.value });
