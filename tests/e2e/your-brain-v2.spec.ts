@@ -67,5 +67,11 @@ test("Your brain fits a 320px screen in dark appearance", async ({ browser }) =>
     await openBrain(page);
     await expect(page.getByRole("navigation", { name: "Projects" })).toBeVisible();
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+    const nav = page.getByRole("navigation", { name: "Projects" });
+    const columns = await nav.evaluate((el) => getComputedStyle(el).gridTemplateColumns.trim().split(/\s+/));
+    expect(columns).toHaveLength(1);
+    const last = await nav.locator("li button").last().boundingBox();
+    const fresh = await nav.getByRole("button", { name: "New project" }).boundingBox();
+    expect(fresh!.y).toBeGreaterThanOrEqual(last!.y + last!.height);
   });
 });

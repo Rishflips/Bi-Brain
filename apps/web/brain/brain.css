@@ -27,9 +27,16 @@
 .yb-details summary { cursor: pointer; font-weight: 650; }
 .yb-details[open] summary { margin-bottom: 10px; }
 .yb-original { margin: 0; font: inherit; line-height: 1.55; white-space: pre-wrap; overflow-wrap: anywhere; }
+/* The app-wide nav rules style the main navigation. Take the Projects list back from them in every theme and width. */
+:root:root nav.yb-plist { display: grid; grid-template-columns: minmax(0, 1fr); flex-direction: initial; gap: 10px; overflow: visible; }
+:root:root nav.yb-plist button { width: 100%; justify-content: flex-start; text-align: left; position: static; min-height: 40px; padding: 8px 10px; font-size: 15px; font-weight: 400; white-space: normal; flex: none; gap: 0; border: 1px solid transparent; border-radius: 8px; background: none; box-shadow: none; color: inherit; }
+:root:root nav.yb-plist button:hover { background: none; border-color: var(--line); }
+:root:root nav.yb-plist button[aria-current="page"] { background: var(--surface); border-color: var(--line); font-weight: 700; color: inherit; box-shadow: none; }
+:root:root nav.yb-plist button::before, :root:root nav.yb-plist button[aria-current="page"]::before { content: none; display: none; }
+:root:root nav.yb-plist > button { width: auto; justify-self: start; min-height: 40px; padding: 8px 4px; }
 @media (max-width: 720px) {
   .yb-layout { grid-template-columns: minmax(0, 1fr); gap: 16px; }
   .yb-plist ul { display: flex; flex-wrap: wrap; gap: 6px; }
-  .yb-plist li button { width: auto; border-color: var(--line); }
+  :root:root nav.yb-plist li button { width: auto; border-color: var(--line); }
   .yb-timeline li { grid-template-columns: minmax(0, 1fr); gap: 2px; }
 }
