@@ -80,8 +80,8 @@ test("browser keeps, compares, dismisses and undoes source-cited decision correc
     await save("paid");
     await page.getByRole("button", { name: "Today", exact: true }).click();
     const correction = page.getByRole("article").filter({ hasText: "paid" });
-    await expect(correction).toContainText("free");
-    await expect(correction).toContainText("paid");
+    await expect(correction.getByRole("heading")).toHaveText(`${key.toLowerCase()}: paid`);
+    await expect(correction).toContainText("Replaces: free");
     await current("free");
     // A correction card keeps its change with "Update the decision".
     await keep(page, "paid", "Update the decision");
@@ -97,9 +97,17 @@ test("browser keeps, compares, dismisses and undoes source-cited decision correc
     await save("sponsored");
     await page.getByRole("button", { name: "Today", exact: true }).click();
     const sponsored = page.getByRole("article").filter({ hasText: "sponsored" });
-    await sponsored.getByRole("button", { name: "Dismiss" }).click();
     // Dismiss is sent once the 6-second undo window passes while the owner stays on Today.
-    await page.waitForTimeout(6500);
+    const dismissed = page.waitForResponse(
+      (r) => /\/proposals\/gate\/[^/]+\/review$/.test(new URL(r.url()).pathname) && r.request().method() === "POST",
+      { timeout: 15_000 },
+    );
+    await sponsored.getByRole("button", { name: "Dismiss" }).click();
+    await expect(sponsored).toHaveCount(0);
+    expect((await dismissed).ok()).toBe(true);
+    await page.reload();
+    await page.getByRole("button", { name: "Today", exact: true }).click();
+    await expect(page.getByRole("article").filter({ hasText: "sponsored" })).toHaveCount(0);
     await current("free");
   });
 });

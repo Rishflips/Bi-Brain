@@ -41,6 +41,10 @@ test("a chosen goal in Your brain becomes one reviewed next step on Today", asyn
       .getByLabel("What would success look like?")
       .fill("Complete three interviews and record the clearest learning.");
     await page.getByRole("button", { name: "Save goal", exact: true }).click();
+    // The handoff lists the chosen goal.
+    await page.getByRole("button", { name: "Preview handoff" }).click();
+    await expect(page.getByRole("dialog", { name: "Project handoff" })).toContainText(`${marker} pilot`);
+    await page.getByRole("button", { name: "Close dialog" }).click();
     // Nothing is prepared until the owner asks for it.
     await expect(
       page.getByRole("button", { name: "Prepare now" }),

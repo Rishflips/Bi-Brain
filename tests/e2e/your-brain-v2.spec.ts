@@ -68,7 +68,9 @@ test("Your brain fits a 320px screen in dark appearance", async ({ browser }) =>
   await journey(browser, async (page) => {
     await save(page, "A note with a long unbroken word Supercalifragilisticexpialidocious_and_more_words_here.");
     await page.setViewportSize({ width: 320, height: 760 });
-    await page.emulateMedia({ colorScheme: "dark" });
+    await page.evaluate(() => localStorage.setItem("brain-theme", "dark"));
+    await page.reload();
+    await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
     await openBrain(page);
     await expect(page.getByRole("navigation", { name: "Projects" })).toBeVisible();
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
