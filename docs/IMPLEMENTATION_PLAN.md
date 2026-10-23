@@ -2,6 +2,18 @@
 
 Complete milestones in dependency order. A polished mockup is not a substitute for a persistent vertical slice. Check boxes only after attaching evidence in BUILD_STATE.md.
 
+## Today v2 — 2026-10-23
+
+Plan: `docs/superpowers/plans/2026-10-23-today-v2.md`. Evidence: BUILD_STATE.md, top entry.
+
+- [x] Tasks 1-2: Brief ranking and the Today brief/dismiss/confirm service.
+- [x] Tasks 3-4: keep memories in the owner's words with undo; answer questions from reviewed facts and originals.
+- [x] Tasks 5-6: Today shell with quiet and empty states; one bar that saves or asks.
+- [x] Tasks 7-8: Brief cards with Keep, Fix, Dismiss and Undo; project cards and header status.
+- [x] Task 9: old Today browser tests ported or retired, full verification run (typecheck, lint, Vitest, build, brain-eval, Playwright), screenshots and docs. Vitest: 2 known load-sensitive process tests failed in the full run and passed alone.
+- [ ] Open: after a purge or correction, the saved receipt on Today keeps the old first line until reload (two `test.fail` markers).
+- [ ] Not in this slice: System 1 routing (plan 4), plug-and-play agent install (plan 3), project suggestion after save.
+
 ## M0 — Runnable foundation
 
 - [x] Inspect project and preserve existing work.

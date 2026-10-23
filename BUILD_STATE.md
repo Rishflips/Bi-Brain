@@ -1,6 +1,30 @@
 # Build state
 
-Updated: 2026-10-21
+Updated: 2026-10-23
+
+## 2026-10-23 — Today v2 verified (branch reframe/today-v2, not pushed)
+
+Today is now one bar (save or ask), a Brief of at most three cards with Keep, Fix,
+Dismiss and Undo, project cards and a header status. Local V1 only; no real model
+run and no native client check was part of this slice.
+
+Commands run in this worktree, in order:
+- `npm run typecheck` passed. `npm run lint` passed.
+- `npm test` (Vitest, run alone): 144 of 146 files passed, 1535 tests passed, 2
+  failed, 8 skipped. Both failures are the known load-sensitive process tests:
+  `managed-decision-advisory-process` and `managed-process`. Re-run alone, both
+  files passed (7 of 7 tests).
+- `npm run build` passed. `npm run brain-eval` passed 4 of 4.
+- `npx playwright test --workers=1`: 71 passed, 0 failed (main, today-v2 and
+  empty-brain projects). The first run on the old specs had 35 failures.
+- Old Today specs ported to the new bar; `first-session-journey` and
+  `living-brain-review` retired (they tested the cut first-loop rows and state card).
+- Screenshots (synthetic text, throwaway database): docs/screenshots/today-v2-*.png.
+
+Known gaps: after a purge or a correction, the receipt under the bar keeps the old
+first line until a reload (pinned by two `test.fail` tests). The quiet screenshot
+shows "Background help is off", not "You are caught up", because background help
+was off on the check server.
 
 ## Active delivery — agent continuity workspace
 

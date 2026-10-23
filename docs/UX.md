@@ -63,51 +63,54 @@ Do not force sign-up in the local application. Hosted identity and guest-to-acco
 
 ## Today
 
-Header: Welcome back, followed by a preferred name only if provided.
-Main content:
+Today is for a glance and a decision. It does one job: let the owner save or ask
+from one bar, then look at what changed.
 
-- One highest-value ready item, with up to two additional items collapsed under More prepared work.
-- Pick up where you left off: selected project and latest usable brief.
-- Background help status: paused/active/unavailable, next eligible run, and a control to pause.
+Header: "Good to see you." A small status beside it says what the brain is doing
+in plain words (for example "Caught up", "2 to look at", "Background help off",
+or that the Brief could not be checked).
 
-Empty state: Nothing needs your attention. Your saved work is ready when you are.
-New-user state: invitation to save something, not fictional prior activity.
-Stale state: Last checked on [date]. Connected sources may have changed since then.
-Failed state: Your note is saved. I couldn't prepare the brief. Retry or view original.
+Main content, top to bottom:
 
-Never show success while a job is only queued.
+- **One bar.** A single box that saves or asks. Enter sends it; Shift+Enter adds a
+  new line. A short single line that ends in a question mark switches the bar to
+  Ask. A pasted note is never turned into a question. The owner can switch modes
+  by hand and pick the project to save to.
+  - Saving keeps the original exactly as written and shows a receipt that says
+    so, with an "Open it" button. A failed save says "Not saved." and keeps the
+    text in the box.
+  - Asking answers only from saved material. Reviewed facts show their quote;
+    unreviewed originals are labelled "Original, not reviewed yet". When nothing
+    answers, it says so.
+  - Limits are explained in plain words: 100,000 characters to save, 500 to ask.
+- **The Brief.** At most three things that changed, never a feed. Each card shows
+  why it is here, the evidence quote, and a link to the original. Each card has
+  Keep, Fix and Dismiss. Keep and Dismiss can be undone for a few seconds; Undo
+  never overwrites a later edit. A decision that replaces an earlier one shows
+  the earlier wording.
+- **Quiet is normal.** When nothing needs a decision the Brief says "You are
+  caught up." If background help is off, it says that instead of pretending to
+  watch.
+- **Project cards.** One card per project with a fact count and which agents are
+  connected. A card opens that project in Your brain. If the count cannot be read
+  it says "Facts unavailable right now" rather than guessing.
 
-Today may include a direct “Find something in your brain” action. It navigates to
-real scoped search; it must not masquerade as semantic answering until that
-capability is implemented and verified.
+New brain: a welcome with three ways to start (plug in an agent, paste something,
+import a folder). No fictional activity is shown.
 
-The Today hero places the plain-language orientation beside a compact state card.
-Its label, title, detail, color treatment, and any motion are selected from real
-application state; reduced-motion preference removes all animation. There is no
-decorative neural map or invented relationship display. On a phone, the header
-and navigation stay in document flow so they cannot cover the capture or saved
-receipt.
+Failed state: the note is saved and the Brief says it could not be checked, with a
+way to try again. Never show success while a job is only queued.
 
-### Guided proactive loop
+On a phone the header and navigation stay in document flow so they cannot cover
+the bar or the receipt. Reduced-motion preference removes all animation.
 
-After at least two items exist and the selected project has reusable current
-understanding, Today may offer one calm **Stay ahead** path. It is not a feed and
-it must not appear before first value. The path is derived only from real goal,
-job, proposal, preference and worker state:
+### Goals now live in Your brain
 
-1. Choose one outcome for the selected project.
-2. Request one evidence-linked review. This explicitly enables preparation for
-   that goal, but it does not turn on account-wide background help or paid model
-   processing.
-3. Show queued work as waiting or preparing, never as completed.
-4. When a real proposal is ready, remove the setup card and foreground the
-   existing review surface.
-5. After review, offer Stay ahead as a separate explicit choice. Quiet remains
-   valid; turning it on applies only to goals the owner selected.
-
-A paused goal is shown as paused and can be resumed without silently requesting
-work. Every proposal remains a hypothesis until the owner accepts it, and no
-external action is taken.
+The guided goal flow is no longer on Today. The owner chooses a goal, asks for a
+first review and turns "Keep this up to date" on from Your brain. Once a plan is
+ready it appears on Today as a card in the Brief ("Prepared for your goal"), where
+the owner keeps it, fixes the wording, or dismisses it. No external action is ever
+taken.
 
 ## Prepared item
 

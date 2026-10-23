@@ -12,7 +12,7 @@ you to learn a “second brain” method. The primary experience is simply:
 
 **Save → Continue → Stay ahead**
 
-![BiBrain Today — a truthful living state and direct capture surface](docs/screenshots/first-use.png)
+![BiBrain Today — one bar to save or ask, and a Brief with a found decision, its quote, and Keep, Fix, Dismiss (synthetic sample)](docs/screenshots/today-v2-brief.png)
 
 ## What makes BiBrain different
 
@@ -107,8 +107,9 @@ is not a completed client certification.
 
 ## Product surfaces
 
-- **Today** — truthful brain state, direct capture, useful prepared work, and a
-  quiet caught-up state.
+- **Today** — one bar that saves or asks, a Brief of at most three things that
+  changed (each with its quote and Keep, Fix, Dismiss and Undo), project cards, and
+  a quiet state when nothing needs you.
 - **Your brain** — a real-state Project Focus workspace plus sources, accepted
   understanding, open questions, history, corrections, search, goals, and
   evidence.
