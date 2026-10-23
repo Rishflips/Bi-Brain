@@ -3,7 +3,7 @@ import { detectSecrets } from "../storage/secrets.ts";
 export const QUESTION_LIMIT = 20;
 /** An original with more unmarked questions than this is probably a pasted chat. */
 const MAX_UNMARKED_PER_SOURCE = 3;
-const MARKED = /^(?:open question|still unclear|question|unclear)\s*[:\-–]\s*/iu;
+const MARKED = /^(?:open question|still unclear|question|unclear)\s*:\s*/iu;
 
 export type QuestionSource = {
   id: string;
@@ -28,8 +28,10 @@ export type OpenQuestion = {
   evidence: QuestionEvidence;
 };
 
+type Part = { quote: string; start: number; marked: boolean };
+
 /** Sentences with code-point offsets into the body. A line break always ends one. */
-function sentences(body: string): { quote: string; start: number }[] {
+function sentences(body: string, offset = 0): { quote: string; start: number }[] {
   const chars = Array.from(body);
   const out: { quote: string; start: number }[] = [];
   let start = 0;
@@ -38,7 +40,7 @@ function sentences(body: string): { quote: string; start: number }[] {
     const quote = raw.trim();
     if (!quote) return;
     const lead = Array.from(raw).length - Array.from(raw.trimStart()).length;
-    out.push({ quote, start: start + lead });
+    out.push({ quote, start: offset + start + lead });
   };
   for (let i = 0; i < chars.length; i++) {
     const c = chars[i];
@@ -54,6 +56,25 @@ function sentences(body: string): { quote: string; start: number }[] {
     }
   }
   flush(chars.length);
+  return out;
+}
+
+/** A marked line is one question, taken whole. Other lines are split into sentences. */
+function parts(body: string): Part[] {
+  const out: Part[] = [];
+  let offset = 0;
+  const pieces = body.split(/(\r\n|\n|\r)/u);
+  for (let i = 0; i < pieces.length; i += 2) {
+    const line = pieces[i];
+    const trimmed = line.trim();
+    if (MARKED.test(trimmed)) {
+      const lead = Array.from(line).length - Array.from(line.trimStart()).length;
+      out.push({ quote: trimmed, start: offset + lead, marked: true });
+    } else {
+      for (const p of sentences(line, offset)) out.push({ ...p, marked: false });
+    }
+    offset += Array.from(line).length + Array.from(pieces[i + 1] ?? "").length;
+  }
   return out;
 }
 
@@ -78,12 +99,11 @@ export function findOpenQuestions(
     .filter((s) => s.state === "active")
     .sort((a, b) => b.captured_at.localeCompare(a.captured_at));
   for (const s of newestFirst) {
-    const parts = sentences(s.body);
-    const unmarked = parts.filter((p) => p.quote.endsWith("?") && !MARKED.test(p.quote));
+    const found = parts(s.body);
+    const unmarked = found.filter((p) => !p.marked && p.quote.endsWith("?"));
     const allowUnmarked = unmarked.length <= MAX_UNMARKED_PER_SOURCE;
-    for (const part of parts) {
-      const marked = MARKED.test(part.quote);
-      if (!marked && !(allowUnmarked && part.quote.endsWith("?"))) continue;
+    for (const part of found) {
+      if (!part.marked && !(allowUnmarked && part.quote.endsWith("?"))) continue;
       const text = part.quote.replace(MARKED, "").trim();
       const length = Array.from(text).length;
       if (length < 6 || length > 300) continue;

@@ -98,6 +98,26 @@ describe("findOpenQuestions", () => {
     expect(items).toEqual([]);
   });
 
+  it("takes a marked line whole, even with several sentences or abbreviations", () => {
+    const body =
+      "🙂 Notes\nOpen question: who owns Q3. Alice or Bob?\r\nQuestion: Dr. Chen's review, e.g. the plan?";
+    const { items } = findOpenQuestions([source("m", body)], new Set());
+    expect(items.map((q) => q.text)).toEqual([
+      "who owns Q3. Alice or Bob?",
+      "Dr. Chen's review, e.g. the plan?",
+    ]);
+    expect(items[0].evidence.quote).toBe("Open question: who owns Q3. Alice or Bob?");
+    for (const q of items) expect(quoteAt(body, q.evidence)).toBe(q.evidence.quote);
+  });
+
+  it("does not treat a hyphenated word as a marker", () => {
+    const { items } = findOpenQuestions(
+      [source("qa", "Question-and-answer notes from the call")],
+      new Set(),
+    );
+    expect(items).toEqual([]);
+  });
+
   it("caps the list and reports how many there are", () => {
     const many = Array.from({ length: 30 }, (_, i) =>
       source(
