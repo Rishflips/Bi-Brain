@@ -62,8 +62,8 @@ describe("bibrain connect", () => {
 
     const transport = new StdioClientTransport({ command: process.execPath, args: [cli, "connect", "--connection", g.id, "--data", dir] });
     const client = new Client({ name: "cli-test", version: "1.0.0" });
-    await client.connect(transport);
     cleanup.push(() => client.close());
+    await client.connect(transport);
     const { tools } = await client.listTools();
     expect(tools.map((t) => t.name)).toEqual(expect.arrayContaining(["brain.search", "brain.propose"]));
     const res = await client.callTool({ name: "brain.search", arguments: { project_id: "inbox", query: "anything" } });
@@ -93,6 +93,6 @@ describe("bibrain connect", () => {
     expect(r.status).toBe(1);
     expect(r.stderr).toContain("This BiBrain connection file is damaged. Add the agent again from Connections in BiBrain.");
     expect(r.stderr).not.toContain("SECRETVALUE");
-    expect(r.stderr).not.toContain("at ");
+    expect(r.stderr).not.toMatch(/\n\s+at |\.mjs:\d+/);
   });
 });

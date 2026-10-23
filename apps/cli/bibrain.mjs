@@ -84,13 +84,18 @@ function connect() {
     fail("This BiBrain connection file is damaged. Add the agent again from Connections in BiBrain.");
   }
   if (typeof api !== "string" || typeof key !== "string") fail("This BiBrain connection file is damaged. Add the agent again from Connections in BiBrain.");
+  const env = { ...process.env };
+  delete env.BRAIN_OWNER_SECRET;
+  env.BRAIN_AGENT_TOKEN = key;
+  env.BRAIN_API_URL = api;
   const adapter = spawn(process.execPath, [join(root, "node_modules", "tsx", "dist", "cli.mjs"), join(root, "apps", "mcp", "main.ts")], {
     cwd: root,
     stdio: "inherit",
-    env: { ...process.env, BRAIN_AGENT_TOKEN: key, BRAIN_API_URL: api },
+    env,
   });
   for (const signal of ["SIGINT", "SIGTERM"]) process.on(signal, () => adapter.kill(signal));
-  adapter.on("exit", (code) => process.exit(code ?? 0));
+  adapter.on("error", () => fail("BiBrain could not start its agent connection. Run npm ci in the BiBrain folder, then try again."));
+  adapter.on("exit", (code, signal) => process.exit(code ?? (signal ? 1 : 0)));
 }
 
 const help = `bibrain: start BiBrain and connect agents.
