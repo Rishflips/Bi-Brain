@@ -13,20 +13,12 @@ test("Your brain turns one real project into a focused, portable workspace", asy
     const marker = "Project focus " + Date.now();
 
     await page
-      .locator("main")
-      .getByRole("textbox")
-      .first()
+      .getByLabel("Save to your brain")
       .fill("We decided that " + marker + " is invite only.");
-    await page
-      .locator("main")
-      .getByRole("button", { name: /^save/i })
-      .first()
-      .click();
+    await page.getByRole("button", { name: "Save", exact: true }).click();
+    await expect(page.getByText(/kept exactly as you wrote it/i)).toBeVisible();
 
-    await page
-      .locator('[data-ui="first-session-journey"]')
-      .getByRole("button", { name: "Review memory" })
-      .click();
+    await page.getByRole("button", { name: "Your brain", exact: true }).click();
     const memory = page.locator("article").filter({
       has: page.getByRole("heading", { name: marker.toLowerCase() }),
     });

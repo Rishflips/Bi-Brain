@@ -84,7 +84,9 @@ test("a failed save keeps the draft and claims nothing", async ({ page }) => {
   const bar = page.getByLabel("Save to your brain");
   await bar.fill("Draft that must survive");
   await page.getByRole("button", { name: "Save", exact: true }).click();
-  await expect(page.getByRole("alert")).toContainText(/not saved/i);
+  await expect(
+    page.getByRole("alert").filter({ hasText: /not saved/i }),
+  ).toBeVisible();
   await expect(bar).toHaveValue("Draft that must survive");
   await expect(page.getByText(/kept exactly as you wrote it/i)).toHaveCount(0);
 });
@@ -113,7 +115,9 @@ test("asking answers from saved material, says when nothing matches, and validat
   ).toBeVisible();
   await bar.fill("??");
   await page.keyboard.press("Enter");
-  await expect(page.getByRole("alert")).toContainText(/a few words/i);
+  await expect(
+    page.getByRole("alert").filter({ hasText: /a few words/i }),
+  ).toBeVisible();
 });
 
 test("a two-line note that ends in a question mark is saved, not asked", async ({
@@ -140,9 +144,11 @@ test("a question over 500 characters is refused before it is sent", async ({
   await page.getByRole("button", { name: "Ask mode" }).click();
   await page.getByLabel("Ask your brain").fill("word ".repeat(120));
   await page.getByRole("button", { name: "Ask", exact: true }).click();
-  await expect(page.getByRole("alert")).toContainText(
-    "Questions can be up to 500 characters.",
-  );
+  await expect(
+    page
+      .getByRole("alert")
+      .filter({ hasText: "Questions can be up to 500 characters." }),
+  ).toBeVisible();
   expect(sent).toBe(0);
 });
 
@@ -214,7 +220,9 @@ test("an item acted on in another tab is refused and the brief refreshes", async
     .click();
   await expect(other.getByText(/kept as a fact/i)).toBeVisible();
   await card.getByRole("button", { name: "Keep as true" }).click();
-  await expect(page.getByRole("alert")).toContainText(/changed|already/i);
+  await expect(
+    page.getByRole("alert").filter({ hasText: /changed|already/i }),
+  ).toBeVisible();
   await expect(card).toHaveCount(0);
 });
 
@@ -449,7 +457,9 @@ test("a failed Undo shows a plain alert and focus moves to the Brief heading whe
   await expect(card).toHaveCount(0);
   await expect(page.locator("#tv-brief-h")).toBeFocused();
   await page.getByRole("button", { name: "Undo" }).click();
-  await expect(page.getByRole("alert")).toContainText("changed since");
+  await expect(
+    page.getByRole("alert").filter({ hasText: "changed since" }),
+  ).toBeVisible();
 });
 
 test("Fix puts the cursor in the wording box and Cancel returns to Keep", async ({

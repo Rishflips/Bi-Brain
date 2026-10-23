@@ -11,15 +11,10 @@ test("Connections carries one real project into a reviewed handoff", async ({
     await fixture.open(page);
     const marker = `Agent continuity ${Date.now()}`;
     await page
-      .locator("main")
-      .getByRole("textbox")
-      .first()
+      .getByLabel("Save to your brain")
       .fill(`We decided that ${marker} is source intact.`);
-    await page
-      .locator("main")
-      .getByRole("button", { name: /^save/i })
-      .first()
-      .click();
+    await page.getByRole("button", { name: "Save", exact: true }).click();
+    await expect(page.getByText(/kept exactly as you wrote it/i)).toBeVisible();
 
     await page
       .getByRole("button", { name: "Connections", exact: true })
@@ -29,10 +24,7 @@ test("Connections carries one real project into a reviewed handoff", async ({
     await continuity
       .getByRole("button", { name: "Review before sharing" })
       .click();
-    await page
-      .locator('[data-ui="first-session-journey"]')
-      .getByRole("button", { name: "Review memory" })
-      .click();
+    await page.getByRole("button", { name: "Your brain", exact: true }).click();
     const memory = page.locator("article").filter({
       has: page.getByRole("heading", {
         name: marker.toLowerCase(),

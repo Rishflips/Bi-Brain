@@ -3,6 +3,9 @@ const port = Number(process.env.BRAIN_E2E_PORT ?? 4317);
 // A second server with its own fresh database, so specs that need a genuinely
 // empty brain do not depend on which other specs ran first.
 const emptyPort = Number(process.env.BRAIN_E2E_EMPTY_PORT ?? port + 1);
+// The Today v2 spec reloads the page a lot, so it gets its own server and its own
+// request budget instead of sharing the per-minute limit with every other spec.
+const todayPort = Number(process.env.BRAIN_E2E_TODAY_PORT ?? port + 2);
 const stamp = Date.now();
 export default defineConfig({
   testDir: "tests/e2e",
@@ -12,8 +15,13 @@ export default defineConfig({
   projects: [
     {
       name: "main",
-      testIgnore: /today-v2-empty\.spec\.ts/,
+      testIgnore: /today-v2(-empty)?\.spec\.ts/,
       use: { baseURL: `http://127.0.0.1:${port}` },
+    },
+    {
+      name: "today-v2",
+      testMatch: /today-v2\.spec\.ts/,
+      use: { baseURL: `http://127.0.0.1:${todayPort}` },
     },
     {
       name: "empty-brain",
@@ -40,6 +48,17 @@ export default defineConfig({
       env: {
         BRAIN_PORT: String(emptyPort),
         BRAIN_DB: `data/e2e-empty-${stamp}.sqlite`,
+        BRAIN_OWNER_SECRET: "e2e-local-only",
+      },
+      timeout: 30000,
+    },
+    {
+      command: "npm start",
+      url: `http://127.0.0.1:${todayPort}/api/v1/health/live`,
+      reuseExistingServer: false,
+      env: {
+        BRAIN_PORT: String(todayPort),
+        BRAIN_DB: `data/e2e-today-${stamp}.sqlite`,
         BRAIN_OWNER_SECRET: "e2e-local-only",
       },
       timeout: 30000,
