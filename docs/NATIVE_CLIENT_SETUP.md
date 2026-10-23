@@ -6,7 +6,8 @@ This works in the local app on your own computer. The hosted edition uses
 [Set up by hand](#set-up-by-hand) below.
 
 1. Run `npx bibrain` in the BiBrain folder. BiBrain opens in your browser already
-   signed in.
+   signed in. This runs the copy in your BiBrain folder; nothing is downloaded
+   from npm.
 2. Open **Connections** and choose **Add to Codex** (or **Add to Claude Code**
    or **Add to Cursor**).
 3. Pick the project and the project folder where you open the agent.
@@ -88,7 +89,8 @@ BiBrain does not list), or when you prefer to control each step.
 ### Before connecting
 
 1. Start BiBrain with `npm start` and keep it running.
-2. In **Connections**, choose **Connect an agent**, select Codex or Claude Code,
+2. In **Connections**, open **Any other agent** and choose **Set up by hand**,
+   which opens the Connect an agent dialog. Select Codex or Claude Code,
    keep the default read-only access unless suggestions are needed, and choose a
    short duration. BiBrain defaults to the current project and one day.
 3. Copy the connection key when BiBrain shows it. The key is displayed once.
