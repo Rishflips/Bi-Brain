@@ -163,3 +163,26 @@ test("editing a fact is complete by keyboard and keeps focus in place", async ({
     await expect(edit).toBeFocused();
   });
 });
+
+test("an open question can be marked answered and brought back", async ({ browser }) => {
+  await journey(browser, async (page) => {
+    await save(page, "Launch notes\nOpen question: who writes the launch post?");
+    await openBrain(page);
+    const questions = page.getByRole("region", { name: "Open questions" });
+    const item = questions.getByRole("listitem").filter({ hasText: "who writes the launch post?" });
+    await expect(item).toBeVisible();
+    await item.getByRole("button", { name: "Mark answered" }).click();
+    const toast = page.locator(".tv-toast");
+    await expect(toast).toContainText("Marked as answered.");
+    await expect(item).toHaveCount(0);
+    await expect(questions).toContainText("Nothing open.");
+    await expect(questions.getByRole("heading", { name: "Open questions" })).toBeFocused();
+    await toast.getByRole("button", { name: "Undo" }).click();
+    await expect(item).toHaveCount(1);
+    await item.getByRole("button", { name: "Mark answered" }).click();
+    await expect(item).toHaveCount(0);
+    await page.reload();
+    await openBrain(page);
+    await expect(questions).toContainText("Nothing open.");
+  });
+});

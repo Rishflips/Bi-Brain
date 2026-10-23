@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { friendlyError } from "../today/BriefCard.tsx";
 import { useUndoToast } from "../today/useUndoToast.tsx";
 import { GoalsSection } from "./GoalsSection.tsx";
+import { OpenQuestions } from "./OpenQuestions.tsx";
 import { Originals } from "./Originals.tsx";
 import { PendingReview } from "./PendingReview.tsx";
 import { ProjectList } from "./ProjectList.tsx";
@@ -130,7 +131,15 @@ export function BrainView(props: BrainProps) {
                 onDone={done}
                 onError={setActionError}
               />
-              {/* Task 7 adds OpenQuestions here. */}
+              <OpenQuestions
+                api={api}
+                projectId={projectId}
+                questions={view.questions}
+                total={view.questions_total}
+                onOpenSource={props.onOpenSource}
+                onDone={done}
+                onError={setActionError}
+              />
               <Originals
                 originals={view.originals}
                 total={view.originals_total}
