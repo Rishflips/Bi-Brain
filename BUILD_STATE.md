@@ -19,14 +19,22 @@ Updated: 2026-10-23
   five routes under /api/v1. Removed project-focus.tsx, CurrentKnowledge and
   their CSS. Local V1 only; no real model run.
 
-Verified in this worktree:
+Verified in this worktree at the branch head, after the final-review fixes
+(cff4fd8):
 
 - `npm run typecheck`: clean. `npm run lint`: clean. `npm run build`: clean.
 - `npm run brain-eval`: 4/4 passed.
-- `npx vitest run --reporter=dot`: 153 files passed, 1604 tests passed, 8
-  skipped (1612), EXIT=0, 881s. No flaky test failed in this run.
-- `npx playwright test --workers=1` (after `npm run build`): 92 passed across
-  the four projects, 3.7m.
+- `npx vitest run --reporter=dot`: 1606 tests passed, 8 skipped (1614),
+  EXIT=0, 866s. No flaky test failed in this run.
+- `npx playwright test --workers=1` (after `npm run build`): 93 passed across
+  the four projects, 4.0m.
+
+Final-review fixes: Today and Your brain now share one staleness rule (an
+owner edit counts as a check), focus returns to the restored item after Undo,
+question signatures no longer depend on the host locale, capped search results
+say so, and an unknown saved project falls back to Inbox. Remaining minor
+findings are listed in
+`docs/superpowers/plans/2026-10-23-your-brain-v2-followups.md`.
 
 Known limits:
 

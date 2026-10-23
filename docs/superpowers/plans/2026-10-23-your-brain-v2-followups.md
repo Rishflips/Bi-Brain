@@ -1,0 +1,101 @@
+# Your brain v2 follow-ups
+
+Minor findings from the task and final reviews of `reframe/your-brain-v2`. Each was judged not to block merge: none puts wrong data in front of the owner or weakens authorization, versioning or purge. They are kept here so later plans can pick them up.
+
+- **Task 1:** quarantine-placeholder case in the "ignores…" test passes only because the placeholder has no ? or marker (kept as a regression guard).
+- **Task 1:** test gaps: leading-whitespace offsets, exactly 3 unmarked allowed, 300-char upper bound, cap keeps the newest, gateFitsBrief null/blank cases.
+- **Task 1:** newest-first sort uses localeCompare on captured_at strings; Date.parse would be safer.
+- **Task 1:** unmarked questions keep list markers ("- Do we ship…?"), so they do not dedupe against the bare form.
+- **Task 1:** buildBrief computes evidenceOf twice per gate (brief-mandated, trivial).
+- **Task 1:** a marker mid-line ("Notes. Open question: foo?") is treated as unmarked; it still surfaces if it ends in ? and counts toward the cap.
+- **Task 1:** a marked line whose text exceeds 300 code points is dropped, not truncated.
+- **Task 1:** no test for leading whitespace on a marked line (probe showed offsets correct).
+- **Task 2:** authorization tests use a non-existent grant; they would still pass if this.owner(p) were removed (access() fails first).
+- **Task 2:** decision_history, the needs_decision partition, questions_total/originals_total/ORIGINALS_LIMIT, from agent/import, private:true and corrected-original (Ruling 5) have no direct test.
+- **Task 2:** needs_decision lists queued gates whose original was withdrawn; Accept then refuses with SOURCE_STALE (Reject not checked).
+- **Task 2:** facts, needs_decision and decision_history are unbounded; the last two return raw gate entities (UI must pick fields).
+- **Task 2:** answerQuestion accepts any signature; forged ones could evict real entries from the 500-entry list (owner-only; same as brief_dismissed).
+- **Task 2:** ISO timestamps are ordered with string sort/localeCompare; Date.parse would be sturdier.
+- **Task 2:** a correction gate in project A hides a same-entity stale card in project B on Today, but not in B's per-project count (rare; count one higher).
+- **Task 2:** each project view gathers every project's claims and sources through briefInput (cost scales with the whole brain).
+- **Task 2:** the failed-jobs LIMIT 20 is global, applied before the per-project filter (same as Today, so they agree).
+- **Task 2:** unsalted SHA-256 of a short question can be confirmed by guessing; an HMAC with a per-install secret would fix it.
+- **Task 2:** briefInput is public; it could be private.
+- **Task 3:** the non-statement refusal branch (service.ts:3842) has no test.
+- **Task 3:** negative assertions are bare toThrow(); pin codes (INVALID_INPUT, FORBIDDEN, SOURCE_STALE) and assert the claim stays at v1 after the withdrawn refusal.
+- **Task 3:** no test that claimHistory refuses an unknown id, a non-claim id or a purged claim.
+- **Task 3:** route tests push `void app.close()` into cleanup without awaiting it (the same pattern as brief-service.test.ts).
+- **Task 3:** claimHistory returns every version, uncapped.
+- **Task 4:** the 20-per-kind cap is untested, and truncation gives the UI no "more" signal.
+- **Task 4:** no search-level test that a real fact disappears after its original is withdrawn or corrected, or that a quarantined capture never appears (verified by reading currentClaims/validateEvidence).
+- **Task 4:** quarantined placeholders ("Quarantined source") match searches for "quarantined"/"secret"/"vault" (no leak, consistent with project view and ask).
+- **Task 4:** searchBrain validates every current claim's evidence before text matching (projects × claims DB reads per request), and duplicates the flatMap pattern in ask.
+- **Task 4:** toLocaleLowerCase is host-locale dependent, with no NFC normalisation (same as the old sources() search).
+- **Task 4:** min(2) counts UTF-16 units (one emoji passes, one CJK ideograph is refused).
+- **Task 4:** bare toThrow() assertions and an un-awaited app.close() in cleanup.
+- **Task 4:** per-code-point fold breaks case-insensitive Greek final sigma ("ΟΔΟΣ" vs "οδος" no longer match); native fold plus ς→σ fixes this and the cost below.
+- **Task 4:** per-code-point fold costs ~110 ms for 200×10 KB sources per search (about 120× native).
+- **Task 4:** a query containing a newline matches but its snippet falls back (the query's newlines are not collapsed).
+- **Task 5:** Today's 320px dark test (today-v2.spec.ts) uses emulateMedia, but the app themes through localStorage["brain-theme"], so it never runs dark. (Fixed for Your brain in Task 10.)
+- **Task 5:** `done` captures `load` for the project at click time; switching project before a review returns can show the old project's view until the next 2.5 s poll.
+- **Task 5:** the [projectId] effect does not clear loadError, so an old error shows under the new project until its load resolves.
+- **Task 5:** Originals' "Show 50 more" count survives a project switch (key Originals by projectId).
+- **Task 5:** PendingReview approve/undo reload only BrainView, not the app's shared state (today, notes, nav pill) until the next poll.
+- **Task 5:** copy polish: the region is named "Needs a decision here" even when only history shows; "Undo is refused…" appears on history rows with no Undo; "Prepare now" is disabled with no reason; "Keep raw only" is jargon.
+- **Task 5:** the 320px check covers only an original; EvidenceList, goal rows and decision rows are unchecked; brain.css carries classes for later tasks.
+- **Task 5:** friendlyError is imported from today/BriefCard.tsx, and about 80 lines of goal handlers sit inline in src.tsx JSX (brief-mandated).
+- **Task 5:** the "New project" link inside .yb-plist lost its .tv-link colour and weight, gains a hover border, and sits 6px left of the project names.
+- **Task 5:** .yb-plist buttons hard-code font-size 15px (was 16px via font: inherit).
+- **Task 5:** no test covers the 721-760px window, or dark colours and the 900px ::before bar (verified by a scratchpad harness).
+- **Task 6:** after a 409, Save keeps failing (base is pinned), and the edit view does not show the newer text, so the only exit is Cancel.
+- **Task 6:** the 1,000-character JS check is unreachable because of maxLength; pasted text over the limit is silently truncated.
+- **Task 6:** test strength: the handoff check uses "invite only" (also in the undone text); the last second-tab assertion reads the first tab's view; there is a fixed 3 s sleep; there is no failed-Undo test and no 320px/dark check with a fact row or edit box.
+- **Task 6:** DRY/a11y: run() duplicates BriefCard.run; .yb-fix duplicates .tv-fix; row buttons share names (no aria-label with the fact); the helper text is not aria-describedby; the alert renders at the top of the pane, not by the box.
+- **Task 6:** the focus restore after a save fires once busy clears even if the owner has since moved focus elsewhere (rare, sub-second window).
+- **Task 6:** on Safari or Firefox on macOS a clicked button is not focused, so the failed-save refocus is a no-op; heldFocus is left pointing at a detached node on success.
+- **Task 6:** no tests for Escape ignored while busy, Edit disabled while busy, or focus returning to Save after a failed save.
+- **Task 6:** after "Still true" succeeds, its button unmounts and focus falls to body.
+- **Task 7:** focus moves after Mark answered even if the owner has moved focus elsewhere meanwhile (TrueNow guards this with heldFocus).
+- **Task 7:** after a failed Mark answered, the disabled button loses focus to body in Chrome.
+- **Task 7:** every "Mark answered" button has the same name; add aria-describedby to the question text.
+- **Task 7:** the lock/busy/friendlyError wrapper is duplicated with TrueNow; useRef(new Map()) allocates every render; FocusTarget.next can be the previous question.
+- **Task 7:** if the newest read fails, done resolves on a stale view and the focus target is discarded (the load error is shown, so the offline state is coherent).
+- **Task 7:** the previous-neighbour focus branch is untested; the race test can pass vacuously when a poll precedes done's read (a few percent of runs).
+- **Task 7:** done now waits for the newest read, so persistently slow reads (>2.5 s) delay busy and the toast; the local `self` name shadows window.self.
+- **Task 7:** every 2.5 s poll re-reads the open project even when nothing changed (today is a fresh object), which is the race's root surface; a cheaper refresh key would shrink it.
+- **Task 8:** with a factId, every citing fact's passage is marked and the opened one is not distinguished.
+- **Task 8:** a Brief claim card's quote button passes no factId (only Fix does), so no history is shown from it.
+- **Task 8:** a long original does not scroll the first mark into view, and the highlight is colour only.
+- **Task 8:** the meta line prints the raw state ("withdrawn"); .yb-history text has no overflow-wrap (a long URL may overflow at 320px, unverified).
+- **Task 8:** origin/visibility labels duplicate Originals.tsx and originFrom; highlight helpers re-run Array.from(body) every render with no useMemo; "Earlier version" fires one pointless project fetch.
+- **Task 8:** no tests for the stale-quote note, the Ask and claim-Fix paths, load errors, no-refetch or 320px; toHaveText normalises whitespace (use textContent); browser RED not captured.
+- **Task 8:** the actions block is indented two spaces off; docs/UX.md:46,163 still describe the removed "Edit understanding" and "Continue in another agent".
+- **Task 8:** with a duplicated quote, the first occurrence is marked briefly while the project read is in flight (or for good if it fails), then moves to the cited one.
+- **Task 8:** the stale-options regression test passes with either the close() or the save-path reset alone; the account-switch reset is untested.
+- **Task 9:** no tests for a fact's "Open the original" from search, the project-switch reset (barely reachable) or 320px search hits.
+- **Task 9:** Prettier reflowed unrelated BrainView lines, while BrainSearch keeps lines over 100 columns (no prettier config in the repo).
+- **Task 9:** aria-live wraps the whole results section; a small status node with the count would be tidier.
+- **Task 9:** results blank to "Searching…" on every keystroke (brief-mandated reset inside the effect).
+- **Task 9:** the project-title spans in hits have no overflow-wrap (possible 320px overflow, unverified).
+- **Task 9:** query.trim() is duplicated; the second unmount effect could fold into the first cleanup.
+- **Task 9:** the late-response test's negative assertion can run before React renders the late response (waitForResponse resolves on arrival), so it could occasionally pass vacuously.
+- **Task 9:** in search mode the alerts sit below the results, so a long result list can push them off-screen; Prettier churn in BrainSearch; the failed-search test's page-wide getByRole("alert") is fragile if a global alert is added.
+- **Task 9:** no browser test for a failed Undo, in search mode or otherwise.
+- **Task 10:** the promote test checks the entity and "paused" separately instead of `${entity} is paused.`.
+- **Task 10:** getJson dropped the .ok() checks, so a 4xx/5xx surfaces as an opaque mismatch.
+- **Task 10:** journey/keep helpers are duplicated across review-journeys and your-brain-v2 specs (tests/helpers is the natural home).
+- **Task 10:** no test asserts Today's origin tags ("Found in something you saved", "Changes an earlier decision"), so the auto-found vs owner-supplied distinction is untested.
+- **Task 10:** the Your brain zero state ("nothing waiting") is unasserted.
+- **Task 10:** the handoff download asserts only the filename; the Markdown original only its tail sentinel; README.md:134 still embeds docs/screenshots/project-focus.png, which nothing regenerates.
+- **Task 10:** the commit message does not name context-conflicts.spec.ts as a file or mention the added abstain-before check.
+- **Task 10:** the post-reload "card still gone" check can pass while Today shows "Checking for changes…" (the commit itself is proven by the awaited 2xx).
+- **Task 10:** "Replaces: free" is a substring match; target .tv-before with toHaveText for a strict check.
+- **Task 10:** fixed sleeps remain in today-v2-bar.spec.ts:63, today-v2.spec.ts:274/535 and your-brain-v2.spec.ts:132/314.
+- **Task 11:** the correction card shows only the earlier value, not its cited passage; no test asserts the correction card's quote or its "Changes an earlier decision" label.
+- **Task 11:** decision_history from brainProject has no integration test (the rewritten unit test feeds PendingReview from /api/v1/gates; the e2e covers the real path).
+- **Task 11:** BUILD_STATE.md:19 says CurrentKnowledge's CSS was removed (it had none); the commit message omits the UX.md and test edits.
+- **Task 11:** docs/IMPLEMENTATION_PLAN.md:162 and :238 are checked historical items naming removed features (Copy brief, Project Focus).
+- **Task 11:** docs/UX.md:116 quotes the old no-result copy ("No matching notes…"); :46 says facts "appear" (they appear once kept); :113 lists "Needs a decision here" as always present; :135 says "Preview agent handoff" (the button is "Preview handoff").
+- **Task 11:** docs/UX.md:43-47 and 90-98 describe a "first useful loop" and receipt preparation state that Today v2 removed.
+- **Final review:** done() can land the previous project's view after a project switch; a queued gate with stale evidence is shown nowhere and never rejected; friendlyError's SOURCE_STALE wording is wrong for Edit/Still true; maxLength truncates pasted facts silently; web types re-declare domain types; brainProject cost every 2.5 s; v1 history label ignores which original is viewed; "Prepare now"/"Keep raw only" copy; docs/UX.md:135/138/151 wording; fixed sleep and a negative assertion before render in your-brain-v2.spec; questions.ts depends on packages/storage for detectSecrets.
+- **Final review:** restored/undone focus flags stay set if the re-read after Undo fails; the NFC/NFD test relies on literal bytes (use \u escapes); BrainSearch keeps its own copy of the 20 limit; localStorage brain-project is effectively write-only (the chosen project never survives a reload, pre-existing); other toLocaleLowerCase uses in service.ts and brief.ts carry the same locale risk.

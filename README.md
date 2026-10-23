@@ -75,7 +75,7 @@ merged; Dodo replaces the rejected Paddle setup (see
 [Dodo setup and acceptance](docs/DODO_PAYMENTS.md) for configuration, plan
 mapping, and the real-provider gates). The current branch replaces Today with
 one bar that saves or asks and a Brief of at most three items; its browser
-regression passes 92/92 across its four Playwright projects (see
+regression passes 93/93 across its four Playwright projects (see
 BUILD_STATE.md). Your brain shows each project's facts that are true now, its
 open questions and its originals, and opens any fact on its original with the
 passage highlighted and its history. These are local release gates, not proof
