@@ -1,4 +1,5 @@
 import type { Entity } from "../contracts/index.ts";
+import { factText, valueText as text } from "./facts.ts";
 
 export type BriefKind = "correction" | "proposal" | "failed_job" | "agent_memory" | "memory" | "stale";
 export type BriefEvidence = { source_id: string; source_version: number; quote: string };
@@ -41,15 +42,6 @@ const evidenceOf = (list: unknown): BriefEvidence[] =>
     .filter((e) => e && typeof e.source_id === "string" && typeof e.quote === "string" && e.quote)
     .map((e) => ({ source_id: e.source_id, source_version: Number(e.source_version) || 1, quote: e.quote }));
 
-const text = (v: unknown): string => {
-  if (typeof v === "string") return v;
-  if (typeof v === "number" || typeof v === "boolean") return String(v);
-  try {
-    return JSON.stringify(v) ?? "";
-  } catch {
-    return "";
-  }
-};
 const nonEmpty = (v: unknown): v is string => typeof v === "string" && v.trim().length > 0;
 const time = (v: unknown) => {
   const t = typeof v === "string" ? Date.parse(v) : NaN;
@@ -58,8 +50,18 @@ const time = (v: unknown) => {
 const escapeRegExp = (v: string) => v.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 const factKey = (name: unknown, aspect: unknown) => `${String(name).trim().toLocaleLowerCase()}\u0000${String(aspect)}`;
 
-function factText(entityName: string, aspect: string, value: unknown) {
-  return aspect === "status" ? `${entityName} is ${text(value)}.` : `${entityName}: ${text(value)}`;
+/** Whether a queued review can be a Brief card: it needs evidence, a named fact and a value. */
+export function gateFitsBrief(g: Entity): boolean {
+  const field = g.data.field;
+  return (
+    evidenceOf(g.data.evidence).length > 0 &&
+    !!field &&
+    nonEmpty(g.data.entity) &&
+    nonEmpty(field.aspect) &&
+    field.value !== undefined &&
+    field.value !== null &&
+    text(field.value).trim().length > 0
+  );
 }
 
 export function buildBrief(input: BriefInput, now: Date): { items: BriefItem[]; waiting: number } {
@@ -68,10 +70,9 @@ export function buildBrief(input: BriefInput, now: Date): { items: BriefItem[]; 
 
   for (const g of input.gates) {
     if (g.data.status !== "queued") continue;
+    if (!gateFitsBrief(g)) continue;
     const evidence = evidenceOf(g.data.evidence);
     const field = g.data.field;
-    if (!evidence.length || !field || !nonEmpty(g.data.entity) || !nonEmpty(field.aspect)) continue;
-    if (field.value === undefined || field.value === null || !text(field.value).trim()) continue;
     const actor = String(g.data.actor ?? "owner");
     const agentKey = actor.startsWith("agent:") ? actor.slice(6) : null;
     const agent = agentKey === null ? null : Object.hasOwn(input.agentNames, agentKey) ? input.agentNames[agentKey] : "A connected agent";
