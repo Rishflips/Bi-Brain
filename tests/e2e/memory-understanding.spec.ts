@@ -6,8 +6,8 @@ test.beforeEach(async ({ page }) => {
   await page.getByRole("button", { name: "Open my brain" }).click();
   await expect(
     page
-      .getByRole("heading", { name: "What do you want to pick up later?" })
-      .or(page.getByRole("heading", { name: "Welcome back." })),
+      .getByRole("heading", { name: "Welcome to BiBrain." })
+      .or(page.getByRole("heading", { name: "Good to see you." })),
   ).toBeVisible();
 });
 
@@ -38,9 +38,7 @@ test("plain language becomes a cited suggestion and only reaches agents after re
     .locator("article")
     .filter({ has: page.getByRole("heading", { name: entity }) });
   await expect(candidate.getByText("statement: November 12")).toBeVisible();
-  await expect(
-    candidate.getByText(/Found in ordinary language/),
-  ).toBeVisible();
+  await expect(candidate.getByText(/Found in ordinary language/)).toBeVisible();
 
   const before = await page.request.get(
     `/api/v1/agent/ask?project_id=inbox&question=${encodeURIComponent(entity)}`,
@@ -70,10 +68,10 @@ test("owner can teach a decision from an arbitrary exact passage", async ({
   await page
     .getByLabel("What kind of memory is this?")
     .selectOption("decision");
-  await page
-    .getByLabel("What should BiBrain remember?")
-    .fill("smaller launch");
-  await expect(page.getByLabel("Exact passage from original")).toHaveValue(body);
+  await page.getByLabel("What should BiBrain remember?").fill("smaller launch");
+  await expect(page.getByLabel("Exact passage from original")).toHaveValue(
+    body,
+  );
   await page.getByRole("button", { name: "Send for review" }).click();
 
   const candidate = page

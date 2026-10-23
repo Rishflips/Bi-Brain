@@ -45,7 +45,7 @@ for (const theme of ["light", "dark"] as const) {
       );
       await page.setViewportSize({ width: 320, height: 780 });
       await page.goto(MANAGED_ORIGIN);
-      const composer = page.locator("main textarea").first();
+      const composer = page.getByLabel("Save to your brain");
       await expect(composer).toBeVisible();
       await expect(page.locator("html")).toHaveAttribute("data-theme", theme);
       await expect(page.locator('meta[name="theme-color"]')).toHaveAttribute(
@@ -60,11 +60,11 @@ for (const theme of ["light", "dark"] as const) {
               .size,
         );
       expect(navigationRows).toBe(1);
-      await expect(
-        page
-          .locator("main")
-          .getByRole("button", { name: "Save to my brain", exact: true }),
-      ).toBeDisabled();
+      // An empty Save is refused in plain words and sends nothing.
+      await page.getByRole("button", { name: "Save", exact: true }).click();
+      await expect(page.getByRole("alert")).toContainText(
+        "Type or paste something first.",
+      );
       expect(
         await page.evaluate(
           () => document.documentElement.scrollWidth <= innerWidth,
@@ -91,19 +91,16 @@ for (const theme of ["light", "dark"] as const) {
         handle.release();
       }
       await expect(
-        page.getByRole("status").filter({ hasText: /saved/i }).first(),
+        page.getByText(/kept exactly as you wrote it/i),
       ).toBeVisible();
-      await expect(page.getByTestId("first-note-original")).toHaveText(
-        original,
-      );
+      await page.getByRole("button", { name: "Open it", exact: true }).click();
+      await expect(page.getByTestId("original")).toHaveText(original);
+      await page.getByRole("button", { name: "Close dialog" }).click();
       expect(
         await page.evaluate(
           () => document.documentElement.scrollWidth <= innerWidth,
         ),
       ).toBe(true);
-      await expect(
-        page.getByRole("button", { name: "Find in Your brain", exact: true }),
-      ).toBeVisible();
       await page.screenshot({
         path: `test-results/visible-inline-${theme}-320.png`,
         fullPage: true,
@@ -153,17 +150,12 @@ test("oversized inline input explains the limit and retains the draft without ca
         captureRequests++;
     });
     await page.goto(MANAGED_ORIGIN);
-    await expect(page.locator("main")).toContainText(
-      /100,000 characters.*1 MiB/,
-    );
+    await expect(page.getByLabel("Save to your brain")).toBeVisible();
     const draft = "x".repeat(100001);
-    const composer = page.locator("main textarea").first();
+    const composer = page.getByLabel("Save to your brain");
     await composer.fill(draft);
-    await page
-      .locator("main")
-      .getByRole("button", { name: "Save to my brain", exact: true })
-      .click();
-    await expect(page.getByRole("alert")).toContainText(/100,000|1 MiB/);
+    await page.getByRole("button", { name: "Save", exact: true }).click();
+    await expect(page.getByRole("alert")).toContainText(/100,000 characters/);
     await expect(composer).toHaveValue(draft);
     expect(captureRequests).toBe(0);
     const handle = runtime.acquire(account.id);

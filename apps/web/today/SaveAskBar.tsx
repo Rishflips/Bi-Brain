@@ -1,0 +1,374 @@
+import { useEffect, useRef, useState } from "react";
+import type { Api, AskHit } from "./types.ts";
+
+type Props = {
+  api: Api;
+  projects: { id: string; title: string }[];
+  notes: { id: string; title: string }[];
+  retiredSourceIds: string[];
+  onSaved: (sourceId: string) => void;
+  onOpenSource: (id: string) => void;
+};
+type Result =
+  | {
+      kind: "saved";
+      sourceId: string;
+      /** null when the server kept it protected: no client-built text is shown. */
+      title: string | null;
+      project: string;
+      retiredBase: number;
+    }
+  | {
+      kind: "answer";
+      question: string;
+      hits: AskHit[];
+      /** Every source the answer cites. */
+      cited: string[];
+      /** The cited sources that were in the notes list when the answer was shown. */
+      listed: string[];
+      retiredBase: number;
+    }
+  | null;
+
+const LIMIT = 100_000;
+const QUESTION_LIMIT = 500;
+
+export function SaveAskBar({
+  api,
+  projects,
+  notes,
+  retiredSourceIds,
+  onSaved,
+  onOpenSource,
+}: Props) {
+  const [text, setText] = useState("");
+  const [mode, setMode] = useState<"save" | "ask">("save");
+  const [project, setProject] = useState("inbox");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [result, setResult] = useState<Result>(null);
+  const area = useRef<HTMLTextAreaElement>(null);
+  const inFlight = useRef(false);
+  const latest = useRef("");
+  // True while Ask mode was chosen by the bar itself, not by the owner.
+  const autoAsk = useRef(false);
+  const ask = mode === "ask";
+  // The receipt and the answer follow the current notes. When a note they show
+  // is purged, withdrawn or corrected they go, even if the refresh failed.
+  const [seen, setSeen] = useState(false);
+  const savedId = result?.kind === "saved" ? result.sourceId : null;
+  const current = savedId ? notes.find((n) => n.id === savedId) : undefined;
+  const retiredSince = result ? retiredSourceIds.slice(result.retiredBase) : [];
+  useEffect(() => {
+    if (!result) return;
+    if (result.kind === "saved") {
+      if (retiredSince.includes(result.sourceId) || (seen && !current)) {
+        setResult(null);
+        setSeen(false);
+      } else if (current && !seen) setSeen(true);
+    } else if (
+      result.cited.some((id) => retiredSince.includes(id)) ||
+      result.listed.some((id) => !notes.some((n) => n.id === id))
+    )
+      setResult(null);
+  }, [result, current, seen, notes, retiredSourceIds]);
+
+  function change(value: string) {
+    latest.current = value;
+    setText(value);
+    setError(null);
+    // Only a short single line that ends in "?" switches to Ask. A pasted note is never turned into a question.
+    const question =
+      /\?\s*$/u.test(value) &&
+      !/[\r\n]/u.test(value.trim()) &&
+      Array.from(value.trim()).length <= QUESTION_LIMIT;
+    if (question) {
+      if (!ask) autoAsk.current = true;
+      setMode("ask");
+    } else if (ask && autoAsk.current) {
+      // The bar switched to Ask by itself and the text is no longer a question,
+      // so it goes back to Save. A mode the owner chose is never changed.
+      autoAsk.current = false;
+      setMode("save");
+    }
+  }
+
+  async function submit() {
+    const value = text.trim();
+    if (inFlight.current) return;
+    if (!value) {
+      setError(
+        ask ? "Type a question first." : "Type or paste something first.",
+      );
+      return;
+    }
+    if (!ask && Array.from(value).length > LIMIT) {
+      setError("That is over 100,000 characters. Split it into smaller notes.");
+      return;
+    }
+    if (ask && Array.from(value).length > QUESTION_LIMIT) {
+      setError("Questions can be up to 500 characters.");
+      return;
+    }
+    inFlight.current = true;
+    setBusy(true);
+    setError(null);
+    setResult(null);
+    const submitted = text;
+    try {
+      if (ask) {
+        const out = await api<{ question: string; hits: AskHit[] }>(
+          `/ask?q=${encodeURIComponent(value)}`,
+        );
+        const ids = out.hits.flatMap((h) =>
+          h.type === "fact" ? h.evidence.map((ev) => ev.source_id) : [h.id],
+        );
+        setResult({
+          kind: "answer",
+          question: out.question,
+          hits: out.hits,
+          cited: ids,
+          listed: ids.filter((id) => notes.some((n) => n.id === id)),
+          retiredBase: retiredSourceIds.length,
+        });
+        if (latest.current === submitted) {
+          latest.current = "";
+          setText("");
+        }
+        autoAsk.current = false;
+        setMode("save");
+      } else {
+        const firstLine = value.split("\n")[0];
+        const title =
+          Array.from(firstLine).length > 80
+            ? Array.from(firstLine).slice(0, 79).join("") + "…"
+            : firstLine;
+        const saved = await api<{ source_id: string; quarantined?: boolean }>(
+          "/sources",
+          {
+            title,
+            body: value,
+            project_id: project,
+          },
+        );
+        setSeen(false);
+        setResult({
+          kind: "saved",
+          sourceId: saved.source_id,
+          title: saved.quarantined ? null : title,
+          retiredBase: retiredSourceIds.length,
+          project: projects.find((p) => p.id === project)?.title ?? "Inbox",
+        });
+        if (latest.current === submitted) {
+          latest.current = "";
+          setText("");
+        }
+        onSaved(saved.source_id);
+      }
+    } catch (e) {
+      const message =
+        e instanceof Error ? e.message : "Your brain is unavailable.";
+      setError(
+        ask ? message : `Not saved. ${message} Your text is still here.`,
+      );
+    } finally {
+      inFlight.current = false;
+      setBusy(false);
+    }
+  }
+
+  // A fact is only shown with a non-empty quote.
+  const shown =
+    result?.kind === "answer"
+      ? result.hits.filter(
+          (h) =>
+            h.type !== "fact" ||
+            h.evidence.some((ev) => ev.quote.trim().length > 0),
+        )
+      : [];
+
+  return (
+    <div className="tv-bar-wrap">
+      <form
+        className="tv-bar"
+        onSubmit={(e) => {
+          e.preventDefault();
+          void submit();
+        }}
+      >
+        <label className="tv-sr" htmlFor="tv-bar">
+          {ask ? "Ask your brain" : "Save to your brain"}
+        </label>
+        <span className="tv-sr" aria-live="polite">
+          {ask ? "Ask mode" : "Save mode"}
+        </span>
+        <div className="tv-bar-row">
+          <textarea
+            id="tv-bar"
+            ref={area}
+            rows={2}
+            value={text}
+            placeholder={
+              ask
+                ? "Ask what your brain knows…"
+                : "Paste a note, a decision, or a conversation…"
+            }
+            onChange={(e) => change(e.target.value)}
+            onKeyDown={(e) => {
+              if (
+                e.key === "Enter" &&
+                !e.shiftKey &&
+                !e.nativeEvent.isComposing
+              ) {
+                e.preventDefault();
+                void submit();
+              }
+            }}
+          />
+          <button className="tv-btn tv-primary" type="submit" disabled={busy}>
+            {busy ? (ask ? "Asking…" : "Saving…") : ask ? "Ask" : "Save"}
+          </button>
+        </div>
+        <div className="tv-bar-foot">
+          <div className="tv-seg" role="group" aria-label="What the bar does">
+            <button
+              type="button"
+              aria-label="Save mode"
+              aria-pressed={!ask}
+              onClick={() => {
+                autoAsk.current = false;
+                setMode("save");
+                area.current?.focus();
+              }}
+            >
+              Save
+            </button>
+            <button
+              type="button"
+              aria-label="Ask mode"
+              aria-pressed={ask}
+              onClick={() => {
+                autoAsk.current = false;
+                setMode("ask");
+                area.current?.focus();
+              }}
+            >
+              Ask
+            </button>
+          </div>
+          {!ask && (
+            <label className="tv-faint">
+              Save to{" "}
+              <select
+                value={project}
+                onChange={(e) => setProject(e.target.value)}
+              >
+                {projects.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.title}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
+          <span className="tv-faint">
+            Enter to {ask ? "ask" : "save"} · Shift+Enter for a new line
+          </span>
+        </div>
+      </form>
+      {error && (
+        <p className="tv-error" role="alert">
+          {error}
+        </p>
+      )}
+      {result?.kind === "saved" && (
+        <div className="tv-panel" aria-live="polite">
+          <span className="tv-eyebrow">Saved</span>
+          {result.title === null ? (
+            <p className="tv-faint">
+              Saved privately. It looked like a secret, so it is kept protected
+              and hidden from agents.{" "}
+              <button
+                type="button"
+                className="tv-link"
+                onClick={() => onOpenSource(result.sourceId)}
+              >
+                Open it
+              </button>
+            </p>
+          ) : (
+            <>
+              <p>
+                <b>{current?.title ?? result.title}</b>
+              </p>
+              <p className="tv-faint">
+                In {result.project}. The original is kept exactly as you wrote
+                it.{" "}
+                <button
+                  type="button"
+                  className="tv-link"
+                  onClick={() => onOpenSource(result.sourceId)}
+                >
+                  Open it
+                </button>
+              </p>
+            </>
+          )}
+        </div>
+      )}
+      {result?.kind === "answer" && (
+        <div className="tv-panel" aria-live="polite">
+          <div className="tv-section-head">
+            <span className="tv-eyebrow">From your brain</span>
+            <button
+              type="button"
+              className="tv-btn tv-ghost"
+              onClick={() => setResult(null)}
+            >
+              Close
+            </button>
+          </div>
+          <p className="tv-faint">
+            You asked: <b>{result.question}</b>
+          </p>
+          {shown.length === 0 ? (
+            <p>Nothing in your brain answers that yet.</p>
+          ) : (
+            shown.map((h) => {
+              const quote =
+                h.type === "fact"
+                  ? h.evidence.find((ev) => ev.quote.trim().length > 0)
+                  : undefined;
+              // A fact is never shown without its quote.
+              if (h.type === "fact" && !quote) return null;
+              return (
+                <div className="tv-hit" key={`${h.type}:${h.id}`}>
+                  <span
+                    className={h.type === "fact" ? "tv-tag tv-ok" : "tv-tag"}
+                  >
+                    {h.type === "fact"
+                      ? "Reviewed"
+                      : "Original, not reviewed yet"}
+                  </span>
+                  <p>{h.type === "fact" ? h.text : h.snippet}</p>
+                  <button
+                    type="button"
+                    className="tv-cite"
+                    onClick={() => onOpenSource(quote ? quote.source_id : h.id)}
+                  >
+                    {quote
+                      ? `“${quote.quote}”`
+                      : h.type === "original"
+                        ? h.title
+                        : ""}
+                  </button>
+                </div>
+              );
+            })
+          )}
+          <p className="tv-faint">Answers come only from what is saved here.</p>
+        </div>
+      )}
+    </div>
+  );
+}

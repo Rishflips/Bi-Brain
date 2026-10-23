@@ -1,74 +1,68 @@
 import { expect, test } from "@playwright/test";
 import { firstNoteFixture } from "../helpers/first-note-browser.ts";
 
-test("a chosen goal becomes one reviewed next step without hidden automation", async ({
+// The guided goal flow lives in Your brain. Today only shows the finished,
+// evidence-linked plan in the Brief, where the owner keeps, fixes or dismisses it.
+test("a chosen goal in Your brain becomes one reviewed next step on Today", async ({
   browser,
 }) => {
-  test.setTimeout(60_000);
+  test.setTimeout(90_000);
   const context = await browser.newContext();
   const fixture = await firstNoteFixture(context);
   const page = await context.newPage();
   try {
     await fixture.open(page);
     const marker = `guided goal ${Date.now()}`;
+    const bar = page.getByLabel("Save to your brain");
+    const saveBtn = page.getByRole("button", { name: "Save", exact: true });
 
-    await page
-      .locator("main")
-      .getByRole("textbox")
-      .first()
-      .fill(`The ${marker} is November 12.`);
-    await page
-      .locator("main")
-      .getByRole("button", { name: /^save/i })
-      .first()
-      .click();
-    await page
-      .locator('[data-ui="first-session-journey"]')
-      .getByRole("button", { name: "Review memory" })
-      .click();
+    await bar.fill(`The ${marker} is November 12.`);
+    await saveBtn.click();
+    await expect(page.getByText(/kept exactly as you wrote it/i)).toBeVisible();
+    await bar.fill(
+      `For the ${marker} interview, compare three onboarding notes.`,
+    );
+    await saveBtn.click();
+    await expect(bar).toHaveValue("");
+
+    await page.getByRole("button", { name: "Your brain", exact: true }).click();
     const memory = page
       .locator("article")
       .filter({ has: page.getByRole("heading", { name: marker }) });
     await memory.getByRole("button", { name: "Accept reviewed claim" }).click();
 
-    await page.getByRole("button", { name: "Today", exact: true }).click();
-    await page.getByRole("button", { name: "Save another" }).click();
     await page
-      .locator("main")
-      .getByRole("textbox")
-      .first()
-      .fill(`For the ${marker} interview, compare three onboarding notes.`);
-    await page
-      .locator("main")
-      .getByRole("button", { name: /^save/i })
-      .first()
+      .getByRole("button", { name: "Choose a goal", exact: true })
       .click();
-
-    const guide = page.locator('[data-ui="proactive-goal"]');
-    await expect(guide).toBeVisible();
-    await expect(guide).toContainText(
-      "What should BiBrain help you move forward?",
-    );
-    await guide.getByRole("button", { name: "Choose a goal" }).click();
     await page
       .getByLabel("What do you want to accomplish?")
       .fill(`${marker} pilot`);
     await page
       .getByLabel("What would success look like?")
       .fill("Complete three interviews and record the clearest learning.");
-    await page.getByRole("button", { name: "Save goal" }).click();
-
-    await expect(guide).toContainText(`${marker} pilot`);
+    await page.getByRole("button", { name: "Save goal", exact: true }).click();
+    // Nothing is prepared until the owner asks for it.
     await expect(
-      guide.getByRole("button", { name: "Prepare a first review" }),
-    ).toBeVisible();
-    await guide.screenshot({ path: "docs/screenshots/proactive-goal.png" });
+      page.getByRole("button", { name: "Prepare now" }),
+    ).toBeDisabled();
+    await page.getByLabel("Keep this up to date").check();
+    await expect(
+      page.getByRole("button", { name: "Prepare now" }),
+    ).toBeEnabled();
+    await page.getByRole("button", { name: "Prepare now" }).click();
 
+    for (let index = 0; index < 5; index += 1) await fixture.prepare();
+
+    // Fits a 320px screen in dark appearance with the plan waiting on Today.
     await page.setViewportSize({ width: 320, height: 760 });
     await page.evaluate(() => localStorage.setItem("brain-theme", "dark"));
     await page.reload();
     await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
-    await expect(guide).toBeVisible();
+    await page.getByRole("button", { name: "Today", exact: true }).click();
+    const card = page
+      .getByRole("article")
+      .filter({ hasText: "Prepared for your goal" });
+    await expect(card).toContainText(marker);
     expect(
       await page.evaluate(
         () => document.documentElement.scrollWidth <= window.innerWidth,
@@ -76,27 +70,9 @@ test("a chosen goal becomes one reviewed next step without hidden automation", a
     ).toBe(true);
     await page.setViewportSize({ width: 1280, height: 900 });
 
-    await guide.getByRole("button", { name: "Prepare a first review" }).click();
-    await expect(guide.getByRole("status")).toContainText("Waiting safely");
-
-    for (let index = 0; index < 5; index += 1) await fixture.prepare();
-    await page.reload();
-    await expect(
-      page.getByRole("button", { name: "Review the plan" }),
-    ).toBeVisible();
-    await expect(guide).toHaveCount(0);
-
-    await page.getByRole("button", { name: "Review the plan" }).click();
-    await expect(page.getByRole("dialog")).toContainText(marker);
-    await page.getByRole("button", { name: "Keep this plan" }).click();
-    await expect(guide).toContainText(
-      "Your goal is chosen. You stay in control.",
-    );
-    await guide.getByRole("button", { name: "Turn on Stay ahead" }).click();
-    await expect(guide).toContainText("BiBrain is keeping this goal in view.");
-    await expect(
-      guide.getByRole("button", { name: "Check this goal now" }),
-    ).toBeVisible();
+    await card.getByRole("button", { name: "Keep this plan" }).click();
+    await expect(page.locator(".tv-toast")).toContainText(/plan kept/i);
+    await expect(card).toHaveCount(0);
   } finally {
     await fixture.close();
   }

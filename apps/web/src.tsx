@@ -1,4 +1,10 @@
-import React, { useState, useEffect, useRef, useCallback } from "react";
+import React, {
+  useState,
+  useEffect,
+  useRef,
+  useCallback,
+  useMemo,
+} from "react";
 import { createRoot } from "react-dom/client";
 import type {
   Entity,
@@ -7,20 +13,11 @@ import type {
   Evidence,
 } from "../../packages/contracts/index.ts";
 import sample from "../../fixtures/beta-launch.json" with { type: "json" };
-import {
-  BrainPulse,
-  BrainQuickFind,
-  EvidenceList,
-  ProposalCard,
-  CurrentKnowledge,
-} from "./components.tsx";
-import {
-  FirstNoteComposer,
-  FirstNoteSaved,
-  type FirstNote,
-} from "./first-note.tsx";
+import { EvidenceList, CurrentKnowledge } from "./components.tsx";
 import { SignIn, ConnectionUnavailable, type RuntimeMode } from "./sign-in.tsx";
 import { BrandLockup } from "./brand.tsx";
+import { TodayView } from "./today/TodayView.tsx";
+import "./today/today.css";
 import {
   AgentContinuityWorkspace,
   AgentClientPicker,
@@ -28,11 +25,6 @@ import {
   agentSetupCommand,
   type AgentClient,
 } from "./agent-connection.tsx";
-import {
-  FirstSessionJourney,
-  type FirstSessionMemoryState,
-} from "./first-session.tsx";
-import { ProactiveGoal, type ProactiveGoalState } from "./proactive-goal.tsx";
 import { ProjectFocus, ProjectOverview } from "./project-focus.tsx";
 import "@fontsource-variable/manrope/wght.css";
 import "./style.css";
@@ -265,6 +257,7 @@ function App() {
     [demo, setDemo] = useState(false),
     [projects, setProjects] = useState<any[]>([]),
     [notes, setNotes] = useState<Source[]>([]),
+    [retiredReceipts, setRetiredReceipts] = useState<string[]>([]),
     [today, setToday] = useState<any>({
       briefs: [],
       goals: [],
@@ -304,17 +297,8 @@ function App() {
     [agentClient, setAgentClient] = useState<AgentClient>("codex"),
     [preview, setPreview] = useState<any>(null),
     [snooze, setSnooze] = useState(""),
-    [confirmation, setConfirmation] = useState(""),
-    [firstNote, setFirstNote] = useState<FirstNote | null>(null);
+    [confirmation, setConfirmation] = useState("");
   const preferencesDirty = useRef(false);
-  /**
-   * Monotonic receipt-read sequence. Every read captures the current value and
-   * may only apply its result if it is still the latest read AND the receipt has
-   * not been mutated. `remove`/`edit`/new-capture/account-change advance it, so a
-   * delayed pre-mutation GET can never restore old text or resurrect a removed
-   * original.
-   */
-  const firstNoteReadSeq = useRef(0);
   const [consentOverride, setConsentOverride] = useState<boolean | null>(null);
   // An INDEPENDENT override for the separate decision-stage consent. It is never
   // derived from the master override; an omitted field preserves the RAW stored
@@ -329,6 +313,32 @@ function App() {
   const [searchResults, setSearchResults] = useState<Source[]>([]);
   const [knowledgePages, setKnowledgePages] = useState<any[]>([]);
   const [knowledgeProject, setKnowledgeProject] = useState("");
+  const [briefCount, setBriefCount] = useState<number | null | "unavailable">(
+    null,
+  );
+  // Connections reports no client name, so a verified grant is shown generically.
+  const brainState =
+    notes.length === 0
+      ? "Empty brain"
+      : briefCount === "unavailable"
+        ? "Couldn't check for changes"
+        : !prefs
+          ? ""
+          : !prefs.enabled
+            ? "Background help off"
+            : briefCount === null
+              ? "Checking…"
+              : briefCount > 0
+                ? `${briefCount} to look at`
+                : "Caught up";
+  const agentNamesByProject = useMemo(() => {
+    const map: Record<string, string[]> = {};
+    for (const g of grants)
+      if (g.status === "Connected")
+        for (const id of g.projects ?? [])
+          (map[id] ??= []).push("A connected agent");
+    return map;
+  }, [grants]);
   const [gateQueue, setGateQueue] = useState<Entity[]>([]);
   const [queryPage, setQueryPage] = useState(0);
   const [adapterSelection, setAdapterSelection] = useState<any>(null);
@@ -419,6 +429,7 @@ function App() {
   const resetPersonalState = useCallback(() => {
     setProjects([]);
     setNotes([]);
+    setRetiredReceipts([]);
     setToday({
       briefs: [],
       goals: [],
@@ -428,6 +439,7 @@ function App() {
       status: { jobs: [] },
     });
     setPrefs(null);
+    setBriefCount(null);
     knowledgeReadSeq.current += 1;
     setKnowledgeProject("");
     setKnowledgePages([]);
@@ -443,7 +455,6 @@ function App() {
     setIdentityDisclosure(null);
     setDialog(null);
     setConfirmation("");
-    setFirstNote(null);
     setPreview(null);
     setAdapterSelection(null);
     setAdapterPreview(null);
@@ -480,7 +491,6 @@ function App() {
     setClaimQuote("");
     setBusy(false);
     preferencesDirty.current = false;
-    firstNoteReadSeq.current += 1;
     setConsentOverride(null);
     setDecisionConsentOverride(null);
   }, []);
@@ -829,186 +839,16 @@ function App() {
     setCanWrite(false);
     setDialog("grant");
   }
-  /**
-   * Applies a fresh read of the receipt's source. An explicit NOT_FOUND (404) or
-   * an inactive/withdrawn state removes the retained body immediately; any other
-   * failure keeps the known saved acknowledgement but is marked as a stale view,
-   * so the last loaded text is never presented as the current original.
-   */
-  function applyFirstNoteRead(
-    id: string,
-    loaded: Source | null,
-    failure?: unknown,
-  ) {
-    setFirstNote((current) => {
-      if (!current || current.sourceId !== id) return current;
-      // A terminal removal is never undone by a late read.
-      if (current.removed) return current;
-      if (loaded && loaded.state === "active")
-        return {
-          ...current,
-          source: loaded,
-          sourceError: null,
-          removed: false,
-        };
-      // A non-active state is a real removal.
-      if (loaded)
-        return { ...current, source: null, sourceError: null, removed: true };
-      const gone = failure instanceof ApiError && failure.code === "NOT_FOUND";
-      // An explicit access refusal is treated as removal: the retained body must
-      // never survive a FORBIDDEN/UNAUTHORIZED answer.
-      const denied =
-        failure instanceof ApiError &&
-        (failure.code === "FORBIDDEN" || failure.code === "UNAUTHORIZED");
-      if (gone || denied)
-        return { ...current, source: null, sourceError: null, removed: true };
-      return {
-        ...current,
-        sourceError:
-          failure instanceof Error
-            ? failure.message
-            : "That note could not be opened.",
-      };
-    });
+  /** Makes the Today receipt and answer let go of a note right away. */
+  function retireReceipt(id: string) {
+    setRetiredReceipts((ids) => [...ids, id]);
   }
-  async function loadFirstNoteSource(id: string, generation: number) {
-    const seq = ++firstNoteReadSeq.current;
-    try {
-      const loaded = await api<Source>(`/sources/${id}`);
-      if (generation !== authGeneration || seq !== firstNoteReadSeq.current)
-        return;
-      applyFirstNoteRead(id, loaded);
-    } catch (e) {
-      if (generation !== authGeneration || seq !== firstNoteReadSeq.current)
-        return;
-      applyFirstNoteRead(id, null, e);
-    }
-  }
-  /** Drops the retained body immediately after an edit/withdraw/delete. */
-  function removeFirstNote(id: string) {
-    // Invalidate every in-flight read before clearing the body.
-    firstNoteReadSeq.current += 1;
-    setFirstNote((current) =>
-      current && current.sourceId === id
-        ? { ...current, source: null, sourceError: null, removed: true }
-        : current,
-    );
-  }
-  /** Clears the retained body immediately after an edit, then reloads it. */
-  function resetFirstNoteBody(id: string) {
-    // An older read must not repopulate the pre-edit text.
-    firstNoteReadSeq.current += 1;
-    setFirstNote((current) =>
-      current && current.sourceId === id
-        ? { ...current, source: null, sourceError: null, removed: false }
-        : current,
-    );
-  }
-  async function saveFirstNote(draft: { body: string }) {
-    const generation = authGeneration;
-    const title =
-      draft.body.trim().split("\n")[0].slice(0, 80) || "Untitled note";
-    const saved = await api<{
-      source_id: string;
-      duplicate?: boolean;
-      quarantined?: boolean;
-      warning?: string;
-    }>("/sources", {
-      title,
-      body: draft.body,
-      project_id: "inbox",
-      visibility: "project",
-      separate: false,
-    });
-    if (generation !== authGeneration) return;
-    // A 201 response carries the real persisted `source_id`: acknowledge the
-    // durable save immediately, before any read or refresh can fail.
-    firstNoteReadSeq.current += 1;
-    setFirstNote({
-      sourceId: saved.source_id,
-      duplicate: !!saved.duplicate,
-      quarantined: !!saved.quarantined,
-      warning: saved.warning,
-      source: null,
-      sourceError: null,
-      removed: false,
-    });
-    void loadFirstNoteSource(saved.source_id, generation);
-    // A refresh failure (or a queued/failed worker) must never change the
-    // saved acknowledgement; the background poll retries on its own.
-    void refresh().catch(() => {});
-  }
-  function retryFirstNoteSource() {
-    if (!firstNote) return;
-    setFirstNote((current) =>
-      current ? { ...current, sourceError: null } : current,
-    );
-    void loadFirstNoteSource(firstNote.sourceId, authGeneration);
-  }
-  function findFirstNote() {
-    const loaded = firstNote?.source;
-    // Inline capture always writes to Inbox. Even when the source read failed,
-    // the known trusted scope is Inbox: clear any older project/search selection
-    // so the view is never an unrelated project or a stale query. The raw draft
-    // is never used as a fallback.
-    setScope(loaded ? loaded.project_id : "inbox");
-    setSearch(loaded ? loaded.title : "");
-    setQueryPage(0);
-    setNav("Your brain");
-  }
-  function openFirstNote() {
-    if (!firstNote?.source) return;
-    void openSource(firstNote.source.id);
-  }
-  /**
-   * Revalidates the receipt's original on every refresh (including another tab
-   * or a correction/withdrawal made elsewhere). It clears the retained body on a
-   * 404/inactive source and marks a transient failure as a stale view rather
-   * than claiming it is current.
-   */
-  useEffect(() => {
-    if (!paired || demo) return;
-    const id = firstNote?.sourceId;
-    if (!id || firstNote?.removed) return;
-    void loadFirstNoteSource(id, authGeneration);
-    // Revalidated whenever the fetched workspace changes; the note id/removal
-    // gate the effect so a removed original is never resurrected. The read
-    // sequence fence discards any late pre-mutation response.
-  }, [paired, demo, firstNote?.sourceId, firstNote?.removed, today]);
   /**
    * The preview must be genuinely source-bound. Items are kept only when ALL of
    * their evidence points at this exact source id and version, so a project-wide
    * brief that cites other notes can never have its clauses shown as this note's
    * preview. A stale (non-current) brief is never shown.
    */
-  const firstNoteBrief =
-    firstNote?.source != null
-      ? (today.briefs.find(
-          (b: Entity) =>
-            b.project_id === firstNote.source!.project_id &&
-            b.data.status === "current",
-        ) ?? null)
-      : null;
-  const firstNotePreviewItems =
-    firstNote?.source && !firstNote.sourceError && !firstNote.removed
-      ? (firstNoteBrief?.data.items ?? []).filter((item: any) => {
-          const evidence = item.evidence ?? [];
-          // Keep the item ONLY when all of its citations are this exact saved
-          // source/version. A mixed-source clause is suppressed rather than
-          // stripped of its inconvenient citations.
-          return (
-            evidence.length > 0 &&
-            evidence.every(
-              (e: any) =>
-                e.source_id === firstNote!.source!.id &&
-                e.source_version === firstNote!.source!.version,
-            )
-          );
-        })
-      : [];
-  const firstNotePreviewMode = firstNotePreviewItems.length
-    ? (firstNoteBrief?.data.mode ?? null)
-    : null;
   async function openSource(id: string) {
     await act(async () => {
       setSource(await api(`/sources/${id}`));
@@ -1024,46 +864,10 @@ function App() {
   const ready = today.proposals.filter(
     (p: Entity) => p.data.status === "ready",
   );
-  const hasActiveJobs = today.status.jobs.some((job: any) =>
-    ["queued", "leased"].includes(job.status),
-  );
-  const hasStaleUnderstanding = today.briefs.some(
-    (item: Entity) => item.data.status !== "current",
-  );
-  const firstSessionProject = notes[0]?.project_id ?? "inbox";
-  const firstSessionSourceId = notes[0]?.id;
-  const firstSessionKnowledgeInScope =
-    (scope || "inbox") === firstSessionProject;
   const scopedKnowledgePages =
     knowledgeProject === (scope || "inbox") ? knowledgePages : [];
   const scopedGateQueue =
     knowledgeProject === (scope || "inbox") ? gateQueue : [];
-  const firstSessionMemoryState: FirstSessionMemoryState =
-    firstSessionKnowledgeInScope &&
-    scopedKnowledgePages.some((page) =>
-      page.current?.some((claim: Entity) =>
-        (claim.data.evidence ?? []).some(
-          (evidence: Evidence) => evidence.source_id === firstSessionSourceId,
-        ),
-      ),
-    )
-      ? "accepted"
-      : firstSessionKnowledgeInScope &&
-          scopedGateQueue.some(
-            (item) =>
-              item.data.status === "queued" &&
-              (item.data.evidence ?? []).some(
-                (evidence: Evidence) =>
-                  evidence.source_id === firstSessionSourceId,
-              ),
-          )
-        ? "pending"
-        : "searchable";
-  const firstSessionConnected = grants.some(
-    (grant) =>
-      grant.status === "Connected" &&
-      grant.projects?.includes(firstSessionProject),
-  );
   const target = scope || "inbox";
   const focusProject = scope || "inbox";
   const focusSources = notes.filter((item) => item.project_id === focusProject);
@@ -1139,46 +943,6 @@ function App() {
       ).length,
     };
   });
-  const proactiveProject = scope || "inbox";
-  const proactiveGoal =
-    today.goals.find(
-      (goal: Entity) =>
-        goal.project_id === proactiveProject && goal.data.status === "active",
-    ) ??
-    today.goals.find(
-      (goal: Entity) =>
-        goal.project_id === proactiveProject && goal.data.status === "paused",
-    );
-  const proactiveReady = proactiveGoal
-    ? ready.some((item: Entity) => item.data.goal_id === proactiveGoal.id)
-    : false;
-  const proactivePreparing = proactiveGoal
-    ? today.status.jobs.some(
-        (job: any) =>
-          job.project_id === proactiveGoal.project_id &&
-          job.kind === "review_changed_assumption" &&
-          ["queued", "running", "leased", "retry_wait"].includes(job.status),
-      )
-    : false;
-  const hasUsefulUnderstanding =
-    scopedKnowledgePages.some((page) => page.current?.length > 0) ||
-    today.briefs.some(
-      (item: Entity) =>
-        item.project_id === proactiveProject && item.data.status === "current",
-    );
-  const proactiveState: ProactiveGoalState = !proactiveGoal
-    ? "choose"
-    : proactiveGoal.data.status === "paused"
-      ? "paused"
-      : proactivePreparing
-        ? "preparing"
-        : proactiveGoal.data.preparation_enabled
-          ? "watching"
-          : "selected";
-  const showProactiveGoal =
-    notes.length >= 2 &&
-    !proactiveReady &&
-    (!!proactiveGoal || hasUsefulUnderstanding);
   const field = (label: string, child: React.ReactNode) => (
     <label className="field">
       {label}
@@ -1193,16 +957,6 @@ function App() {
   // recovery state. It makes the unavailable boundary legible and preserves
   // the safety contract that a runtime discovery failure can never look paired.
   const showProductShell = paired || demo || phase === "unknown";
-  function reviewProposal(item: Entity) {
-    setProposal(item);
-    setArtifact(item.data.artifact);
-    setDialog("review");
-  }
-  function snoozeProposal(item: Entity) {
-    setProposal(item);
-    setSnooze("");
-    setDialog("snooze");
-  }
   async function importFile(file?: File) {
     if (!file) return;
     if (file.size > 4 * 1048576)
@@ -1232,6 +986,11 @@ function App() {
             <BrandLockup className="masthead-lockup" />
             <span className="tagline">One brain. Every agent.</span>
           </a>
+          {brainState ? (
+            <span className="tv-state" role="status">
+              {brainState}
+            </span>
+          ) : null}
           <button
             className="primary"
             data-ui="save-something"
@@ -1348,360 +1107,26 @@ function App() {
               </article>
             </section>
           ) : nav === "Today" ? (
-            <section className="today-view">
-              <div className="today-hero">
-                <div className="today-intro">
-                  <p className="eyebrow">
-                    {new Intl.DateTimeFormat("en", { weekday: "long" })
-                      .format(new Date())
-                      .toUpperCase()}{" "}
-                    · YOUR PRIVATE SPACE
-                  </p>
-                  <h1>
-                    {notes.length
-                      ? "Welcome back."
-                      : "What do you want to pick up later?"}
-                  </h1>
-                  <p className="lede">
-                    {notes.length
-                      ? "Everything you saved is ready to continue—here or with a connected agent."
-                      : "Drop in anything worth keeping. BiBrain will hold the thread."}
-                  </p>
-                </div>
-                <BrainPulse
-                  hasSavedWork={notes.length > 0}
-                  readyCount={ready.length}
-                  hasActiveJobs={hasActiveJobs}
-                  hasStaleUnderstanding={hasStaleUnderstanding}
-                  preparationEnabled={!!prefs?.enabled}
-                  workerOnline={!!today.status.worker_online}
-                />
-              </div>
-              {notes.length ? (
-                <BrainQuickFind
-                  onFind={(query) => {
-                    setSearch(query);
-                    setQueryPage(0);
-                    setNav("Your brain");
-                  }}
-                />
-              ) : null}
-              {firstNote ? (
-                <FirstNoteSaved
-                  note={firstNote}
-                  projectName={projectName}
-                  previewMode={firstNotePreviewMode}
-                  previewItems={firstNotePreviewItems}
-                  workerOnline={!!today.status.worker_online}
-                  onRetryOpen={retryFirstNoteSource}
-                  onFind={findFirstNote}
-                  onOpen={openFirstNote}
-                  onOpenEvidence={(id) => void openSource(id)}
-                  onSaveAnother={() => setFirstNote(null)}
-                />
-              ) : !notes.length ? (
-                <FirstNoteComposer
-                  providerEnabled={!!prefs?.provider_enabled}
-                  onSave={saveFirstNote}
-                  onTryExample={() => setDemo(true)}
-                />
-              ) : null}
-              {notes.length === 1 ? (
-                <FirstSessionJourney
-                  memoryState={firstSessionMemoryState}
-                  connected={firstSessionConnected}
-                  shareable={notes[0].visibility === "project"}
-                  onOpenMemory={() => {
-                    setScope(firstSessionProject);
-                    setNav("Your brain");
-                  }}
-                  onFind={() => {
-                    setScope(firstSessionProject);
-                    setSearch(notes[0].title);
-                    setQueryPage(0);
-                    setNav("Your brain");
-                  }}
-                  onConnect={() => {
-                    setScope(firstSessionProject);
-                    setNav("Connections");
-                  }}
-                />
-              ) : null}
-              {notes.length && ready.length ? (
-                <>
-                  {today.pings?.some(
-                    (ping: Entity) => ping.data.proposal_id === ready[0].id,
-                  ) ? (
-                    <p className="status">
-                      One next step from a goal you chose is ready to review.
-                    </p>
-                  ) : null}
-                  <ProposalCard
-                    item={ready[0]}
-                    project={projectName(ready[0].project_id)}
-                    onReview={reviewProposal}
-                    onSnooze={snoozeProposal}
-                  />
-                  {ready.length > 1 ? (
-                    <details>
-                      <summary>More ready for you ({ready.length - 1})</summary>
-                      {ready.slice(1, 3).map((p: Entity) => (
-                        <ProposalCard
-                          key={p.id}
-                          item={p}
-                          project={projectName(p.project_id)}
-                          onReview={reviewProposal}
-                          onSnooze={snoozeProposal}
-                        />
-                      ))}
-                    </details>
-                  ) : null}
-                </>
-              ) : null}
-              {showProactiveGoal ? (
-                <ProactiveGoal
-                  state={proactiveState}
-                  goalTitle={proactiveGoal?.data.title}
-                  projectTitle={projectName(proactiveProject)}
-                  stayAhead={!!prefs?.enabled}
-                  workerOnline={!!today.status.worker_online}
-                  onChoose={() => {
-                    setCaptureScope(proactiveProject);
-                    setDialog("goal");
-                  }}
-                  onPrepare={() => {
-                    if (!proactiveGoal) return;
-                    void act(async () => {
-                      if (!proactiveGoal.data.preparation_enabled)
-                        await api(
-                          `/goals/${proactiveGoal.id}`,
-                          {
-                            expected_version: proactiveGoal.version,
-                            preparation_enabled: true,
-                          },
-                          "PATCH",
-                        );
-                      try {
-                        await api(`/goals/${proactiveGoal.id}/prepare`, {});
-                      } finally {
-                        // The goal opt-in may already be durable if the enqueue
-                        // request fails. Refresh so the UI never hides that
-                        // partial, retryable state behind stale local data.
-                        await refresh();
-                      }
-                      setNotice(
-                        "Review requested. Nothing changes until you approve it.",
-                      );
-                    });
-                  }}
-                  onEnableStayAhead={() =>
-                    void act(async () => {
-                      setPrefs(
-                        await api(
-                          "/preferences/background",
-                          backgroundPatchBody({ enabled: true }),
-                          "PATCH",
-                        ),
-                      );
-                      await refresh();
-                      setNotice(
-                        "Stay ahead is on for goals you explicitly selected.",
-                      );
-                    })
-                  }
-                  onResume={() => {
-                    if (!proactiveGoal) return;
-                    void act(async () => {
-                      await api(
-                        `/goals/${proactiveGoal.id}`,
-                        {
-                          expected_version: proactiveGoal.version,
-                          status: "active",
-                        },
-                        "PATCH",
-                      );
-                      await refresh();
-                      setNotice("Goal resumed. No preparation was requested.");
-                    });
-                  }}
-                  onViewGoal={() => setNav("Your brain")}
-                />
-              ) : null}
-              {notes.length && !firstNote ? (
-                <>
-                  <div className="section-heading">
-                    <p className="eyebrow">ADD TO YOUR BRAIN</p>
-                  </div>
-                  <FirstNoteComposer
-                    providerEnabled={!!prefs?.provider_enabled}
-                    onSave={saveFirstNote}
-                    onTryExample={() => setDemo(true)}
-                  />
-                </>
-              ) : null}
-              {notes.length ? (
-                <>
-                  <div className="section-heading">
-                    <p className="eyebrow">PICK UP WHERE YOU LEFT OFF</p>
-                    <button
-                      className="link"
-                      onClick={() => setNav("Your brain")}
-                    >
-                      View your brain →
-                    </button>
-                  </div>
-                  {today.briefs.slice(0, 3).map((b: Entity) => (
-                    <article className="resume row" key={b.id}>
-                      <div>
-                        <span className="muted">
-                          {projectName(b.project_id)}
-                        </span>
-                        <h3>{b.data.title}</h3>
-                        <p>
-                          {b.data.status === "current"
-                            ? b.data.mode
-                            : "Updating understanding · earlier context is stale"}
-                        </p>
-                      </div>
-                      <button
-                        disabled={b.data.status !== "current"}
-                        onClick={() => {
-                          setBrief(b);
-                          setDialog("continue");
-                        }}
-                      >
-                        Use with an agent
-                      </button>
-                    </article>
-                  ))}
-                </>
-              ) : null}
-              {today.receipts
-                .filter((r: Entity) => r.data.outcome === "accepted")
-                .map((r: Entity) => (
-                  <article key={r.id}>
-                    <h3>
-                      {r.data.reverted ? "Plan change undone" : "Plan accepted"}
-                    </h3>
-                    <p>
-                      Your reviewed plan is saved in {projectName(r.project_id)}
-                      .
-                    </p>
-                    {!r.data.reverted ? (
-                      <button
-                        onClick={() =>
-                          void act(async () => {
-                            try {
-                              await api(`/receipts/${r.id}/undo`, {
-                                expected_version: r.data.applied_version,
-                              });
-                            } catch (err) {
-                              if (
-                                !(err instanceof ApiError) ||
-                                err.code !== "VERSION_CONFLICT"
-                              )
-                                throw err;
-                              const current = await api("/today");
-                              setToday(current);
-                              const goal = current.goals.find(
-                                (g: Entity) => g.id === r.data.goal_id,
-                              );
-                              if (!goal) throw err;
-                              setComparison({ receipt: r, goal });
-                              setDialog("compare");
-                              return;
-                            }
-                            await refresh();
-                            setNotice("Acceptance undone with a new revision.");
-                          })
-                        }
-                      >
-                        Undo acceptance
-                      </button>
-                    ) : null}
-                  </article>
-                ))}
-              {today.proposals.some(
-                (p: Entity) => p.data.status !== "prepared",
-              ) ? (
-                <details>
-                  <summary>Earlier preparation</summary>
-                  {today.proposals
-                    .filter((p: Entity) => p.data.status !== "prepared")
-                    .slice(0, 20)
-                    .map((p: Entity) => (
-                      <article key={p.id}>
-                        <h3>{projectName(p.project_id)}</h3>
-                        <p>
-                          {p.data.status === "invalidated"
-                            ? "Evidence changed. This suggestion is no longer current."
-                            : p.data.status === "snoozed"
-                              ? `Snoozed until ${new Date(p.data.until).toLocaleString()}.`
-                              : p.data.status === "dismissed"
-                                ? "Dismissed by you."
-                                : p.data.status === "accepted"
-                                  ? "Accepted by you."
-                                  : p.data.status === "reverted"
-                                    ? "Acceptance undone."
-                                    : "This preparation is no longer active."}
-                        </p>
-                      </article>
-                    ))}
-                </details>
-              ) : null}
-              {today.receipts.some(
-                (r: Entity) => r.data.outcome !== "accepted",
-              ) ? (
-                <details>
-                  <summary>What changed</summary>
-                  {today.receipts
-                    .filter((r: Entity) => r.data.outcome !== "accepted")
-                    .slice(0, 20)
-                    .map((r: Entity) => (
-                      <p key={r.id}>
-                        {projectName(r.project_id)}:{" "}
-                        {r.data.outcome === "no_change"
-                          ? "Nothing new to review."
-                          : r.data.outcome === "failed"
-                            ? "Preparation failed. Your saved work remains available."
-                            : r.data.outcome === "abstained"
-                              ? "Not enough reliable context to prepare a suggestion."
-                              : "A check completed; review your current context."}
-                      </p>
-                    ))}
-                </details>
-              ) : null}
-              <div className="background row">
-                <div>
-                  <h3>Stay ahead is {prefs?.enabled ? "on" : "paused"}</h3>
-                  <p>
-                    {today.status.worker_online
-                      ? "This computer is ready to prepare selected work."
-                      : "Preparation is offline. Start the worker to prepare saved work."}
-                  </p>
-                  <small>
-                    Chosen goals only · at most one in-app prompt per local day
-                    · no external sending
-                  </small>
-                </div>
-                <button
-                  className="link"
-                  onClick={() =>
-                    void act(async () => {
-                      setPrefs(
-                        await api(
-                          "/preferences/background",
-                          backgroundPatchBody({ enabled: !prefs?.enabled }),
-                          "PATCH",
-                        ),
-                      );
-                    })
-                  }
-                >
-                  {prefs?.enabled ? "Pause" : "Turn on"}
-                </button>
-              </div>
-            </section>
+            <TodayView
+              api={api}
+              projects={projects.map((p: any) => ({
+                id: p.id,
+                title: p.title,
+              }))}
+              sourceCount={notes.length}
+              notes={notes.map((n) => ({ id: n.id, title: n.title }))}
+              retiredSourceIds={retiredReceipts}
+              backgroundOn={!!prefs?.enabled}
+              agentNamesByProject={agentNamesByProject}
+              onOpenSource={(id) => void openSource(id)}
+              onOpenProject={(id) => {
+                setScope(id);
+                setNav("Your brain");
+              }}
+              onNavigate={(to) => setNav(to)}
+              onChanged={() => void refresh()}
+              onBriefCount={setBriefCount}
+            />
           ) : nav === "Your brain" ? (
             <section className="brain-view" data-ui="brain-library">
               <p className="eyebrow">SAVE → CONTINUE</p>
@@ -3250,10 +2675,7 @@ function App() {
                         visibility,
                       }),
                     );
-                    if (source.id === firstNote?.sourceId) {
-                      resetFirstNoteBody(source.id);
-                      void loadFirstNoteSource(source.id, authGeneration);
-                    }
+                    setRetiredReceipts((ids) => [...ids, source.id]);
                     await refresh();
                     setDialog("source");
                     setNotice(
@@ -3406,7 +2828,7 @@ function App() {
                     await api(`/sources/${source.id}/withdraw`, {
                       expected_version: source.version,
                     });
-                    removeFirstNote(source.id);
+                    retireReceipt(source.id);
                     await refresh();
                     close();
                     setNotice("Source withdrawn from active retrieval.");
@@ -3437,14 +2859,14 @@ function App() {
                         failure.code === "FORGET_INCOMPLETE"
                       ) {
                         setForgetNeedsRetry(source.id);
-                        removeFirstNote(source.id);
+                        retireReceipt(source.id);
                       }
                       throw failure;
                     });
                     setForgetNeedsRetry(null);
                     setForgetProof(result.proof ?? null);
                     setSource(null);
-                    removeFirstNote(source.id);
+                    retireReceipt(source.id);
                     await refresh();
                     close();
                     setNotice(
@@ -3474,7 +2896,7 @@ function App() {
                       setForgetProof(proof);
                       setForgetNeedsRetry(null);
                       setSource(null);
-                      removeFirstNote(source.id);
+                      retireReceipt(source.id);
                       await refresh();
                       close();
                       setNotice(

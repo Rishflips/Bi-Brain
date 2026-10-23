@@ -1,6 +1,38 @@
 # Build state
 
-Updated: 2026-10-21
+Updated: 2026-10-23
+
+## 2026-10-23 — Today v2 verified (branch reframe/today-v2, PR #20)
+
+PR #20 CI repair: patched vite 8.3.4, vitest 5.0.5, fastify 5.12.7, hono 4.13.13
+and ip-address 10.7.4 (`npm audit`: 0 vulnerabilities), then merged main after
+PR #19 (Dodo). Counts below are from the run before that merge.
+
+Today is one bar (save or ask), a Brief of at most three cards with Keep, Fix,
+Dismiss and Undo, and project cards. Local V1 only; no real model run and no
+native client check in this slice.
+
+Final review fixes: a failed-preparation card goes when its note is purged or
+withdrawn; Undo after Keep returns the card to the Brief; the Ask answer clears
+when any cited note is purged; Fix starts from the proposed wording; an automatic
+Ask goes back to Save when the "?" is deleted; a dismissal still waiting is
+dropped, not sent, when the owner leaves Today. Old Today code and CSS removed.
+
+Commands, in order (final run, nothing else running):
+- `npm run typecheck`, `npm run lint` and `npm run build` passed.
+- `npx playwright test --workers=1`: 78 passed, 0 failed (main, today-v2,
+  today-v2-bar and empty-brain projects; extra projects on ports 4327-4329).
+- `npx vitest run` (alone): 1540 passed, 1 failed, 8 skipped. The failure is
+  `managed-process.test.ts`, which also failed on clean main and failed again when
+  re-run alone. `managed-decision-advisory-process.test.ts` passed this time; it
+  had failed only under load in earlier full runs and passed when re-run alone.
+- Retired earlier: `first-session-journey` and `living-brain-review` specs, the
+  saved-note preview test and the delayed pre-purge read test (those features were cut).
+- Screenshots (synthetic, throwaway database): docs/screenshots/today-v2-*.png.
+
+Limits: no System 1 routing yet (plan 4), no plug-and-play install yet (plan 3),
+no project suggestion after save. today-v2.spec.ts is close to the server's
+1000 requests a minute limit; add new Today journeys to today-v2-bar.spec.ts.
 
 ## Active delivery — Dodo Payments and dependency repair
 

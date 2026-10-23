@@ -12,13 +12,13 @@ import { firstNoteFixture } from "../helpers/first-note-browser.ts";
 
 /**
  * Independent regressions for the approved first-note slice:
- * a calm inline composer on Today -> durable saved confirmation -> find and
+ * one bar on Today -> durable saved confirmation -> find and
  * reopen in "Your brain" after a real browser reload.
  *
- * Selector contract (kept semantic so accessible names may still evolve):
- *  - the composer textbox is the textbox inside `main` on the empty Today view;
- *  - the primary save control is the `main` button whose name starts with "Save";
- *  - the durable confirmation is a `role=status` / "saved" message.
+ * Selector contract (Today v2):
+ *  - the bar textbox is labelled "Save to your brain";
+ *  - the save control is the button named exactly "Save";
+ *  - the durable confirmation reads "kept exactly as you wrote it".
  * The tests assert real server behavior (`/api/v1/sources`, `/api/v1/search`)
  * and the `source_id` returned by an actual capture. Failure is injected once
  * for the draft-retention case only; no successful persistence is ever faked.
@@ -27,21 +27,19 @@ import { firstNoteFixture } from "../helpers/first-note-browser.ts";
 test.setTimeout(60_000);
 
 function todayComposer(page: Page) {
-  return page
-    .locator("main")
-    .getByRole("textbox", { name: "Write a note", exact: true });
+  return page.getByLabel("Save to your brain");
 }
 function todaySave(page: Page) {
-  return page.locator("main").getByRole("button", { name: /^save/i }).first();
+  return page.getByRole("button", { name: "Save", exact: true });
 }
 function savedConfirmation(page: Page) {
-  return page
-    .getByRole("status")
-    .filter({ hasText: /saved/i })
-    .or(page.getByText(/saved to your brain/i));
+  return page.getByText(/kept exactly as you wrote it/i);
 }
 async function reopenInBrain(page: Page, marker: string): Promise<void> {
   await page.getByRole("button", { name: "Your brain", exact: true }).click();
+  await expect(
+    page.getByRole("heading", { name: "Your brain", exact: true }),
+  ).toBeVisible();
   await page.getByLabel("Search saved material").fill(marker);
   const result = page
     .getByRole("button", {
@@ -79,21 +77,12 @@ test("inline capture keeps a real Unicode multiline original across reload", asy
     // The ID returned by the real capture resolves to the exact original text.
     expect(f.source(sourceId).body).toBe(body);
 
-    await page
-      .getByRole("button", { name: "Find in Your brain", exact: true })
-      .click();
-    await expect(
-      page.getByRole("heading", { name: "Your brain", exact: true }),
-    ).toBeVisible();
     await reopenInBrain(page, marker);
     await expect(page.getByTestId("original")).toHaveText(body);
     await page.getByRole("button", { name: "Close dialog" }).click();
 
     // A genuine browser reload must still find and reopen the same original.
     await page.reload();
-    await expect(
-      page.getByRole("heading", { name: "Your brain", exact: true }),
-    ).toBeVisible();
     await reopenInBrain(page, marker);
     await expect(page.getByTestId("original")).toHaveText(body);
   } finally {
@@ -123,6 +112,7 @@ test("failed save keeps the inline draft, surfaces failure and invents no succes
     const composer = todayComposer(page);
     await composer.fill(body);
     await todaySave(page).click();
+    await expect(page.getByRole("alert")).toContainText(/not saved/i);
     await expect(page.getByRole("alert")).toContainText(/unavailable/i);
     await expect(composer).toHaveValue(body);
     await expect(savedConfirmation(page)).toHaveCount(0);

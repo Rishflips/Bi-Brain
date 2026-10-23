@@ -12,7 +12,7 @@ you to learn a “second brain” method. The primary experience is simply:
 
 **Save → Continue → Stay ahead**
 
-![BiBrain Today — a truthful living state and direct capture surface](docs/screenshots/first-use.png)
+![BiBrain Today — one bar to save or ask, and a Brief with a found decision, its quote, and Keep, Fix, Dismiss (synthetic sample)](docs/screenshots/today-v2-brief.png)
 
 ## What makes BiBrain different
 
@@ -26,8 +26,9 @@ you to learn a “second brain” method. The primary experience is simply:
   keeps quiet when nothing is useful, and never silently takes external action.
 - **Local ownership is real.** The self-hosted edition works without an account,
   subscription, model key, or remote telemetry.
-- **The interface reflects real state.** Its compact state card can be ready,
-  organizing, waiting, refreshing, caught up, or quiet—never fake “AI thinking.”
+- **The interface reflects real state.** Today shows a single bar to save or ask
+  and a short Brief; it says plainly when it is caught up, offline, or unable to
+  check—never fake “AI thinking.”
 
 ## What works today
 
@@ -36,16 +37,18 @@ The merged application provides a complete single-owner local workflow:
 1. Pair a browser to the local installation.
 2. Save text, Markdown, notes, decisions, or supported conversation exports.
 3. Keep immutable source versions in SQLite plus the portable Git-backed vault.
-4. Follow one quiet first-session loop from saved original to reviewed meaning,
-   search, and optional agent continuity; it disappears as the brain grows.
+4. Use Today: one bar to save a note or ask what your brain knows, and a Brief
+   of at most three things that changed. Each card shows its evidence and offers
+   Keep, Fix or Dismiss; Keep and Dismiss can be undone. When nothing needs you,
+   it says you are caught up.
 5. Review one clear memory suggested from ordinary language, or teach BiBrain
    the meaning of any exact passage. Nothing becomes current until you approve it.
 6. Search the full retained text and reopen the original.
 7. Copy an exact project handoff, or connect Codex or Claude Code through a
    guided, expiring, project-scoped permission flow.
-8. Move from reviewed understanding into one guided proactive loop: choose a
-   goal, request one source-linked review, then explicitly turn on quiet
-   background preparation if you want it.
+8. Choose a goal in Your brain, request one source-linked review of it, and
+   explicitly turn on quiet background preparation if you want it. Prepared
+   plans reach Today's Brief for you to keep, fix or dismiss.
 9. Open any project as a focused workspace for current understanding, open
    questions, chosen direction, recent originals, and an exact agent handoff.
 10. Back up, restore, withdraw, delete, and revoke access with explicit safeguards.
@@ -67,13 +70,14 @@ processed a real payment.
 | Agent connections          | Read-only native recall/correction/privacy/revocation verified in Codex 0.156.1 and Claude Code 2.1.283; broader native write workflows remain unverified |
 | Public cloud release       | Not deployed; hosting, legal, support, and human-pilot gates remain open                                                                    |
 
-PR #18's project continuity workspace is merged. Its PR workflow passed the full
-release gate, including 54 browser journeys. The subsequent merged-main security
-audit found Vite/Hono advisories; this delivery updates the pinned dependency
-tree and replaces the rejected Paddle setup with Dodo Payments. See
-[Dodo setup and acceptance](docs/DODO_PAYMENTS.md) for configuration, plan mapping,
-and the real-provider gates. Local tests do not establish a human usability pilot,
-live model quality, native-agent compatibility, real payment, or target-host operations. See
+PR #18's project continuity workspace and PR #19's Dodo Payments boundary are
+merged; Dodo replaces the rejected Paddle setup (see
+[Dodo setup and acceptance](docs/DODO_PAYMENTS.md) for configuration, plan
+mapping, and the real-provider gates). The current branch replaces Today with
+one bar that saves or asks and a Brief of at most three items; its browser
+regression passes 78/78 (see BUILD_STATE.md). These are local release gates,
+not proof of a human usability pilot, live model quality, native-agent
+compatibility, real payment, or target-host operations. See
 [BUILD_STATE.md](BUILD_STATE.md) for commands, exact scope, and known limits.
 
 ## Quick start
@@ -107,8 +111,9 @@ is not a completed client certification.
 
 ## Product surfaces
 
-- **Today** — truthful brain state, direct capture, useful prepared work, and a
-  quiet caught-up state.
+- **Today** — one bar that saves or asks, a Brief of at most three things that
+  changed (each with its quote and Keep, Fix, Dismiss and Undo), project cards, and
+  a quiet state when nothing needs you.
 - **Your brain** — a real-state Project Focus workspace plus sources, accepted
   understanding, open questions, history, corrections, search, goals, and
   evidence.
@@ -122,9 +127,9 @@ Technical terms such as models, queues, tokens, classifiers, and MCP stay out of
 the primary flow. Every visible control either works or states why it is
 unavailable.
 
-![BiBrain first useful loop — synthetic item with owner-reviewed meaning](docs/screenshots/first-session.png)
+![BiBrain Today — asking the bar a question; the answer quotes the saved original (synthetic sample)](docs/screenshots/today-v2-ask.png)
 
-![BiBrain guided proactive goal — synthetic chosen goal before any preparation](docs/screenshots/proactive-goal.png)
+![BiBrain Today at 320px in dark appearance — the Brief card with its evidence (synthetic sample)](docs/screenshots/today-v2-brief-320-dark.png)
 
 ![BiBrain Project Focus — synthetic reviewed memory, goal, and retained original](docs/screenshots/project-focus.png)
 

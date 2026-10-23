@@ -45,6 +45,8 @@ import {
   type AdvisoryRecord,
 } from "./decision-advisory.ts";
 import { extractReviewableMemory } from "./memory-understanding.ts";
+import { buildBrief, type BriefJob } from "./brief.ts";
+import { questionWords, rankAnswers } from "./ask.ts";
 import {
   attemptReferencesSource,
   claimDecisionAttempt,
@@ -553,6 +555,7 @@ export class Brain {
         this.invalidate(v.project_id);
         const job = this.enqueue(v.project_id, "derive_brief", {
           principal: p,
+          source_id: id,
         });
         if (!fromGate && !quarantined && v.visibility === "project") {
           // A bounded deterministic grammar can suggest one unambiguous memory
@@ -2325,19 +2328,34 @@ export class Brain {
       .object({
         action: z.enum(["accept", "reject", "undo"]),
         expected_version: z.number().int().positive(),
+        value: z.string().trim().min(1).max(1000).optional(),
       })
       .strict()
       .parse(input);
+    if (v.value !== undefined && v.action !== "accept")
+      throw new BrainError(
+        "INVALID_INPUT",
+        "Only a kept memory can use your wording.",
+      );
     return this.store.transaction(() => {
       const gate = this.entity(p, id);
       if (gate.kind !== "gate")
         throw new BrainError("INVALID_INPUT", "Not a pending review.");
       requireVersion(gate.version, v.expected_version);
+      if (v.value !== undefined && gate.data.field?.aspect !== "statement")
+        throw new BrainError(
+          "INVALID_INPUT",
+          "Your wording can replace a statement, not a status.",
+        );
+      const acceptedValue = v.value ?? gate.data.field?.value;
       if (v.action === "undo") {
-        if (!gate.data.correction || gate.data.status !== "accepted")
+        if (gate.data.status !== "accepted" ||
+          gate.data.type === "intent" ||
+          gate.data.intent_id ||
+          !gate.data.field || !(gate.data.claim_ids ?? []).length)
           throw new BrainError(
             "VERSION_CONFLICT",
-            "Only an approved correction can be undone.",
+            "Only a kept memory can be undone.",
             409,
           );
         const approved = (gate.data.claim_ids as string[]).map((claimId) =>
@@ -2363,7 +2381,7 @@ export class Brain {
             409,
           );
         const restore = (
-          gate.data.conflicts as { id: string; version: number }[]
+          (gate.data.conflicts ?? []) as { id: string; version: number }[]
         ).map((ref) => {
           const c = this.entity(p, ref.id);
           requireVersion(c.version, ref.version + 1);
@@ -2410,15 +2428,20 @@ export class Brain {
             retirement_reason: "owner_undo",
           });
         for (const { c, data } of restore) this.revise(c, data);
-        this.revise(gate, {
-          ...gate.data,
-          status: "reverted",
-          reverted_at: this.now(),
-        });
+        // A plain kept memory goes back to waiting for review so its card
+        // returns; a correction stays reverted (the earlier decision is restored).
+        const { reviewed_at: _reviewedAt, claim_ids: _claimIds, ...rest } = gate.data;
+        const revertedGate = this.revise(
+          gate,
+          gate.data.correction
+            ? { ...gate.data, status: "reverted", reverted_at: this.now() }
+            : { ...rest, status: "queued" },
+        );
         return {
           reviewed: true,
           claim_ids: restore.map(({ c }) => c.id),
           intent_id: undefined,
+          gate_version: revertedGate.version,
         };
       }
       if (gate.data.status !== "queued")
@@ -2493,7 +2516,8 @@ export class Brain {
         const claim = this.createEntity(gate.project_id, "claim", {
           entity: gate.data.entity,
           aspect: field.aspect,
-          value: field.value,
+          value: acceptedValue,
+          edited_by_owner: v.value !== undefined,
           source_id: source.id,
           source_version: source.version,
           agent: gate.data.actor,
@@ -2572,14 +2596,19 @@ export class Brain {
           intentId = target.id;
         }
       }
-      this.revise(gate, {
+      const revisedGate = this.revise(gate, {
         ...gate.data,
         status: v.action === "accept" ? "accepted" : "rejected",
         reviewed_at: this.now(),
         claim_ids: claims,
         intent_id: intentId,
       });
-      return { reviewed: true, claim_ids: claims, intent_id: intentId };
+      return {
+        reviewed: true,
+        claim_ids: claims,
+        intent_id: intentId,
+        gate_version: revisedGate.version,
+      };
     });
   }
   retireClaim(p: Principal, id: string, expected: number) {
@@ -3646,6 +3675,101 @@ export class Brain {
       this.store.run("DELETE FROM imports WHERE id=?", id);
       return { imported: true };
     });
+  }
+  brief(p: Principal) {
+    this.owner(p);
+    const projects = this.projects(p) as { id: string }[];
+    const current = (project: string, list: unknown) =>
+      Array.isArray(list) && list.length > 0 && (list as Evidence[]).every((e) => this.evidenceCurrent(project, e));
+    const gates = this.entities(p, "gate").filter(
+      (g) => g.data.status === "queued" && current(g.project_id, g.data.evidence),
+    );
+    const proposals = this.entities(p, "proposal").filter(
+      (x) => x.data.status === "ready" && current(x.project_id, x.data.evidence),
+    );
+    const claims = projects.flatMap((project) => this.currentClaims(p, project.id));
+    const failedJobs = this.store
+      .all<{ id: string; project_id: string; kind: string; attempts: number; created_at: string; payload: string }>(
+        "SELECT id,project_id,kind,attempts,created_at,payload FROM jobs WHERE status='failed' AND kind IN ('derive_brief','review_changed_assumption') ORDER BY created_at DESC LIMIT 20",
+      )
+      .filter((job) => {
+        let source_id: unknown;
+        try {
+          source_id = JSON.parse(job.payload)?.source_id;
+        } catch {
+          return true;
+        }
+        if (typeof source_id !== "string") return true;
+        return (
+          this.store.get<{ state: string }>("SELECT state FROM sources WHERE id=?", source_id)?.state === "active"
+        );
+      })
+      .map(({ payload, ...job }): BriefJob => {
+        let source_id: unknown;
+        try {
+          source_id = JSON.parse(payload)?.source_id;
+        } catch {
+          source_id = undefined;
+        }
+        return typeof source_id === "string" ? { ...job, source_id } : job;
+      });
+    const sources = projects.flatMap((project) =>
+      this.sources(p, project.id).map((s) => ({
+        id: s.id,
+        project_id: s.project_id,
+        body: s.body,
+        captured_at: s.captured_at,
+      })),
+    );
+    // Grants carry no display name, so every connected agent is named generically.
+    const agentNames = Object.fromEntries(
+      (this.connections(p) as unknown as { id: string }[]).map((g) => [g.id, "A connected agent"]),
+    );
+    return buildBrief(
+      {
+        gates,
+        proposals,
+        claims,
+        failedJobs,
+        sources,
+        dismissed: this.store.setting<string[]>("brief_dismissed", []),
+        confirmations: this.store.setting<Record<string, string>>("claim_confirmations", {}),
+        agentNames,
+      },
+      this.clock(),
+    );
+  }
+  dismissBriefItem(p: Principal, input: unknown) {
+    this.owner(p);
+    const v = z.object({ signature: z.string().min(1).max(300) }).strict().parse(input);
+    const list = this.store.setting<string[]>("brief_dismissed", []);
+    if (!list.includes(v.signature)) this.store.set("brief_dismissed", [...list, v.signature].slice(-500));
+    return { dismissed: true as const };
+  }
+  confirmClaim(p: Principal, id: string) {
+    this.owner(p);
+    id = z.string().min(1).max(100).parse(id);
+    const claim = this.store.get<{ project_id: string; kind: string }>(
+      "SELECT project_id,kind FROM entities WHERE id=?",
+      id,
+    );
+    if (!claim || claim.kind !== "claim" || !this.currentClaims(p, claim.project_id).some((c) => c.id === id))
+      throw new BrainError("NOT_FOUND", "Fact unavailable.", 404);
+    const confirmed_at = this.now();
+    const map = this.store.setting<Record<string, string>>("claim_confirmations", {});
+    this.store.set("claim_confirmations", { ...map, [id]: confirmed_at });
+    return { id, confirmed_at };
+  }
+  ask(p: Principal, input: unknown) {
+    this.owner(p);
+    const v = z.object({ q: z.string().trim().min(1).max(500) }).strict().parse(input);
+    if (!questionWords(v.q).length)
+      throw new BrainError("INVALID_INPUT", "Ask with a few words, for example: When does the beta open?");
+    const projects = this.projects(p) as { id: string }[];
+    const claims = projects.flatMap((project) => this.currentClaims(p, project.id));
+    const sources = projects.flatMap((project) => this.sources(p, project.id));
+    const hits = rankAnswers(v.q, claims, sources, 3);
+    return { question: v.q, hits, answered: hits.length > 0 };
   }
   status(p: Principal) {
     this.owner(p);
