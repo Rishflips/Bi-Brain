@@ -36,6 +36,7 @@ import {
   paidProcessingBlockedSetting,
 } from "../storage/spend.ts";
 import { safeAdd } from "./spend.ts";
+import { agentDisplayName } from "./agents.ts";
 import type { ManagedSpendView } from "./managed-spend.ts";
 import {
   advisorySourceBodyHash,
@@ -1973,12 +1974,15 @@ export class Brain {
     this.owner(p);
     return this.store
       .all(
-        "SELECT id,projects,operations,expires_at,revoked_at,last_verified_at FROM grants",
+        "SELECT id,projects,operations,expires_at,revoked_at,last_verified_at,client,folder FROM grants",
       )
       .map((g) => ({
         ...g,
         projects: JSON.parse(g.projects),
         operations: JSON.parse(g.operations),
+        client: g.client ?? "other",
+        client_name: agentDisplayName(g.client),
+        folder: g.folder ?? null,
         status: g.revoked_at
           ? "Revoked"
           : g.expires_at <= this.now()
@@ -1992,6 +1996,9 @@ export class Brain {
     this.owner(p);
     const v = z
       .object({
+        id: z.uuid().optional(),
+        client: z.enum(["codex", "claude-code", "cursor", "other"]).default("other"),
+        folder: z.string().max(1000).optional(),
         projects: z.array(z.string()).min(1).max(30),
         operations: z
           .array(z.enum(["read", "propose_memory", "forget"]))
@@ -2006,15 +2013,17 @@ export class Brain {
         "INVALID_INPUT",
         "Expiration must be in the future.",
       );
-    const id = randomUUID(),
+    const id = v.id ?? randomUUID(),
       token = randomBytes(32).toString("hex");
     this.store.run(
-      "INSERT INTO grants VALUES(?,?,?,?,?,NULL,NULL)",
+      "INSERT INTO grants(id,token_hash,projects,operations,expires_at,revoked_at,last_verified_at,client,folder) VALUES(?,?,?,?,?,NULL,NULL,?,?)",
       id,
       hash(token),
       JSON.stringify(v.projects),
       JSON.stringify(v.operations),
       new Date(v.expires_at).toISOString(),
+      v.client,
+      v.folder ?? null,
     );
     return { id, token };
   }
@@ -3729,7 +3738,7 @@ export class Brain {
     );
     // Grants carry no display name, so every connected agent is named generically.
     const agentNames = Object.fromEntries(
-      (this.connections(p) as unknown as { id: string }[]).map((g) => [g.id, "A connected agent"]),
+      (this.connections(p) as unknown as { id: string; client: string }[]).map((g) => [g.id, agentDisplayName(g.client)]),
     );
     return {
       gates,

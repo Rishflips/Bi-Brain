@@ -31,7 +31,7 @@ export class Storage {
       Number(
         this.db.prepare("SELECT max(version) AS version FROM migrations").get()
           ?.version,
-      ) > 5
+      ) > 6
     ) {
       this.db.close();
       throw new Error(
@@ -144,6 +144,16 @@ export class Storage {
       OR NEW.fence<>OLD.fence OR NEW.claimed_at<>OLD.claimed_at
     BEGIN SELECT RAISE(ABORT,'advisory attempt identity is immutable'); END;
     INSERT OR IGNORE INTO migrations VALUES(5,strftime('%Y-%m-%dT%H:%M:%fZ','now'));`);
+    });
+    this.transaction(() => {
+      const columns = this.all("PRAGMA table_info(grants)").map((c) => c.name);
+      if (!columns.includes("client"))
+        this.db.exec("ALTER TABLE grants ADD COLUMN client TEXT");
+      if (!columns.includes("folder"))
+        this.db.exec("ALTER TABLE grants ADD COLUMN folder TEXT");
+      this.db.exec(
+        "INSERT OR IGNORE INTO migrations VALUES(6,strftime('%Y-%m-%dT%H:%M:%fZ','now'));",
+      );
     });
     const vaultRoot =
       options.vault ??

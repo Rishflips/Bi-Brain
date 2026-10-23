@@ -135,7 +135,7 @@ it("migrates a genuine tenant v4 database to 5 without rewriting originals, raw 
   let store: Storage | undefined;
   try {
     store = new Storage(f.path);
-    expect(store.get("SELECT MAX(version) AS version FROM migrations")?.version).toBe(5);
+    expect(store.get("SELECT MAX(version) AS version FROM migrations")?.version).toBe(6);
     expect(
       store.get("SELECT name FROM sqlite_master WHERE type='table' AND name='advisory_attempts'")?.name,
     ).toBe("advisory_attempts");
@@ -151,7 +151,7 @@ it("migrates a genuine tenant v4 database to 5 without rewriting originals, raw 
     store.close();
     store = new Storage(f.path);
     expect(store.get("SELECT COUNT(*) AS count FROM migrations WHERE version=5")?.count).toBe(1);
-    expect(store.get("SELECT MAX(version) AS version FROM migrations")?.version).toBe(5);
+    expect(store.get("SELECT MAX(version) AS version FROM migrations")?.version).toBe(6);
     expect(store.all("SELECT * FROM provider_dispatches ORDER BY call_id")).toEqual(f.before.dispatches);
   } finally {
     store?.close();
@@ -194,16 +194,16 @@ it("rolls the whole advisory DDL back if the v5 marker write fails, holding orig
   }
 });
 
-it("refuses a tenant schema newer than 5 without changing retained data", () => {
+it("refuses a tenant schema newer than 6 without changing retained data", () => {
   const f = seeded();
   try {
     const db = new DatabaseSync(f.path);
-    db.prepare("INSERT INTO migrations VALUES(?,?)").run(6, AT);
+    db.prepare("INSERT INTO migrations VALUES(?,?)").run(7, AT);
     db.close();
     expect(() => new Storage(f.path)).toThrow(/newer Bi Brain version/);
     const check = new DatabaseSync(f.path);
     try {
-      expect(check.prepare("SELECT MAX(version) AS version FROM migrations").get()?.version).toBe(6);
+      expect(check.prepare("SELECT MAX(version) AS version FROM migrations").get()?.version).toBe(7);
       expect(check.prepare("SELECT * FROM provider_dispatches ORDER BY call_id").all()).toEqual(f.before.dispatches);
       expect(check.prepare("SELECT * FROM source_versions ORDER BY source_id,version").all()).toEqual(f.before.sources);
       expect(check.prepare("SELECT name FROM sqlite_master WHERE name='advisory_attempts'").get()).toBeUndefined();

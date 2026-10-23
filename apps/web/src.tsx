@@ -332,7 +332,7 @@ function App() {
     for (const g of grants)
       if (g.status === "Connected")
         for (const id of g.projects ?? [])
-          (map[id] ??= []).push("A connected agent");
+          (map[id] ??= []).push(g.client_name ?? "A connected agent");
     return map;
   }, [grants]);
   const [adapterSelection, setAdapterSelection] = useState<any>(null);
