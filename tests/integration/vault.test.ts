@@ -6,6 +6,9 @@ import {
   readdirSync,
   rmSync,
   copyFileSync,
+  mkdirSync,
+  writeFileSync,
+  utimesSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -582,3 +585,60 @@ it("replays a committed but unacknowledged vault journal after injected publish 
     });
   }
 });
+
+// A forced stop (SIGKILL, power loss, Windows TerminateProcess) during the
+// journal's `git add`/`git commit` kills git too and leaves its own lock file
+// behind. The vault write lock already tolerates a dead owner; git's lock must
+// not wedge recovery of an already-committed journal.
+it.each(["index.lock", "refs/heads/main.lock"])(
+  "recovers a pending vault journal when a killed git left %s behind",
+  (lockName) => {
+    const dir = mkdtempSync(join(tmpdir(), "brain-stale-git-lock-"));
+    const path = join(dir, "brain.sqlite"),
+      root = join(dir, "vault");
+    try {
+      let s = new Storage(path, { vault: root });
+      s.vault = new Vault(root, (step) => {
+        if (step === "manifest_published") throw new Error("injected stop");
+      });
+      expect(() =>
+        new Brain(s).capture(
+          { kind: "owner" },
+          { title: "Killed", body: "STALE_GIT_LOCK_SENTINEL" },
+        ),
+      ).toThrow("injected stop");
+      s.close();
+      expect(existsSync(join(root + "-protected", "journal.json"))).toBe(true);
+
+      // The lock a killed git leaves, made old enough that no live git owns it.
+      const lock = join(root, ".git", ...lockName.split("/"));
+      mkdirSync(join(lock, ".."), { recursive: true });
+      writeFileSync(lock, "");
+      const longAgo = new Date(Date.now() - 60_000);
+      utimesSync(lock, longAgo, longAgo);
+
+      s = new Storage(path, { vault: root });
+      expect(JSON.stringify(s.vault!.read())).toContain(
+        "STALE_GIT_LOCK_SENTINEL",
+      );
+      expect(existsSync(join(root + "-protected", "journal.json"))).toBe(false);
+      expect(existsSync(lock)).toBe(false);
+      expect(s.vault!.git("log", "-1", "--format=%s")).toContain(
+        "Publish generation",
+      );
+      s.close();
+    } finally {
+      // A Storage constructor that throws leaves its SQLite handle open on
+      // Windows; cleanup must not replace the real failure with an EPERM.
+      try {
+        rmSync(dir, {
+          recursive: true,
+          force: true,
+          maxRetries: 10,
+          retryDelay: 100,
+        });
+      } catch {}
+    }
+  },
+  20000,
+);
