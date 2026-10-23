@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { friendlyError } from "../today/BriefCard.tsx";
 import { AgentTile } from "./AgentTile.tsx";
+import { ConnectionList } from "./ConnectionList.tsx";
 import type { AgentInfo, AgentsStatus, Api, Grant } from "./types.ts";
 
 const KNOWN: AgentInfo[] = [
@@ -36,6 +37,8 @@ export function ConnectionsView({ api, projects, projectId, grants, onChanged, o
     };
   }, [api]);
   const clients = status?.clients.length ? status.clients : KNOWN;
+  // "Other" and any client this screen has no tile for end up with the handoff tile, so no live access is hidden.
+  const otherGrants = grants.filter((g) => !clients.some((c) => c.client === g.client));
   return (
     <section className="cx" aria-labelledby="cx-h">
       <h1 id="cx-h" className="tv-title">
@@ -65,6 +68,7 @@ export function ConnectionsView({ api, projects, projectId, grants, onChanged, o
         <section className="cx-tile" aria-labelledby="cx-other-h">
           <h2 id="cx-other-h">Any other agent</h2>
           <p className="tv-faint">Copy a handoff of one project and paste it in. It gives no ongoing access.</p>
+          <ConnectionList api={api} grants={otherGrants} projects={projects} onChanged={onChanged} />
           <div className="tv-actions">
             <button type="button" className="tv-btn tv-sm" onClick={() => onPreviewHandoff(projectId)}>
               Preview handoff

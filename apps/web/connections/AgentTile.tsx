@@ -1,7 +1,6 @@
-import { useState } from "react";
-import { friendlyError } from "../today/BriefCard.tsx";
-import { shortDate } from "../brain/format.ts";
+import { useRef, useState } from "react";
 import { AddAgent } from "./AddAgent.tsx";
+import { ConnectionList } from "./ConnectionList.tsx";
 import type { AgentInfo, Api, Grant } from "./types.ts";
 
 type Props = {
@@ -16,29 +15,11 @@ type Props = {
   onChanged: () => Promise<void> | void;
 };
 
-const live = (g: Grant) => g.status === "Connected" || g.status === "Not connected";
-
 export function AgentTile({ api, info, available, reason, loading, projects, projectId, grants, onChanged }: Props) {
   const [adding, setAdding] = useState(false);
-  const [busy, setBusy] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const current = grants.filter(live);
-  const ended = grants.filter((g) => !live(g));
-  const title = (ids: string[]) => ids.map((id) => projects.find((p) => p.id === id)?.title ?? "Project").join(", ");
+  const addButton = useRef<HTMLButtonElement>(null);
   const headingId = `cx-${info.client}-h`;
-
-  async function revoke(id: string) {
-    setBusy(id);
-    setError(null);
-    try {
-      await api(`/agent-grants/${id}`, {}, "DELETE");
-      await onChanged();
-    } catch (e) {
-      setError(friendlyError(e));
-    } finally {
-      setBusy(null);
-    }
-  }
+  const lastFolder = grants.find((g) => g.folder)?.folder ?? "";
 
   return (
     <section className="cx-tile" aria-labelledby={headingId}>
@@ -53,34 +34,9 @@ export function AgentTile({ api, info, available, reason, loading, projects, pro
           </p>
         </div>
       </div>
-      {current.length > 0 && (
-        <ul className="cx-list">
-          {current.map((g) => (
-            <li key={g.id} className="cx-row">
-              <div className="cx-row-text">
-                <p className="cx-strong">
-                  {g.status === "Connected" ? `Connected · last used ${shortDate(g.last_verified_at!)}` : "Waiting for its first call"}
-                </p>
-                <p className="tv-faint">
-                  Reads {title(g.projects)} · {g.operations.includes("propose_memory") ? "suggests memories" : "read only"}
-                  {g.folder ? ` · ${g.folder}` : ""}
-                </p>
-                {g.status !== "Connected" && info.hint && <p className="tv-faint">{info.hint}</p>}
-              </div>
-              <button type="button" className="tv-btn tv-ghost tv-sm" disabled={busy === g.id} onClick={() => void revoke(g.id)}>
-                Revoke
-              </button>
-            </li>
-          ))}
-        </ul>
-      )}
-      {error && (
-        <p className="tv-error" role="alert">
-          {error}
-        </p>
-      )}
+      <ConnectionList api={api} grants={grants} projects={projects} hint={info.hint} onChanged={onChanged} />
       {available && !adding && (
-        <button type="button" className="tv-btn tv-primary tv-sm" onClick={() => setAdding(true)}>
+        <button ref={addButton} type="button" className="tv-btn tv-primary tv-sm" onClick={() => setAdding(true)}>
           Add to {info.name}
         </button>
       )}
@@ -90,28 +46,16 @@ export function AgentTile({ api, info, available, reason, loading, projects, pro
           info={info}
           projects={projects}
           projectId={projectId}
-          lastFolder={current.find((g) => g.folder)?.folder ?? ended.find((g) => g.folder)?.folder ?? ""}
-          onCancel={() => setAdding(false)}
+          lastFolder={lastFolder}
+          onCancel={() => {
+            setAdding(false);
+            requestAnimationFrame(() => addButton.current?.focus());
+          }}
           onAdded={async () => {
             setAdding(false);
             await onChanged();
           }}
         />
-      )}
-      {ended.length > 0 && (
-        <details className="cx-ended">
-          <summary>Earlier connections ({ended.length})</summary>
-          <ul className="cx-list">
-            {ended.map((g) => (
-              <li key={g.id} className="cx-row">
-                <p className="tv-faint">
-                  {title(g.projects)} · {g.status === "Revoked" ? "access ended" : "this access expired"}
-                  {g.folder ? ` · ${g.folder}` : ""}
-                </p>
-              </li>
-            ))}
-          </ul>
-        </details>
       )}
     </section>
   );

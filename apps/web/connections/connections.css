@@ -16,3 +16,4 @@
 .cx-field input:focus-visible, .cx-field select:focus-visible, .cx-add summary:focus-visible { outline: 2px solid var(--green); outline-offset: 2px; }
 .cx-file { margin: 0; padding: 10px 12px; border-radius: 10px; border: 1px solid var(--line); font-size: 13px; white-space: pre-wrap; overflow-wrap: anywhere; }
 .cx-add summary, .cx-ended summary { cursor: pointer; font-weight: 650; }
+.cx-add p, .cx-add small, .cx-add label, .cx-head-text p { overflow-wrap: anywhere; }

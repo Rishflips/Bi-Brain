@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { friendlyError } from "../today/BriefCard.tsx";
 import type { AgentInfo, Api, Preview } from "./types.ts";
 
@@ -20,14 +20,25 @@ export function AddAgent({ api, info, projects, projectId, lastFolder, onCancel,
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const id = (s: string) => `cx-${info.client}-${s}`;
+  const seq = useRef(0);
+  const folderInput = useRef<HTMLInputElement>(null);
+  useEffect(() => folderInput.current?.focus(), []);
+  const changed = () => {
+    seq.current += 1;
+    setPreview(null);
+    setError(null);
+  };
 
   async function loadPreview(): Promise<Preview | null> {
+    const mine = ++seq.current;
     setError(null);
     try {
       const p = await api<Preview>("/agents/preview", { client: info.client, project_id: project, folder });
+      if (mine !== seq.current) return null;
       setPreview(p);
       return p;
     } catch (e) {
+      if (mine !== seq.current) return null;
       setPreview(null);
       setError(friendlyError(e));
       return null;
@@ -47,6 +58,7 @@ export function AddAgent({ api, info, projects, projectId, lastFolder, onCancel,
       await api("/agents/connect", { connection_id: p.connection_id, client: info.client, project_id: project, folder, access });
       await onAdded();
     } catch (e) {
+      setPreview(null);
       setError(friendlyError(e));
     } finally {
       setBusy(false);
@@ -63,7 +75,7 @@ export function AddAgent({ api, info, projects, projectId, lastFolder, onCancel,
     >
       <div className="cx-field">
         <label htmlFor={id("project")}>Project</label>
-        <select id={id("project")} value={project} onChange={(e) => { setProject(e.target.value); setPreview(null); }}>
+        <select id={id("project")} value={project} onChange={(e) => { setProject(e.target.value); changed(); }}>
           {projects.map((p) => (
             <option key={p.id} value={p.id}>
               {p.title}
@@ -80,10 +92,13 @@ export function AddAgent({ api, info, projects, projectId, lastFolder, onCancel,
           maxLength={1000}
           value={folder}
           placeholder="C:\Users\you\code\northstar"
-          onChange={(e) => { setFolder(e.target.value); setPreview(null); }}
+          ref={folderInput}
+          aria-invalid={error ? true : undefined}
+          aria-describedby={error ? id("error") : id("help")}
+          onChange={(e) => { setFolder(e.target.value); changed(); }}
         />
-        <small className="tv-faint">The folder where you open {info.name}.</small>
       </label>
+      <small id={id("help")} className="tv-faint">The folder where you open {info.name}.</small>
       <fieldset className="cx-field">
         <legend>What may it do?</legend>
         <label>
@@ -113,7 +128,7 @@ export function AddAgent({ api, info, projects, projectId, lastFolder, onCancel,
       </details>
       {error && (
         <div className="tv-error" role="alert">
-          <p>{error}</p>
+          <p id={id("error")}>{error}</p>
           {preview?.exists && (
             <pre className="cx-file" data-testid="agent-file-to-add">
               {preview.contents}

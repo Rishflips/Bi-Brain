@@ -91,5 +91,24 @@ test("Connections fits a 320px screen in dark appearance", async ({ page }) => {
   await tile(page, "Codex").getByRole("button", { name: "Add to Codex" }).click();
   await tile(page, "Codex").getByLabel("Project folder on this computer").fill(mkdtempSync(join(tmpdir(), "bibrain-proj-")));
   await tile(page, "Codex").getByText("See the file BiBrain will add").click();
+  await expect(tile(page, "Codex").getByTestId("agent-file")).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+});
+
+test("a connection with no named agent is listed under Any other agent and can be revoked", async ({ page }) => {
+  await open(page);
+  const status = await page.evaluate(async () => {
+    const { csrf } = await (await fetch("/api/v1/session")).json();
+    const res = await fetch("/api/v1/agent-grants", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-Brain-CSRF": csrf, "Idempotency-Key": crypto.randomUUID() },
+      body: JSON.stringify({ projects: ["inbox"], operations: ["read"], expires_at: new Date(Date.now() + 3600_000).toISOString() }),
+    });
+    return res.status;
+  });
+  expect(status).toBeLessThan(300);
+  const other = tile(page, "Any other agent");
+  await expect(other).toContainText("Waiting for its first call", { timeout: 10_000 });
+  await other.getByRole("button", { name: "Revoke" }).click();
+  await expect(other.getByText(/Earlier connections \(1\)/)).toBeVisible();
 });
