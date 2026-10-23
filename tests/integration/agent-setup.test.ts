@@ -59,6 +59,17 @@ describe("detectAgents", () => {
     expect(found).toEqual({ codex: true, "claude-code": false, cursor: true });
   });
 
+  it("accepts a PATH entry wrapped in double quotes on Windows", () => {
+    const found = detectAgents({
+      home: "C:\\Users\\Ana",
+      pathDirs: ['"C:\\tools"'],
+      platform: "win32",
+      exists: (p) => p === "C:\\tools\\codex.cmd",
+      join: win32.join,
+    });
+    expect(found).toEqual({ codex: true, "claude-code": false, cursor: false });
+  });
+
   it("finds a posix binary without an extension", () => {
     const found = detectAgents({
       home: "/home/ana",
@@ -77,6 +88,7 @@ describe("checkFolderShape", () => {
     expect(checkFolderShape("/home/ana/northstar", posix.isAbsolute)).toBeNull();
     expect(checkFolderShape("northstar", posix.isAbsolute)).toBe("Use the full path of the project folder, for example C:\\Users\\you\\code\\northstar.");
     expect(checkFolderShape("/home/ana/../etc", posix.isAbsolute)).toBe("Use the folder's own path without .. in it.");
+    expect(checkFolderShape("C:\\work\\..\\etc", win32.isAbsolute)).toBe("Use the folder's own path without .. in it.");
     expect(checkFolderShape("   ", posix.isAbsolute)).toBe("Enter the project folder.");
     expect(checkFolderShape("/" + "a".repeat(1000), posix.isAbsolute)).toBe("That folder path is too long.");
     expect(checkFolderShape("/home/ana/\u0000x", posix.isAbsolute)).toBe("That folder path has a character BiBrain cannot use.");

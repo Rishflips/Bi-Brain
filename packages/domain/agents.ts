@@ -37,7 +37,7 @@ function launchArgs(l: LaunchSpec): string[] {
 export function configContents(client: AgentClient, launch: LaunchSpec): string {
   const args = launchArgs(launch);
   if (client === "codex") {
-    // A JSON string is also a valid TOML basic string.
+    // For normal path text a JSON string is also a valid TOML basic string.
     const q = (s: string) => JSON.stringify(s);
     return [
       "# Added by BiBrain. The access key stays in BiBrain on this computer, not in this file.",
@@ -74,11 +74,12 @@ const HOME_DIRS: Record<AgentClient, string> = { codex: ".codex", "claude-code":
 /** Whether each agent looks installed: its command is on PATH or its settings folder exists. */
 export function detectAgents(env: DetectEnv): Record<AgentClient, boolean> {
   const exts = env.platform === "win32" ? ["", ".exe", ".cmd", ".bat"] : [""];
+  const dirs = env.pathDirs.map((d) => (d.length >= 2 && d.startsWith('"') && d.endsWith('"') ? d.slice(1, -1) : d));
   const found = {} as Record<AgentClient, boolean>;
   for (const client of AGENT_CLIENTS)
     found[client] =
       env.exists(env.join(env.home, HOME_DIRS[client])) ||
-      env.pathDirs.some((dir) => dir.length > 0 && exts.some((ext) => env.exists(env.join(dir, BINARIES[client] + ext))));
+      dirs.some((dir) => dir.length > 0 && exts.some((ext) => env.exists(env.join(dir, BINARIES[client] + ext))));
   return found;
 }
 
@@ -89,6 +90,6 @@ export function checkFolderShape(folder: string, isAbsolute: (p: string) => bool
   if (f.length > 1000) return "That folder path is too long.";
   if (f.includes("\u0000")) return "That folder path has a character BiBrain cannot use.";
   if (!isAbsolute(f)) return "Use the full path of the project folder, for example C:\\Users\\you\\code\\northstar.";
-  if (f.split(/[\/]+/u).includes("..")) return "Use the folder's own path without .. in it.";
+  if (f.split(/[\\/]+/u).includes("..")) return "Use the folder's own path without .. in it.";
   return null;
 }
