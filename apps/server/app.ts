@@ -699,6 +699,9 @@ export async function createApp(
   app.get("/api/v1/claims/:id/history", (req) =>
     req.brain.claimHistory(req.principal, params(req)),
   );
+  app.get("/api/v1/brain/search", (req) =>
+    req.brain.searchBrain(req.principal, req.query),
+  );
   app.get("/api/v1/ask", (req) => req.brain.ask(req.principal, req.query));
   app.get("/api/v1/today", (req) => {
     req.brain.owner(req.principal);

@@ -49,6 +49,7 @@ import { buildBrief, gateFitsBrief, type BriefInput, type BriefJob } from "./bri
 import { buildProjectView } from "./project-view.ts";
 import { questionWords, rankAnswers } from "./ask.ts";
 import { factText } from "./facts.ts";
+import { SEARCH_LIMIT, findInBrain } from "./brain-search.ts";
 import {
   attemptReferencesSource,
   claimDecisionAttempt,
@@ -3867,6 +3868,13 @@ export class Brain {
           at: row.created_at,
         };
       });
+  }
+  searchBrain(p: Principal, input: unknown) {
+    this.owner(p);
+    const v = z.object({ q: z.string().trim().min(2).max(200) }).strict().parse(input);
+    const projects = this.projects(p) as { id: string }[];
+    const claims = projects.flatMap((project) => this.currentClaims(p, project.id));
+    return findInBrain(v.q, claims, this.sources(p), SEARCH_LIMIT);
   }
   ask(p: Principal, input: unknown) {
     this.owner(p);
