@@ -75,11 +75,12 @@ merged; Dodo replaces the rejected Paddle setup (see
 [Dodo setup and acceptance](docs/DODO_PAYMENTS.md) for configuration, plan
 mapping, and the real-provider gates). The current branch replaces Today with
 one bar that saves or asks and a Brief of at most three items; its browser
-regression passes 78/78 (see BUILD_STATE.md). Your brain shows each project's
-facts that are true now, its open questions and its originals, and opens any
-fact on its original with the passage highlighted and its history. These are local release gates,
-not proof of a human usability pilot, live model quality, native-agent
-compatibility, real payment, or target-host operations. See
+regression passes 92/92 across its four Playwright projects (see
+BUILD_STATE.md). Your brain shows each project's facts that are true now, its
+open questions and its originals, and opens any fact on its original with the
+passage highlighted and its history. These are local release gates, not proof
+of a human usability pilot, live model quality, native-agent compatibility,
+real payment, or target-host operations. See
 [BUILD_STATE.md](BUILD_STATE.md) for commands, exact scope, and known limits.
 
 ## Quick start
@@ -133,8 +134,6 @@ unavailable.
 ![BiBrain Today — asking the bar a question; the answer quotes the saved original (synthetic sample)](docs/screenshots/today-v2-ask.png)
 
 ![BiBrain Today at 320px in dark appearance — the Brief card with its evidence (synthetic sample)](docs/screenshots/today-v2-brief-320-dark.png)
-
-![BiBrain Project Focus — synthetic reviewed memory, goal, and retained original](docs/screenshots/project-focus.png)
 
 ![BiBrain agent continuity — synthetic reviewed project at 320px in dark appearance](docs/screenshots/agent-continuity.png)
 
