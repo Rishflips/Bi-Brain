@@ -60,6 +60,7 @@ import {
   readDecisionAttempt,
   type AdvisoryClaimResult,
 } from "../storage/decision-advisory.ts";
+const PAIR_LINK_MS = 120_000;
 export const defaults: Preferences = {
   enabled: false,
   time_zone: "Asia/Calcutta",
@@ -214,6 +215,33 @@ export class Brain {
       new Date(this.clock().getTime() + 7 * 86400000).toISOString(),
     );
     return { token, csrf };
+  }
+  issuePairLink() {
+    const token = randomBytes(32).toString("hex");
+    const now = this.clock().getTime();
+    const links = this.store
+      .setting<{ hash: string; expires_at: number }[]>("pair_links", [])
+      .filter((l) => l.expires_at > now)
+      .slice(-4);
+    links.push({ hash: hash(token), expires_at: now + PAIR_LINK_MS });
+    this.store.set("pair_links", links);
+    return { token, expires_at: new Date(now + PAIR_LINK_MS).toISOString() };
+  }
+  redeemPairLink(token: string): boolean {
+    return this.store.transaction(() => {
+      const now = this.clock().getTime();
+      const h = hash(token);
+      const links = this.store.setting<{ hash: string; expires_at: number }[]>(
+        "pair_links",
+        [],
+      );
+      const hit = links.some((l) => l.hash === h && l.expires_at > now);
+      this.store.set(
+        "pair_links",
+        links.filter((l) => l.hash !== h && l.expires_at > now),
+      );
+      return hit;
+    });
   }
   ownerSession(token: string) {
     const session = this.store.get(

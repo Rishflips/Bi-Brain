@@ -309,6 +309,8 @@ export async function createApp(
       req.url === "/api/v1/health/live" ||
       req.url === "/api/v1/runtime" ||
       req.url === "/api/v1/session/pair" ||
+      req.url === "/api/v1/session/pair-link" ||
+      req.url === "/api/v1/session/pair-link/redeem" ||
       requestPath(req.url) === "/api/v1/billing/webhook"
     )
       return;
@@ -421,18 +423,34 @@ export async function createApp(
   if (managed) {
     // Managed accounts never use local pairing; the control store sessions
     // are the only browser credential. Fail closed with an explicit message.
-    app.post(
+    for (const path of [
       "/api/v1/session/pair",
-      { config: { rateLimit: { max: 10, timeWindow: 60000 } } },
-      () => {
-        throw new BrainError(
-          "PAIRING_UNAVAILABLE",
-          "This server uses managed sign-in; local pairing is unavailable.",
-          403,
-        );
-      },
-    );
+      "/api/v1/session/pair-link",
+      "/api/v1/session/pair-link/redeem",
+    ])
+      app.post(
+        path,
+        { config: { rateLimit: { max: 10, timeWindow: 60000 } } },
+        () => {
+          throw new BrainError(
+            "PAIRING_UNAVAILABLE",
+            "This server uses managed sign-in; local pairing is unavailable.",
+            403,
+          );
+        },
+      );
   } else {
+    const startSession = (reply: FastifyReply) => {
+      const { token, csrf } = localBrain!.issueSession();
+      reply.setCookie("brain_session", token, {
+        httpOnly: true,
+        secure: deployment.secure,
+        sameSite: "strict",
+        path: "/",
+        maxAge: 7 * 86400,
+      });
+      return { csrf };
+    };
     app.post(
       "/api/v1/session/pair",
       { config: { rateLimit: { max: 10, timeWindow: 60000 } } },
@@ -449,15 +467,43 @@ export async function createApp(
             "The installation code did not match.",
             401,
           );
-        const { token, csrf } = localBrain!.issueSession();
-        reply.setCookie("brain_session", token, {
-          httpOnly: true,
-          secure: deployment.secure,
-          sameSite: "strict",
-          path: "/",
-          maxAge: 7 * 86400,
-        });
-        return { csrf };
+        return startSession(reply);
+      },
+    );
+    app.post(
+      "/api/v1/session/pair-link",
+      { config: { rateLimit: { max: 10, timeWindow: 60000 } } },
+      (req) => {
+        const { secret } = z
+          .object({ secret: z.string().max(200) })
+          .strict()
+          .parse(req.body);
+        const expected = Buffer.from(pairSecret!);
+        const got = Buffer.from(secret);
+        if (got.length !== expected.length || !timingSafeEqual(got, expected))
+          throw new BrainError(
+            "UNAUTHORIZED",
+            "The installation code did not match.",
+            401,
+          );
+        return localBrain!.issuePairLink();
+      },
+    );
+    app.post(
+      "/api/v1/session/pair-link/redeem",
+      { config: { rateLimit: { max: 10, timeWindow: 60000 } } },
+      (req, reply) => {
+        const { token } = z
+          .object({ token: z.string().regex(/^[0-9a-f]{64}$/u) })
+          .strict()
+          .parse(req.body);
+        if (!localBrain!.redeemPairLink(token))
+          throw new BrainError(
+            "UNAUTHORIZED",
+            "This link was already used or has expired. Use the installation code instead.",
+            401,
+          );
+        return startSession(reply);
       },
     );
   }

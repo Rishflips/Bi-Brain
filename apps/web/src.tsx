@@ -15,6 +15,7 @@ import sample from "../../fixtures/beta-launch.json" with { type: "json" };
 import { EvidenceList } from "./components.tsx";
 import { SignIn, ConnectionUnavailable, type RuntimeMode } from "./sign-in.tsx";
 import { BrandLockup } from "./brand.tsx";
+import { takePairToken } from "./pair-link.ts";
 import { TodayView } from "./today/TodayView.tsx";
 import "./today/today.css";
 import { BrainView } from "./brain/BrainView.tsx";
@@ -229,6 +230,9 @@ function Modal({
     </dialog>
   );
 }
+// Taken at module load so the one-time token leaves the address bar before
+// anything else reads location.hash.
+let pendingPairToken = takePairToken(location, history);
 function App() {
   const navFromHash = () =>
     (
@@ -533,6 +537,22 @@ function App() {
     }
     setRuntime(meta);
     let session: SessionInfo | null = null;
+    if (pendingPairToken && meta.mode === "local") {
+      const token = pendingPairToken;
+      pendingPairToken = null;
+      try {
+        const s = await api<{ csrf: string }>("/session/pair-link/redeem", {
+          token,
+        });
+        csrf = s.csrf;
+      } catch (e) {
+        setError(
+          e instanceof Error
+            ? e.message
+            : "This link was already used or has expired. Use the installation code instead.",
+        );
+      }
+    }
     try {
       const value = await api("/session");
       if (isSessionInfo(value)) session = value;
