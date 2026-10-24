@@ -49,3 +49,8 @@ These are the minor findings left open after plan 4 (System 1 with Clef). None b
 ## Tests
 
 - The "facts still listed" assertion in the watch tests compares two empty lists (the sample note creates no accepted facts).
+
+## Found after the final review
+
+- Settings reads whether the background worker is running when it loads and after a save, so "Waiting for BiBrain's background worker to start." can lag by a few seconds until the next read.
+- `brief_quiet` entries stay after a card is decided (bounded at 2000); harmless, since lookups use live card ids.

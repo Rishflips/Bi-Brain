@@ -19,17 +19,22 @@ Updated: 2026-10-25
 - `scripts/system-one-live-proof.ts` (`npm run proof:sorting`) is the owner-run live
   check. Docs: PROVIDERS.md, UX.md, README "Optional sorting help".
 
-Verified in this worktree at the commit's parent (Windows, Node 24.19.0):
+Verified in this worktree at the branch head after the final review's fix wave
+(Windows, Node 24.19.0):
 
 - `npm ci`, `npm run typecheck`, `npm run lint` and `npm run build`: all exit 0.
   After `npm ci`, `apps/cli/bibrain.mjs` showed line-ending changes only and was
   restored.
+- `npm audit --audit-level=high`: 0 vulnerabilities.
 - `npm run brain-eval`: 4/4 passed.
-- `npx vitest run --reporter=dot`: 168 files, 1752 passed, 8 skipped, 0 failed, in
+- `npx vitest run --reporter=dot`: 168 files, 1757 passed, 8 skipped, 0 failed, in
   one run; no load-only timeouts.
-- `npx playwright test --workers=1`: 104 passed, 0 failed, 4.7m. By project: main 69,
+- `npx playwright test --workers=1`: 104 passed, 0 failed, 4.2m. By project: main 69,
   today-v2 20, connections 6, today-v2-bar 4, system1 4, empty-brain 1. The e2e
   journey uses a loopback fake Ollama-format server, not a real service.
+- Every task had its own spec and quality review; Fable reviewed the whole branch
+  ("ready with fixes": 0 Critical, 1 Important, 6 Minor), and all seven were fixed
+  and re-reviewed.
 - This is local V1 verification with a fake server. The live proof script was not
   run.
 
