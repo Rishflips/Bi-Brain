@@ -179,6 +179,7 @@ Tests use isolated databases, deterministic clocks and clearly synthetic fixture
 | [Providers](docs/PROVIDERS.md) | Sorting help and model providers |
 | [Run locally](docs/LOCAL_RUN.md) and [self-hosting](docs/SELF_HOSTING.md) | Running, backup and restore |
 | [Testing](docs/TESTING.md) and [release](docs/RELEASE.md) | Verification and release gates |
+| [Delivery orchestration](docs/ORCHESTRATION.md) | Work-card, delegation, verification, and handoff method |
 | [History](docs/history/README.md) | Earlier build logs, audits and handoffs |
 | [AGENTS.md](AGENTS.md) | Instructions for coding agents working on this repository |
 
