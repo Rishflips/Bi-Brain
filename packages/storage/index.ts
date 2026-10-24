@@ -21,6 +21,9 @@ export class Storage {
   ) {
     if (path !== ":memory:") mkdirSync(dirname(path), { recursive: true });
     this.db = new DatabaseSync(path);
+    // The server and the worker open the same file at startup, so wait for the
+    // other one's lock before the first read instead of failing at once.
+    this.db.exec("PRAGMA busy_timeout=5000;");
     const hasMigrations = this.db
       .prepare(
         "SELECT name FROM sqlite_master WHERE type='table' AND name='migrations'",
