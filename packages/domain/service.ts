@@ -1027,7 +1027,15 @@ export class Brain {
       })
       .strict()
       .parse(input);
-    return this.store.transaction(() => {
+    return this.store.transaction(() => this.editSourceTx(p, id, v));
+  }
+  /** The edit itself. The caller holds the open transaction. */
+  private editSourceTx(
+    p: Principal,
+    id: string,
+    v: { body: string; title: string; expected_version: number; project_id?: string; visibility?: "private" | "project" },
+  ) {
+    {
       const s = this.source(p, id);
       requireVersion(s.version, v.expected_version);
       if (s.state !== "active")
@@ -1091,7 +1099,7 @@ export class Brain {
           source_version: version,
         });
       return this.source(p, id);
-    });
+    }
   }
   removeSource(p: Principal, id: string, expected: number, purge: boolean) {
     this.owner(p);
@@ -2868,6 +2876,7 @@ export class Brain {
         this.gateAnswerIds(gate),
         v.action === "reject" ? "reject" : v.value !== undefined ? "fix" : "accept",
         gate.id,
+        this.gateQuestions(gate),
       );
       const revisedGate = this.revise(gate, {
         ...gate.data,
@@ -4119,8 +4128,9 @@ export class Brain {
         if (gate.data.status !== "queued" || !cites) continue;
         try {
           this.revise(gate, { ...gate.data, s1_quiet: true, s1_answer_id: answerId });
-        } catch {
-          // A review the owner just changed is left alone.
+        } catch (e) {
+          // A review the owner just changed is left alone; anything else is a real error.
+          if (!(e instanceof BrainError && e.code === "VERSION_CONFLICT")) throw e;
         }
       }
     if (advice.review)
@@ -4149,20 +4159,20 @@ export class Brain {
       if (f.data.status !== "queued") throw new BrainError("VERSION_CONFLICT", "Already answered.", 409);
       return f;
     };
-    const suggestion = open();
-    if (v.action === "keep") {
-      const s = this.source(p, suggestion.data.source_id);
-      this.editSource(p, s.id, {
-        title: s.title,
-        body: s.body,
-        project_id: suggestion.data.to_project_id,
-        expected_version: suggestion.data.source_version,
-      });
-    }
     return this.store.transaction(() => {
       const f = open();
+      if (v.action === "keep") {
+        const s = this.source(p, f.data.source_id);
+        this.captureLimit({ body: s.body });
+        this.editSourceTx(p, s.id, {
+          title: s.title,
+          body: s.body,
+          project_id: f.data.to_project_id,
+          expected_version: f.data.source_version,
+        });
+      }
       const revised = this.revise(f, { ...f.data, status: v.action === "keep" ? "kept" : "dismissed", answered_at: this.now() });
-      this.logSystemOneFeedback([f.data.answer_id], v.action === "keep" ? "keep_file" : "dismiss_file", f.id);
+      this.logSystemOneFeedback([f.data.answer_id], v.action === "keep" ? "keep_file" : "dismiss_file", f.id, ["project"]);
       return { id: f.id, status: revised.data.status as string, version: revised.version };
     });
   }
@@ -4179,11 +4189,30 @@ export class Brain {
     answerIds: string[],
     action: "accept" | "fix" | "reject" | "dismiss" | "keep_file" | "dismiss_file",
     target: string,
+    questions: string[],
   ) {
     for (const answer_id of new Set(answerIds)) {
-      const row = this.store.get<{ project_id: string }>("SELECT project_id FROM entities WHERE id=? AND kind='s1_answer'", answer_id);
-      if (row) this.createEntity(row.project_id, "s1_feedback", { answer_id, action, target, at: this.now() });
+      const row = this.store.get<{ project_id: string; data: string }>("SELECT project_id,data FROM entities WHERE id=? AND kind='s1_answer'", answer_id);
+      if (!row) continue;
+      const stored = (JSON.parse(row.data).answers ?? []) as any[];
+      for (const question of new Set(questions)) {
+        const a = stored.find((x) => x.id === question);
+        if (!a) continue;
+        this.createEntity(row.project_id, "s1_feedback", {
+          answer_id,
+          question,
+          choice: a.type === "choice" ? a.choice : a.probability,
+          confidence: a.type === "choice" ? a.confidence : a.probability,
+          action,
+          target,
+          at: this.now(),
+        });
+      }
     }
+  }
+  /** What a review of this card actually judged: whether it was worth showing, and a correction's change. */
+  private gateQuestions(gate: Entity): string[] {
+    return gate.data.correction === true ? ["show", "changes_fact"] : ["show"];
   }
   /** What sorting help said and what the owner then did, for the owner to download. */
   systemOneLog(p: Principal) {
@@ -4192,41 +4221,31 @@ export class Brain {
     const feedback = this.store.all<{ data: string }>(
       "SELECT data FROM entities WHERE kind='s1_feedback' ORDER BY created_at DESC, rowid DESC LIMIT 5000",
     );
-    const cache = new Map<string, any>();
-    const answerOf = (id: string) => {
-      if (!cache.has(id)) {
-        const e = this.store.get<{ data: string }>("SELECT data FROM entities WHERE id=? AND kind='s1_answer'", id);
-        cache.set(id, e ? JSON.parse(e.data) : null);
-      }
-      return cache.get(id);
-    };
-    const rows: { answer_id: string; question: string; choice: string | number; confidence: number; action: string; at: string }[] = [];
-    for (const f of feedback) {
+    const rows = feedback.map((f) => {
       const fb = JSON.parse(f.data);
-      const answer = answerOf(fb.answer_id);
-      if (!answer) continue;
-      const wanted = String(fb.action).endsWith("_file") ? "project" : answer.advice?.quiet ? "show" : "kind";
-      const a = (answer.answers as any[]).find((x) => x.id === wanted);
-      if (!a) continue;
-      rows.push({
-        answer_id: fb.answer_id,
-        question: a.id,
-        choice: a.type === "choice" ? a.choice : a.probability,
-        confidence: a.type === "choice" ? a.confidence : a.probability,
-        action: fb.action,
-        at: fb.at,
-      });
-    }
+      return {
+        answer_id: fb.answer_id as string,
+        question: fb.question as string,
+        choice: fb.choice as string | number,
+        confidence: fb.confidence as number,
+        action: fb.action as string,
+        at: fb.at as string,
+      };
+    });
     return { answers, reviewed: new Set(rows.map((r) => r.answer_id)).size, rows };
   }
   dismissBriefItem(p: Principal, input: unknown) {
     this.owner(p);
     const v = z.object({ signature: z.string().min(1).max(300) }).strict().parse(input);
     const list = this.store.setting<string[]>("brief_dismissed", []);
-    if (!list.includes(v.signature)) this.store.set("brief_dismissed", [...list, v.signature].slice(-500));
+    const added = !list.includes(v.signature);
+    if (added) this.store.set("brief_dismissed", [...list, v.signature].slice(-500));
     const [type, target] = v.signature.split(":");
-    if (type === "gate" && target && this.store.get("SELECT id FROM entities WHERE id=? AND kind='gate'", target))
-      this.logSystemOneFeedback(this.gateAnswerIds(this.entity(p, target)), "dismiss", target);
+    if (added && type === "gate" && target && this.store.get("SELECT id FROM entities WHERE id=? AND kind='gate'", target)) {
+      const gate = this.entity(p, target);
+      if (gate.data.status === "queued")
+        this.logSystemOneFeedback(this.gateAnswerIds(gate), "dismiss", target, this.gateQuestions(gate));
+    }
     return { dismissed: true as const };
   }
   confirmClaim(p: Principal, id: string) {

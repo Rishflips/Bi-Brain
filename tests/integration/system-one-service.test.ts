@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -109,5 +109,64 @@ describe("System 1 in the service", () => {
     b.editSource(owner, source_id, { title: "S", body: "Interviews moved the date again.", expected_version: 1 });
     b.recordSystemOneResult({ id: "j2", project_id: p.id }, source_id, 2, result({ review: 0.9, project: "stay" }));
     expect(pending()).toBe(before + 1);
+  });
+
+  const gateFor = (b: Brain, project: string, sourceId: string, version: number, extra: Record<string, any> = {}) =>
+    b.createEntity(project, "gate", {
+      raw_id: sourceId, type: "fact", entity: "northstar", field: { aspect: "status", value: "active" },
+      evidence: [{ source_id: sourceId, source_version: version, start: 0, end: 4, quote: "nort" }],
+      status: "queued", reasons: [], actor: "owner", ...extra,
+    });
+
+  it("logs a dismissed card as the show question only, once, and never as kind", () => {
+    const b = setup();
+    const p = b.createProject(owner, "Northstar");
+    const { source_id } = b.capture(owner, { project_id: p.id, title: "S", body: "northstar status active", visibility: "project" }) as any;
+    b.recordSystemOneResult({ id: "j1", project_id: p.id }, source_id, 1, result({ project: "stay" }));
+    const [card] = b.brief(owner).items;
+    b.dismissBriefItem(owner, { signature: card.signature });
+    b.dismissBriefItem(owner, { signature: card.signature });
+    const { rows } = b.systemOneLog(owner);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ question: "show", choice: 0.9, action: "dismiss" });
+    expect(rows.some((r) => r.question === "kind")).toBe(false);
+  });
+
+  it("logs show and changes_fact when a correction is reviewed", () => {
+    const b = setup();
+    const p = b.createProject(owner, "Northstar");
+    const { source_id } = b.capture(owner, { project_id: p.id, title: "S", body: "Northstar plan notes", visibility: "project" }) as any;
+    const r = result({ project: "stay" });
+    r.answers.push({ id: "changes_fact", type: "noul", probability: 0.8 });
+    b.recordSystemOneResult({ id: "j1", project_id: p.id }, source_id, 1, r);
+    const gate = gateFor(b, p.id, source_id, 1, { correction: true, conflicts: [] });
+    b.reviewGate(owner, gate.id, { action: "reject", expected_version: gate.version });
+    const rows = b.systemOneLog(owner).rows.filter((x) => x.action === "reject");
+    expect(rows.map((x) => x.question).sort()).toEqual(["changes_fact", "show"]);
+    expect(b.systemOneLog(owner).rows.some((x) => x.question === "kind")).toBe(false);
+  });
+
+  it("leaves a newer version's card alone when the answer is for the older version", () => {
+    const b = setup();
+    const p = b.createProject(owner, "Northstar");
+    const { source_id } = b.capture(owner, { project_id: p.id, title: "S", body: "Northstar plan notes", visibility: "project" }) as any;
+    const old = gateFor(b, p.id, source_id, 1);
+    const newer = gateFor(b, p.id, source_id, 2);
+    b.recordSystemOneResult({ id: "j1", project_id: p.id }, source_id, 1, result({ show: 0.1, project: "stay" }));
+    expect(b.entity(owner, old.id).data.s1_quiet).toBe(true);
+    expect(b.entity(owner, newer.id).data.s1_quiet).toBeUndefined();
+  });
+
+  it("skips a card the owner changed at the same moment, without an error", () => {
+    const b = setup();
+    const p = b.createProject(owner, "Northstar");
+    const { source_id } = b.capture(owner, { project_id: p.id, title: "S", body: "Northstar plan notes", visibility: "project" }) as any;
+    const gate = gateFor(b, p.id, source_id, 1);
+    const real = b.revise.bind(b);
+    vi.spyOn(b, "revise").mockImplementationOnce((e: any, d: any) => { real(e, { ...e.data, touched: true }); return real(e, d); });
+    expect(b.recordSystemOneResult({ id: "j1", project_id: p.id }, source_id, 1, result({ show: 0.1, project: "stay" })).recorded).toBe(true);
+    const after = b.entity(owner, gate.id);
+    expect(after.data.touched).toBe(true);
+    expect(after.data.s1_quiet).toBeUndefined();
   });
 });
