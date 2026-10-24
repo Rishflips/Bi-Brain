@@ -765,6 +765,10 @@ export async function createApp(
   app.post("/api/v1/brief/dismiss", (req) =>
     req.brain.dismissBriefItem(req.principal, req.body),
   );
+  app.post("/api/v1/file-suggestions/:id", (req) =>
+    req.brain.fileSuggestion(req.principal, params(req), req.body),
+  );
+  app.get("/api/v1/system-one/log", (req) => req.brain.systemOneLog(req.principal));
   app.post("/api/v1/claims/:id/confirm", (req) =>
     req.brain.confirmClaim(req.principal, params(req)),
   );

@@ -10,6 +10,7 @@ const entity = (kind: string, id: string, data: Record<string, any>, created_at 
 const empty = (): BriefInput => ({
   gates: [], proposals: [], claims: [], failedJobs: [], sources: [],
   dismissed: [], confirmations: {}, agentNames: {},
+  fileSuggestions: [], projectTitles: {},
 });
 
 describe("buildBrief", () => {
@@ -45,6 +46,21 @@ describe("buildBrief", () => {
     const items = buildBrief(input, now).items;
     expect(items.find((i) => i.kind === "memory")?.aspect).toBe("status");
     expect(items.find((i) => i.kind === "stale")?.aspect).toBe("statement");
+  });
+
+  it("shows a file suggestion as a Keep or Dismiss card, ranked between a failed job and an agent memory", () => {
+    const input = empty();
+    input.gates.push(entity("gate", "g-agent", { status: "queued", entity: "Pricing", field: { aspect: "statement", value: "one plan" }, evidence: [ev("s2", "one plan")], actor: "agent:grant-1" }));
+    input.failedJobs.push({ id: "j1", project_id: "p1", kind: "derive_brief", attempts: 1, created_at: "2026-10-22T09:00:00Z" });
+    input.fileSuggestions.push(entity("file_suggestion", "f1", { source_id: "s9", source_version: 1, to_project_id: "p2", answer_id: "a1", status: "queued" }));
+    input.sources.push({ id: "s9", project_id: "p1", body: "Northstar ships with one plan.", captured_at: "2026-10-22T09:00:00Z" });
+    input.projectTitles.p2 = "Northstar";
+    const items = buildBrief(input, now).items;
+    expect(items.map((i) => i.kind)).toEqual(["failed_job", "file", "agent_memory"]);
+    expect(items[1]).toMatchObject({ title: "File in Northstar?", target: { type: "file", id: "f1", version: 1 }, source_id: "s9" });
+    expect(items[1].why).toContain("Dismiss leaves it in the Inbox");
+    input.sources = [];
+    expect(buildBrief(input, now).items.some((i) => i.kind === "file")).toBe(false);
   });
 
   it("flags a fact as stale only when it is old and newer originals mention it", () => {

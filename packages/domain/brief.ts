@@ -1,9 +1,9 @@
 import type { Entity } from "../contracts/index.ts";
 import { factText, valueText as text } from "./facts.ts";
 
-export type BriefKind = "correction" | "proposal" | "failed_job" | "agent_memory" | "memory" | "stale";
+export type BriefKind = "correction" | "proposal" | "failed_job" | "file" | "agent_memory" | "memory" | "stale";
 export type BriefEvidence = { source_id: string; source_version: number; quote: string };
-export type BriefTarget = { type: "gate" | "proposal" | "job" | "claim"; id: string; version: number };
+export type BriefTarget = { type: "gate" | "proposal" | "job" | "claim" | "file"; id: string; version: number };
 export type BriefItem = {
   signature: string;
   kind: BriefKind;
@@ -30,12 +30,15 @@ export type BriefInput = {
   dismissed: string[];
   confirmations: Record<string, string>;
   agentNames: Record<string, string>;
+  /** Queued "file this note" suggestions whose source is still the version that was sorted. */
+  fileSuggestions: Entity[];
+  projectTitles: Record<string, string>;
 };
 
 export const BRIEF_LIMIT = 3;
 export const STALE_DAYS = 21;
 const MIN_STALE_MENTIONS = 2;
-const RANK: Record<BriefKind, number> = { correction: 0, proposal: 1, failed_job: 2, agent_memory: 3, memory: 4, stale: 5 };
+const RANK: Record<BriefKind, number> = { correction: 0, proposal: 1, failed_job: 2, file: 3, agent_memory: 4, memory: 5, stale: 6 };
 
 const evidenceOf = (list: unknown): BriefEvidence[] =>
   (Array.isArray(list) ? list : [])
@@ -131,6 +134,24 @@ export function buildBrief(input: BriefInput, now: Date): { items: BriefItem[]; 
       target: { type: "job", id: j.id, version: j.attempts },
       created_at: j.created_at,
       ...(j.source_id ? { source_id: j.source_id } : {}),
+    });
+  }
+
+  for (const f of input.fileSuggestions) {
+    if (f.data.status !== "queued") continue;
+    const source = input.sources.find((s) => s.id === f.data.source_id);
+    if (!source) continue;
+    const target = typeof f.data.to_project_id === "string" ? input.projectTitles[f.data.to_project_id] : undefined;
+    candidates.push({
+      signature: `file:${f.id}:${f.version}`,
+      kind: "file",
+      project_id: f.project_id,
+      title: `File in ${target ?? "another project"}?`,
+      why: "BiBrain suggests this note belongs there. Keep moves it; Dismiss leaves it in the Inbox.",
+      evidence: [{ source_id: source.id, source_version: Number(f.data.source_version) || 1, quote: Array.from(source.body).slice(0, 140).join("") }],
+      target: { type: "file", id: f.id, version: f.version },
+      created_at: f.created_at,
+      source_id: source.id,
     });
   }
 
