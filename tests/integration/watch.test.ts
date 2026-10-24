@@ -26,11 +26,17 @@ describe("watching a project", () => {
     b.capture(owner, { project_id: p.id, title: "Status", body: "northstar status active", visibility: "project" });
     expect(b.projects(owner).find((x) => x.id === p.id)?.watched).toBe(true);
     expect(b.brief(owner).items).toHaveLength(1);
+    const before = b.brainProject(owner, p.id);
     expect(b.watchProject(owner, p.id, { watched: false })).toEqual({ id: p.id, watched: false });
     expect(b.brief(owner).items).toEqual([]);
-    expect(b.brainProject(owner, p.id).waiting_for_review).toBeGreaterThan(0);
+    const view = b.brainProject(owner, p.id);
+    expect(view.waiting_for_review).toBe(0);
+    expect(view.originals).toHaveLength(1);
+    expect(view.facts).toEqual(before.facts);
+    expect(view.needs_decision).toEqual(before.needs_decision);
     b.watchProject(owner, p.id, { watched: true });
     expect(b.brief(owner).items).toHaveLength(1);
+    expect(b.brainProject(owner, p.id).waiting_for_review).toBeGreaterThan(0);
   });
 
   it("never unwatches the Inbox and refuses agents and unknown projects", () => {
@@ -39,6 +45,16 @@ describe("watching a project", () => {
     expect(() => b.watchProject(owner, "nope", { watched: false })).toThrow();
     const g = b.createGrant(owner, { projects: ["inbox"], operations: ["read"], expires_at: "2026-11-24T09:00:00.000Z" });
     expect(() => b.watchProject(b.authenticateAgent(g.token), "inbox", { watched: true })).toThrow();
+  });
+
+  it("forgets unwatched projects that no longer exist", () => {
+    const b = setup();
+    const a = b.createProject(owner, "A");
+    const c = b.createProject(owner, "C");
+    b.watchProject(owner, a.id, { watched: false });
+    b.store.run("DELETE FROM projects WHERE id=?", a.id);
+    b.watchProject(owner, c.id, { watched: false });
+    expect(b.store.setting<string[]>("unwatched_projects", [])).toEqual([c.id]);
   });
 
   it("does not schedule goal reviews for an unwatched project", async () => {
@@ -62,5 +78,9 @@ describe("watching a project", () => {
     const res = await app.inject({ method: "PUT", url: `/api/v1/projects/${p.id}/watch`, headers: { host: "127.0.0.1:4317", cookie: `${c.name}=${c.value}`, "x-brain-csrf": pair.json().csrf }, payload: { watched: false } });
     expect(res.statusCode).toBe(200);
     expect(res.json()).toEqual({ id: p.id, watched: false });
+    const headers = { host: "127.0.0.1:4317", cookie: `${c.name}=${c.value}`, "x-brain-csrf": pair.json().csrf };
+    const url = `/api/v1/projects/${p.id}/watch`;
+    expect((await app.inject({ method: "PUT", url, headers, payload: { watched: "no" } })).statusCode).toBe(400);
+    expect((await app.inject({ method: "PUT", url, headers, payload: { watched: true, extra: 1 } })).statusCode).toBe(400);
   });
 });

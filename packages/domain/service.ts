@@ -312,7 +312,11 @@ export class Brain {
       throw new BrainError("INVALID_INPUT", "The Inbox is always watched.", 400);
     const list = this.store
       .setting<string[]>("unwatched_projects", [])
-      .filter((id) => id !== projectId);
+      .filter(
+        (id) =>
+          id !== projectId &&
+          !!this.store.get("SELECT id FROM projects WHERE id=?", id),
+      );
     if (!v.watched) list.push(projectId);
     this.store.set("unwatched_projects", list.slice(-500));
     return { id: projectId, watched: v.watched };
@@ -3929,12 +3933,12 @@ export class Brain {
     this.owner(p);
     return buildBrief(this.briefInput(p), this.clock());
   }
-  /** Today only looks at watched projects; Your brain passes `includeUnwatched`. */
-  briefInput(p: Principal, includeUnwatched = false): BriefInput {
-    const projects = (this.projects(p) as { id: string }[]).filter(
-      (x) => includeUnwatched || this.isWatched(x.id),
+  /** Today only looks at watched projects. */
+  briefInput(p: Principal): BriefInput {
+    const projects = (this.projects(p) as { id: string }[]).filter((x) =>
+      this.isWatched(x.id),
     );
-    const inScope = (id: string) => includeUnwatched || this.isWatched(id);
+    const inScope = (id: string) => this.isWatched(id);
     const current = (project: string, list: unknown) =>
       Array.isArray(list) && list.length > 0 && (list as Evidence[]).every((e) => this.evidenceCurrent(project, e));
     const gates = this.entities(p, "gate").filter(
@@ -4024,7 +4028,7 @@ export class Brain {
     )!;
     const gates = this.entities(p, "gate").filter((g) => g.project_id === project);
     const queued = gates.filter((g) => g.data.status === "queued");
-    const input = this.briefInput(p, true);
+    const input = this.briefInput(p);
     const mine = <T extends { project_id: string }>(list: T[]) => list.filter((x) => x.project_id === project);
     const brief = buildBrief(
       {
