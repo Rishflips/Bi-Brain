@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { friendlyError } from "../today/BriefCard.tsx";
 import { AgentTile } from "./AgentTile.tsx";
 import { ConnectionList } from "./ConnectionList.tsx";
@@ -23,19 +23,48 @@ type Props = {
 export function ConnectionsView({ api, projects, projectId, grants, onChanged, onPreviewHandoff, onManualSetup }: Props) {
   const [status, setStatus] = useState<AgentsStatus | null>(null);
   const [error, setError] = useState<string | null>(null);
-  useEffect(() => {
-    let live = true;
-    api<AgentsStatus>("/agents")
-      .then((s) => {
-        if (live) setStatus(s);
-      })
-      .catch((e) => {
-        if (live) setError(friendlyError(e));
-      });
-    return () => {
-      live = false;
-    };
+  // One detection request at a time. A request asked for while one runs is
+  // queued once, and an answer that arrives after unmount is ignored.
+  const inFlight = useRef(false);
+  const again = useRef(false);
+  const mounted = useRef(true);
+  const refresh = useCallback(async () => {
+    if (inFlight.current) {
+      again.current = true;
+      return;
+    }
+    inFlight.current = true;
+    try {
+      const s = await api<AgentsStatus>("/agents");
+      if (mounted.current) {
+        setStatus(s);
+        setError(null);
+      }
+    } catch (e) {
+      if (mounted.current) setError(friendlyError(e));
+    } finally {
+      inFlight.current = false;
+      if (again.current && mounted.current) {
+        again.current = false;
+        void refresh();
+      }
+    }
   }, [api]);
+  useEffect(() => {
+    mounted.current = true;
+    void refresh();
+    // The person may install an agent in another window, then come back.
+    const onFocus = () => void refresh();
+    window.addEventListener("focus", onFocus);
+    return () => {
+      mounted.current = false;
+      window.removeEventListener("focus", onFocus);
+    };
+  }, [refresh]);
+  const changed = useCallback(async () => {
+    await onChanged();
+    void refresh();
+  }, [onChanged, refresh]);
   const clients = status?.clients.length ? status.clients : KNOWN;
   // "Other" and any client this screen has no tile for end up with the handoff tile, so no live access is hidden.
   const otherGrants = grants.filter((g) => !clients.some((c) => c.client === g.client));
@@ -62,13 +91,13 @@ export function ConnectionsView({ api, projects, projectId, grants, onChanged, o
             projects={projects}
             projectId={projectId}
             grants={grants.filter((g) => g.client === info.client)}
-            onChanged={onChanged}
+            onChanged={changed}
           />
         ))}
         <section className="cx-tile" aria-labelledby="cx-other-h">
           <h2 id="cx-other-h">Any other agent</h2>
           <p className="tv-faint">Copy a handoff of one project and paste it in. It gives no ongoing access.</p>
-          <ConnectionList api={api} grants={otherGrants} projects={projects} onChanged={onChanged} />
+          <ConnectionList api={api} grants={otherGrants} projects={projects} onChanged={changed} />
           <div className="tv-actions">
             <button type="button" className="tv-btn tv-sm" onClick={() => onPreviewHandoff(projectId)}>
               Preview handoff

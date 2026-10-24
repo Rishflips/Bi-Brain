@@ -48,7 +48,7 @@ export function ConnectionList({ api, grants, projects, hint = "", onChanged }: 
                   Reads {title(g.projects)} · {g.operations.includes("propose_memory") ? "suggests memories" : "read only"}
                   {g.folder ? ` · ${g.folder}` : ""}
                 </p>
-                {g.status !== "Connected" && hint && <p className="tv-faint">{hint}</p>}
+                {g.status !== "Connected" && g.folder && hint && <p className="tv-faint">{hint}</p>}
               </div>
               <button
                 type="button"

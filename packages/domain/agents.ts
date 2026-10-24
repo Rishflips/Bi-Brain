@@ -56,9 +56,9 @@ export function configContents(client: AgentClient, launch: LaunchSpec): string 
 
 /** What to do after the file is written, in the agent's own words. */
 export const AGENT_HINTS: Record<AgentClient, string> = {
-  codex: "Open Codex in this folder. If Codex asks, trust the folder and allow BiBrain.",
-  "claude-code": "Open Claude Code in this folder and approve BiBrain when it asks.",
-  cursor: "Open this folder in Cursor. If BiBrain is listed as off in Cursor's settings, turn it on.",
+  codex: "Open Codex in this folder. If Codex asks, trust the folder and allow BiBrain. Keep the new file out of shared version control.",
+  "claude-code": "Open Claude Code in this folder and approve BiBrain when it asks. Keep the new file out of shared version control.",
+  cursor: "Open this folder in Cursor. If BiBrain is listed as off in Cursor's settings, turn it on. Keep the new file out of shared version control.",
 };
 
 export type DetectEnv = {

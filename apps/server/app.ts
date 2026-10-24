@@ -440,6 +440,15 @@ export async function createApp(
         },
       );
   } else {
+    // One-time links are for the person's own computer, like one-step adding.
+    const linksAllowed = !deployment.secure;
+    const linksUnavailable = () => {
+      throw new BrainError(
+        "PAIRING_UNAVAILABLE",
+        "Sign-in links are only available when BiBrain runs on this computer.",
+        403,
+      );
+    };
     const startSession = (reply: FastifyReply) => {
       const { token, csrf } = localBrain!.issueSession();
       reply.setCookie("brain_session", token, {
@@ -474,6 +483,7 @@ export async function createApp(
       "/api/v1/session/pair-link",
       { config: { rateLimit: { max: 10, timeWindow: 60000 } } },
       (req) => {
+        if (!linksAllowed) return linksUnavailable();
         const { secret } = z
           .object({ secret: z.string().max(200) })
           .strict()
@@ -493,6 +503,7 @@ export async function createApp(
       "/api/v1/session/pair-link/redeem",
       { config: { rateLimit: { max: 10, timeWindow: 60000 } } },
       (req, reply) => {
+        if (!linksAllowed) return linksUnavailable();
         const { token } = z
           .object({ token: z.string().regex(/^[0-9a-f]{64}$/u) })
           .strict()

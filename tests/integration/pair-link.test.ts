@@ -56,6 +56,30 @@ describe("one-time pairing link", () => {
   });
 });
 
+describe("pairing links on a secure deployment", () => {
+  it("are unavailable when the app is served over HTTPS for remote use", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "pair-link-secure-"));
+    const s = new Storage(join(dir, "brain.sqlite"));
+    cleanup.push(() => rmSync(dir, { recursive: true, force: true }));
+    cleanup.push(() => {
+      try {
+        s.close();
+      } catch {}
+    });
+    const secret = "s".repeat(40);
+    const app = await createApp(new Brain(s), { pairSecret: secret, static: false, publicOrigin: "https://brain.example" });
+    cleanup.push(() => void app.close());
+    for (const [url, payload] of [
+      ["/api/v1/session/pair-link", { secret }],
+      ["/api/v1/session/pair-link/redeem", { token: "a".repeat(64) }],
+    ] as const) {
+      const res = await app.inject({ method: "POST", url, headers: { host: "brain.example" }, payload });
+      expect(res.statusCode).toBe(403);
+      expect(res.json().error.code).toBe("PAIRING_UNAVAILABLE");
+    }
+  });
+});
+
 describe("takePairToken", () => {
   it("takes the token and removes it from the address bar", () => {
     const calls: string[] = [];

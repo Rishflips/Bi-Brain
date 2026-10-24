@@ -120,7 +120,7 @@ export function AddAgent({ api, info, projects, projectId, lastFolder, onCancel,
             <pre className="cx-file" data-testid="agent-file">
               {preview.contents}
             </pre>
-            <p className="tv-faint">The access key stays in BiBrain on this computer, never in this file. An existing file is never changed.</p>
+            <p className="tv-faint">The access key stays in BiBrain on this computer, never in this file. An existing file is never changed. This file points at BiBrain on this computer, so keep it out of shared version control.</p>
           </>
         ) : (
           <p className="tv-faint">Enter the project folder to see the file.</p>

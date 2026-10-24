@@ -210,7 +210,10 @@ Agents write back to a project only as suggestions that wait on Today. Revoked
 access never counts as active. Fence in-flight reads when the selected project
 changes; never render the previous project's data under the new project name.
 
-Status vocabulary: Not connected, Awaiting authorization, Checking, Connected, Needs attention, Revoked.
+Status words on a connection, as the screen shows them: "Waiting for its first
+call" (server status Not connected), "Connected · last used …" (Connected), "this
+access expired" (Needs attention) and "access ended" (Revoked). Expired and ended
+connections sit under "Earlier connections".
 A configured key alone does not establish Connected; verify a round trip.
 
 Set up by hand keeps the original flow for hosted use and other clients: choose

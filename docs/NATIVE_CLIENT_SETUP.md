@@ -13,7 +13,8 @@ This works in the local app on your own computer. The hosted edition uses
 3. Pick the project and the project folder where you open the agent.
 4. Open **See the file BiBrain will add** and check it. BiBrain writes only that
    one file in the folder. If the file already exists, BiBrain changes nothing and
-   shows the exact lines to add yourself.
+   shows the exact lines to add yourself. The file points at BiBrain on this
+   computer, so keep it out of shared version control.
 5. Open the agent in that folder and approve BiBrain once.
 6. The tile says **Waiting for its first call** until the agent really uses
    BiBrain, then **Connected**.
