@@ -72,6 +72,28 @@ describe("Brain.agentNote", () => {
     expect(b.brief(owner).items).toHaveLength(1);
   });
 
+  it("keeps a rejected agent decision rejected when a later note repeats it", () => {
+    const { b, agent } = setup();
+    const decisions = [{ topic: "pricing page", decision: "ships with one plan" }];
+    b.agentNote(agent, { project_id: "inbox", decisions }, "a");
+    const [card] = b.brief(owner).items;
+    b.reviewGate(owner, card.target.id, { action: "reject", expected_version: card.target.version });
+    expect(b.brief(owner).items).toHaveLength(0);
+    const again = b.agentNote(agent, { project_id: "inbox", summary: "Different words.", decisions }, "b");
+    expect(again.suggestions).toBe(0);
+    expect(b.brief(owner).items).toHaveLength(0);
+  });
+
+  it("still raises a card when the agent changes its decision after a rejection", () => {
+    const { b, agent } = setup();
+    b.agentNote(agent, { project_id: "inbox", decisions: [{ topic: "pricing page", decision: "ships with one plan" }] }, "a");
+    const [card] = b.brief(owner).items;
+    b.reviewGate(owner, card.target.id, { action: "reject", expected_version: card.target.version });
+    const next = b.agentNote(agent, { project_id: "inbox", decisions: [{ topic: "pricing page", decision: "ships with two plans" }] }, "b");
+    expect(next.suggestions).toBe(1);
+    expect(b.brief(owner).items).toHaveLength(1);
+  });
+
   it("refuses read-only grants, other projects, the owner, newlines, oversize and empty notes", () => {
     const readOnly = setup(["read"]);
     expect(() => readOnly.b.agentNote(readOnly.agent, note)).toThrow(/Item unavailable/);

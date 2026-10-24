@@ -693,7 +693,20 @@ export class Brain {
               this.source(p, e.source_id).visibility === "project",
           ),
       );
-    if (duplicate) return false;
+    // An agent that repeats a decision the owner already turned down must not
+    // raise it again. Owner captures keep their own rules.
+    const turnedDown =
+      actor.startsWith("agent:") &&
+      this.entities(p, "gate").some(
+        (g) =>
+          g.project_id === projectId &&
+          ["rejected", "dismissed"].includes(g.data.status) &&
+          g.data.entity === key &&
+          g.data.field?.aspect === memory.field.aspect &&
+          JSON.stringify(g.data.field?.value) ===
+            JSON.stringify(memory.field.value),
+      );
+    if (duplicate || turnedDown) return false;
     this.createEntity(projectId, "gate", {
       raw_id: source.id,
       type: memory.type,
