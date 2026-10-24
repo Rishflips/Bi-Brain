@@ -19,6 +19,7 @@ const children = entries.map((args) => {
     NODE_ENV: dev ? "development" : "production",
   };
   if (!isWorker(args)) delete env.BRAIN_DECISION_API_KEY;
+  if (!isWorker(args)) delete env.OLLAMA_API_KEY;
   if (!isServer(args) && !isWorker(args)) delete env.BRAIN_PADDLE_API_KEY;
   if (!isServer(args) && !isWorker(args)) delete env.BRAIN_PADDLE_WEBHOOK_SECRET;
   if (!isServer(args) && !isWorker(args)) delete env.BRAIN_DODO_API_KEY;

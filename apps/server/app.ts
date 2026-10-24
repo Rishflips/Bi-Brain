@@ -22,6 +22,7 @@ import { deploymentPolicy } from "./deployment.ts";
 import type { PaddleBillingService } from "../../packages/runtime/paddle-billing.ts";
 import type { DodoBillingService } from "../../packages/runtime/dodo-billing.ts";
 import { registerBillingRoutes } from "./billing-routes.ts";
+import { systemOneCapability } from "./system-one-capability.ts";
 import { agentConnect, LOCAL_ONLY_REASON, type AgentConnectConfig } from "./agent-connect.ts";
 
 const LOGIN_PATH = "/auth/login";
@@ -73,6 +74,13 @@ declare module "fastify" {
     releaseRuntime?: () => void;
   }
 }
+/** The local brain, asking the worker whether sorting help can be switched on. */
+function localBrainWithSortingHelp(): Brain {
+  const storage = new Storage();
+  const clock = () => new Date();
+  return new Brain(storage, clock, undefined, undefined, undefined, undefined, systemOneCapability(storage, clock));
+}
+
 export async function createApp(
   brain: Brain | undefined = undefined,
   options: {
@@ -149,7 +157,7 @@ export async function createApp(
   const ownsLocalBrain = !managed && !brain;
   const localBrain: Brain | undefined = managed
     ? undefined
-    : (brain ?? new Brain(new Storage()));
+    : (brain ?? localBrainWithSortingHelp());
   const agentHome = process.env.BRAIN_AGENT_HOME ?? homedir();
   const agentPath = process.env.BRAIN_AGENT_PATH ?? process.env.PATH ?? "";
   const agents = localBrain
