@@ -1,6 +1,7 @@
 {
   "name": "bibrain",
   "private": true,
+  "license": "Apache-2.0",
   "type": "module",
   "version": "0.1.0",
   "bin": { "bibrain": "./bibrain.mjs" }

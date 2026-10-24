@@ -14,6 +14,10 @@ Do not promise unlimited reasoning. Set prices after measuring model cost, conne
 
 ## License decision
 
+**Decided 2026-10-24:** the app is `AGPL-3.0-only` ([LICENSE](../LICENSE)). The agent connector (`apps/mcp` and `apps/cli`) is `Apache-2.0`, so other tools can embed it. Every workspace `package.json` declares its license. A contributor agreement, which would keep the option of offering the hosted edition under other terms, is recommended but not yet in place.
+
+Background considered before the decision:
+
 Permissive open source permits broad commercial reuse. A restriction on competing hosted services generally requires a source-available approach for affected code.
 Do not attach contradictory no-competition terms to the same code granted under MIT/Apache.
 Hosted service terms and software licenses govern different things.
