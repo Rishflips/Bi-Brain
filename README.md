@@ -95,7 +95,9 @@ npx bibrain
 BiBrain opens in your browser already signed in. Connections finds Codex, Claude Code and Cursor and adds each to a project folder with one button.
 
 `npx bibrain` runs from this BiBrain folder (it is not published to npm). It
-builds the app on first use, starts it, and opens a one-time sign-in link that
+builds the app on first use (after updating BiBrain, for example with
+`git pull`, run `npm run build` once, or delete `dist`, so the new version is
+served), starts it, and opens a one-time sign-in link that
 works once and expires after two minutes. `npx bibrain open` opens it again
 signed in. To sign in by hand instead, run `npm run db:migrate`, `npm run build`
 and `npm start`, then paste the private pairing code from `data/owner-secret`

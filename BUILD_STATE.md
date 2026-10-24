@@ -53,6 +53,10 @@ Known limits:
   connector with the MCP SDK client against a real local server.
 - The access key rests in BiBrain's data folder, as the installation code does.
   One-step connections last 90 days unless revoked.
+- `npx bibrain start` (the build, the server start and the health wait) and the
+  real browser opener have not been run on the owner's machine. That includes
+  whether Windows `rundll32 url.dll,FileProtocolHandler` keeps the `#pair=`
+  fragment. The `open` hand-off is covered by a test with a stubbed browser.
 - Local V1 only; no real model run.
 
 ## 2026-10-23 — Your brain v2 (branch reframe/your-brain-v2)
