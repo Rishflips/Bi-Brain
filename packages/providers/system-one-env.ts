@@ -42,7 +42,9 @@ export function systemOneFromEnv(env: Record<string, string | undefined>): { con
   const tier = base as "clef" | "clef-flash";
   const override = loopbackOverride(env.BRAIN_SYSTEM1_ENDPOINT);
   if (override === null) return off(TEST_SERVER_ONLY);
-  const key = ((env.BRAIN_DECISION_API_KEY ?? env.OLLAMA_API_KEY) ?? "").trim() || undefined;
+  const key = (env.BRAIN_DECISION_API_KEY ?? "").trim() || (env.OLLAMA_API_KEY ?? "").trim() || undefined;
+  const inputRaw = env.BRAIN_SYSTEM1_INPUT_MICRO_USD_PER_MILLION?.trim();
+  if (inputRaw && !/^[1-9][0-9]{0,15}$/u.test(inputRaw)) return off("BRAIN_SYSTEM1_INPUT_MICRO_USD_PER_MILLION must be a positive whole number.");
 
   let endpoint: string;
   let label: string;
@@ -63,7 +65,6 @@ export function systemOneFromEnv(env: Record<string, string | undefined>): { con
       endpoint = `https://api.cloudflare.com/client/v4/accounts/${account}/ai/run/@cf/cloudflare/${model}`;
     }
   }
-  const inputRaw = env.BRAIN_SYSTEM1_INPUT_MICRO_USD_PER_MILLION?.trim();
   const config: AskConfig = {
     provider,
     endpoint,

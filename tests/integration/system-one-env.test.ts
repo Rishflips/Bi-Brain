@@ -67,6 +67,20 @@ describe("systemOneFromEnv", () => {
       const r = systemOneFromEnv({ BRAIN_SYSTEM1_PROVIDER: "ollama", OLLAMA_API_KEY: "k", BRAIN_SYSTEM1_MODEL: "clef:cloud" });
       expect(r.config).toMatchObject({ model: "clef:cloud", price: { version: "ollama-estimate-clef-2026-10-01", input_micro_usd_per_million: 240_000 } });
     });
+    it.each(["", "   "])("falls through a blank BRAIN_DECISION_API_KEY (%j) to OLLAMA_API_KEY", (blank) => {
+      const r = systemOneFromEnv({ BRAIN_SYSTEM1_PROVIDER: "ollama", BRAIN_DECISION_API_KEY: blank, OLLAMA_API_KEY: "k".repeat(40) });
+      expect(r.config).toMatchObject({ key: "k".repeat(40) });
+    });
+    it("treats a blank Cloudflare token as missing", () => {
+      const r = systemOneFromEnv({ BRAIN_SYSTEM1_PROVIDER: "cloudflare", BRAIN_CLOUDFLARE_ACCOUNT_ID: account, BRAIN_DECISION_API_KEY: "   " });
+      expect(r.config).toBeNull();
+      expect("reason" in r && r.reason).toMatch(/token/i);
+    });
+    it.each(["abc", "1.5", "-1", "0"])("rejects the input price %j by name", (bad) => {
+      const r = systemOneFromEnv({ BRAIN_SYSTEM1_PROVIDER: "ollama", OLLAMA_API_KEY: "k", BRAIN_SYSTEM1_INPUT_MICRO_USD_PER_MILLION: bad });
+      expect(r.config).toBeNull();
+      expect("reason" in r && r.reason).toMatch(/BRAIN_SYSTEM1_INPUT_MICRO_USD_PER_MILLION/);
+    });
     it("rejects other models and honours price overrides", () => {
       expect(systemOneFromEnv({ BRAIN_SYSTEM1_PROVIDER: "ollama", OLLAMA_API_KEY: "k", BRAIN_SYSTEM1_MODEL: "llama3" }).config).toBeNull();
       const r = systemOneFromEnv({ BRAIN_SYSTEM1_PROVIDER: "ollama", OLLAMA_API_KEY: "k", BRAIN_SYSTEM1_PRICE_VERSION: "v9", BRAIN_SYSTEM1_INPUT_MICRO_USD_PER_MILLION: "1234" });
