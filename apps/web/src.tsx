@@ -91,8 +91,8 @@ type SortingStatus = {
 function sortingLine(status: SortingStatus, prefs: Preferences): string {
   if (!status.configured)
     return `Off on this computer: ${status.reason ?? "sorting help is not set up."}`;
-  if (prefs.daily_cap_micro_usd <= 0 || prefs.per_job_cap_micro_usd <= 0)
-    return "Needs a daily limit above $0 below.";
+  if (prefs.daily_cap_micro_usd <= 0) return "Needs a daily limit above $0 below.";
+  if (prefs.per_job_cap_micro_usd <= 0) return "Needs a per-note limit above $0 below.";
   if (!prefs.enabled) return "Needs background help turned on below.";
   if (!prefs.decision_provider_enabled) return "Waiting for your consent below.";
   return `On · ${status.label ?? "sorting service"} · ${status.answers} ${status.answers === 1 ? "note" : "notes"} sorted, ${status.reviewed} reviewed`;
@@ -291,6 +291,9 @@ function App() {
     }),
     [prefs, setPrefs] = useState<Preferences | null>(null),
     [sorting, setSorting] = useState<SortingStatus | null>(null),
+    [sortingUnavailable, setSortingUnavailable] = useState(false),
+    // The preferences as last loaded or saved, which is what sorting help really runs on.
+    [savedPrefs, setSavedPrefs] = useState<Preferences | null>(null),
     [grants, setGrants] = useState<any[]>([]),
     [billing, setBilling] = useState<BillingStatus | null>(null),
     [scope, setScope] = useState(
@@ -433,7 +436,7 @@ function App() {
       api("/preferences/background"),
       api("/connections"),
       api<BillingStatus>("/billing/status"),
-      // Sorting help is optional: a failed read hides its card, never the rest.
+      // Sorting help is optional: a failed read says so on its card, never fails the rest.
       api<SortingStatus>("/system-one/status").catch(() => null),
     ]);
     // A response that arrives after sign-out or an account change must not
@@ -443,9 +446,11 @@ function App() {
     setNotes(n);
     setToday(t);
     if (!preferencesDirty.current) setPrefs(settings);
+    setSavedPrefs(settings);
     setGrants(g);
     setBilling(paidPlan);
     setSorting(sortingStatus);
+    setSortingUnavailable(sortingStatus === null);
   }, []);
   /**
    * Clears every piece of per-account UI state: fetched data, chosen scope,
@@ -465,6 +470,8 @@ function App() {
     });
     setPrefs(null);
     setSorting(null);
+    setSortingUnavailable(false);
+    setSavedPrefs(null);
     setBriefCount(null);
     setGrants([]);
     setBilling(null);
@@ -1403,7 +1410,7 @@ function App() {
                   </button>
                 </article>
               ) : null}
-              {prefs && sorting && runtime?.mode !== "managed" ? (
+              {prefs && savedPrefs && (sorting || sortingUnavailable) && runtime?.mode !== "managed" ? (
                 <article>
                   <h2>Sorting help</h2>
                   <p>
@@ -1412,9 +1419,18 @@ function App() {
                     without your Keep.
                   </p>
                   <p className="status" role="status">
-                    {sortingLine(sorting, prefs)}
+                    {sorting
+                      ? sortingLine(sorting, savedPrefs)
+                      : "Sorting help status is unavailable right now."}
                   </p>
-                  {sorting.last_error ? (
+                  {sorting &&
+                  (prefs.enabled !== savedPrefs.enabled ||
+                    prefs.daily_cap_micro_usd !== savedPrefs.daily_cap_micro_usd ||
+                    prefs.per_job_cap_micro_usd !== savedPrefs.per_job_cap_micro_usd ||
+                    prefs.decision_provider_enabled !== savedPrefs.decision_provider_enabled) ? (
+                    <p className="muted">Save to apply.</p>
+                  ) : null}
+                  {sorting?.configured && sorting.last_error ? (
                     <p className="muted">Last problem: {sorting.last_error}</p>
                   ) : null}
                   <div className="actions">
@@ -1472,9 +1488,26 @@ function App() {
                             body.decision_provider_enabled =
                               decisionConsentOverride;
                         }
-                        setPrefs(
-                          await api("/preferences/background", body, "PATCH"),
-                        );
+                        let saved: Preferences;
+                        try {
+                          saved = await api("/preferences/background", body, "PATCH");
+                        } catch (error) {
+                          // A refused consent should say why in the worker's words.
+                          if (body.decision_provider_enabled === true && runtime?.mode !== "managed") {
+                            const now = await api<SortingStatus>("/system-one/status").catch(() => null);
+                            if (now) setSorting(now);
+                            if (now?.reason) throw new Error(now.reason);
+                          }
+                          throw error;
+                        }
+                        setPrefs(saved);
+                        setSavedPrefs(saved);
+                        api<SortingStatus>("/system-one/status")
+                          .then((now) => {
+                            setSorting(now);
+                            setSortingUnavailable(false);
+                          })
+                          .catch(() => {});
                         setConsentOverride(null);
                         setDecisionConsentOverride(null);
                         preferencesDirty.current = false;

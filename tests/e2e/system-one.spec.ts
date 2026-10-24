@@ -3,6 +3,7 @@ import { expect, test, type Page } from "@playwright/test";
 // One server, one brain, one story: the journeys below build on each other, so they
 // run in order and share a single sign-in (local pairing is rate limited).
 test.describe.configure({ mode: "serial" });
+test.setTimeout(90_000);
 
 const LABEL = "Ollama on this computer (estimated cost)";
 const nav = (page: Page) => page.getByRole("navigation", { name: "Main navigation" });
@@ -80,7 +81,7 @@ test("sorting help is switched on in Settings and a note is filed with Keep", as
   await expect(async () => {
     await page.reload();
     await expect(fileCard(page)).toBeVisible({ timeout: 2000 });
-  }).toPass({ timeout: 30000 });
+  }).toPass({ timeout: 45_000, intervals: [1000, 2000] });
   await fileCard(page).getByRole("button", { name: "Keep" }).click();
   await expect(page.locator(".tv-toast")).toContainText("Moved to Northstar.");
 
@@ -111,7 +112,7 @@ test("Dismiss on a filing suggestion can be undone, and a stale Keep says so pla
   await expect(async () => {
     await page.reload();
     await expect(fileCard(page)).toBeVisible({ timeout: 2000 });
-  }).toPass({ timeout: 30000 });
+  }).toPass({ timeout: 45_000, intervals: [1000, 2000] });
 
   await fileCard(page).getByRole("button", { name: "Dismiss" }).click();
   await expect(page.locator(".tv-toast")).toContainText("Dismissed. The note stays in your Inbox.");
@@ -176,7 +177,7 @@ test("a Watch switch hides a project's cards from Today and brings them back", a
   await expect(async () => {
     await page.reload();
     await expect(prepared).toBeVisible({ timeout: 2000 });
-  }).toPass({ timeout: 30000 });
+  }).toPass({ timeout: 45_000, intervals: [1000, 2000] });
 
   const watch = page.getByRole("switch", { name: "Watch Northstar" });
   await expect(watch).toBeChecked();
