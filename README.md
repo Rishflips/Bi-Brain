@@ -109,6 +109,23 @@ into the first-use screen. A preview or custom database folder has its own
 `owner-secret` beside that database. The code is generated locally and is never
 logged or exported.
 
+### Optional sorting help
+
+BiBrain can suggest which project a new note belongs in and what is worth your attention. It only suggests; nothing moves without your Keep. Add the settings to `.env`:
+
+```
+# Ollama (simplest)
+BRAIN_SYSTEM1_PROVIDER=ollama
+OLLAMA_API_KEY=your-ollama-key
+
+# or Cloudflare
+BRAIN_SYSTEM1_PROVIDER=cloudflare
+BRAIN_CLOUDFLARE_ACCOUNT_ID=your-32-character-account-id
+BRAIN_DECISION_API_KEY=your-workers-ai-token
+```
+
+Restart BiBrain, then turn sorting help on in Settings and set daily and per-note limits above $0. The key stays in BiBrain's background worker and is never sent to the browser. A local Ollama needs no key: set `BRAIN_SYSTEM1_PROVIDER=ollama` and `BRAIN_SYSTEM1_ENDPOINT=http://127.0.0.1:11434/v1/systemone`. Details and the owner-run live check (`npm run proof:sorting`) are in [Providers](docs/PROVIDERS.md).
+
 No provider key is required. Without one, BiBrain keeps originals, search,
 review, and labeled extractive previews available locally. Data is stored in
 `data/brain.sqlite`; the API and durable worker run together under the local
