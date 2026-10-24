@@ -191,6 +191,7 @@ export class Worker {
         .filter(
           (g) =>
             g.data.status === "active" &&
+            b.isWatched(g.project_id) &&
             g.data.preparation_enabled &&
             (!g.data.review_at || g.data.review_at <= b.now()),
         )) {

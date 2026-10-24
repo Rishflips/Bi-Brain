@@ -654,6 +654,9 @@ export async function createApp(
       z.object({ title: z.string() }).strict().parse(req.body).title,
     ),
   );
+  app.put("/api/v1/projects/:id/watch", (req) =>
+    req.brain.watchProject(req.principal, params(req), req.body),
+  );
   app.post("/api/v1/sources", (req, reply) => {
     req.brain.owner(req.principal);
     const result = req.brain.capture(req.principal, req.body, key(req));

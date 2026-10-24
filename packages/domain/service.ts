@@ -292,8 +292,30 @@ export class Brain {
   projects(p: Principal) {
     const g = this.grant(p);
     return this.store
-      .all("SELECT * FROM projects ORDER BY created_at")
-      .filter((r) => !g || g.projects.includes(r.id));
+      .all<{ id: string; title: string; created_at: string }>("SELECT * FROM projects ORDER BY created_at")
+      .filter((r) => !g || g.projects.includes(r.id))
+      .map((r) => ({ ...r, watched: this.isWatched(r.id) }));
+  }
+  /** Every project is watched unless the owner switched it off. The Inbox always is. */
+  isWatched(projectId: string): boolean {
+    return (
+      projectId === "inbox" ||
+      !this.store.setting<string[]>("unwatched_projects", []).includes(projectId)
+    );
+  }
+  watchProject(p: Principal, projectId: string, input: unknown) {
+    this.owner(p);
+    projectId = z.string().min(1).max(100).parse(projectId);
+    const v = z.object({ watched: z.boolean() }).strict().parse(input);
+    this.access(p, projectId);
+    if (projectId === "inbox")
+      throw new BrainError("INVALID_INPUT", "The Inbox is always watched.", 400);
+    const list = this.store
+      .setting<string[]>("unwatched_projects", [])
+      .filter((id) => id !== projectId);
+    if (!v.watched) list.push(projectId);
+    this.store.set("unwatched_projects", list.slice(-500));
+    return { id: projectId, watched: v.watched };
   }
   createProject(p: Principal, title: string) {
     this.owner(p);
@@ -3517,9 +3539,10 @@ export class Brain {
   export(p: Principal, project?: string) {
     this.owner(p);
     if (project) this.access(p, project);
-    const projects = this.projects(p).filter(
-      (r) => !project || r.id === project,
-    );
+    // Watching is a local viewing choice, not part of the portable format.
+    const projects = this.projects(p)
+      .filter((r) => !project || r.id === project)
+      .map(({ watched: _watched, ...row }) => row);
     const ids = projects.map((r) => r.id);
     const sources = this.store
       .all(
@@ -3906,21 +3929,26 @@ export class Brain {
     this.owner(p);
     return buildBrief(this.briefInput(p), this.clock());
   }
-  briefInput(p: Principal): BriefInput {
-    const projects = this.projects(p) as { id: string }[];
+  /** Today only looks at watched projects; Your brain passes `includeUnwatched`. */
+  briefInput(p: Principal, includeUnwatched = false): BriefInput {
+    const projects = (this.projects(p) as { id: string }[]).filter(
+      (x) => includeUnwatched || this.isWatched(x.id),
+    );
+    const inScope = (id: string) => includeUnwatched || this.isWatched(id);
     const current = (project: string, list: unknown) =>
       Array.isArray(list) && list.length > 0 && (list as Evidence[]).every((e) => this.evidenceCurrent(project, e));
     const gates = this.entities(p, "gate").filter(
-      (g) => g.data.status === "queued" && current(g.project_id, g.data.evidence),
+      (g) => g.data.status === "queued" && inScope(g.project_id) && current(g.project_id, g.data.evidence),
     );
     const proposals = this.entities(p, "proposal").filter(
-      (x) => x.data.status === "ready" && current(x.project_id, x.data.evidence),
+      (x) => x.data.status === "ready" && inScope(x.project_id) && current(x.project_id, x.data.evidence),
     );
     const claims = projects.flatMap((project) => this.currentClaims(p, project.id));
     const failedJobs = this.store
       .all<{ id: string; project_id: string; kind: string; attempts: number; created_at: string; payload: string }>(
         "SELECT id,project_id,kind,attempts,created_at,payload FROM jobs WHERE status='failed' AND kind IN ('derive_brief','review_changed_assumption') ORDER BY created_at DESC LIMIT 20",
       )
+      .filter((job) => inScope(job.project_id))
       .filter((job) => {
         let source_id: unknown;
         try {
@@ -3996,7 +4024,7 @@ export class Brain {
     )!;
     const gates = this.entities(p, "gate").filter((g) => g.project_id === project);
     const queued = gates.filter((g) => g.data.status === "queued");
-    const input = this.briefInput(p);
+    const input = this.briefInput(p, true);
     const mine = <T extends { project_id: string }>(list: T[]) => list.filter((x) => x.project_id === project);
     const brief = buildBrief(
       {
