@@ -1073,6 +1073,11 @@ Notes for the implementer:
   - In `tick`, right after the existing `b.access(...)` check: `if (j.kind === "system_one_route") { const r = await runSystemOneJob({...}, j, controller.signal); b.store.run("UPDATE jobs SET status=?,lease_until=NULL WHERE id=? AND fence=?", r.outcome === "recorded" ? "succeeded" : "cancelled", j.id, j.fence); return true; }`. Errors fall through to the existing catch, which retries `PROVIDER_UNAVAILABLE` while nothing is held and writes the failure receipt.
   - `main.ts`, local branch: `new Worker(new Brain(storage), undefined, undefined, undefined, (() => { const s = systemOneFromEnv(process.env); return s.config ? { config: s.config } : null; })())`.
   - **Ruling 12, status.** The worker publishes `brain.store.set("system_one_status", { configured, label, reason, updated_at })` once at startup in the local branch of `main.ts`, from the same `systemOneFromEnv` result. It never includes the key. `runSystemOneJob` updates `last_error` (a plain message) or `last_ok_at` on that setting after each job. The server never reads `process.env` for this, because `scripts/run.mjs` strips `BRAIN_DECISION_API_KEY` from the server.
+  - **Ruling 14, consent capability.** A local `Brain` admits `decision_provider_enabled: true` only when its 7th constructor argument `decisionCapability()` returns `{ ready: true }`, and the local server passes none today.
+    - In `apps/server/app.ts`, where the local brain is constructed (`brain ?? new Brain(new Storage())`), pass a capability that is ready only when the worker has published `system_one_status.configured === true` and the `worker_heartbeat` setting is under 30 s old.
+    - Otherwise its `reason` is the published reason, or "Sorting help needs BiBrain's background worker to be running."
+    - Read the Brain constructor's parameter order in packages/domain/service.ts first.
+    - Add a test: with no published status the consent PATCH is refused (409); with a published configured status and a fresh heartbeat it is accepted; with a heartbeat older than 30 s it is refused.
   - **Ruling 13, least privilege.** In `scripts/run.mjs`, also `delete env.OLLAMA_API_KEY` for every child that is not the worker, next to the existing `BRAIN_DECISION_API_KEY` line. Add `scripts/run.mjs` to this task's files.
 
 **`runSystemOneJob` steps:**
