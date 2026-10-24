@@ -75,6 +75,14 @@ Every Keep, Fix and Dismiss is logged against the answer that caused it. Watchin
    - **Access:** downloadable from Settings as JSON.
 8. **Live Clef proof** is the owner-run script `scripts/system-one-live-proof.ts`. CI and agents use a loopback fake Clef server.
 9. **No new Brief alarm:** a failed System 1 job never creates the "could not be prepared" card (the Brief only counts `derive_brief` and `review_changed_assumption`). Settings shows the last error instead.
+11. **Ollama is a provider too** (owner, 2026-10-24: "i have api key for clef from ollama cloud … it works").
+    - **Endpoints:** Ollama serves Clef at `/v1/systemone` in the native Jev format: the same request body, and a response with NO Cloudflare envelope (`{ model, answers, usage }`), where `output_tokens` may be above 0.
+    - **Provider kind:** the System 1 code accepts `provider: "ollama"`. Two endpoints are allowed, through `system-one-ask.ts`'s own resolver; `system-one.ts` stays unchanged:
+      - `https://ollama.com/v1/systemone`, which needs a key sent as a Bearer token;
+      - any loopback `http://127.0.0.1|localhost:<port>/v1/systemone`, with no key (local Ollama).
+    - **Models:** `clef-flash` or `clef`, optionally with a `:tag`. The response model is accepted when it equals the requested name or its base name.
+    - **Pricing:** Ollama bills by plan, so the cost is an ESTIMATE at Clef's public per-token input price. Output is priced 0. The label says "estimated", and the daily and per-job limits still bound how many calls run.
+    - **Key:** `BRAIN_DECISION_API_KEY`, falling back to `OLLAMA_API_KEY`.
 10. **Monthly cap deferred:** the brief's monthly cap needs ledger changes in billing-adjacent code. System 1 uses the existing daily and per-job caps, and the gap is recorded in BUILD_STATE.
 
 ## Review Focus
@@ -453,8 +461,19 @@ If `tests/integration/system-one.test.ts` does not exist, run `npx vitest run te
   - `reason` is a sentence for Settings.
   - It never includes the key.
 
+**Amendment (Ruling 11): Ollama.**
+- `BRAIN_SYSTEM1_PROVIDER` may also be `ollama`.
+- **Endpoint:** `https://ollama.com/v1/systemone` by default, or the loopback `BRAIN_SYSTEM1_ENDPOINT` (e.g. `http://localhost:11434/v1/systemone`).
+- **Key:** `BRAIN_DECISION_API_KEY ?? OLLAMA_API_KEY`. It is required for `ollama.com` and not needed for loopback.
+- **Model:** `clef-flash` (default) or `clef`, with an optional `:tag`.
+- **Price:** version `ollama-estimate-clef-flash-2026-10-01` / 90000, or `ollama-estimate-clef-2026-10-01` / 240000.
+- **Label:** "Ollama Cloud (estimated cost)", or "Ollama on this computer (estimated cost)" for loopback.
+- **Missing key reason:** "Add your Ollama API key to turn on sorting help."
+- **Validation:** the config is checked with `system-one-ask.ts`'s `resolveAskConfig` (Task 1 amendment), not `resolveSystemOneConfig`, because `system-one.ts` does not know the `ollama` kind.
+- **Extra tests:** (a) `ollama` with an `OLLAMA_API_KEY` builds the `ollama.com` endpoint with the estimated label; (b) `ollama` without a key gives the Ollama reason; (c) `ollama` with a loopback endpoint needs no key; (d) `ollama` with `https://evil.example/v1/systemone` is refused.
+
 **Variables:**
-- `BRAIN_SYSTEM1_PROVIDER`: `cloudflare`. Empty means off.
+- `BRAIN_SYSTEM1_PROVIDER`: `cloudflare` or `ollama`. Empty means off.
 - `BRAIN_CLOUDFLARE_ACCOUNT_ID`: 32 hex characters.
 - `BRAIN_SYSTEM1_MODEL`: `clef-flash` (default) or `clef`.
 - `BRAIN_DECISION_API_KEY`: the existing variable name, holding the Cloudflare API token.
