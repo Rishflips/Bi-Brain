@@ -78,6 +78,50 @@ describe("prepareAsk", () => {
     expect(() => prepareAsk(config, "note: x", many)).toThrow(SystemOneError);
   });
 
+  describe("Ollama", () => {
+    const ollama = {
+      provider: "ollama" as const,
+      endpoint: "http://127.0.0.1:9/v1/systemone",
+      model: "clef-flash",
+      price: { version: "ollama-1", input_micro_usd_per_million: 90_000, output_micro_usd_per_million: 0 },
+    };
+    const plain = { ...ok.result, usage: { input_tokens: 400, output_tokens: 3 } };
+
+    it("reads the plain top-level answer from a local Ollama without a key and prices input only", async () => {
+      const ask = prepareAsk(ollama, "note: x", questions, respond(plain));
+      const r = await ask.execute(new AbortController().signal);
+      expect(r.answers).toHaveLength(2);
+      expect(r.cost_micro_usd).toBe(Math.ceil((400 * 90_000) / 1_000_000));
+    });
+
+    it("accepts the base model name when a tagged model is configured", async () => {
+      const ask = prepareAsk({ ...ollama, model: "clef-flash:cloud" }, "note: x", questions, respond(plain));
+      const r = await ask.execute(new AbortController().signal);
+      expect(r.model).toBe("clef-flash");
+    });
+
+    it("needs a key for ollama.com and sends it as a bearer token", async () => {
+      const remote = { ...ollama, endpoint: "https://ollama.com/v1/systemone" };
+      expect(() => prepareAsk(remote, "note: x", questions)).toThrow(SystemOneError);
+      let headers: any;
+      const fetcher = (async (_u: string, init: RequestInit) => {
+        headers = init.headers;
+        return new Response(JSON.stringify(plain));
+      }) as unknown as typeof fetch;
+      const key = "k".repeat(40);
+      await prepareAsk({ ...remote, key }, "note: x", questions, fetcher).execute(new AbortController().signal);
+      expect(headers.Authorization).toBe(`Bearer ${key}`);
+    });
+
+    it.each([
+      ["another host", { endpoint: "https://evil.example/v1/systemone", key: "k".repeat(40) }],
+      ["another path", { endpoint: "https://ollama.com/api/chat", key: "k".repeat(40) }],
+      ["a non-Clef model", { model: "llama3" }],
+    ])("refuses %s", (_label, patch) => {
+      expect(() => prepareAsk({ ...ollama, ...patch }, "note: x", questions)).toThrow(SystemOneError);
+    });
+  });
+
   describe("deadline and transport bounds", () => {
     const fast = { ...config, timeout_ms: 30 };
     const never = () => new Promise<Response>(() => undefined);

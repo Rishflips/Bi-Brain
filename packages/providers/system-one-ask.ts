@@ -72,8 +72,51 @@ function checkQuestions(questions: AskQuestion[]) {
   }
 }
 
-export function prepareAsk(config: SystemOneConfig, state: string, questions: AskQuestion[], fetcher: typeof fetch = fetch): PreparedAsk {
-  const resolved = resolveSystemOneConfig(config);
+export type AskConfig = SystemOneConfig | (Omit<SystemOneConfig, "provider"> & { provider: "ollama" });
+
+const OLLAMA_MODEL = /^(clef|clef-flash)(:[A-Za-z0-9_.-]{1,40})?$/u;
+const OLLAMA_LOOPBACK_HOSTS = new Set(["127.0.0.1", "localhost", "[::1]"]);
+
+/**
+ * Resolves a config for the ask transport. Non-Ollama providers use the
+ * existing resolver unchanged. Ollama serves the plain Jev format (no
+ * Cloudflare envelope) at /v1/systemone, either on ollama.com (key required)
+ * or a loopback Ollama. The shared price, key, timeout, byte-bound and
+ * accepted-model checks are reused by resolving a loopback surrogate with
+ * `resolveSystemOneConfig`, then restoring the real endpoint.
+ */
+export function resolveAskConfig(config: AskConfig): ResolvedSystemOneConfig {
+  if (config.provider !== "ollama") return resolveSystemOneConfig(config);
+  const refuse = (message: string): never => {
+    throw new SystemOneError("PROVIDER_UNAVAILABLE", message, 503, false);
+  };
+  const endpointMessage = "The Ollama endpoint must be https://ollama.com/v1/systemone or a local Ollama.";
+  let url: URL | undefined;
+  try {
+    url = new URL(config.endpoint);
+  } catch {
+    refuse(endpointMessage);
+  }
+  const u = url as URL;
+  const loopback = u.protocol === "http:" && OLLAMA_LOOPBACK_HOSTS.has(u.hostname);
+  const official = u.protocol === "https:" && u.hostname === "ollama.com" && u.port === "";
+  if (u.username || u.password || u.search || u.hash || u.pathname !== "/v1/systemone" || !(loopback || official)) refuse(endpointMessage);
+  if (typeof config.model !== "string" || !OLLAMA_MODEL.test(config.model)) refuse("The Ollama model must be clef or clef-flash.");
+  if (official && (config.key === undefined || config.key === null)) refuse("A server-side credential is required for remote dispatch.");
+  if (config.price?.output_micro_usd_per_million !== 0) refuse("The Ollama output price must be exactly 0.");
+  const accepted = config.accepted_response_models ?? [...new Set([config.model, config.model.split(":")[0]])];
+  const base = resolveSystemOneConfig({
+    ...config,
+    provider: "typesafe",
+    endpoint: "http://127.0.0.1/v1/systemone",
+    accepted_response_models: accepted,
+  });
+  // The real provider is "ollama"; ResolvedSystemOneConfig only names the older kinds.
+  return { ...base, provider: "ollama" as unknown as ResolvedSystemOneConfig["provider"], endpoint: config.endpoint, url: u, loopback };
+}
+
+export function prepareAsk(config: AskConfig, state: string, questions: AskQuestion[], fetcher: typeof fetch = fetch): PreparedAsk {
+  const resolved = resolveAskConfig(config);
   if (typeof state !== "string" || !state.trim() || state.length > MAX_STATE) bad("The state is empty or too long.");
   checkQuestions(questions);
   const checked = [state, ...questions.flatMap((q) => [q.instructions, ...(q.type === "choice" ? q.options.map((o) => o.description) : [])])].join("\n");
