@@ -124,7 +124,16 @@ BRAIN_CLOUDFLARE_ACCOUNT_ID=your-32-character-account-id
 BRAIN_DECISION_API_KEY=your-workers-ai-token
 ```
 
-Restart BiBrain, then turn sorting help on in Settings and set daily and per-note limits above $0. The key stays in BiBrain's background worker and is never sent to the browser. A local Ollama needs no key: set `BRAIN_SYSTEM1_PROVIDER=ollama` and `BRAIN_SYSTEM1_ENDPOINT=http://127.0.0.1:11434/v1/systemone`. Details and the owner-run live check (`npm run proof:sorting`) are in [Providers](docs/PROVIDERS.md).
+Restart BiBrain, then open Settings and find "Background help & spending":
+
+1. Tick "Turn on background help (sorting new notes and preparing reviews)".
+2. Set "Daily cap (USD)" and "Per preparation cap (USD)" above 0, for example 0.05 and 0.01.
+3. Tick "Let BiBrain sort new notes with <service>".
+4. Press "Save preferences".
+
+The "Sorting help" card then reads "On · …". Until then it names what is missing: "Needs background help turned on below." (step 1), "Needs a daily limit above $0 below." (the daily cap), "Needs a per-note limit above $0 below." (the per-preparation cap), or "Waiting for your consent below." (step 3).
+
+The key stays in BiBrain's background worker and is never sent to the browser. A local Ollama needs no key: set `BRAIN_SYSTEM1_PROVIDER=ollama` and `BRAIN_SYSTEM1_ENDPOINT=http://127.0.0.1:11434/v1/systemone` (not yet tested against a real local Ollama). Details and the owner-run live check are in [Providers](docs/PROVIDERS.md); run it as: put `BRAIN_SYSTEM1_LIVE=1` on its own line in `.env` and run `npm run proof:sorting`, or in PowerShell run `$env:BRAIN_SYSTEM1_LIVE=1; npm run proof:sorting`. Remove the line from `.env` afterwards so it is never left on.
 
 No provider key is required. Without one, BiBrain keeps originals, search,
 review, and labeled extractive previews available locally. Data is stored in

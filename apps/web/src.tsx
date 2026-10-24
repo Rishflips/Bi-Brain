@@ -1524,7 +1524,7 @@ function App() {
                           setPrefs({ ...prefs, enabled: e.target.checked })
                         }
                       />{" "}
-                      Prepare around chosen goals
+                      Turn on background help (sorting new notes and preparing reviews)
                     </label>
                     <div className="grid">
                       {field(

@@ -57,7 +57,7 @@ test("sorting help is switched on in Settings and a note is filed with Keep", as
   const card = page.getByRole("article").filter({ has: page.getByRole("heading", { name: "Sorting help" }) });
   await expect(card).toBeVisible();
   await expect(card.getByText("Needs a daily limit above $0 below.")).toBeVisible();
-  await page.getByLabel("Prepare around chosen goals").check();
+  await page.getByLabel("Turn on background help (sorting new notes and preparing reviews)").check();
   await page.getByLabel("Daily cap (USD)").fill("0.05");
   await page.getByLabel("Per preparation cap (USD)").fill("0.01");
   const consent = page.getByLabel(/Let BiBrain sort new notes with/);

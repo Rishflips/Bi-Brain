@@ -36,7 +36,7 @@ Verified in this worktree at the commit's parent (Windows, Node 24.19.0):
 Known limits:
 
 - No live Clef or Ollama call has been made on this branch. The owner runs
-  `BRAIN_SYSTEM1_LIVE=1 npm run proof:sorting`.
+  `npm run proof:sorting` after putting `BRAIN_SYSTEM1_LIVE=1` in `.env` (or `$env:BRAIN_SYSTEM1_LIVE=1;` first in PowerShell), then removing the line.
 - The monthly cap is deferred; the daily and per-note limits apply.
 - A call that fails after it was sent is not retried (Ruling 15): the note stays
   unsorted and its hold stays.

@@ -55,7 +55,7 @@ Sorting help is the local, advisory use of Clef. For each new note it asks one s
 | `BRAIN_SYSTEM1_ENDPOINT` | Local test servers only: a loopback URL. Any other host is refused. |
 | `BRAIN_SYSTEM1_INPUT_MICRO_USD_PER_MILLION`, `BRAIN_SYSTEM1_PRICE_VERSION` | Override the built-in input price (a positive whole number) and its version label. |
 
-- **Ollama.** `https://ollama.com/v1/systemone` with the key as a bearer token, or a local Ollama on loopback with no key. Ollama bills by plan, so the cost is an estimate at Clef's public input price; it exists so the daily and per-note limits still bound calls.
+- **Ollama.** `https://ollama.com/v1/systemone` with the key as a bearer token, or a local Ollama on loopback with no key (set `BRAIN_SYSTEM1_ENDPOINT=http://127.0.0.1:11434/v1/systemone`; not yet tested against a real local Ollama). Ollama bills by plan, so the cost is a built-in estimate based on Cloudflare's published Clef input price (as of 2026-10-01); it exists so the daily and per-note limits still bound calls.
 - **Cloudflare.** Workers AI at `api.cloudflare.com` for the account in `BRAIN_CLOUDFLARE_ACCOUNT_ID`, with a token that has Workers AI access.
 - **Status.** The worker publishes whether sorting help is configured (never the key) and the last outcome. Settings reads that status. The consent switch works only when the worker is configured and running with a recent heartbeat.
 
@@ -75,7 +75,7 @@ Every answer must name an option the request offered; one invalid answer rejects
 
 **Review log.** Each Keep, Fix, Dismiss or rejection logs the judged question (`show`, `changes_fact` or `project`, never `kind`) with the choice, confidence and action. It holds no note text and can be downloaded from Settings.
 
-**Live proof is the owner's.** No live Clef or Ollama call has been made on this branch. After setting the variables above, the owner runs `BRAIN_SYSTEM1_LIVE=1 npm run proof:sorting`. It sends three synthetic notes as three requests, prints the answers, model, input tokens and cost (labelled estimated for Ollama), never prints the key or account id, refuses a loopback endpoint, and exits 0 only when all three answers validate. It spends quota, so agents and CI never run it; their tests use a loopback fake server.
+**Live proof is the owner's.** No live Clef or Ollama call has been made on this branch. After setting the variables above, the owner runs it: Put `BRAIN_SYSTEM1_LIVE=1` on its own line in `.env` and run `npm run proof:sorting`, or in PowerShell run `$env:BRAIN_SYSTEM1_LIVE=1; npm run proof:sorting`. Remove the line from `.env` afterwards so it is never left on. It sends three synthetic notes as three requests, prints the answers, model, input tokens and cost (labelled estimated for Ollama), never prints the key or account id, refuses a loopback endpoint, and exits 0 only when all three answers validate. It spends quota, so agents and CI never run it; their tests use a loopback fake server.
 
 ### Prepared decision contract and default-off managed consumer
 

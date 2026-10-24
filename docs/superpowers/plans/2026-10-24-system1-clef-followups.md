@@ -12,6 +12,7 @@ These are the minor findings left open after plan 4 (System 1 with Clef). None b
 ## Providers (`packages/providers/system-one-ask.ts`, `system-one-env.ts`)
 
 - The Ollama tests do not pin a nonzero output price, `http://ollama.com` or an empty-string key (the code handles all three).
+- `PreparedAsk.provider` is a free string; ledger rows and labels must keep handling "ollama".
 - `resolveAskConfig` uses an `as unknown as` provider cast.
 
 ## Run script (`scripts/run.mjs`)
