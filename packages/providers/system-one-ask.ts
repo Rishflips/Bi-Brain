@@ -99,7 +99,17 @@ export function prepareAsk(config: SystemOneConfig, state: string, questions: As
     json,
     bytes,
     request_hash: sha(json),
-    config_hash: sha(JSON.stringify({ p: resolved.provider, e: resolved.endpoint, m: resolved.model, v: resolved.price.version })),
+    config_hash: sha(JSON.stringify({
+      p: resolved.provider,
+      e: resolved.endpoint,
+      m: resolved.model,
+      v: resolved.price.version,
+      pi: resolved.price.input_micro_usd_per_million,
+      po: resolved.price.output_micro_usd_per_million,
+      t: resolved.timeout_ms,
+      rq: resolved.max_request_bytes,
+      rs: resolved.max_response_bytes,
+    })),
     reserved_micro_usd: reserved,
     model: resolved.model,
     provider: resolved.provider,
@@ -108,25 +118,66 @@ export function prepareAsk(config: SystemOneConfig, state: string, questions: As
   };
 }
 
+/**
+ * The whole request (fetch, bounded read, validation) runs under one deadline
+ * enforced by a race, so a fetcher or stream that ignores its abort signal
+ * still cannot outlive `timeout_ms`.
+ */
 async function run(resolved: ResolvedSystemOneConfig, json: string, questions: AskQuestion[], bound: number, fetcher: typeof fetch, signal: AbortSignal): Promise<AskResult> {
+  if (signal.aborted) throw new SystemOneError("PROVIDER_ABORTED", "Cancelled before it was sent.", 499, false);
+  const controller = new AbortController();
+  let timedOut = false;
+  const onAbort = () => controller.abort();
+  signal.addEventListener("abort", onAbort, { once: true });
+  const timer = setTimeout(() => {
+    timedOut = true;
+    controller.abort();
+  }, resolved.timeout_ms);
+  const work = Promise.resolve().then(() => perform(resolved, json, questions, bound, fetcher, controller.signal));
+  work.catch(() => undefined);
+  const expired = new Promise<never>((_, reject) => {
+    controller.signal.addEventListener(
+      "abort",
+      () =>
+        reject(
+          timedOut
+            ? new SystemOneError("PROVIDER_TIMEOUT", "The sorting service did not answer in time.", 504, true)
+            : new SystemOneError("PROVIDER_ABORTED", "Cancelled while waiting for the sorting service.", 499, true),
+        ),
+      { once: true },
+    );
+  });
+  expired.catch(() => undefined);
+  try {
+    return await Promise.race([work, expired]);
+  } catch (error) {
+    if (error instanceof SystemOneError) throw error;
+    throw new SystemOneError("PROVIDER_UNAVAILABLE", "The sorting service request failed.", 503, true);
+  } finally {
+    clearTimeout(timer);
+    signal.removeEventListener("abort", onAbort);
+  }
+}
+
+async function perform(resolved: ResolvedSystemOneConfig, json: string, questions: AskQuestion[], bound: number, fetcher: typeof fetch, signal: AbortSignal): Promise<AskResult> {
   const fail = (code: string, message: string, status: number, known?: { usage?: AskResult["usage"]; cost?: number; model?: string }): never => {
     throw new SystemOneError(code, message, status, true, known?.usage, known?.cost, known?.model);
   };
   if (signal.aborted) throw new SystemOneError("PROVIDER_ABORTED", "Cancelled before it was sent.", 499, false);
-  const controller = new AbortController();
-  const onAbort = () => controller.abort();
-  signal.addEventListener("abort", onAbort, { once: true });
-  const timer = setTimeout(() => controller.abort(), resolved.timeout_ms);
+  const headers: Record<string, string> = { "Content-Type": "application/json" };
+  if (resolved.key) headers.Authorization = `Bearer ${resolved.key}`;
+  const res = await fetcher(resolved.endpoint, { method: "POST", headers, body: json, signal, redirect: "error" });
+  if (!res.ok) {
+    res.body?.cancel().catch(() => undefined);
+    fail("PROVIDER_UNAVAILABLE", `The sorting service answered ${res.status}.`, 503);
+  }
+  const reader = res.body?.getReader();
+  const cancelReader = () => {
+    reader?.cancel().catch(() => undefined);
+  };
+  signal.addEventListener("abort", cancelReader, { once: true });
   let raw = "";
   try {
-    const headers: Record<string, string> = { "Content-Type": "application/json" };
-    if (resolved.key) headers.Authorization = `Bearer ${resolved.key}`;
-    const res = await fetcher(resolved.endpoint, { method: "POST", headers, body: json, signal: controller.signal, redirect: "error" });
-    if (!res.ok) {
-      res.body?.cancel().catch(() => undefined);
-      fail("PROVIDER_UNAVAILABLE", `The sorting service answered ${res.status}.`, 503);
-    }
-    const reader = res.body?.getReader();
     const chunks: Buffer[] = [];
     let total = 0;
     while (reader) {
@@ -134,18 +185,14 @@ async function run(resolved: ResolvedSystemOneConfig, json: string, questions: A
       if (done) break;
       total += value.byteLength;
       if (total > resolved.max_response_bytes) {
-        reader.cancel().catch(() => undefined);
+        cancelReader();
         fail("PROVIDER_INVALID", "The answer was larger than the configured limit.", 502);
       }
       chunks.push(Buffer.from(value));
     }
     raw = Buffer.concat(chunks).toString("utf8");
-  } catch (error) {
-    if (error instanceof SystemOneError) throw error;
-    fail(controller.signal.aborted && !signal.aborted ? "PROVIDER_TIMEOUT" : "PROVIDER_UNAVAILABLE", "The sorting service could not be reached.", 503);
   } finally {
-    clearTimeout(timer);
-    signal.removeEventListener("abort", onAbort);
+    signal.removeEventListener("abort", cancelReader);
   }
   let payload: any;
   try {

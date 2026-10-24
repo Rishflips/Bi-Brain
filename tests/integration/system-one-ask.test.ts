@@ -78,6 +78,67 @@ describe("prepareAsk", () => {
     expect(() => prepareAsk(config, "note: x", many)).toThrow(SystemOneError);
   });
 
+  describe("deadline and transport bounds", () => {
+    const fast = { ...config, timeout_ms: 30 };
+    const never = () => new Promise<Response>(() => undefined);
+    const stuckBody = () =>
+      new Response(new ReadableStream({ start() {} }), { status: 200 });
+
+    it("times out a fetcher that ignores its signal", async () => {
+      const started = Date.now();
+      const ask = prepareAsk(fast, "note: x", questions, never as unknown as typeof fetch);
+      await expect(ask.execute(new AbortController().signal)).rejects.toMatchObject({ code: "PROVIDER_TIMEOUT", dispatched: true });
+      expect(Date.now() - started).toBeLessThan(500);
+    });
+
+    it("times out a body that never delivers or closes", async () => {
+      const ask = prepareAsk(fast, "note: x", questions, (async () => stuckBody()) as unknown as typeof fetch);
+      await expect(ask.execute(new AbortController().signal)).rejects.toMatchObject({ code: "PROVIDER_TIMEOUT", dispatched: true });
+    });
+
+    it("reports a caller abort mid-flight as dispatched, and one before sending as not dispatched", async () => {
+      const ask = prepareAsk({ ...config, timeout_ms: 5000 }, "note: x", questions, never as unknown as typeof fetch);
+      const c = new AbortController();
+      const pending = ask.execute(c.signal);
+      setTimeout(() => c.abort(), 10);
+      await expect(pending).rejects.toMatchObject({ code: "PROVIDER_ABORTED", dispatched: true });
+      const pre = new AbortController();
+      pre.abort();
+      await expect(ask.execute(pre.signal)).rejects.toMatchObject({ code: "PROVIDER_ABORTED", dispatched: false });
+    });
+
+    it("rejects a response larger than the configured limit", async () => {
+      const ask = prepareAsk({ ...config, max_response_bytes: 256 }, "note: x", questions, respond({ pad: "x".repeat(1000) }));
+      await expect(ask.execute(new AbortController().signal)).rejects.toMatchObject({ code: "PROVIDER_INVALID", dispatched: true });
+    });
+
+    it("rejects an unaccepted model but keeps the usage", async () => {
+      const ask = prepareAsk(config, "note: x", questions, respond({ ...ok, result: { ...ok.result, model: "other" } }));
+      const err = await ask.execute(new AbortController().signal).catch((e) => e);
+      expect(err).toMatchObject({ code: "PROVIDER_INVALID", dispatched: true });
+      expect(err.usage).toEqual({ input_tokens: 400, output_tokens: 0 });
+    });
+
+    it("rejects a reported cost above the reserved bound but keeps the usage", async () => {
+      const usage = { input_tokens: 1_000_000_000, output_tokens: 0 };
+      const ask = prepareAsk(config, "note: x", questions, respond({ ...ok, result: { ...ok.result, usage } }));
+      const err = await ask.execute(new AbortController().signal).catch((e) => e);
+      expect(err).toMatchObject({ code: "PROVIDER_UNAVAILABLE", dispatched: true });
+      expect(err.usage).toEqual(usage);
+    });
+
+    it("never leaks the credential through a transport error", async () => {
+      const key = "k".repeat(40);
+      const fetcher = (async () => {
+        throw new Error(`connect failed for Bearer ${key}`);
+      }) as unknown as typeof fetch;
+      const ask = prepareAsk({ ...config, key }, "note: x", questions, fetcher);
+      const err = await ask.execute(new AbortController().signal).catch((e) => e);
+      expect(err).toMatchObject({ code: "PROVIDER_UNAVAILABLE", dispatched: true });
+      expect(String(err.message)).not.toContain(key);
+    });
+  });
+
   it("reports a provider failure as dispatched with no answers", async () => {
     const ask = prepareAsk(config, "note: x", questions, respond({ success: false, errors: [{ code: 5006 }] }, 400));
     await expect(ask.execute(new AbortController().signal)).rejects.toMatchObject({ code: "PROVIDER_UNAVAILABLE", dispatched: true });
