@@ -79,7 +79,7 @@ Three layers, each cheaper and more frequent than the next.
 
 | Edition | Price | Who runs it | Models |
 | --- | --- | --- | --- |
-| Self-hosted | Free, open source (license still to choose) | You, on your machine or server | Your key, or Ollama |
+| Self-hosted | Free, open source (AGPL-3.0; connector Apache-2.0) | You, on your machine or server | Your key, or Ollama |
 | Hosted | $12/month or $120/year (approved 2026-10-21) | BiBrain, always on, multiple devices | Included, within the monthly cap |
 
 Ship the local loop first. Hosted follows once the local loop is good.
@@ -116,4 +116,4 @@ routing and answers are simulated in the page. Covered flows:
 | Direction | Approved. Build starts with Today v2: `docs/superpowers/plans/2026-10-23-today-v2.md` |
 | System 1 for the first live test | **Clef** |
 | Billing | Paused after PR #19 is parked, until the local loop ships |
-| Open-source license | Recommendation given (AGPL-3.0 core, permissive connector); owner to confirm |
+| Open-source license | **Decided:** AGPL-3.0-only for the app, Apache-2.0 for the agent connector (`apps/mcp`, `apps/cli`). Added 2026-10-24 |

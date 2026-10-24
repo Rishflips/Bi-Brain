@@ -210,10 +210,18 @@ usability have separate gates.
 ## Open source and commercial route
 
 BiBrain is being built to support both a useful self-hosted edition and a managed
-subscription service that shares the same core trust model. The software license,
-customer pricing, allowances, annual discount, legal terms, privacy disclosures,
-and support commitments are still owner decisions. No permissive license is
-granted merely by the presence of this repository.
+subscription service that shares the same core trust model.
+
+**License.** BiBrain is licensed under the
+[GNU Affero General Public License v3.0](LICENSE) (`AGPL-3.0-only`). If you run
+a modified BiBrain as a network service, you must offer its source to that
+service's users. The agent connector, `apps/mcp` (the stdio adapter agents run)
+and `apps/cli` (the `bibrain` command, including `bibrain connect`), is licensed
+under the [Apache License 2.0](apps/mcp/LICENSE) (`Apache-2.0`), so it can be
+embedded in other tools. The connector imports nothing from the AGPL code.
+
+Customer pricing, allowances, annual discount, legal terms, privacy disclosures
+and support commitments are still owner decisions.
 
 Read [Business](docs/BUSINESS.md) and [Release](docs/RELEASE.md) before public
 distribution or enabling live billing.

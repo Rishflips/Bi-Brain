@@ -329,7 +329,7 @@ Document retention and deletion implications.
 - [x] Demo content cannot be mistaken for user data.
 - [x] Keyboard/responsive checks pass.
 - [x] Supported environments and limitations documented.
-- [ ] License decision completed before public distribution.
+- [x] License decision completed before public distribution: AGPL-3.0-only for the app, Apache-2.0 for the agent connector (2026-10-24).
 
 ## Hosted additions
 
