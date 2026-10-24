@@ -145,6 +145,68 @@ describe("the worker runs sorting help", () => {
     expect(t.ledgerRows().map((r) => r.state)).toEqual(["dispatched"]);
   });
 
+  for (const [name, change] of [
+    ["the project is unwatched", (t: ReturnType<typeof setup>, pid: string) => t.brain.watchProject(owner, pid, { watched: false })],
+    ["consent is withdrawn", (t: ReturnType<typeof setup>) => t.brain.prefs(owner, { ...t.brain.prefs(owner), decision_provider_enabled: false })],
+  ] as const) {
+    it(`sends nothing and keeps the hold when ${name} right after the mark`, async () => {
+      let change_ = () => {};
+      const t = setup({
+        ledger: (l) => {
+          const mark = l.markDispatched.bind(l);
+          l.markDispatched = (callId, lease) => {
+            const r = mark(callId, lease);
+            change_();
+            return r;
+          };
+          return l;
+        },
+      });
+      const p = t.brain.createProject(owner, "Northstar");
+      change_ = () => change(t, p.id);
+      t.brain.capture(owner, { project_id: p.id, title: "Notes", body: "Northstar notes.", visibility: "project" });
+      await t.drain();
+      expect(t.calls.n).toBe(0);
+      expect(t.job().status).toBe("cancelled");
+      expect(t.ledgerRows().map((r) => r.state)).toEqual(["dispatched"]);
+    });
+  }
+
+  it("cancels a job for an older version of an edited note, then answers the newer one", async () => {
+    const t = setup();
+    const { source_id } = t.brain.capture(owner, { project_id: "inbox", title: "Pricing", body: "Northstar ships.", visibility: "project" }) as any;
+    t.brain.editSource(owner, source_id, { title: "Pricing", body: "Northstar ships soon.", expected_version: 1 });
+    const jobs = () => t.store.all<any>("SELECT id,status,payload FROM jobs WHERE kind='system_one_route' ORDER BY created_at");
+    expect(jobs()).toHaveLength(2);
+    await t.drain();
+    const byVersion = (v: number) => jobs().find((j) => JSON.parse(j.payload).source_version === v);
+    expect(byVersion(1).status).toBe("cancelled");
+    expect(byVersion(2).status).toBe("succeeded");
+    expect(t.calls.n).toBe(1);
+    const answers = t.brain.entities(owner, "s1_answer");
+    expect(answers.map((a: any) => a.data.source_version)).toEqual([2]);
+    expect(t.ledgerRows()).toHaveLength(1);
+  });
+
+  it("says why in Settings when a note is not sent because it looks like a secret", async () => {
+    const t = setup();
+    publishSystemOneStatus(t.brain, { configured: true, label: "Ollama (estimated cost)" });
+    // Capture quarantines secret-shaped notes, so no job is queued from it.
+    t.brain.capture(owner, { project_id: "inbox", title: "Keys", body: "Use sk-abcdefghijklmnopqrstuvwxyz0123456789 for the build.", visibility: "project" });
+    expect(t.job()).toBeUndefined();
+    // Drive the job directly with a context that holds the secret.
+    t.brain.systemOneContext = () => ({ note: "Use sk-abcdefghijklmnopqrstuvwxyz0123456789 for the build.", title: "Keys", project_id: "inbox", projects: [], hasCurrentFacts: false });
+    const client = clientFor("ollama", (async () => { throw new Error("must not be called"); }) as unknown as typeof fetch);
+    const r = await runSystemOneJob(
+      { brain: t.brain, ledger: t.ledger, client, owner, leaseOwner: "w" },
+      { id: "j", project_id: "inbox", fence: 1, payload: { source_id: "s", source_version: 1 } },
+      new AbortController().signal,
+    );
+    expect(r.outcome).toBe("cancelled");
+    expect(t.ledgerRows()).toHaveLength(0);
+    expect(t.store.setting<any>("system_one_status", null).last_error).toBe("A note looked like it held a secret, so it was not sent for sorting.");
+  });
+
   it("rejects an answer naming an unoffered project whole, settles its cost and files nothing", async () => {
     const t = setup();
     t.brain.createProject(owner, "Northstar");

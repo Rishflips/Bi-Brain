@@ -130,7 +130,15 @@ async function sortOneNote(
     const { state, questions } = buildQuestions(ctx);
     ask = prepareAsk(client.config, state, questions, client.fetcher);
   } catch (error) {
-    if (error instanceof SystemOneError && !error.dispatched) return { outcome: "cancelled" };
+    if (error instanceof SystemOneError && !error.dispatched) {
+      // Nothing was reserved or sent. Say why in Settings instead of skipping silently.
+      noteStatus(brain, {
+        last_error: /secret/i.test(error.message)
+          ? "A note looked like it held a secret, so it was not sent for sorting."
+          : "A note was too large to send for sorting.",
+      });
+      return { outcome: "cancelled" };
+    }
     throw error;
   }
   // 6. Reserve, then mark. Before the mark a failure releases the hold.
