@@ -1,11 +1,15 @@
 import { useEffect, useMemo, useState } from "react";
 import type { Api } from "./types.ts";
+import { WatchSwitch } from "./WatchSwitch.tsx";
 
 type Props = {
   api: Api;
-  projects: { id: string; title: string }[];
+  projects: { id: string; title: string; watched?: boolean }[];
   agentNamesByProject: Record<string, string[]>;
   onOpen: (projectId: string) => void;
+  /** Saves a Watch choice. A rejection is shown and the switch flips back. */
+  onWatch: (projectId: string, watched: boolean) => Promise<void>;
+  onWatchError: (message: string) => void;
   /** Changing this value counts the facts again. */
   refreshKey?: unknown;
 };
@@ -17,6 +21,8 @@ export function ProjectCards({
   projects,
   agentNamesByProject,
   onOpen,
+  onWatch,
+  onWatchError,
   refreshKey,
 }: Props) {
   const [facts, setFacts] = useState<Counts>({});
@@ -71,6 +77,14 @@ export function ProjectCards({
                 ? "No agent connected"
                 : `${agents} ${agents === 1 ? "agent" : "agents"} connected`}
             </p>
+            {p.id === "inbox" ? null : (
+              <WatchSwitch
+                title={p.title}
+                watched={p.watched !== false}
+                onSet={(next) => onWatch(p.id, next)}
+                onError={onWatchError}
+              />
+            )}
           </div>
         );
       })}

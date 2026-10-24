@@ -4234,6 +4234,46 @@ export class Brain {
     });
     return { answers, reviewed: new Set(rows.map((r) => r.answer_id)).size, rows };
   }
+  /**
+   * What Settings says about sorting help. The worker publishes whether it is set up
+   * (this server never sees the credential); the counts come from what was stored.
+   */
+  systemOneStatus(p: Principal) {
+    this.owner(p);
+    const published = this.store.setting<{
+      configured?: boolean;
+      label?: string;
+      reason?: string;
+      last_error?: string;
+      last_ok_at?: string;
+    } | null>("system_one_status", null);
+    const prefs = this.prefs(p);
+    const { answers, reviewed } = this.systemOneLog(p);
+    const configured = published?.configured === true;
+    const failed = this.store.get<{ error: string | null; created_at: string }>(
+      "SELECT error,created_at FROM jobs WHERE kind='system_one_route' AND status='failed' AND error IS NOT NULL ORDER BY created_at DESC, rowid DESC LIMIT 1",
+    );
+    return {
+      configured,
+      label: configured ? (published?.label ?? null) : null,
+      reason: configured
+        ? null
+        : (published?.reason ?? "Sorting help status appears once BiBrain's background worker starts."),
+      wanted:
+        prefs.enabled === true &&
+        prefs.decision_provider_enabled === true &&
+        prefs.daily_cap_micro_usd > 0 &&
+        prefs.per_job_cap_micro_usd > 0,
+      answers,
+      reviewed,
+      // A failure older than the last success is history, not a current problem.
+      last_error:
+        published?.last_error ??
+        (failed?.error && !(published?.last_ok_at && published.last_ok_at > failed.created_at)
+          ? failed.error.slice(0, 300)
+          : null),
+    };
+  }
   dismissBriefItem(p: Principal, input: unknown) {
     this.owner(p);
     const v = z.object({ signature: z.string().min(1).max(300) }).strict().parse(input);

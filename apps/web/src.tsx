@@ -78,6 +78,25 @@ function formatUsd(microUsd: number): string {
   const usd = microUsd / 1_000_000;
   return usd < 0.0001 ? "<$0.0001" : `$${usd.toFixed(6)}`;
 }
+type SortingStatus = {
+  configured: boolean;
+  label: string | null;
+  reason: string | null;
+  wanted: boolean;
+  answers: number;
+  reviewed: number;
+  last_error: string | null;
+};
+/** The one plain line Settings shows about sorting help. */
+function sortingLine(status: SortingStatus, prefs: Preferences): string {
+  if (!status.configured)
+    return `Off on this computer: ${status.reason ?? "sorting help is not set up."}`;
+  if (prefs.daily_cap_micro_usd <= 0 || prefs.per_job_cap_micro_usd <= 0)
+    return "Needs a daily limit above $0 below.";
+  if (!prefs.enabled) return "Needs background help turned on below.";
+  if (!prefs.decision_provider_enabled) return "Waiting for your consent below.";
+  return `On · ${status.label ?? "sorting service"} · ${status.answers} ${status.answers === 1 ? "note" : "notes"} sorted, ${status.reviewed} reviewed`;
+}
 /**
  * Monotonic auth generation. It advances whenever the browser session is
  * established, lost, or found to belong to a different account. Every
@@ -271,6 +290,7 @@ function App() {
       status: { jobs: [] },
     }),
     [prefs, setPrefs] = useState<Preferences | null>(null),
+    [sorting, setSorting] = useState<SortingStatus | null>(null),
     [grants, setGrants] = useState<any[]>([]),
     [billing, setBilling] = useState<BillingStatus | null>(null),
     [scope, setScope] = useState(
@@ -301,6 +321,7 @@ function App() {
     [snooze, setSnooze] = useState(""),
     [confirmation, setConfirmation] = useState("");
   const preferencesDirty = useRef(false);
+  const sortingConsentTouched = useRef(false);
   const [consentOverride, setConsentOverride] = useState<boolean | null>(null);
   // An INDEPENDENT override for the separate decision-stage consent. It is never
   // derived from the master override; an omitted field preserves the RAW stored
@@ -405,13 +426,15 @@ function App() {
   }, [dark]);
   const refresh = useCallback(async () => {
     const generation = authGeneration;
-    const [p, n, t, settings, g, paidPlan] = await Promise.all([
+    const [p, n, t, settings, g, paidPlan, sortingStatus] = await Promise.all([
       api("/projects"),
       api("/search"),
       api("/today"),
       api("/preferences/background"),
       api("/connections"),
       api<BillingStatus>("/billing/status"),
+      // Sorting help is optional: a failed read hides its card, never the rest.
+      api<SortingStatus>("/system-one/status").catch(() => null),
     ]);
     // A response that arrives after sign-out or an account change must not
     // restore the previous account's data.
@@ -422,6 +445,7 @@ function App() {
     if (!preferencesDirty.current) setPrefs(settings);
     setGrants(g);
     setBilling(paidPlan);
+    setSorting(sortingStatus);
   }, []);
   /**
    * Clears every piece of per-account UI state: fetched data, chosen scope,
@@ -440,6 +464,7 @@ function App() {
       status: { jobs: [] },
     });
     setPrefs(null);
+    setSorting(null);
     setBriefCount(null);
     setGrants([]);
     setBilling(null);
@@ -680,6 +705,10 @@ function App() {
     const body: Record<string, unknown> = { ...(prefs ?? {}), ...over };
     if (runtime?.mode === "managed") {
       delete body.provider_enabled;
+      delete body.decision_provider_enabled;
+    } else if (!("decision_provider_enabled" in over)) {
+      // Local mode: sorting consent is sent only when the box itself was
+      // changed, so an unrelated save never re-asks the worker for permission.
       delete body.decision_provider_enabled;
     }
     return body;
@@ -987,6 +1016,7 @@ function App() {
               projects={projects.map((p: any) => ({
                 id: p.id,
                 title: p.title,
+                watched: p.watched !== false,
               }))}
               sourceCount={notes.length}
               notes={notes.map((n) => ({ id: n.id, title: n.title }))}
@@ -999,15 +1029,20 @@ function App() {
                 setNav("Your brain");
               }}
               onNavigate={(to) => setNav(to)}
-              onChanged={() => void refresh()}
+              onChanged={() => refresh()}
               onBriefCount={setBriefCount}
             />
           ) : nav === "Your brain" ? (
             <BrainView
               key={accountId ?? "local"}
               api={api}
-              projects={projects.map((p: any) => ({ id: p.id, title: p.title }))}
+              projects={projects.map((p: any) => ({
+                id: p.id,
+                title: p.title,
+                watched: p.watched !== false,
+              }))}
               projectId={scope || "inbox"}
+              onChanged={() => refresh()}
               onSelectProject={(id) => setScope(id)}
               agentNamesByProject={agentNamesByProject}
               goals={today.goals}
@@ -1368,6 +1403,45 @@ function App() {
                   </button>
                 </article>
               ) : null}
+              {prefs && sorting && runtime?.mode !== "managed" ? (
+                <article>
+                  <h2>Sorting help</h2>
+                  <p>
+                    BiBrain can suggest where a new note belongs and what is
+                    worth your attention. It only suggests: nothing moves
+                    without your Keep.
+                  </p>
+                  <p className="status" role="status">
+                    {sortingLine(sorting, prefs)}
+                  </p>
+                  {sorting.last_error ? (
+                    <p className="muted">Last problem: {sorting.last_error}</p>
+                  ) : null}
+                  <div className="actions">
+                    <button
+                      type="button"
+                      disabled={busy}
+                      onClick={() =>
+                        void act(async () => {
+                          const log = await api("/system-one/log");
+                          download(
+                            "bibrain-review-log.json",
+                            JSON.stringify(log, null, 2),
+                            "application/json",
+                          );
+                          setNotice("Review log downloaded.");
+                        })
+                      }
+                    >
+                      Download the review log
+                    </button>
+                  </div>
+                  <small className="muted">
+                    The log lists what sorting help suggested and what you did
+                    with it. It never contains your notes.
+                  </small>
+                </article>
+              ) : null}
               {prefs ? (
                 <article>
                   <h2>Background help & spending</h2>
@@ -1382,7 +1456,11 @@ function App() {
                     onSubmit={(e) => {
                       e.preventDefault();
                       void act(async () => {
-                        const body = backgroundPatchBody();
+                        const body = backgroundPatchBody(
+                          sortingConsentTouched.current && prefs
+                            ? { decision_provider_enabled: prefs.decision_provider_enabled }
+                            : {},
+                        );
                         if (runtime?.mode === "managed") {
                           // Send each consent field ONLY when the user explicitly
                           // toggled it; otherwise omit it so the raw stored value is
@@ -1400,6 +1478,7 @@ function App() {
                         setConsentOverride(null);
                         setDecisionConsentOverride(null);
                         preferencesDirty.current = false;
+                        sortingConsentTouched.current = false;
                         setNotice("Background preferences saved.");
                       });
                     }}
@@ -1566,6 +1645,30 @@ function App() {
                       I authorize selected text to be processed by OpenAI within
                       these caps
                     </label>
+                    {runtime?.mode !== "managed" && sorting ? (
+                      <div>
+                        <label>
+                          <input
+                            type="checkbox"
+                            checked={prefs.decision_provider_enabled}
+                            disabled={
+                              !prefs.decision_provider_enabled &&
+                              !sorting.configured
+                            }
+                            onChange={(e) => {
+                              sortingConsentTouched.current = true;
+                              setPrefs({
+                                ...prefs,
+                                decision_provider_enabled: e.target.checked,
+                              });
+                            }}
+                          />{" "}
+                          Let BiBrain sort new notes with{" "}
+                          {sorting.label ?? "the sorting service"} (costs count
+                          against the limits below)
+                        </label>
+                      </div>
+                    ) : null}
                     {runtime?.mode === "managed" ? (
                       <div>
                         <label>
