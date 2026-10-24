@@ -20,6 +20,7 @@ export type BriefItem = {
     | "correction"
     | "proposal"
     | "failed_job"
+    | "file"
     | "agent_memory"
     | "memory"
     | "stale";
@@ -29,7 +30,7 @@ export type BriefItem = {
   before?: string;
   evidence: BriefEvidence[];
   target: {
-    type: "gate" | "proposal" | "job" | "claim";
+    type: "gate" | "proposal" | "job" | "claim" | "file";
     id: string;
     version: number;
   };

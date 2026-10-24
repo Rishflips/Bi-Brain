@@ -18,6 +18,8 @@ export type BriefItem = {
   aspect?: string;
   /** The proposed wording for a memory, so Fix can start from it. */
   value?: string;
+  /** Sorting help judged this not worth showing first. It ranks after others of its kind and is never hidden. */
+  quiet?: true;
 };
 export type BriefSourceRef = { id: string; project_id: string; body: string; captured_at: string };
 export type BriefJob = { id: string; project_id: string; kind: string; attempts: number; created_at: string; source_id?: string };
@@ -104,6 +106,7 @@ export function buildBrief(input: BriefInput, now: Date): { items: BriefItem[]; 
       created_at: g.created_at,
       aspect: field.aspect,
       value: text(field.value),
+      ...(g.data.s1_quiet === true ? { quiet: true as const } : {}),
     });
   }
 
@@ -190,6 +193,6 @@ export function buildBrief(input: BriefInput, now: Date): { items: BriefItem[]; 
   const dismissed = new Set(input.dismissed);
   const open = candidates
     .filter((i) => !dismissed.has(i.signature))
-    .sort((a, b) => RANK[a.kind] - RANK[b.kind] || time(b.created_at) - time(a.created_at) || a.signature.localeCompare(b.signature));
+    .sort((a, b) => RANK[a.kind] - RANK[b.kind] || (a.quiet ? 1 : 0) - (b.quiet ? 1 : 0) || time(b.created_at) - time(a.created_at) || a.signature.localeCompare(b.signature));
   return { items: open.slice(0, BRIEF_LIMIT), waiting: Math.max(0, open.length - BRIEF_LIMIT) };
 }

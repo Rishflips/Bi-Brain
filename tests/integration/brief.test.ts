@@ -63,6 +63,20 @@ describe("buildBrief", () => {
     expect(buildBrief(input, now).items.some((i) => i.kind === "file")).toBe(false);
   });
 
+  it("ranks a quiet memory after other memories without hiding it", () => {
+    const input = empty();
+    const gate = (id: string, created_at: string, extra: Record<string, any> = {}) =>
+      entity("gate", id, { status: "queued", entity: id, field: { aspect: "statement", value: "x" }, evidence: [ev("s1", "x")], actor: "owner", ...extra }, created_at);
+    input.gates.push(
+      gate("g-older", "2026-10-21T09:00:00Z"),
+      gate("g-newer-quiet", "2026-10-22T09:00:00Z", { s1_quiet: true, s1_answer_id: "a1" }),
+    );
+    const out = buildBrief(input, now);
+    expect(out.items.map((i) => i.target.id)).toEqual(["g-older", "g-newer-quiet"]);
+    expect(out.items[0].quiet).toBeUndefined();
+    expect(out.items[1].quiet).toBe(true);
+  });
+
   it("flags a fact as stale only when it is old and newer originals mention it", () => {
     const input = empty();
     input.claims.push(entity("claim", "c-beta", { status: "current", entity: "beta launch", aspect: "statement", value: "opens November 14", recorded_at: "2026-09-20T09:00:00Z", evidence: [ev("s5", "opens November 14")] }));
