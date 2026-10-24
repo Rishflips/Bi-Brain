@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { BriefCard, friendlyError } from "./BriefCard.tsx";
 import { ProjectCards } from "./ProjectCards.tsx";
+import { setWatched } from "./WatchSwitch.tsx";
 import { SaveAskBar } from "./SaveAskBar.tsx";
 import type { Brief, TodayProps } from "./types.ts";
 import { useUndoToast } from "./useUndoToast.tsx";
@@ -287,7 +288,9 @@ export function TodayView(props: TodayProps) {
                   }, 6000);
                   pending.current.set(it.signature, { timer, send });
                   show(
-                    "Dismissed. It comes back only if something new appears.",
+                    it.kind === "file"
+                      ? "Dismissed. The note stays in your Inbox."
+                      : "Dismissed. It comes back only if something new appears.",
                     async () => {
                       window.clearTimeout(timer);
                       pending.current.delete(it.signature);
@@ -325,6 +328,14 @@ export function TodayView(props: TodayProps) {
           agentNamesByProject={props.agentNamesByProject}
           refreshKey={`${props.sourceCount}:${changes}`}
           onOpen={props.onOpenProject}
+          onWatch={async (id, watched) => {
+            setActionError(null);
+            await setWatched(api, id, watched);
+            setChanges((n) => n + 1);
+            await props.onChanged();
+            await loadBrief();
+          }}
+          onWatchError={setActionError}
         />
       </div>
     </section>

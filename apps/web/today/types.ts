@@ -20,6 +20,7 @@ export type BriefItem = {
     | "correction"
     | "proposal"
     | "failed_job"
+    | "file"
     | "agent_memory"
     | "memory"
     | "stale";
@@ -29,7 +30,7 @@ export type BriefItem = {
   before?: string;
   evidence: BriefEvidence[];
   target: {
-    type: "gate" | "proposal" | "job" | "claim";
+    type: "gate" | "proposal" | "job" | "claim" | "file";
     id: string;
     version: number;
   };
@@ -57,7 +58,7 @@ export type AskHit =
     };
 export type TodayProps = {
   api: Api;
-  projects: { id: string; title: string }[];
+  projects: { id: string; title: string; watched?: boolean }[];
   sourceCount: number;
   /** The current saved notes. The receipt follows these, never its own copy. */
   notes: { id: string; title: string }[];
@@ -68,7 +69,7 @@ export type TodayProps = {
   onOpenSource: (id: string, opts?: OpenSourceOptions) => void;
   onOpenProject: (projectId: string) => void;
   onNavigate: (to: "Your brain" | "Connections") => void;
-  onChanged: () => void;
+  onChanged: () => void | Promise<void>;
   /** null: not loaded yet. "unavailable": the last check failed. */
   onBriefCount?: (n: number | null | "unavailable") => void;
 };

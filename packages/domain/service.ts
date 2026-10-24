@@ -46,6 +46,8 @@ import {
   type AdvisoryRecord,
 } from "./decision-advisory.ts";
 import { extractReviewableMemory } from "./memory-understanding.ts";
+import { adviseFrom, workerRunning, type S1Advice, type S1Context } from "./system-one.ts";
+import type { AskResult } from "../providers/system-one-ask.ts";
 import { buildBrief, gateFitsBrief, type BriefInput, type BriefJob } from "./brief.ts";
 import { buildProjectView } from "./project-view.ts";
 import { questionWords, rankAnswers } from "./ask.ts";
@@ -292,8 +294,34 @@ export class Brain {
   projects(p: Principal) {
     const g = this.grant(p);
     return this.store
-      .all("SELECT * FROM projects ORDER BY created_at")
-      .filter((r) => !g || g.projects.includes(r.id));
+      .all<{ id: string; title: string; created_at: string }>("SELECT * FROM projects ORDER BY created_at")
+      .filter((r) => !g || g.projects.includes(r.id))
+      .map((r) => ({ ...r, watched: this.isWatched(r.id) }));
+  }
+  /** Every project is watched unless the owner switched it off. The Inbox always is. */
+  isWatched(projectId: string): boolean {
+    return (
+      projectId === "inbox" ||
+      !this.store.setting<string[]>("unwatched_projects", []).includes(projectId)
+    );
+  }
+  watchProject(p: Principal, projectId: string, input: unknown) {
+    this.owner(p);
+    projectId = z.string().min(1).max(100).parse(projectId);
+    const v = z.object({ watched: z.boolean() }).strict().parse(input);
+    this.access(p, projectId);
+    if (projectId === "inbox")
+      throw new BrainError("INVALID_INPUT", "The Inbox is always watched.", 400);
+    const list = this.store
+      .setting<string[]>("unwatched_projects", [])
+      .filter(
+        (id) =>
+          id !== projectId &&
+          !!this.store.get("SELECT id FROM projects WHERE id=?", id),
+      );
+    if (!v.watched) list.push(projectId);
+    this.store.set("unwatched_projects", list.slice(-500));
+    return { id: projectId, watched: v.watched };
   }
   createProject(p: Principal, title: string) {
     this.owner(p);
@@ -589,6 +617,12 @@ export class Brain {
           principal: p,
           source_id: id,
         });
+        if (this.systemOneWanted(v.project_id, v.visibility, quarantined))
+          this.enqueue(v.project_id, "system_one_route", {
+            principal: p,
+            source_id: id,
+            source_version: 1,
+          });
         if (!fromGate && !quarantined && v.visibility === "project") {
           // A bounded deterministic grammar can suggest one unambiguous memory
           // from ordinary language. It is never applied without owner review.
@@ -993,7 +1027,15 @@ export class Brain {
       })
       .strict()
       .parse(input);
-    return this.store.transaction(() => {
+    return this.store.transaction(() => this.editSourceTx(p, id, v));
+  }
+  /** The edit itself. The caller holds the open transaction. */
+  private editSourceTx(
+    p: Principal,
+    id: string,
+    v: { body: string; title: string; expected_version: number; project_id?: string; visibility?: "private" | "project" },
+  ) {
+    {
       const s = this.source(p, id);
       requireVersion(s.version, v.expected_version);
       if (s.state !== "active")
@@ -1011,6 +1053,7 @@ export class Brain {
         v.body,
         detectSecrets(v.title).length > 0,
       );
+      let quarantined = false;
       if (scan?.quarantined || detectSecrets(v.body + "\n" + v.title).length) {
         if (!this.store.vault)
           throw new BrainError(
@@ -1018,6 +1061,7 @@ export class Brain {
             "Protected vault required.",
             503,
           );
+        quarantined = true;
         v.body =
           "[Quarantined: suspected secret. Original retained outside the vault.]";
         v.title = "Quarantined source";
@@ -1048,8 +1092,14 @@ export class Brain {
       this.invalidate(s.project_id);
       if (project !== s.project_id) this.invalidate(project);
       this.enqueue(project, "derive_brief", { principal: p });
+      if (this.systemOneWanted(project, v.visibility ?? s.visibility, quarantined))
+        this.enqueue(project, "system_one_route", {
+          principal: p,
+          source_id: id,
+          source_version: version,
+        });
       return this.source(p, id);
-    });
+    }
   }
   removeSource(p: Principal, id: string, expected: number, purge: boolean) {
     this.owner(p);
@@ -1733,11 +1783,15 @@ export class Brain {
         ? patch.decision_provider_enabled === true
         : rawDecision;
       if (explicitDecision && decisionEnabled) {
-        const decisionReady = this.decisionCapability?.().ready === true;
+        const capability = this.decisionCapability?.();
+        const decisionReady = capability?.ready === true;
         if (!decisionReady || tenantBlocked || centrallyUnusable)
           throw new BrainError(
             "BUDGET_BLOCKED",
-            "Additional background checks are not available yet.",
+            // Local mode says why in the worker's words; managed mode keeps its message.
+            !this.spending && !decisionReady && capability?.reason
+              ? capability.reason
+              : "Additional background checks are not available yet.",
             409,
           );
       }
@@ -2822,6 +2876,12 @@ export class Brain {
           intentId = target.id;
         }
       }
+      this.logSystemOneFeedback(
+        this.gateAnswerIds(gate),
+        v.action === "reject" ? "reject" : v.value !== undefined ? "fix" : "accept",
+        gate.id,
+        this.gateQuestions(gate),
+      );
       const revisedGate = this.revise(gate, {
         ...gate.data,
         status: v.action === "accept" ? "accepted" : "rejected",
@@ -3517,9 +3577,10 @@ export class Brain {
   export(p: Principal, project?: string) {
     this.owner(p);
     if (project) this.access(p, project);
-    const projects = this.projects(p).filter(
-      (r) => !project || r.id === project,
-    );
+    // Watching is a local viewing choice, not part of the portable format.
+    const projects = this.projects(p)
+      .filter((r) => !project || r.id === project)
+      .map(({ watched: _watched, ...row }) => row);
     const ids = projects.map((r) => r.id);
     const sources = this.store
       .all(
@@ -3906,21 +3967,26 @@ export class Brain {
     this.owner(p);
     return buildBrief(this.briefInput(p), this.clock());
   }
+  /** Today only looks at watched projects. */
   briefInput(p: Principal): BriefInput {
-    const projects = this.projects(p) as { id: string }[];
+    const projects = (this.projects(p) as { id: string }[]).filter((x) =>
+      this.isWatched(x.id),
+    );
+    const inScope = (id: string) => this.isWatched(id);
     const current = (project: string, list: unknown) =>
       Array.isArray(list) && list.length > 0 && (list as Evidence[]).every((e) => this.evidenceCurrent(project, e));
     const gates = this.entities(p, "gate").filter(
-      (g) => g.data.status === "queued" && current(g.project_id, g.data.evidence),
+      (g) => g.data.status === "queued" && inScope(g.project_id) && current(g.project_id, g.data.evidence),
     );
     const proposals = this.entities(p, "proposal").filter(
-      (x) => x.data.status === "ready" && current(x.project_id, x.data.evidence),
+      (x) => x.data.status === "ready" && inScope(x.project_id) && current(x.project_id, x.data.evidence),
     );
     const claims = projects.flatMap((project) => this.currentClaims(p, project.id));
     const failedJobs = this.store
       .all<{ id: string; project_id: string; kind: string; attempts: number; created_at: string; payload: string }>(
         "SELECT id,project_id,kind,attempts,created_at,payload FROM jobs WHERE status='failed' AND kind IN ('derive_brief','review_changed_assumption') ORDER BY created_at DESC LIMIT 20",
       )
+      .filter((job) => inScope(job.project_id))
       .filter((job) => {
         let source_id: unknown;
         try {
@@ -3954,22 +4020,287 @@ export class Brain {
     const agentNames = Object.fromEntries(
       (this.connections(p) as unknown as { id: string; client: string }[]).map((g) => [g.id, agentDisplayName(g.client)]),
     );
+    const fileSuggestions = this.entities(p, "file_suggestion").filter(
+      (f) =>
+        f.data.status === "queued" &&
+        inScope(f.project_id) &&
+        this.store.get(
+          "SELECT id FROM sources WHERE id=? AND state='active' AND version=?",
+          f.data.source_id,
+          f.data.source_version,
+        ),
+    );
+    const projectTitles = Object.fromEntries(
+      (this.projects(p) as { id: string; title: string }[]).map((x) => [x.id, x.title]),
+    );
     return {
       gates,
       proposals,
       claims,
       failedJobs,
       sources,
+      fileSuggestions,
+      projectTitles,
+      quiet: this.store.setting<Record<string, string>>("brief_quiet", {}),
       dismissed: this.store.setting<string[]>("brief_dismissed", []),
       confirmations: this.store.setting<Record<string, string>>("claim_confirmations", {}),
       agentNames,
+    };
+  }
+  /** Sorting help runs only while every owner choice allows it. */
+  systemOneWanted(projectId: string, visibility: string, quarantined: boolean): boolean {
+    const prefs = this.prefs(this.ownerPrincipal());
+    return (
+      prefs.enabled === true &&
+      prefs.decision_provider_enabled === true &&
+      prefs.daily_cap_micro_usd > 0 &&
+      prefs.per_job_cap_micro_usd > 0 &&
+      this.isWatched(projectId) &&
+      visibility === "project" &&
+      !quarantined
+    );
+  }
+  /** What the sorting question may see. Null when this version is no longer the one to sort. */
+  systemOneContext(sourceId: string, version: number): S1Context | null {
+    const owner = this.ownerPrincipal();
+    let s: Source;
+    try {
+      s = this.source(owner, sourceId);
+    } catch {
+      return null;
+    }
+    if (s.state !== "active" || s.version !== version || s.visibility !== "project" || !this.isWatched(s.project_id)) return null;
+    return {
+      note: s.body,
+      title: s.title,
+      project_id: s.project_id,
+      projects: (this.projects(owner) as { id: string; title: string; watched: boolean }[])
+        .filter((x) => x.watched)
+        .map(({ id, title }) => ({ id, title })),
+      hasCurrentFacts: this.currentClaims(owner, s.project_id).length > 0,
+    };
+  }
+  /** Stores one answer per source version and applies its advice, all in one short transaction. */
+  recordSystemOneResult(
+    job: { id: string; project_id: string },
+    sourceId: string,
+    version: number,
+    result: AskResult,
+  ): { recorded: boolean; advice: S1Advice | null } {
+    return this.store.transaction(() => {
+      const ctx = this.systemOneContext(sourceId, version);
+      if (!ctx) return { recorded: false, advice: null };
+      if (this.s1Answers(sourceId, version).length > 0) return { recorded: false, advice: null };
+      const advice = adviseFrom(result.answers, ctx);
+      const answer = this.createEntity(ctx.project_id, "s1_answer", {
+        source_id: sourceId,
+        source_version: version,
+        job_id: job.id,
+        answers: result.answers,
+        model: result.model,
+        policy_version: result.policy_version,
+        price_version: result.price_version,
+        cost_micro_usd: result.cost_micro_usd,
+        advice,
+      });
+      this.applySystemOneAdvice(ctx.project_id, sourceId, version, answer.id, advice);
+      return { recorded: true, advice };
+    });
+  }
+  private s1Answers(sourceId: string, version: number) {
+    return this.store.all<{ id: string; data: string }>(
+      "SELECT id,data FROM entities WHERE kind='s1_answer' AND json_extract(data,'$.source_id')=? AND json_extract(data,'$.source_version')=?",
+      sourceId,
+      version,
+    );
+  }
+  private applySystemOneAdvice(project: string, sourceId: string, version: number, answerId: string, advice: S1Advice) {
+    const owner = this.ownerPrincipal();
+    if (advice.file_to)
+      this.createEntity(project, "file_suggestion", {
+        source_id: sourceId,
+        source_version: version,
+        to_project_id: advice.file_to,
+        answer_id: answerId,
+        status: "queued",
+      });
+    if (advice.quiet) {
+      // The mark lives in a setting, never on the card, so a card drawn before the
+      // answer arrived keeps its version and still accepts.
+      const quiet = { ...this.store.setting<Record<string, string>>("brief_quiet", {}) };
+      for (const row of this.store.all<{ id: string }>("SELECT id FROM entities WHERE project_id=? AND kind='gate'", project)) {
+        const gate = this.entity(owner, row.id);
+        const cites = ((gate.data.evidence ?? []) as Evidence[]).some(
+          (e) => e.source_id === sourceId && Number(e.source_version) === version,
+        );
+        if (gate.data.status !== "queued" || !cites) continue;
+        delete quiet[gate.id];
+        quiet[gate.id] = answerId;
+      }
+      this.store.set("brief_quiet", Object.fromEntries(Object.entries(quiet).slice(-2000)));
+    }
+    if (advice.review)
+      for (const goal of this.entities(owner, "goal")) {
+        if (goal.project_id !== project || goal.data.status !== "active" || !goal.data.preparation_enabled) continue;
+        const pending = this.store.get(
+          "SELECT id FROM jobs WHERE project_id=? AND kind='review_changed_assumption' AND json_extract(payload,'$.goal_id')=? AND status IN ('queued','running','retry_wait')",
+          project,
+          goal.id,
+        );
+        const since = new Date(this.clock().getTime() - 24 * 60 * 60 * 1000).toISOString();
+        const recent = this.store.get(
+          "SELECT id FROM jobs WHERE project_id=? AND kind='review_changed_assumption' AND json_extract(payload,'$.goal_id')=? AND created_at>?",
+          project,
+          goal.id,
+          since,
+        );
+        if (!pending && !recent)
+          this.enqueue(project, "review_changed_assumption", { goal_id: goal.id, principal: owner, manual: false, woken_by: answerId });
+      }
+  }
+  /** The owner's Keep moves the note as a new version; Dismiss leaves it where it is. */
+  fileSuggestion(p: Principal, id: string, input: unknown) {
+    this.owner(p);
+    const v = z
+      .object({ action: z.enum(["keep", "dismiss"]), expected_version: z.number().int().positive() })
+      .strict()
+      .parse(input);
+    const open = () => {
+      const f = this.entity(p, id);
+      if (f.kind !== "file_suggestion") throw new BrainError("NOT_FOUND", "Item unavailable.", 404);
+      requireVersion(f.version, v.expected_version);
+      if (f.data.status !== "queued") throw new BrainError("VERSION_CONFLICT", "Already answered.", 409);
+      return f;
+    };
+    return this.store.transaction(() => {
+      const f = open();
+      if (v.action === "keep") {
+        const s = this.source(p, f.data.source_id);
+        this.captureLimit({ body: s.body });
+        this.editSourceTx(p, s.id, {
+          title: s.title,
+          body: s.body,
+          project_id: f.data.to_project_id,
+          expected_version: f.data.source_version,
+        });
+      }
+      const revised = this.revise(f, { ...f.data, status: v.action === "keep" ? "kept" : "dismissed", answered_at: this.now() });
+      this.logSystemOneFeedback([f.data.answer_id], v.action === "keep" ? "keep_file" : "dismiss_file", f.id, ["project"]);
+      return { id: f.id, status: revised.data.status as string, version: revised.version };
+    });
+  }
+  /** The answers behind a review: the one that quieted it, else any for its cited source version. */
+  private gateAnswerIds(gate: Entity): string[] {
+    const quieted = this.store.setting<Record<string, string>>("brief_quiet", {})[gate.id];
+    if (typeof quieted === "string") return [quieted];
+    const ids = new Set<string>();
+    for (const e of (gate.data.evidence ?? []) as Evidence[])
+      for (const a of this.s1Answers(e.source_id, Number(e.source_version))) ids.add(a.id);
+    return [...ids];
+  }
+  /** One row per answer. Rows hold ids and numbers only, never the note's words. */
+  logSystemOneFeedback(
+    answerIds: string[],
+    action: "accept" | "fix" | "reject" | "dismiss" | "keep_file" | "dismiss_file",
+    target: string,
+    questions: string[],
+  ) {
+    for (const answer_id of new Set(answerIds)) {
+      const row = this.store.get<{ project_id: string; data: string }>("SELECT project_id,data FROM entities WHERE id=? AND kind='s1_answer'", answer_id);
+      if (!row) continue;
+      const stored = (JSON.parse(row.data).answers ?? []) as any[];
+      for (const question of new Set(questions)) {
+        const a = stored.find((x) => x.id === question);
+        if (!a) continue;
+        this.createEntity(row.project_id, "s1_feedback", {
+          answer_id,
+          question,
+          choice: a.type === "choice" ? a.choice : a.probability,
+          confidence: a.type === "choice" ? a.confidence : a.probability,
+          action,
+          target,
+          at: this.now(),
+        });
+      }
+    }
+  }
+  /** What a review of this card actually judged: whether it was worth showing, and a correction's change. */
+  private gateQuestions(gate: Entity): string[] {
+    return gate.data.correction === true ? ["show", "changes_fact"] : ["show"];
+  }
+  /** What sorting help said and what the owner then did, for the owner to download. */
+  systemOneLog(p: Principal) {
+    this.owner(p);
+    const answers = this.store.get<{ n: number }>("SELECT COUNT(*) AS n FROM entities WHERE kind='s1_answer'")?.n ?? 0;
+    const feedback = this.store.all<{ data: string }>(
+      "SELECT data FROM entities WHERE kind='s1_feedback' ORDER BY created_at DESC, rowid DESC LIMIT 5000",
+    );
+    const rows = feedback.map((f) => {
+      const fb = JSON.parse(f.data);
+      return {
+        answer_id: fb.answer_id as string,
+        question: fb.question as string,
+        choice: fb.choice as string | number,
+        confidence: fb.confidence as number,
+        action: fb.action as string,
+        at: fb.at as string,
+      };
+    });
+    return { answers, reviewed: new Set(rows.map((r) => r.answer_id)).size, rows };
+  }
+  /**
+   * What Settings says about sorting help. The worker publishes whether it is set up
+   * (this server never sees the credential); the counts come from what was stored.
+   */
+  systemOneStatus(p: Principal) {
+    this.owner(p);
+    const published = this.store.setting<{
+      configured?: boolean;
+      label?: string;
+      reason?: string;
+      last_error?: string;
+      last_ok_at?: string;
+    } | null>("system_one_status", null);
+    const prefs = this.prefs(p);
+    const { answers, reviewed } = this.systemOneLog(p);
+    const configured = published?.configured === true;
+    const failed = this.store.get<{ error: string | null; created_at: string }>(
+      "SELECT error,created_at FROM jobs WHERE kind='system_one_route' AND status='failed' AND error IS NOT NULL ORDER BY created_at DESC, rowid DESC LIMIT 1",
+    );
+    return {
+      configured,
+      label: configured ? (published?.label ?? null) : null,
+      worker_running: workerRunning(this.store.setting<string | null>("worker_heartbeat", null), this.clock()),
+      reason: configured
+        ? null
+        : (published?.reason ?? "Sorting help status appears once BiBrain's background worker starts."),
+      wanted:
+        prefs.enabled === true &&
+        prefs.decision_provider_enabled === true &&
+        prefs.daily_cap_micro_usd > 0 &&
+        prefs.per_job_cap_micro_usd > 0,
+      answers,
+      reviewed,
+      // A failure older than the last success is history, not a current problem.
+      last_error:
+        published?.last_error ??
+        (failed?.error && !(published?.last_ok_at && published.last_ok_at > failed.created_at)
+          ? failed.error.slice(0, 300)
+          : null),
     };
   }
   dismissBriefItem(p: Principal, input: unknown) {
     this.owner(p);
     const v = z.object({ signature: z.string().min(1).max(300) }).strict().parse(input);
     const list = this.store.setting<string[]>("brief_dismissed", []);
-    if (!list.includes(v.signature)) this.store.set("brief_dismissed", [...list, v.signature].slice(-500));
+    const added = !list.includes(v.signature);
+    if (added) this.store.set("brief_dismissed", [...list, v.signature].slice(-500));
+    const [type, target] = v.signature.split(":");
+    if (added && type === "gate" && target && this.store.get("SELECT id FROM entities WHERE id=? AND kind='gate'", target)) {
+      const gate = this.entity(p, target);
+      if (gate.data.status === "queued")
+        this.logSystemOneFeedback(this.gateAnswerIds(gate), "dismiss", target, this.gateQuestions(gate));
+    }
     return { dismissed: true as const };
   }
   confirmClaim(p: Principal, id: string) {

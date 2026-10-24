@@ -22,6 +22,7 @@ import { deploymentPolicy } from "./deployment.ts";
 import type { PaddleBillingService } from "../../packages/runtime/paddle-billing.ts";
 import type { DodoBillingService } from "../../packages/runtime/dodo-billing.ts";
 import { registerBillingRoutes } from "./billing-routes.ts";
+import { systemOneCapability } from "./system-one-capability.ts";
 import { agentConnect, LOCAL_ONLY_REASON, type AgentConnectConfig } from "./agent-connect.ts";
 
 const LOGIN_PATH = "/auth/login";
@@ -73,6 +74,13 @@ declare module "fastify" {
     releaseRuntime?: () => void;
   }
 }
+/** The local brain, asking the worker whether sorting help can be switched on. */
+function localBrainWithSortingHelp(): Brain {
+  const storage = new Storage();
+  const clock = () => new Date();
+  return new Brain(storage, clock, undefined, undefined, undefined, undefined, systemOneCapability(storage, clock));
+}
+
 export async function createApp(
   brain: Brain | undefined = undefined,
   options: {
@@ -149,7 +157,7 @@ export async function createApp(
   const ownsLocalBrain = !managed && !brain;
   const localBrain: Brain | undefined = managed
     ? undefined
-    : (brain ?? new Brain(new Storage()));
+    : (brain ?? localBrainWithSortingHelp());
   const agentHome = process.env.BRAIN_AGENT_HOME ?? homedir();
   const agentPath = process.env.BRAIN_AGENT_PATH ?? process.env.PATH ?? "";
   const agents = localBrain
@@ -654,6 +662,9 @@ export async function createApp(
       z.object({ title: z.string() }).strict().parse(req.body).title,
     ),
   );
+  app.put("/api/v1/projects/:id/watch", (req) =>
+    req.brain.watchProject(req.principal, params(req), req.body),
+  );
   app.post("/api/v1/sources", (req, reply) => {
     req.brain.owner(req.principal);
     const result = req.brain.capture(req.principal, req.body, key(req));
@@ -762,6 +773,11 @@ export async function createApp(
   app.post("/api/v1/brief/dismiss", (req) =>
     req.brain.dismissBriefItem(req.principal, req.body),
   );
+  app.post("/api/v1/file-suggestions/:id", (req) =>
+    req.brain.fileSuggestion(req.principal, params(req), req.body),
+  );
+  app.get("/api/v1/system-one/status", (req) => req.brain.systemOneStatus(req.principal));
+  app.get("/api/v1/system-one/log", (req) => req.brain.systemOneLog(req.principal));
   app.post("/api/v1/claims/:id/confirm", (req) =>
     req.brain.confirmClaim(req.principal, params(req)),
   );

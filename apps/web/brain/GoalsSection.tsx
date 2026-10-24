@@ -7,13 +7,13 @@ export function GoalsSection({ goals, busy, projectId, actions }: Props) {
   return (
     <section className="tv-section" aria-labelledby="yb-goals-h">
       <div className="tv-section-head">
-        <h3 id="yb-goals-h">Goals</h3>
+        <h3 id="yb-goals-h">Plan ahead (optional)</h3>
         <button type="button" className="tv-link" onClick={() => actions.choose(projectId)}>
           Choose a goal
         </button>
       </div>
       {goals.length === 0 ? (
-        <p className="tv-faint">No goal for this project. Goals are optional.</p>
+        <p className="tv-faint">Optional: write down where this project is heading, and BiBrain can prepare a review.</p>
       ) : (
         goals.map((g) => (
           <article key={g.id} className="yb-item">

@@ -16,6 +16,7 @@ const LABEL: Record<BriefItem["kind"], string> = {
   correction: "Changes an earlier decision",
   proposal: "Prepared for your goal",
   failed_job: "Needs a retry",
+  file: "Where this note belongs",
   agent_memory: "Written down by your agent",
   memory: "Found in something you saved",
   stale: "Still true?",
@@ -24,6 +25,7 @@ const KEEP: Record<BriefItem["kind"], string> = {
   correction: "Update the decision",
   proposal: "Keep this plan",
   failed_job: "Try again",
+  file: "Keep",
   agent_memory: "Keep as true",
   memory: "Keep as true",
   stale: "Still true",
@@ -63,6 +65,7 @@ export function BriefCard({
   const t = item.target;
   const gate = t.type === "gate";
   const proposal = t.type === "proposal";
+  const file = t.type === "file";
   const canFix =
     (gate && item.aspect !== "status") || proposal || t.type === "claim";
 
@@ -110,11 +113,21 @@ export function BriefCard({
           expected_version: t.version,
           ...(value ? { edited_artifact: value } : {}),
         });
-        await onDone("Plan kept. The earlier plan stays in history.", async () => {
-          await api(`/receipts/${r.receipt.id}/undo`, {
-            expected_version: r.goal.data.plan_version,
-          });
+        await onDone(
+          "Plan kept. The earlier plan stays in history.",
+          async () => {
+            await api(`/receipts/${r.receipt.id}/undo`, {
+              expected_version: r.goal.data.plan_version,
+            });
+          },
+        );
+      } else if (file) {
+        await api(`/file-suggestions/${t.id}`, {
+          action: "keep",
+          expected_version: t.version,
         });
+        const to = /^File in (.+)\?$/u.exec(item.title)?.[1];
+        await onDone(to ? `Moved to ${to}.` : "Moved.");
       } else if (t.type === "claim") {
         await api(`/claims/${t.id}/confirm`, {});
         await onDone("Marked as still true today.");
@@ -147,16 +160,22 @@ export function BriefCard({
 
   const dismiss = () => {
     if (lock.current) return;
-    const send = gate
+    const send = file
       ? () =>
-          api(`/proposals/gate/${t.id}/review`, {
-            action: "reject",
+          api(`/file-suggestions/${t.id}`, {
+            action: "dismiss",
             expected_version: t.version,
           })
-      : proposal
+      : gate
         ? () =>
-            api(`/proposals/${t.id}/dismiss`, { expected_version: t.version })
-        : () => api("/brief/dismiss", { signature: item.signature });
+            api(`/proposals/gate/${t.id}/review`, {
+              action: "reject",
+              expected_version: t.version,
+            })
+        : proposal
+          ? () =>
+              api(`/proposals/${t.id}/dismiss`, { expected_version: t.version })
+          : () => api("/brief/dismiss", { signature: item.signature });
     onDeferredDismiss(item, send);
   };
 

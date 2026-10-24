@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { friendlyError } from "../today/BriefCard.tsx";
 import { useUndoToast } from "../today/useUndoToast.tsx";
+import { WatchSwitch, setWatched } from "../today/WatchSwitch.tsx";
 import { BrainSearch } from "./BrainSearch.tsx";
 import { GoalsSection } from "./GoalsSection.tsx";
 import { OpenQuestions } from "./OpenQuestions.tsx";
@@ -146,6 +147,19 @@ export function BrainView(props: BrainProps) {
                     ? `${agents} ${agents === 1 ? "agent" : "agents"} connected`
                     : "No agent connected"}
                 </p>
+                {projectId === "inbox" ? null : (
+                  <WatchSwitch
+                    title={title}
+                    watched={props.projects.find((p) => p.id === projectId)?.watched !== false}
+                    onSet={async (watched) => {
+                      setActionError(null);
+                      await setWatched(api, projectId, watched);
+                      await props.onChanged?.();
+                      await load();
+                    }}
+                    onError={setActionError}
+                  />
+                )}
               </div>
               <button
                 type="button"

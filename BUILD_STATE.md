@@ -1,6 +1,54 @@
 # Build state
 
-Updated: 2026-10-23
+Updated: 2026-10-25
+
+## 2026-10-25 — Sorting help with Clef (branch reframe/system1-clef)
+
+- Each new note can get one small request to Clef (up to five questions: kind, which
+  project, whether it changes a fact, whether to review, whether to show). The
+  answers are advice only: a "File in Northstar?" card (moves only on Keep, as a new
+  version), a quieter card, or a queued review for a project with an active
+  preparation goal. Providers: Ollama (Ollama Cloud with a key, or a local Ollama on
+  loopback) and Cloudflare; Ollama cost is an estimate at Clef's public price.
+  The key lives only in the background worker; the worker publishes status and the
+  consent switch works only while it is configured and running.
+- Watch is a per-project switch, on by default. An unwatched project is quiet on
+  Today, gets no sorting help and no scheduled reviews, and keeps everything in
+  Your brain. Settings has a Sorting help card and a downloadable review log (the
+  judged question per review, never `kind`, never note text).
+- `scripts/system-one-live-proof.ts` (`npm run proof:sorting`) is the owner-run live
+  check. Docs: PROVIDERS.md, UX.md, README "Optional sorting help".
+
+Verified in this worktree at the branch head after the final review's fix wave
+(Windows, Node 24.19.0):
+
+- `npm ci`, `npm run typecheck`, `npm run lint` and `npm run build`: all exit 0.
+  After `npm ci`, `apps/cli/bibrain.mjs` showed line-ending changes only and was
+  restored.
+- `npm audit --audit-level=high`: 0 vulnerabilities.
+- `npm run brain-eval`: 4/4 passed.
+- `npx vitest run --reporter=dot`: 168 files, 1757 passed, 8 skipped, 0 failed, in
+  one run; no load-only timeouts.
+- `npx playwright test --workers=1`: 104 passed, 0 failed, 4.2m. By project: main 69,
+  today-v2 20, connections 6, today-v2-bar 4, system1 4, empty-brain 1. The e2e
+  journey uses a loopback fake Ollama-format server, not a real service.
+- Every task had its own spec and quality review; Fable reviewed the whole branch
+  ("ready with fixes": 0 Critical, 1 Important, 6 Minor), and all seven were fixed
+  and re-reviewed.
+- This is local V1 verification with a fake server. The live proof script was not
+  run.
+
+Known limits:
+
+- No live Clef or Ollama call has been made on this branch. The owner runs
+  `npm run proof:sorting` after putting `BRAIN_SYSTEM1_LIVE=1` in `.env` (or `$env:BRAIN_SYSTEM1_LIVE=1;` first in PowerShell), then removing the line.
+- The monthly cap is deferred; the daily and per-note limits apply.
+- A call that fails after it was sent is not retried (Ruling 15): the note stays
+  unsorted and its hold stays.
+- System 2 wakes only for projects with an active preparation goal.
+- Watch state lives in settings and is not part of exports.
+- A Keep queues one more sorting call for the moved note's new version.
+- Follow-ups: docs/superpowers/plans/2026-10-24-system1-clef-followups.md.
 
 ## 2026-10-23 — Plug-and-play Connections (branch reframe/connections-v2)
 

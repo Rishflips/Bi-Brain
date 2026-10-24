@@ -70,7 +70,7 @@ export type GoalActions = {
 };
 export type BrainProps = {
   api: Api;
-  projects: { id: string; title: string }[];
+  projects: { id: string; title: string; watched?: boolean }[];
   /** The project on screen. "inbox" when nothing else was chosen. */
   projectId: string;
   onSelectProject: (id: string) => void;
@@ -85,4 +85,6 @@ export type BrainProps = {
   onPreviewHandoff: (projectId: string) => void;
   onNavigate: (to: "Today") => void;
   goalActions: GoalActions;
+  /** Called after something here changes what the rest of the app shows (for example Watch). */
+  onChanged?: () => void | Promise<void>;
 };

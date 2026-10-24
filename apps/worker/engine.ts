@@ -22,6 +22,7 @@ import {
 import type { PreparedDecisionProvider } from "../../packages/providers/prepared-decision.ts";
 import type { DispatchRecord } from "../../packages/domain/spend.ts";
 import { dispatchPrepared, type PreparedAttempt } from "./dispatch.ts";
+import { runSystemOneJob, type SystemOneClient } from "./system-one.ts";
 import { runDecisionAdvisory } from "./decision-advisory.ts";
 import { AccountingPersistenceError } from "../../packages/storage/managed-spending.ts";
 import {
@@ -62,6 +63,8 @@ export class Worker {
       decisionAccounting?: DispatchAccounting;
       decisionProvider?: Pick<PreparedDecisionProvider, "prepareDecision">;
     },
+    /** Local sorting help. Null (the default) means it is not configured. */
+    private readonly systemOne: SystemOneClient | null = null,
   ) {
     if (brain.tenantId !== undefined) {
       // A tenant-bound brain must never fall back to local money. Without an
@@ -191,6 +194,7 @@ export class Worker {
         .filter(
           (g) =>
             g.data.status === "active" &&
+            b.isWatched(g.project_id) &&
             g.data.preparation_enabled &&
             (!g.data.review_at || g.data.review_at <= b.now()),
         )) {
@@ -252,6 +256,27 @@ export class Worker {
         j.project_id,
         principal.kind === "agent" ? "propose_memory" : "read",
       );
+      // Sorting help is advice only: its own spend path, no brief or receipt.
+      if (j.kind === "system_one_route") {
+        const r = await runSystemOneJob(
+          {
+            brain: b,
+            ledger: this.accounting,
+            client: this.systemOne,
+            owner: this.owner,
+            leaseOwner: this.id,
+          },
+          j as Parameters<typeof runSystemOneJob>[1],
+          controller.signal,
+        );
+        b.store.run(
+          "UPDATE jobs SET status=?,lease_until=NULL WHERE id=? AND fence=?",
+          r.outcome === "recorded" ? "succeeded" : "cancelled",
+          j.id,
+          j.fence,
+        );
+        return true;
+      }
       const prefs = b.prefs(this.owner);
       if (
         j.kind === "review_changed_assumption" &&

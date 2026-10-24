@@ -112,6 +112,12 @@ ready it appears on Today as a card in the Brief ("Prepared for your goal"), whe
 the owner keeps it, fixes the wording, or dismisses it. No external action is ever
 taken.
 
+### Watch and sorting help
+
+- **Watch.** Each project card on Today, and each project header in Your brain except Inbox, has a Watch switch. It is on by default. An unwatched project says "Quiet: not on Today": it adds nothing to the Brief, gets no sorting help and no scheduled reviews, and everything stays in Your brain. Inbox is always watched. The state lives in settings and is not part of exports.
+- **File in card.** When sorting help is on and fairly sure an Inbox note belongs in a project, the Brief shows "File in Northstar?" with Keep and Dismiss. Keep moves the note as a new version and says "Moved to Northstar."; if the note changed meanwhile it fails with a plain version-conflict message and moves nothing. Nothing is filed without Keep.
+- **Sorting help card (Settings).** Says in plain words whether sorting help is on, off, waiting for the background worker or missing setup, shows the last problem if any, and downloads the review log (what was suggested and what the owner did, never note text). Hidden in managed mode. To turn it on: Settings, "Background help & spending", tick "Turn on background help (sorting new notes and preparing reviews)", set the daily and per-preparation caps above 0, tick "Let BiBrain sort new notes with <service>", then Save preferences. Each "Needs …" or "Waiting …" line names the one control still missing.
+
 ## Prepared item
 
 Collapsed content: project, specific title, why it matters now, evidence count, and Prepared—not applied.

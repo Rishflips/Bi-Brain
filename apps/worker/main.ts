@@ -35,6 +35,8 @@ import {
 } from "../../packages/runtime/decision-worker-readiness.ts";
 import { loadConfig } from "../server/config.ts";
 import { Worker } from "./engine.ts";
+import { publishSystemOneStatus } from "./system-one.ts";
+import { systemOneFromEnv } from "../../packages/providers/system-one-env.ts";
 import { ManagedWorker } from "./managed.ts";
 import { BoundedFetchTransport } from "../../packages/providers/bounded-fetch.ts";
 import { DodoClient } from "../../packages/providers/dodo.ts";
@@ -484,7 +486,23 @@ if (config.mode === "managed") {
   }
 } else {
   const storage = new Storage();
-  const worker = new Worker(new Brain(storage));
+  const brain = new Brain(storage);
+  // Sorting help is read from the worker's environment only; the server never
+  // sees the key. The published status carries a plain label or reason, never it.
+  const sorting = systemOneFromEnv(process.env);
+  publishSystemOneStatus(
+    brain,
+    sorting.config
+      ? { configured: true, label: sorting.label }
+      : { configured: false, reason: sorting.reason },
+  );
+  const worker = new Worker(
+    brain,
+    undefined,
+    undefined,
+    undefined,
+    sorting.config ? { config: sorting.config } : null,
+  );
   let running = true;
   const stop = () => {
     running = false;

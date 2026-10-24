@@ -40,6 +40,43 @@ Do not hardcode unverified pricing, speed, probability calibration, or model cap
 
 Reserve each provider dispatch and enforce aggregate job/tenant/service limits before integrating decision calls with deeper reasoning. Existing job-keyed reservations are not sufficient to account for multiple paid stages. Preserve uncertain usage after ambiguous failures. No external provider fallback without explicit consent, no model calls in storage transactions, and no classifier-driven loss of saved originals.
 
+### Sorting help (System 1, local)
+
+Sorting help is the local, advisory use of Clef. For each new note it asks one small model one request with up to five questions. It is separate from the managed decision path above and from the reasoning adapter.
+
+**Setup.** The settings are read by the background worker only; the key never reaches the server process, the browser, a URL or a log.
+
+| Variable | Meaning |
+| --- | --- |
+| `BRAIN_SYSTEM1_PROVIDER` | `ollama` or `cloudflare`. Unset means sorting help is off. |
+| `BRAIN_DECISION_API_KEY` | The key or token. For Ollama, `OLLAMA_API_KEY` is used when this is empty. |
+| `BRAIN_CLOUDFLARE_ACCOUNT_ID` | Cloudflare only: the 32-character account id. |
+| `BRAIN_SYSTEM1_MODEL` | `clef-flash` (default) or `clef`. Ollama also accepts a tagged name such as `clef-flash:cloud`. |
+| `BRAIN_SYSTEM1_ENDPOINT` | Local test servers only: a loopback URL. Any other host is refused. |
+| `BRAIN_SYSTEM1_INPUT_MICRO_USD_PER_MILLION`, `BRAIN_SYSTEM1_PRICE_VERSION` | Override the built-in input price (a positive whole number) and its version label. |
+
+- **Ollama.** `https://ollama.com/v1/systemone` with the key as a bearer token, or a local Ollama on loopback with no key (set `BRAIN_SYSTEM1_ENDPOINT=http://127.0.0.1:11434/v1/systemone`; not yet tested against a real local Ollama). Ollama bills by plan, so the cost is a built-in estimate based on Cloudflare's published Clef input price (as of 2026-10-01); it exists so the daily and per-note limits still bound calls.
+- **Cloudflare.** Workers AI at `api.cloudflare.com` for the account in `BRAIN_CLOUDFLARE_ACCOUNT_ID`, with a token that has Workers AI access.
+- **Status.** The worker publishes whether sorting help is configured (never the key) and the last outcome. Settings reads that status. The consent switch works only when the worker is configured and running with a recent heartbeat.
+
+**Design.** One request, up to five questions, never one call per question:
+
+1. `kind`: decision, fact, question, task or note.
+2. `project`: only for Inbox notes when other projects exist; up to 15 projects plus `stay`.
+3. `changes_fact`: only when the note's project has current facts.
+4. `review`: whether a deeper review should look at the note.
+5. `show`: whether the note is worth showing on Today.
+
+Every answer must name an option the request offered; one invalid answer rejects the whole response. The adapter refuses secret-looking text before any request and bounds the question set, the state and the response size.
+
+**Advisory only.** Answers never discard a capture, grant access, accept a fact or move an original. Effects, all shown to the owner: a "File in Northstar?" suggestion (project choice other than `stay`, confidence 0.7 or more) that moves a note only on Keep; a quiet card (`show` below 0.3) that ranks last but is never hidden; and a queued review for a watched project with an active preparation goal (`review` 0.7 or more).
+
+**Limits and money.** Sorting help runs only when background help and its own consent are on, the daily and per-note limits are above $0, the project is watched, and the note is a project-visible, unquarantined original. Cost is integer micro-USD on the existing daily and per-job limits. A call that fails after it was sent is not retried: the note stays unsorted and the hold stays. A monthly cap is deferred.
+
+**Review log.** Each Keep, Fix, Dismiss or rejection logs the judged question (`show`, `changes_fact` or `project`, never `kind`) with the choice, confidence and action. It holds no note text and can be downloaded from Settings.
+
+**Live proof is the owner's.** No live Clef or Ollama call has been made on this branch. After setting the variables above, the owner runs it: Put `BRAIN_SYSTEM1_LIVE=1` on its own line in `.env` and run `npm run proof:sorting`, or in PowerShell run `$env:BRAIN_SYSTEM1_LIVE=1; npm run proof:sorting`, then run `Remove-Item Env:BRAIN_SYSTEM1_LIVE` (or close the window). Remove the line from `.env` afterwards so it is never left on. It sends three synthetic notes as three requests, prints the answers, model, input tokens and cost (labelled estimated for Ollama), never prints the key or account id, refuses a loopback endpoint, and exits 0 only when all three answers validate. It spends quota, so agents and CI never run it; their tests use a loopback fake server.
+
 ### Prepared decision contract and default-off managed consumer
 
 `new PreparedDecisionProvider(config, fetcher?).prepareDecision(input)` performs no

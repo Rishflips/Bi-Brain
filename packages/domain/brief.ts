@@ -1,9 +1,9 @@
 import type { Entity } from "../contracts/index.ts";
 import { factText, valueText as text } from "./facts.ts";
 
-export type BriefKind = "correction" | "proposal" | "failed_job" | "agent_memory" | "memory" | "stale";
+export type BriefKind = "correction" | "proposal" | "failed_job" | "file" | "agent_memory" | "memory" | "stale";
 export type BriefEvidence = { source_id: string; source_version: number; quote: string };
-export type BriefTarget = { type: "gate" | "proposal" | "job" | "claim"; id: string; version: number };
+export type BriefTarget = { type: "gate" | "proposal" | "job" | "claim" | "file"; id: string; version: number };
 export type BriefItem = {
   signature: string;
   kind: BriefKind;
@@ -18,6 +18,8 @@ export type BriefItem = {
   aspect?: string;
   /** The proposed wording for a memory, so Fix can start from it. */
   value?: string;
+  /** Sorting help judged this not worth showing first. It ranks after others of its kind and is never hidden. */
+  quiet?: true;
 };
 export type BriefSourceRef = { id: string; project_id: string; body: string; captured_at: string };
 export type BriefJob = { id: string; project_id: string; kind: string; attempts: number; created_at: string; source_id?: string };
@@ -28,14 +30,19 @@ export type BriefInput = {
   failedJobs: BriefJob[];
   sources: BriefSourceRef[];
   dismissed: string[];
+  /** Gate id to the sorting-help answer that judged it not worth showing first. */
+  quiet?: Record<string, string>;
   confirmations: Record<string, string>;
   agentNames: Record<string, string>;
+  /** Queued "file this note" suggestions whose source is still the version that was sorted. */
+  fileSuggestions: Entity[];
+  projectTitles: Record<string, string>;
 };
 
 export const BRIEF_LIMIT = 3;
 export const STALE_DAYS = 21;
 const MIN_STALE_MENTIONS = 2;
-const RANK: Record<BriefKind, number> = { correction: 0, proposal: 1, failed_job: 2, agent_memory: 3, memory: 4, stale: 5 };
+const RANK: Record<BriefKind, number> = { correction: 0, proposal: 1, failed_job: 2, file: 3, agent_memory: 4, memory: 5, stale: 6 };
 
 const evidenceOf = (list: unknown): BriefEvidence[] =>
   (Array.isArray(list) ? list : [])
@@ -101,6 +108,7 @@ export function buildBrief(input: BriefInput, now: Date): { items: BriefItem[]; 
       created_at: g.created_at,
       aspect: field.aspect,
       value: text(field.value),
+      ...(Object.hasOwn(input.quiet ?? {}, g.id) ? { quiet: true as const } : {}),
     });
   }
 
@@ -131,6 +139,24 @@ export function buildBrief(input: BriefInput, now: Date): { items: BriefItem[]; 
       target: { type: "job", id: j.id, version: j.attempts },
       created_at: j.created_at,
       ...(j.source_id ? { source_id: j.source_id } : {}),
+    });
+  }
+
+  for (const f of input.fileSuggestions) {
+    if (f.data.status !== "queued") continue;
+    const source = input.sources.find((s) => s.id === f.data.source_id);
+    if (!source) continue;
+    const target = typeof f.data.to_project_id === "string" ? input.projectTitles[f.data.to_project_id] : undefined;
+    candidates.push({
+      signature: `file:${f.id}:${f.version}`,
+      kind: "file",
+      project_id: f.project_id,
+      title: `File in ${target ?? "another project"}?`,
+      why: "BiBrain suggests this note belongs there. Keep moves it; Dismiss leaves it in the Inbox.",
+      evidence: [{ source_id: source.id, source_version: Number(f.data.source_version) || 1, quote: Array.from(source.body).slice(0, 140).join("") }],
+      target: { type: "file", id: f.id, version: f.version },
+      created_at: f.created_at,
+      source_id: source.id,
     });
   }
 
@@ -169,6 +195,6 @@ export function buildBrief(input: BriefInput, now: Date): { items: BriefItem[]; 
   const dismissed = new Set(input.dismissed);
   const open = candidates
     .filter((i) => !dismissed.has(i.signature))
-    .sort((a, b) => RANK[a.kind] - RANK[b.kind] || time(b.created_at) - time(a.created_at) || a.signature.localeCompare(b.signature));
+    .sort((a, b) => RANK[a.kind] - RANK[b.kind] || (a.quiet ? 1 : 0) - (b.quiet ? 1 : 0) || time(b.created_at) - time(a.created_at) || a.signature.localeCompare(b.signature));
   return { items: open.slice(0, BRIEF_LIMIT), waiting: Math.max(0, open.length - BRIEF_LIMIT) };
 }
