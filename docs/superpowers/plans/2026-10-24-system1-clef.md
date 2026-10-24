@@ -1072,6 +1072,8 @@ Notes for the implementer:
   - The `Worker` constructor gains an optional 5th parameter, `systemOne?: SystemOneClient | null`, defaulting to null. The existing four parameters are unchanged.
   - In `tick`, right after the existing `b.access(...)` check: `if (j.kind === "system_one_route") { const r = await runSystemOneJob({...}, j, controller.signal); b.store.run("UPDATE jobs SET status=?,lease_until=NULL WHERE id=? AND fence=?", r.outcome === "recorded" ? "succeeded" : "cancelled", j.id, j.fence); return true; }`. Errors fall through to the existing catch, which retries `PROVIDER_UNAVAILABLE` while nothing is held and writes the failure receipt.
   - `main.ts`, local branch: `new Worker(new Brain(storage), undefined, undefined, undefined, (() => { const s = systemOneFromEnv(process.env); return s.config ? { config: s.config } : null; })())`.
+  - **Ruling 12, status.** The worker publishes `brain.store.set("system_one_status", { configured, label, reason, updated_at })` once at startup in the local branch of `main.ts`, from the same `systemOneFromEnv` result. It never includes the key. `runSystemOneJob` updates `last_error` (a plain message) or `last_ok_at` on that setting after each job. The server never reads `process.env` for this, because `scripts/run.mjs` strips `BRAIN_DECISION_API_KEY` from the server.
+  - **Ruling 13, least privilege.** In `scripts/run.mjs`, also `delete env.OLLAMA_API_KEY` for every child that is not the worker, next to the existing `BRAIN_DECISION_API_KEY` line. Add `scripts/run.mjs` to this task's files.
 
 **`runSystemOneJob` steps:**
 1. If `brain.tenantId !== undefined`, return `cancelled`. System 1 is local only in this plan.
@@ -1116,7 +1118,10 @@ Notes for the implementer:
     - "On · <label> · <n> notes sorted, <m> reviewed".
   - **Download:** a "Download the review log" button that fetches `/api/v1/system-one/log` and saves JSON through a Blob, the same way exports save.
   - **Consent:** the existing `decision_provider_enabled` checkbox, relabelled "Let BiBrain sort new notes with Cloudflare (costs count against the limits below)".
-- Modify: `apps/server/app.ts`: `GET /api/v1/system-one/status` → `{ configured: boolean, label: string | null, reason: string | null, wanted: boolean, answers: number, reviewed: number, last_error: string | null }`. It is owner-only, computed with `systemOneFromEnv(process.env)` (never the key) and the service's counts. `last_error` is the newest failed `system_one_route` job's error.
+- Modify: `apps/server/app.ts`: `GET /api/v1/system-one/status` → `{ configured: boolean, label: string | null, reason: string | null, wanted: boolean, answers: number, reviewed: number, last_error: string | null }`. It is owner-only.
+  - **Status source (Ruling 12):** the status comes from the `system_one_status` setting the worker publishes, never from the server's `process.env`. While no worker has published yet, the response is `configured: false`, with the reason "Sorting help status appears once BiBrain's background worker starts."
+  - **Counts:** answers and reviewed come from the service.
+  - **`last_error`:** comes from the setting, or else from the newest failed `system_one_route` job's error.
 - Create: `tests/helpers/fake-clef.mjs`, a Node `http` server on `BRAIN_FAKE_CLEF_PORT`. For `POST /client/v4/accounts/test/ai/run/@cf/cloudflare/clef-flash` it answers every question in the body:
   - choice: the first non-`stay` option at 0.9 (split the rest evenly), confidence 0.9;
   - noul: 0.8;
