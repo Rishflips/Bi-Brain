@@ -101,7 +101,7 @@ async function start() {
       await new Promise((r) => setTimeout(r, 500));
     }
   }
-  if (flags["no-open"]) process.stdout.write(`BiBrain is running at ${origin}. Run npx bibrain open to open it signed in.\n`);
+  if (flags["no-open"]) process.stdout.write(`BiBrain is running at ${origin}. Run npx --no-install bibrain open to open it signed in.\n`);
   else {
     await openSignedIn();
     process.stdout.write(`BiBrain is open at ${origin}.\n`);
@@ -147,16 +147,20 @@ function connect() {
 
 const help = `bibrain: start BiBrain and connect agents.
 
-  npx bibrain            Start BiBrain and open it signed in
-  npx bibrain open       Open the running BiBrain signed in
-  npx bibrain help       Show this help
+  npx --no-install bibrain                   Start BiBrain and open it signed in
+  npx --no-install bibrain start --no-open   Start BiBrain without the browser
+  npx --no-install bibrain open              Open the running BiBrain signed in
+  npx --no-install bibrain help              Show this help
+
+Run these from inside the BiBrain folder. --no-install stops npx from
+downloading a package with this name from npm.
 
 Agents use "bibrain connect" from the file BiBrain writes into a project folder.`;
 
 try {
   if (command === "start") await start();
   else if (command === "open") {
-    if (!(await healthy())) stop(`BiBrain is not running at ${origin}. Run npx bibrain first.`);
+    if (!(await healthy())) stop(`BiBrain is not running at ${origin}. Run npx --no-install bibrain first.`);
     if (!(await isBiBrain())) notBiBrain();
     await openSignedIn();
   } else if (command === "connect") connect();

@@ -5,9 +5,10 @@
 This works in the local app on your own computer. The hosted edition uses
 [Set up by hand](#set-up-by-hand) below.
 
-1. Run `npx bibrain` in the BiBrain folder. BiBrain opens in your browser already
-   signed in. This runs the copy in your BiBrain folder; nothing is downloaded
-   from npm.
+1. In the BiBrain folder, run `npx --no-install bibrain`. BiBrain opens in your
+   browser already signed in. This runs the copy in your BiBrain folder;
+   `--no-install` makes npx refuse to download anything, so running it from
+   another folder fails instead of fetching a package from npm.
 2. Open **Connections** and choose **Add to Codex** (or **Add to Claude Code**
    or **Add to Cursor**).
 3. Pick the project and the project folder where you open the agent.

@@ -88,17 +88,21 @@ real payment, or target-host operations. See
 Requirements: Node.js **24.19 or later in the Node 24 LTS line** and npm 11+.
 
 ```powershell
+cd "path\to\Bi Brain"
 npm ci
-npx bibrain
+npx --no-install bibrain
 ```
 
 BiBrain opens in your browser already signed in. Connections finds Codex, Claude Code and Cursor and adds each to a project folder with one button.
 
-`npx bibrain` runs from this BiBrain folder (it is not published to npm). It
+Run it from inside this BiBrain folder. `bibrain` is not published to npm, and
+`--no-install` makes npx refuse to download anything with that name, so a
+command run from the wrong folder fails instead of fetching someone else's
+package. It
 builds the app on first use (after updating BiBrain, for example with
 `git pull`, run `npm run build` once, or delete `dist`, so the new version is
 served), starts it, and opens a one-time sign-in link that
-works once and expires after two minutes. `npx bibrain open` opens it again
+works once and expires after two minutes. `npx --no-install bibrain open` opens it again
 signed in. To sign in by hand instead, run `npm run db:migrate`, `npm run build`
 and `npm start`, then paste the private pairing code from `data/owner-secret`
 into the first-use screen. A preview or custom database folder has its own

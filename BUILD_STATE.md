@@ -4,7 +4,7 @@ Updated: 2026-10-23
 
 ## 2026-10-23 — Plug-and-play Connections (branch reframe/connections-v2)
 
-- `npx bibrain` (new private workspace `apps/cli`) starts BiBrain from the
+- `npx --no-install bibrain` (new private workspace `apps/cli`) starts BiBrain from the
   BiBrain folder and opens the browser already signed in through a single-use
   `#pair=` link (two-minute expiry, stripped from the address bar). `bibrain
   open` reopens it and `bibrain connect` is the connector an agent starts. The
@@ -45,7 +45,10 @@ wave (Windows, Node 24.19.0):
 
 Known limits:
 
-- `bibrain` is not published to npm. Run `npx bibrain` from the BiBrain folder;
+- `bibrain` is not published to npm. Run `npx --no-install bibrain` from the
+  BiBrain folder; `--no-install` makes npx refuse to fetch a registry package
+  of that name when it is run from the wrong folder (checked on npm 11.17:
+  it cancels instead of installing);
   generated agent files call `node` with absolute paths, never `npx`.
 - One-step adding works only in the local app. The hosted edition uses "Set up
   by hand".
@@ -56,7 +59,7 @@ Known limits:
   connector with the MCP SDK client against a real local server.
 - The access key rests in BiBrain's data folder, as the installation code does.
   One-step connections last 90 days unless revoked.
-- `npx bibrain start` (the build, the server start and the health wait) and the
+- `npx --no-install bibrain start` (the build, the server start and the health wait) and the
   real browser opener have not been run on the owner's machine. That includes
   whether Windows `rundll32 url.dll,FileProtocolHandler` keeps the `#pair=`
   fragment. The `open` hand-off is covered by a test with a stubbed browser.
