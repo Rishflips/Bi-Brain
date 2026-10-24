@@ -1,6 +1,6 @@
 # BiBrain prototype — handoff
 
-Source of truth: `design.md` (approved brief, 2026-10-19). Everything visible in the prototype is either synthetic **Demo data** ("Northstar launch") or an empty **Preview** brain that keeps saves in the browser tab only. No backend, integration, payment, or user history exists here.
+Source of truth: `docs/DESIGN_BRIEF.md` (approved brief, 2026-10-19; formerly `design.md`). Everything visible in the prototype is either synthetic **Demo data** ("Northstar launch") or an empty **Preview** brain that keeps saves in the browser tab only. No backend, integration, payment, or user history exists here.
 
 ## For the founder (plain language)
 

@@ -1,8 +1,31 @@
 {
   "name": "bi-brain",
   "version": "0.1.0",
+  "description": "A local-first second brain that your AI agents keep current, and that keeps your agents caught up.",
   "private": true,
   "license": "AGPL-3.0-only",
+  "homepage": "https://github.com/Rishflips/Bi-Brain#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Rishflips/Bi-Brain.git"
+  },
+  "bugs": {
+    "url": "https://github.com/Rishflips/Bi-Brain/issues"
+  },
+  "keywords": [
+    "second-brain",
+    "personal-knowledge-management",
+    "local-first",
+    "ai-agents",
+    "mcp",
+    "model-context-protocol",
+    "claude-code",
+    "codex",
+    "cursor",
+    "sqlite",
+    "react",
+    "fastify"
+  ],
   "type": "module",
   "workspaces": [
     "apps/*",

@@ -151,11 +151,11 @@ The following gates require owner authority, credentials, spending, or external 
 4. Choose a production host and domain, then verify Transport Layer Security (TLS), reboot recovery, durable storage, monitoring, backups, and deletion barriers.
 5. Verify two named native agent clients in fresh sessions and complete a human first-use pilot.
 
-Do not enable `BRAIN_PADDLE_ALLOW_LIVE=1` until the Sandbox checks and commercial decisions pass. See [BUILD_STATE.md](../BUILD_STATE.md) for the detailed evidence and [PRODUCTION_READINESS_2026-10-18.md](PRODUCTION_READINESS_2026-10-18.md) for the operator gates.
+Do not enable `BRAIN_PADDLE_ALLOW_LIVE=1` until the Sandbox checks and commercial decisions pass. See [BUILD_STATE.md](../BUILD_STATE.md) for the detailed evidence and [PRODUCTION_READINESS_2026-10-18.md](history/PRODUCTION_READINESS_2026-10-18.md) for the operator gates.
 
 ## Independent deployment checkpoint — 2026-10-07
 
-ChatGPT Sites is canceled as a deployment path. Use [SELF_HOSTING.md](SELF_HOSTING.md) and [SHIP_AUDIT_2026-10-07.md](SHIP_AUDIT_2026-10-07.md) for the current one-owner HTTPS package. The checklist below records specification/history; it is not proof of a completed harness V1.
+ChatGPT Sites is canceled as a deployment path. Use [SELF_HOSTING.md](SELF_HOSTING.md) and [SHIP_AUDIT_2026-10-07.md](history/SHIP_AUDIT_2026-10-07.md) for the current one-owner HTTPS package. The checklist below records specification/history; it is not proof of a completed harness V1.
 
 - [x] Preserve real capture, shared authorization, durable queue and Git vault.
 - [x] Add explicit HTTPS origin/host security and Secure cookies with regression evidence.
@@ -224,7 +224,7 @@ At this historical checkpoint, payments and paid providers stayed off, B1 (Paddl
 was a draft, and B0 operational enrollment, key recovery, and Windows access control
 list verification remained open. The latest local checkpoint above supersedes that
 implementation status. See
-[PRODUCTION_READINESS_2026-10-18.md](PRODUCTION_READINESS_2026-10-18.md) for the
+[PRODUCTION_READINESS_2026-10-18.md](history/PRODUCTION_READINESS_2026-10-18.md) for the
 still-blocked launch gates.
 
 Historical sections below retain their original scope and dates; where an older

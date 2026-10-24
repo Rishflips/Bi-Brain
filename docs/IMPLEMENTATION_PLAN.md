@@ -145,7 +145,7 @@ Gate: a clean checkout installs and starts using documented commands; production
 - [x] Consolidate into Desktop as sole working copy, preserve original brain/personal
       note, migrate separate preview and archive evidence with hash/integrity checks;
       fresh Desktop install/typecheck/build and **23/23 brain/restart tests** passed.
-- [x] Write root `NEXT_AGENT_HANDOFF.md` with current state and next gates. The new
+- [x] Write `NEXT_AGENT_HANDOFF.md` (now in `docs/history/`) with current state and next gates. The new
       handoff/checkpoint was subsequently superseded by the merged PR #6 checkpoint
       dated 2026-10-19; older pre-merge language is retained only as history.
 - [x] Read the separate merged-main run
@@ -330,7 +330,7 @@ Prioritize M0 and M1. Once verified, continue the next unblocked milestone under
 
 ## Review follow-up — 2026-09-28
 
-Cross-project purge, dependency-based suggestion invalidation, and per-goal daily scheduling are repaired with regressions. M4 remains an extractive workflow; model-backed goal reasoning is unfinished product work and is not completed by configuring the brief provider. See BUILD_STATE.md and VERIFICATION_REVIEW_2026-09-28.md.
+Cross-project purge, dependency-based suggestion invalidation, and per-goal daily scheduling are repaired with regressions. M4 remains an extractive workflow; model-backed goal reasoning is unfinished product work and is not completed by configuring the brief provider. See BUILD_STATE.md and docs/history/VERIFICATION_REVIEW_2026-09-28.md.
 
 ## Current checkpoint — explicit decision correction slice (session44)
 
