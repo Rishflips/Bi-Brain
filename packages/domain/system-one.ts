@@ -6,13 +6,27 @@ import type { AskAnswer, AskQuestion } from "../providers/system-one-ask.ts";
  * titles appear only as option descriptions, never as option ids.
  */
 export const S1_STATE_LIMIT = 8000;
-export const S1_THRESHOLDS = { file: 0.7, review: 0.7, quiet: 0.3 } as const;
+export const S1_THRESHOLDS = { file: 0.7, review: 0.7, quiet: 0.3, changes: 0.5 } as const;
 const MAX_TARGETS = 15;
 
 export type S1Context = { note: string; title: string; project_id: string; projects: { id: string; title: string }[]; hasCurrentFacts: boolean };
 export type S1Advice = { kind: string | null; file_to: string | null; changes_fact: boolean | null; review: boolean; quiet: boolean };
 
 const safeId = (id: string) => (/^[A-Za-z0-9_.-]{1,64}$/u.test(id) ? id : null);
+
+/** The only projects a note may be filed into: Inbox notes only, safe unique ids, at most 15. */
+export function offeredTargets(ctx: Pick<S1Context, "project_id" | "projects">): { id: string; title: string }[] {
+  if (ctx.project_id !== "inbox") return [];
+  const seen = new Set<string>();
+  const out: { id: string; title: string }[] = [];
+  for (const p of ctx.projects) {
+    if (p.id === ctx.project_id || p.id === "stay" || !safeId(p.id) || seen.has(p.id)) continue;
+    seen.add(p.id);
+    out.push(p);
+    if (out.length >= MAX_TARGETS) break;
+  }
+  return out;
+}
 
 export function buildQuestions(ctx: S1Context): { state: string; questions: AskQuestion[] } {
   const note = Array.from(ctx.note).slice(0, S1_STATE_LIMIT).join("");
@@ -31,8 +45,8 @@ export function buildQuestions(ctx: S1Context): { state: string; questions: AskQ
       ],
     },
   ];
-  const targets = ctx.projects.filter((p) => p.id !== ctx.project_id && safeId(p.id)).slice(0, MAX_TARGETS);
-  if (ctx.project_id === "inbox" && targets.length > 0)
+  const targets = offeredTargets(ctx);
+  if (targets.length > 0)
     questions.push({
       id: "project",
       type: "choice",
@@ -55,13 +69,13 @@ export function adviseFrom(answers: AskAnswer[], ctx: Pick<S1Context, "project_i
   const changes = by.get("changes_fact");
   const review = by.get("review");
   const show = by.get("show");
-  const offered = new Set(ctx.projects.filter((p) => p.id !== ctx.project_id).map((p) => p.id));
+  const offered = new Set(offeredTargets(ctx).map((p) => p.id));
   const fileTo =
     project?.type === "choice" && project.choice !== "stay" && offered.has(project.choice) && project.confidence >= S1_THRESHOLDS.file ? project.choice : null;
   return {
     kind: kind?.type === "choice" ? kind.choice : null,
     file_to: fileTo,
-    changes_fact: changes?.type === "noul" ? changes.probability >= 0.5 : null,
+    changes_fact: changes?.type === "noul" ? changes.probability >= S1_THRESHOLDS.changes : null,
     review: review?.type === "noul" ? review.probability >= S1_THRESHOLDS.review : false,
     quiet: show?.type === "noul" ? show.probability < S1_THRESHOLDS.quiet : false,
   };
