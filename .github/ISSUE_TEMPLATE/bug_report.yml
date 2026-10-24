@@ -1,0 +1,65 @@
+name: Bug report
+description: Something in BiBrain does not work as described.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting. For a security problem, do not file it here; follow SECURITY.md instead.
+        Please do not paste real notes, keys or tokens.
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you saw, including any message on screen.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Open Today
+        2. Save a note "..."
+        3. ...
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - Today
+        - Your brain
+        - Connections (agents)
+        - Sorting help
+        - Settings
+        - Install or startup
+        - Self-hosting
+        - Other
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Commit or version
+      description: Output of `git rev-parse --short HEAD`
+  - type: input
+    id: env
+    attributes:
+      label: Environment
+      placeholder: Windows 11, Node 24.19.0, Chrome 141
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      description: Relevant terminal output. Remove anything private first.
+      render: text

@@ -1,0 +1,26 @@
+name: Feature request
+description: Suggest an improvement to BiBrain.
+labels: [enhancement]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        BiBrain is deliberately quiet: no infinite feeds, and nothing becomes a fact without the owner.
+        Requests that fit docs/PRODUCT.md and docs/REFRAME_BRIEF.md are most likely to land.
+  - type: textarea
+    id: problem
+    attributes:
+      label: The problem
+      description: What are you trying to do, and what gets in the way today?
+    validations:
+      required: true
+  - type: textarea
+    id: idea
+    attributes:
+      label: What you would like
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives you considered
