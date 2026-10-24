@@ -1,255 +1,190 @@
-# BiBrain
+<h1 align="center">BiBrain</h1>
 
-**One brain. Every agent. Always caught up. A little ahead.**
+<p align="center">
+  <strong>One brain. Every agent. Always caught up.</strong><br>
+  A local-first second brain that your AI agents keep current, and that keeps your agents caught up.
+</p>
 
-BiBrain is a user-owned second-brain suite that keeps memory and continuity
-outside any single AI agent. Save a thought, conversation, decision, or document
-once; inspect the original; correct what BiBrain understands; and carry only the
-right context into the agent you choose.
+<p align="center">
+  <a href="https://github.com/Rishflips/Bi-Brain/actions/workflows/verify.yml"><img alt="Verify" src="https://github.com/Rishflips/Bi-Brain/actions/workflows/verify.yml/badge.svg?branch=main"></a>
+  <a href="LICENSE"><img alt="License: AGPL-3.0" src="https://img.shields.io/badge/license-AGPL--3.0-blue"></a>
+  <a href="apps/mcp/LICENSE"><img alt="Connector: Apache-2.0" src="https://img.shields.io/badge/agent%20connector-Apache--2.0-green"></a>
+  <img alt="Node 24" src="https://img.shields.io/badge/node-24.19%2B-339933">
+</p>
 
-It is designed to feel like a living central unit for your work without asking
-you to learn a “second brain” method. The primary experience is simply:
+![BiBrain Today: one bar to save or ask, and a short Brief with a found decision, its quote, and Keep, Fix, Dismiss (synthetic sample)](docs/screenshots/today-v2-brief.png)
 
-**Save → Continue → Stay ahead**
+You save a note once, or your coding agents write one when they finish work. BiBrain keeps the original and works out what changed. Each day it shows you at most three things worth a decision. Nothing becomes "true" until you keep it, and when nothing needs you, it stays quiet.
 
-![BiBrain Today — one bar to save or ask, and a Brief with a found decision, its quote, and Keep, Fix, Dismiss (synthetic sample)](docs/screenshots/today-v2-brief.png)
+## Contents
 
-## What makes BiBrain different
+- [What you get](#what-you-get)
+- [Quick start](#quick-start)
+- [Connect your agents](#connect-your-agents)
+- [Optional sorting help](#optional-sorting-help)
+- [How you stay in control](#how-you-stay-in-control)
+- [Status](#status)
+- [How it is built](#how-it-is-built)
+- [Development](#development)
+- [Documentation](#documentation)
+- [Contributing, security and licence](#contributing-security-and-licence)
 
-- **One memory layer across agents.** Your context is not trapped in one chat or
-  model provider.
-- **Originals stay inspectable.** Generated claims require evidence or remain
-  visibly labeled as hypotheses.
-- **Corrections create history.** Human edits produce new versions; undo never
-  overwrites a later edit.
-- **Proactivity stays bounded.** BiBrain prepares work only for goals you chose,
-  keeps quiet when nothing is useful, and never silently takes external action.
-- **Local ownership is real.** The self-hosted edition works without an account,
-  subscription, model key, or remote telemetry.
-- **The interface reflects real state.** Today shows a single bar to save or ask
-  and a short Brief; it says plainly when it is caught up, offline, or unable to
-  check—never fake “AI thinking.”
+## What you get
 
-## What works today
+- **Today.** One bar that saves a note or answers a question from what you have kept, with the original quoted. Below it is a Brief of at most three things that changed. Each one shows its evidence, and you can Keep, Fix or Dismiss it (with Undo). Project cards each have a Watch switch.
+- **Your brain.** Pick a project to see its facts that are true now (edit them as new versions), its open questions and its originals. Open any fact to see the exact passage it came from, highlighted, with its history. Search covers facts and originals across projects.
+- **Connections.** One tile each for Codex, Claude Code and Cursor:
+  - **Add:** writes the agent's project file in one step, without the access key.
+  - **Status:** shows "Connected" only after the agent's first real call.
+  - **Revoke:** ends access immediately.
+  - **Any other agent:** gets a copied handoff, or setup by hand.
+- **Agent write-back.** Connected agents leave a short session note when they finish: decisions, open questions and the next step. Their decisions arrive as suggestions, never as accepted facts.
+- **Sorting help (optional).** A small decision model, Clef, through Ollama or Cloudflare, looks at each new note:
+  - it can suggest **"File in Northstar?"**;
+  - it can rank a low-value card lower;
+  - it can wake a review you already planned.
 
-The merged application provides a complete single-owner local workflow:
+  It only suggests, and it stays within the daily limits you set.
+- **Watch.** Turn a project off and it goes quiet on Today, while everything stays in Your brain.
 
-1. Pair a browser to the local installation.
-2. Save text, Markdown, notes, decisions, or supported conversation exports.
-3. Keep immutable source versions in SQLite plus the portable Git-backed vault.
-4. Use Today: one bar to save a note or ask what your brain knows, and a Brief
-   of at most three things that changed. Each card shows its evidence and offers
-   Keep, Fix or Dismiss; Keep and Dismiss can be undone. When nothing needs you,
-   it says you are caught up.
-5. Review one clear memory suggested from ordinary language, or teach BiBrain
-   the meaning of any exact passage. Nothing becomes current until you approve it.
-6. Search the full retained text and reopen the original.
-7. Copy an exact project handoff, or connect Codex or Claude Code through a
-   guided, expiring, project-scoped permission flow.
-8. Choose a goal in Your brain, request one source-linked review of it, and
-   explicitly turn on quiet background preparation if you want it. Prepared
-   plans reach Today's Brief for you to keep, fix or dismiss.
-9. Open any project as a focused workspace for current understanding, open
-   questions, chosen direction, recent originals, and an exact agent handoff.
-10. Back up, restore, withdraw, delete, and revoke access with explicit safeguards.
-
-The repository also contains the browser-first managed foundation: isolated
-accounts, standards-based sign-in, guarded processing authority, recovery
-controls, and a default-off Dodo Payments subscription boundary. These paths have local
-synthetic verification, but they are **not a public hosted service** and have not
-processed a real payment.
-
-## Release status
-
-| Route                      | Current state                                                                                                                               |
-| -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
-| Local / self-hosted        | Working single-owner application; no subscription required                                                                                  |
-| Managed accounts           | Implemented foundation with local isolation and recovery evidence                                                                           |
-| Connected model processing | Default off; live quality and cost gate still open                                                                                          |
-| Dodo Payments              | Hosted checkout, signed webhook, current payment verification and recovery implemented; real test-mode acceptance still open                 |
-| Agent connections          | Read-only native recall/correction/privacy/revocation verified in Codex 0.156.1 and Claude Code 2.1.283; broader native write workflows remain unverified |
-| Public cloud release       | Not deployed; hosting, legal, support, and human-pilot gates remain open                                                                    |
-
-PR #18's project continuity workspace and PR #19's Dodo Payments boundary are
-merged; Dodo replaces the rejected Paddle setup (see
-[Dodo setup and acceptance](docs/DODO_PAYMENTS.md) for configuration, plan
-mapping, and the real-provider gates). The current branch replaces Today with
-one bar that saves or asks and a Brief of at most three items; its browser
-regression passes 93/93 across its four Playwright projects (see
-BUILD_STATE.md). Your brain shows each project's facts that are true now, its
-open questions and its originals, and opens any fact on its original with the
-passage highlighted and its history. These are local release gates, not proof
-of a human usability pilot, live model quality, native-agent compatibility,
-real payment, or target-host operations. See
-[BUILD_STATE.md](BUILD_STATE.md) for commands, exact scope, and known limits.
+![Asking the bar a question; the answer quotes the saved original (synthetic sample)](docs/screenshots/today-v2-ask.png)
 
 ## Quick start
 
-Requirements: Node.js **24.19 or later in the Node 24 LTS line** and npm 11+.
+You need Node.js **24.19 or later on the Node 24 line** and npm 11 or later.
 
-```powershell
-cd "path\to\Bi Brain"
+```bash
+git clone https://github.com/Rishflips/Bi-Brain.git
+cd Bi-Brain
 npm ci
 npx --no-install bibrain
 ```
 
-BiBrain opens in your browser already signed in. Connections finds Codex, Claude Code and Cursor and adds each to a project folder with one button.
+BiBrain builds itself on first use, starts, and opens your browser already signed in through a one-time link. The link works once and expires after two minutes.
+- **Open it again:** `npx --no-install bibrain open`.
+- **After an update:** if you update with `git pull`, run `npm run build` once so the new version is served.
 
-Run it from inside this BiBrain folder. `bibrain` is not published to npm, and
-`--no-install` makes npx refuse to download anything with that name, so a
-command run from the wrong folder fails instead of fetching someone else's
-package. It
-builds the app on first use (after updating BiBrain, for example with
-`git pull`, run `npm run build` once, or delete `dist`, so the new version is
-served), starts it, and opens a one-time sign-in link that
-works once and expires after two minutes. `npx --no-install bibrain open` opens it again
-signed in. To sign in by hand instead, run `npm run db:migrate`, `npm run build`
-and `npm start`, then paste the private pairing code from `data/owner-secret`
-into the first-use screen. A preview or custom database folder has its own
-`owner-secret` beside that database. The code is generated locally and is never
-logged or exported.
+Run these commands from inside the BiBrain folder. `bibrain` is not published to npm; `--no-install` makes npx refuse to download anything with that name, so running it from the wrong folder fails safely.
 
-### Optional sorting help
+To sign in by hand instead:
+1. Run `npm run db:migrate`, `npm run build` and `npm start`.
+2. Paste the pairing code from `data/owner-secret` into the first screen.
 
-BiBrain can suggest which project a new note belongs in and what is worth your attention. It only suggests; nothing moves without your Keep. Add the settings to `.env`:
+The code is generated on your computer and is never logged or exported.
 
-```
-# Ollama (simplest)
-BRAIN_SYSTEM1_PROVIDER=ollama
-OLLAMA_API_KEY=your-ollama-key
+No account, subscription or model key is needed. Your data stays in `data/brain.sqlite` plus a Git-backed vault of originals. Back it up with `npm run backup`.
 
-# or Cloudflare
-BRAIN_SYSTEM1_PROVIDER=cloudflare
-BRAIN_CLOUDFLARE_ACCOUNT_ID=your-32-character-account-id
-BRAIN_DECISION_API_KEY=your-workers-ai-token
-```
+## Connect your agents
 
-Restart BiBrain, then open Settings and find "Background help & spending":
+1. Open **Connections**.
+2. On the Codex, Claude Code or Cursor tile, choose **Add to …**.
+3. Pick the project and the folder where you open that agent. BiBrain shows the exact file it will add, and never changes an existing file.
+4. Open the agent in that folder and approve BiBrain once.
 
-1. Tick "Turn on background help (sorting new notes and preparing reviews)".
-2. Set "Daily cap (USD)" and "Per preparation cap (USD)" above 0, for example 0.05 and 0.01.
-3. Tick "Let BiBrain sort new notes with <service>".
-4. Press "Save preferences".
+The tile says **Connected** after the agent's first call. The access key stays in BiBrain's data folder on your computer and is never written into your project. Agents can read their project and suggest; they cannot accept their own suggestions.
 
-The "Sorting help" card then reads "On · …". Until then it names what is missing: "Needs background help turned on below." (step 1), "Needs a daily limit above $0 below." (the daily cap), "Needs a per-note limit above $0 below." (the per-preparation cap), or "Waiting for your consent below." (step 3).
+Details: [Connect a native agent](docs/NATIVE_CLIENT_SETUP.md).
 
-The key stays in BiBrain's background worker and is never sent to the browser. A local Ollama needs no key: set `BRAIN_SYSTEM1_PROVIDER=ollama` and `BRAIN_SYSTEM1_ENDPOINT=http://127.0.0.1:11434/v1/systemone` (not yet tested against a real local Ollama). Details and the owner-run live check are in [Providers](docs/PROVIDERS.md); run it as: put `BRAIN_SYSTEM1_LIVE=1` on its own line in `.env` and run `npm run proof:sorting`, or in PowerShell run `$env:BRAIN_SYSTEM1_LIVE=1; npm run proof:sorting`, then run `Remove-Item Env:BRAIN_SYSTEM1_LIVE` (or close the window). Remove the line from `.env` afterwards so it is never left on.
+## Optional sorting help
 
-No provider key is required. Without one, BiBrain keeps originals, search,
-review, and labeled extractive previews available locally. Data is stored in
-`data/brain.sqlite`; the API and durable worker run together under the local
-supervisor.
+1. Add these lines to a file named `.env` in the BiBrain folder. Keep the key only there; `.env` is git-ignored.
 
-For full setup, backup/restore, provider limits, and scoped agent configuration,
-read [Run BiBrain locally](docs/LOCAL_RUN.md). For a private always-on server,
-use [Self-hosting](docs/SELF_HOSTING.md) and `deploy/compose.yaml`.
-Native Codex and Claude Code setup is in
-[Connect a native agent](docs/NATIVE_CLIENT_SETUP.md); configuration readiness
-is not a completed client certification.
+   ```bash
+   # Ollama (simplest)
+   BRAIN_SYSTEM1_PROVIDER=ollama
+   OLLAMA_API_KEY=your-ollama-key
 
-## Product surfaces
+   # or Cloudflare Workers AI
+   BRAIN_SYSTEM1_PROVIDER=cloudflare
+   BRAIN_CLOUDFLARE_ACCOUNT_ID=your-32-character-account-id
+   BRAIN_DECISION_API_KEY=your-workers-ai-token
+   ```
 
-- **Today** — one bar that saves or asks, a Brief of at most three things that
-  changed (each with its quote and Keep, Fix, Dismiss and Undo), project cards, and
-  a quiet state when nothing needs you.
-- **Your brain** — a project list and, for each project, the facts that are true
-  now (editable as versions, with Undo and Still true), open questions, its
-  originals, decisions to review, goals, and search over facts and originals.
-  Any fact opens on its original with the passage highlighted and its history.
-- **Connections** — one tile each for Codex, Claude Code and Cursor, with a
-  one-step Add that writes the agent's project file, a status that reads
-  Connected only after the agent's first real call, immediate Revoke, an "Any
-  other agent" tile for a copied handoff or setup by hand, and reviewed imports.
-- **Settings & privacy** — appearance, background help, provider consent,
-  spending controls, export, deletion, and managed plan state.
+2. Restart BiBrain.
+3. In **Settings**, under "Background help & spending":
+   1. Tick **"Turn on background help (sorting new notes and preparing reviews)"**.
+   2. Set **"Daily cap (USD)"** and **"Per preparation cap (USD)"** above 0, for example 0.05 and 0.01.
+   3. Tick **"Let BiBrain sort new notes with …"**.
+   4. Press **"Save preferences"**.
 
-Technical terms such as models, queues, tokens, classifiers, and MCP stay out of
-the primary flow. Every visible control either works or states why it is
-unavailable.
+The **Sorting help** card then reads "On". Until it does, it names exactly what is missing.
 
-![BiBrain Today — asking the bar a question; the answer quotes the saved original (synthetic sample)](docs/screenshots/today-v2-ask.png)
+A few details:
+- **Where the key lives:** only in BiBrain's background worker. It never reaches the browser.
+- **Local Ollama:** works without a key. Set `BRAIN_SYSTEM1_ENDPOINT=http://127.0.0.1:11434/v1/systemone`. This has not yet been tested against a real local Ollama.
+- **Live check:** to confirm your setup against the real service once, see [Providers](docs/PROVIDERS.md) (`npm run proof:sorting`).
 
-![BiBrain Today at 320px in dark appearance — the Brief card with its evidence (synthetic sample)](docs/screenshots/today-v2-brief-320-dark.png)
+## How you stay in control
 
-![BiBrain agent continuity — synthetic reviewed project at 320px in dark appearance](docs/screenshots/agent-continuity.png)
+- **Originals never change.** Corrections create new versions, and Undo never overwrites a later edit.
+- **Nothing becomes fact without you.** Every suggestion carries its evidence. Agents and sorting help can only propose.
+- **Access is scoped and revocable.** Each agent sees only the projects you pick, for a limited time.
+- **Money is bounded.** Paid calls stay within your daily and per-note limits, are counted in whole micro-dollars, and are never sent twice.
+- **Model output is untrusted.** It is validated against a fixed schema. It can never grant access, raise a limit or change instructions.
+- **Quiet is a feature.** There is no endless feed. When nothing needs you, Today says so.
 
-![BiBrain guided agent connection — synthetic project and no connection key shown](docs/screenshots/agent-connection.png)
+## Status
 
-## Architecture in one view
+BiBrain is a working **single-owner local app**. This table is the honest state as of 2026-10-25. The verified details and the commands that ran are in [BUILD_STATE.md](BUILD_STATE.md).
+
+| Area | State |
+| --- | --- |
+| Local app: Today, Your brain, Connections, Settings | Works end to end; verified on Windows with 1,757 Vitest tests and 104 Playwright browser tests |
+| One-step agent connections | Verified locally; real Codex and Claude Code runs are owner-run |
+| Sorting help with Clef | Built and tested against a fake server; a live run is owner-run |
+| Self-hosting on your own server | Supported: [Self-hosting](docs/SELF_HOSTING.md) and `deploy/compose.yaml` |
+| Hosted edition and payments | Paused; the code is kept but not deployed |
+
+Next on the roadmap: better memory and retrieval (embeddings, freshness and a retrieval test set), then removing the paused hosted machinery. See the [reframe brief](docs/REFRAME_BRIEF.md).
+
+## How it is built
 
 ```text
-Browser UI
+Browser (React)
    │
    ▼
-Fastify application services ─── scoped stdio agent adapter
+Fastify API ─────────── agent connector (stdio, Apache-2.0)
    │
-   ├── SQLite operational state
-   ├── Git-backed immutable source vault
-   └── durable worker queue ─── optional bounded providers
+   ├── SQLite: operational state
+   ├── Git vault: immutable originals
+   └── durable worker queue ─── optional bounded providers (Clef, reasoning)
 ```
 
-Authorization is enforced in shared application services used by HTTP, agents,
-exports, and workers. Model and webhook output are untrusted inputs: neither can
-grant permission, increase a budget, change system instructions, or publish an
-accepted fact without the relevant deterministic checks and human gate.
+TypeScript throughout, React 19 with Vite, Fastify 5, Node's built-in SQLite, and Zod validation at every boundary. Authorization lives in shared application services used by HTTP, agents, export and the worker. Read [Architecture](docs/ARCHITECTURE.md), [Data model](docs/DATA_MODEL.md) and [Security and privacy](docs/SECURITY_PRIVACY.md).
 
-Read [Architecture](docs/ARCHITECTURE.md), [Data model](docs/DATA_MODEL.md), and
-[Security and privacy](docs/SECURITY_PRIVACY.md) for the complete boundaries.
+## Development
 
-## Development and verification
-
-```powershell
+```bash
+npm run dev          # API, worker and Vite with live reload
 npm run typecheck
 npm run lint
-npm test
+npm test             # Vitest
+npm run test:e2e     # Playwright, six projects
+npm run brain-eval   # offline memory evaluation
 npm run build
-npm run brain-eval
-npm run test:e2e
 ```
 
-Tests use isolated databases, deterministic clocks, and clearly synthetic
-fixtures. A successful build or screenshot is not treated as feature proof.
-Live-provider evaluation, native-client sessions, target-host recovery, and human
-usability have separate gates.
+Tests use isolated databases, deterministic clocks and clearly synthetic fixtures. A passing build or a screenshot is never treated as proof that a feature works.
 
-## Documentation map
+## Documentation
 
-| Document                                           | Purpose                                                                     |
-| -------------------------------------------------- | --------------------------------------------------------------------------- |
-| [AGENTS.md](AGENTS.md)                             | Required instructions for coding agents                                     |
-| [BUILD_STATE.md](BUILD_STATE.md)                   | Latest verified evidence and limits                                         |
-| [NEXT_AGENT_HANDOFF.md](NEXT_AGENT_HANDOFF.md)     | Current continuation state and safe next steps                              |
-| [Product](docs/PRODUCT.md)                         | Audience, promise, scope, and outcomes                                      |
-| [UX](docs/UX.md)                                   | First-use, Today, review, and failure states                                |
-| [Design system](docs/DESIGN_SYSTEM.md)             | Living visual language and accessibility                                    |
-| [Approved interface brief](design.md)              | Official black/gold identity, responsive surfaces, states, and wiring rules |
-| [Prototype handoff](design/BiBrain-HANDOFF_1.md)   | Delivered Claude prototype boundaries and the real-service wiring map       |
-| [Architecture](docs/ARCHITECTURE.md)               | Runtime, storage, trust, and deployment shape                               |
-| [API](docs/API.md)                                 | HTTP contracts and errors                                                   |
-| [Agent integration](docs/AGENT_INTEGRATION.md)     | Scoped tools, grants, and client verification                               |
-| [Native client setup](docs/NATIVE_CLIENT_SETUP.md) | Token-safe Codex/Claude setup and the required proof checklist              |
-| [Managed operator guide](docs/MANAGED_RUN.md)      | Identity, activation, billing, and recovery gates                           |
-| [Release](docs/RELEASE.md)                         | What can ship and what still blocks launch                                  |
-| [Implementation plan](docs/IMPLEMENTATION_PLAN.md) | Dependency-ordered milestone checklist                                      |
-| [Business](docs/BUSINESS.md)                       | Open-source and subscription decisions                                      |
+| Document | Covers |
+| --- | --- |
+| [Product](docs/PRODUCT.md) | Audience, promise, scope |
+| [Reframe brief](docs/REFRAME_BRIEF.md) | The current direction and roadmap |
+| [UX](docs/UX.md) | Screens, states and copy rules |
+| [Design brief](docs/DESIGN_BRIEF.md) and [design system](docs/DESIGN_SYSTEM.md) | Visual identity and accessibility |
+| [Architecture](docs/ARCHITECTURE.md), [Data model](docs/DATA_MODEL.md), [API](docs/API.md) | How the system fits together |
+| [Agent integration](docs/AGENT_INTEGRATION.md) and [native setup](docs/NATIVE_CLIENT_SETUP.md) | Connecting agents |
+| [Providers](docs/PROVIDERS.md) | Sorting help and model providers |
+| [Run locally](docs/LOCAL_RUN.md) and [self-hosting](docs/SELF_HOSTING.md) | Running, backup and restore |
+| [Testing](docs/TESTING.md) and [release](docs/RELEASE.md) | Verification and release gates |
+| [History](docs/history/README.md) | Earlier build logs, audits and handoffs |
+| [AGENTS.md](AGENTS.md) | Instructions for coding agents working on this repository |
 
-## Open source and commercial route
+## Contributing, security and licence
 
-BiBrain is being built to support both a useful self-hosted edition and a managed
-subscription service that shares the same core trust model.
-
-**License.** BiBrain is licensed under the
-[GNU Affero General Public License v3.0](LICENSE) (`AGPL-3.0-only`). If you run
-a modified BiBrain as a network service, you must offer its source to that
-service's users. The agent connector, `apps/mcp` (the stdio adapter agents run)
-and `apps/cli` (the `bibrain` command, including `bibrain connect`), is licensed
-under the [Apache License 2.0](apps/mcp/LICENSE) (`Apache-2.0`), so it can be
-embedded in other tools. The connector imports nothing from the AGPL code.
-
-Customer pricing, allowances, annual discount, legal terms, privacy disclosures
-and support commitments are still owner decisions.
-
-Read [Business](docs/BUSINESS.md) and [Release](docs/RELEASE.md) before public
-distribution or enabling live billing.
-
-Official repository: [Rishflips/Bi-Brain](https://github.com/Rishflips/Bi-Brain)
+- **Contributing:** read [CONTRIBUTING.md](CONTRIBUTING.md). Issues and pull requests are welcome.
+- **Security:** please report vulnerabilities privately, as described in [SECURITY.md](SECURITY.md).
+- **Conduct:** see [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md).
+- **Licence:** BiBrain is licensed under the [GNU Affero General Public License v3.0](LICENSE) (`AGPL-3.0-only`). If you run a modified BiBrain as a network service, you must offer its source to that service's users. The agent connector (`apps/mcp` and `apps/cli`) is licensed under the [Apache License 2.0](apps/mcp/LICENSE), so other tools can embed it.

@@ -2,7 +2,7 @@
 
 Deploy the full application from [Rishflips/Bi-Brain](https://github.com/Rishflips/Bi-Brain). ChatGPT Sites is no longer a deployment target. The separate `sites-port/` compatibility probe is excluded from this repository and container context.
 
-This package is for **one owner on one always-on Linux host with persistent disk**. API and worker share SQLite and a real Git-backed vault. Do not put the backend on ephemeral serverless functions, mount it on multiple hosts, or run multiple application replicas. A frontend-only upload cannot run this product. See [BUILD_STATE](../BUILD_STATE.md) and the [ship audit](SHIP_AUDIT_2026-10-07.md) for verified and open gates.
+This package is for **one owner on one always-on Linux host with persistent disk**. API and worker share SQLite and a real Git-backed vault. Do not put the backend on ephemeral serverless functions, mount it on multiple hosts, or run multiple application replicas. A frontend-only upload cannot run this product. See [BUILD_STATE](../BUILD_STATE.md) and the [ship audit](history/SHIP_AUDIT_2026-10-07.md) for verified and open gates.
 
 ## Install and pair
 

@@ -1,0 +1,3 @@
+# Store the CLI entry point with LF endings, so the CRLF that npm ci writes on Windows
+# does not show up as a content change.
+apps/cli/bibrain.mjs text eol=lf
