@@ -36,6 +36,7 @@ import {
   paidProcessingBlockedSetting,
 } from "../storage/spend.ts";
 import { safeAdd } from "./spend.ts";
+import { agentDisplayName } from "./agents.ts";
 import type { ManagedSpendView } from "./managed-spend.ts";
 import {
   advisorySourceBodyHash,
@@ -59,6 +60,7 @@ import {
   readDecisionAttempt,
   type AdvisoryClaimResult,
 } from "../storage/decision-advisory.ts";
+const PAIR_LINK_MS = 120_000;
 export const defaults: Preferences = {
   enabled: false,
   time_zone: "Asia/Calcutta",
@@ -213,6 +215,33 @@ export class Brain {
       new Date(this.clock().getTime() + 7 * 86400000).toISOString(),
     );
     return { token, csrf };
+  }
+  issuePairLink() {
+    const token = randomBytes(32).toString("hex");
+    const now = this.clock().getTime();
+    const links = this.store
+      .setting<{ hash: string; expires_at: number }[]>("pair_links", [])
+      .filter((l) => l.expires_at > now)
+      .slice(-4);
+    links.push({ hash: hash(token), expires_at: now + PAIR_LINK_MS });
+    this.store.set("pair_links", links);
+    return { token, expires_at: new Date(now + PAIR_LINK_MS).toISOString() };
+  }
+  redeemPairLink(token: string): boolean {
+    return this.store.transaction(() => {
+      const now = this.clock().getTime();
+      const h = hash(token);
+      const links = this.store.setting<{ hash: string; expires_at: number }[]>(
+        "pair_links",
+        [],
+      );
+      const hit = links.some((l) => l.hash === h && l.expires_at > now);
+      this.store.set(
+        "pair_links",
+        links.filter((l) => l.hash !== h && l.expires_at > now),
+      );
+      return hit;
+    });
   }
   ownerSession(token: string) {
     const session = this.store.get(
@@ -565,90 +594,14 @@ export class Brain {
           // from ordinary language. It is never applied without owner review.
           const memory = extractReviewableMemory(v.body);
           if (memory) {
-            const key = memory.entity;
-            const existing = this.currentClaims(p, v.project_id).filter(
-              (c) =>
-                c.data.entity === key &&
-                c.data.aspect === memory.field.aspect &&
-                c.data.evidence?.every(
-                  (e: Evidence) =>
-                    this.source(p, e.source_id).visibility === "project",
-                ),
+            this.queueMemoryGate(
+              p,
+              v.project_id,
+              { id, version: 1, body: v.body },
+              memory,
+              [memory.reason],
+              "owner",
             );
-            const duplicate =
-              existing.some(
-                (c) =>
-                  JSON.stringify(c.data.value) ===
-                  JSON.stringify(memory.field.value),
-              ) ||
-              this.entities(p, "gate").some(
-                (g) =>
-                  g.project_id === v.project_id &&
-                  g.data.status === "queued" &&
-                  g.data.entity === key &&
-                  g.data.field?.aspect === memory.field.aspect &&
-                  JSON.stringify(g.data.field?.value) ===
-                    JSON.stringify(memory.field.value) &&
-                  g.data.evidence?.every(
-                    (e: Evidence) =>
-                      this.evidenceCurrent(v.project_id, e) &&
-                      this.source(p, e.source_id).visibility === "project",
-                  ),
-              );
-            if (!duplicate) {
-              this.createEntity(v.project_id, "gate", {
-                raw_id: id,
-                type: memory.type,
-                entity: key,
-                field: memory.field,
-                evidence: [
-                  {
-                    source_id: id,
-                    source_version: 1,
-                    start: memory.start,
-                    end: memory.end,
-                    quote: memory.quote,
-                  },
-                ],
-                correction: existing.length > 0,
-                conflicts: existing.map((c) => ({
-                  id: c.id,
-                  version: c.version,
-                  value: c.data.value,
-                  evidence: c.data.evidence.map((e: Evidence) => {
-                    const chars = Array.from(this.source(p, e.source_id).body);
-                    let start = e.start,
-                      end = e.end;
-                    while (
-                      start > 0 &&
-                      chars[start - 1] !== "\n" &&
-                      chars[start - 1] !== "\r"
-                    )
-                      start--;
-                    while (
-                      end < chars.length &&
-                      chars[end] !== "\n" &&
-                      chars[end] !== "\r"
-                    )
-                      end++;
-                    return {
-                      ...e,
-                      start,
-                      end,
-                      quote: chars.slice(start, end).join(""),
-                    };
-                  }),
-                })),
-                status: "queued",
-                reasons: [
-                  memory.reason,
-                  ...(existing.length ? ["changed_understanding"] : []),
-                ],
-                actor: "owner",
-                policy_version: policyVersion,
-                classifier_version: memory.classifier_version,
-              });
-            }
           }
           let cursor = 0;
           for (const line of v.body.split(/\r?\n/)) {
@@ -695,6 +648,258 @@ export class Brain {
         };
       }),
     );
+  }
+  private queueMemoryGate(
+    p: Principal,
+    projectId: string,
+    source: { id: string; version: number; body: string },
+    memory: {
+      type: string;
+      entity: string;
+      field: { aspect: string; value: unknown };
+      start: number;
+      end: number;
+      quote: string;
+      classifier_version?: string;
+    },
+    reasons: string[],
+    actor: string,
+  ): boolean {
+    const key = memory.entity;
+    const existing = this.currentClaims(p, projectId).filter(
+      (c) =>
+        c.data.entity === key &&
+        c.data.aspect === memory.field.aspect &&
+        c.data.evidence?.every(
+          (e: Evidence) => this.source(p, e.source_id).visibility === "project",
+        ),
+    );
+    const duplicate =
+      existing.some(
+        (c) =>
+          JSON.stringify(c.data.value) === JSON.stringify(memory.field.value),
+      ) ||
+      this.entities(p, "gate").some(
+        (g) =>
+          g.project_id === projectId &&
+          g.data.status === "queued" &&
+          g.data.entity === key &&
+          g.data.field?.aspect === memory.field.aspect &&
+          JSON.stringify(g.data.field?.value) ===
+            JSON.stringify(memory.field.value) &&
+          g.data.evidence?.every(
+            (e: Evidence) =>
+              this.evidenceCurrent(projectId, e) &&
+              this.source(p, e.source_id).visibility === "project",
+          ),
+      );
+    // An agent that repeats a decision the owner already turned down must not
+    // raise it again. Owner captures keep their own rules.
+    const turnedDown =
+      actor.startsWith("agent:") &&
+      this.entities(p, "gate").some(
+        (g) =>
+          g.project_id === projectId &&
+          ["rejected", "dismissed"].includes(g.data.status) &&
+          g.data.entity === key &&
+          g.data.field?.aspect === memory.field.aspect &&
+          JSON.stringify(g.data.field?.value) ===
+            JSON.stringify(memory.field.value),
+      );
+    if (duplicate || turnedDown) return false;
+    this.createEntity(projectId, "gate", {
+      raw_id: source.id,
+      type: memory.type,
+      entity: key,
+      field: memory.field,
+      evidence: [
+        {
+          source_id: source.id,
+          source_version: source.version,
+          start: memory.start,
+          end: memory.end,
+          quote: memory.quote,
+        },
+      ],
+      correction: existing.length > 0,
+      conflicts: existing.map((c) => ({
+        id: c.id,
+        version: c.version,
+        value: c.data.value,
+        evidence: c.data.evidence.map((e: Evidence) => {
+          const chars = Array.from(this.source(p, e.source_id).body);
+          let start = e.start,
+            end = e.end;
+          while (
+            start > 0 &&
+            chars[start - 1] !== "\n" &&
+            chars[start - 1] !== "\r"
+          )
+            start--;
+          while (
+            end < chars.length &&
+            chars[end] !== "\n" &&
+            chars[end] !== "\r"
+          )
+            end++;
+          return { ...e, start, end, quote: chars.slice(start, end).join("") };
+        }),
+      })),
+      status: "queued",
+      reasons: [...reasons, ...(existing.length ? ["changed_understanding"] : [])],
+      actor,
+      policy_version: policyVersion,
+      classifier_version: memory.classifier_version ?? classifierVersion,
+    });
+    return true;
+  }
+  agentNote(p: Principal, input: unknown, key?: string) {
+    if (p.kind !== "agent")
+      throw new BrainError(
+        "FORBIDDEN",
+        "Session notes come from connected agents.",
+        403,
+      );
+    const line = z
+      .string()
+      .trim()
+      .min(1)
+      .max(300)
+      .refine((s) => !/[\r\n]/u.test(s), "Use one line.");
+    const v = z
+      .object({
+        project_id: z.string().min(1).max(100),
+        summary: z
+          .string()
+          .trim()
+          .max(1000)
+          .refine((s) => !/[\r\n]/u.test(s), "Use one line.")
+          .optional(),
+        decisions: z
+          .array(
+            z
+              .object({
+                topic: z
+                  .string()
+                  .trim()
+                  .min(1)
+                  .max(120)
+                  .refine(
+                    (s) => !/[\r\n:]/u.test(s),
+                    "Use a short topic on one line, without a colon.",
+                  ),
+                decision: line,
+              })
+              .strict(),
+          )
+          .max(10)
+          .default([]),
+        open_questions: z.array(line).max(10).default([]),
+        next_step: line.optional(),
+      })
+      .strict()
+      .refine(
+        (n) =>
+          n.decisions.length > 0 ||
+          n.open_questions.length > 0 ||
+          !!n.next_step ||
+          !!n.summary,
+        "Write at least one decision, question or next step.",
+      )
+      .parse(input);
+    this.access(p, v.project_id, "propose_memory");
+    const name = agentDisplayName(
+      this.store.get<{ client: string | null }>(
+        "SELECT client FROM grants WHERE id=?",
+        p.grant_id,
+      )?.client,
+    );
+    const lines = [`Session note from ${name}.`];
+    if (v.summary) lines.push(v.summary);
+    // Code-point offset of each decision line, counted while the body is assembled.
+    let offset = lines.reduce((n, l) => n + Array.from(l).length + 1, 0);
+    const decisionLines = v.decisions.map((d) => {
+      const quote = `Decided: ${d.topic}: ${d.decision}`;
+      const at = { quote, start: offset };
+      offset += Array.from(quote).length + 1;
+      return at;
+    });
+    lines.push(
+      ...decisionLines.map((d) => d.quote),
+      ...v.open_questions.map((q) => `Open question: ${q}`),
+    );
+    if (v.next_step) lines.push(`Next step: ${v.next_step}`);
+    // The first response is stored under the key, so a replay returns it and creates no new suggestions.
+    return this.idempotent(p, `agent_note:${v.project_id}`, key, v, () =>
+      this.writeAgentNote(p, v, name, lines, decisionLines, key),
+    );
+  }
+  private writeAgentNote(
+    p: Extract<Principal, { kind: "agent" }>,
+    v: {
+      project_id: string;
+      decisions: { topic: string; decision: string }[];
+      open_questions: string[];
+    },
+    name: string,
+    lines: string[],
+    decisionLines: { quote: string; start: number }[],
+    key?: string,
+  ) {
+    const captured = this.capture(
+      p,
+      {
+        project_id: v.project_id,
+        title: `Session note from ${name}`,
+        body: lines.join("\n"),
+        visibility: "project",
+      },
+      key ? `note:${key}` : undefined,
+      true,
+    ) as { source_id: string; quarantined?: boolean; duplicate?: boolean };
+    if (captured.quarantined || captured.duplicate)
+      return {
+        source_id: captured.source_id,
+        suggestions: 0,
+        open_questions: captured.quarantined ? 0 : v.open_questions.length,
+        quarantined: !!captured.quarantined,
+      };
+    const owner = this.ownerPrincipal();
+    const source = this.source(owner, captured.source_id);
+    let suggestions = 0;
+    this.store.transaction(() => {
+      v.decisions.forEach((d, i) => {
+        const { quote, start } = decisionLines[i];
+        const end = start + Array.from(quote).length;
+        if (Array.from(source.body).slice(start, end).join("") !== quote)
+          return;
+        // Reads run as the owner (an agent cannot list gates); the gate names the agent as its actor.
+        if (
+          this.queueMemoryGate(
+            owner,
+            v.project_id,
+            source,
+            {
+              type: "decision",
+              entity: d.topic,
+              field: { aspect: "statement", value: d.decision },
+              start,
+              end,
+              quote,
+            },
+            ["agent_session_note", "owner_review_required"],
+            `agent:${p.grant_id}`,
+          )
+        )
+          suggestions++;
+      });
+    });
+    return {
+      source_id: source.id,
+      suggestions,
+      open_questions: v.open_questions.length,
+      quarantined: false,
+    };
   }
   invalidate(project: string) {
     for (const row of this.store.all<Entity & { data: string }>(
@@ -1972,13 +2177,25 @@ export class Brain {
   connections(p: Principal) {
     this.owner(p);
     return this.store
-      .all(
-        "SELECT id,projects,operations,expires_at,revoked_at,last_verified_at FROM grants",
+      .all<{
+        id: string;
+        projects: string;
+        operations: string;
+        expires_at: string;
+        revoked_at: string | null;
+        last_verified_at: string | null;
+        client: string | null;
+        folder: string | null;
+      }>(
+        "SELECT id,projects,operations,expires_at,revoked_at,last_verified_at,client,folder FROM grants",
       )
       .map((g) => ({
         ...g,
         projects: JSON.parse(g.projects),
         operations: JSON.parse(g.operations),
+        client: g.client ?? "other",
+        client_name: agentDisplayName(g.client),
+        folder: g.folder ?? null,
         status: g.revoked_at
           ? "Revoked"
           : g.expires_at <= this.now()
@@ -1992,6 +2209,9 @@ export class Brain {
     this.owner(p);
     const v = z
       .object({
+        id: z.uuid().optional(),
+        client: z.enum(["codex", "claude-code", "cursor", "other"]).default("other"),
+        folder: z.string().max(1000).optional(),
         projects: z.array(z.string()).min(1).max(30),
         operations: z
           .array(z.enum(["read", "propose_memory", "forget"]))
@@ -2006,15 +2226,17 @@ export class Brain {
         "INVALID_INPUT",
         "Expiration must be in the future.",
       );
-    const id = randomUUID(),
+    const id = v.id ?? randomUUID(),
       token = randomBytes(32).toString("hex");
     this.store.run(
-      "INSERT INTO grants VALUES(?,?,?,?,?,NULL,NULL)",
+      "INSERT INTO grants(id,token_hash,projects,operations,expires_at,revoked_at,last_verified_at,client,folder) VALUES(?,?,?,?,?,NULL,NULL,?,?)",
       id,
       hash(token),
       JSON.stringify(v.projects),
       JSON.stringify(v.operations),
       new Date(v.expires_at).toISOString(),
+      v.client,
+      v.folder ?? null,
     );
     return { id, token };
   }
@@ -2129,6 +2351,7 @@ export class Brain {
           ),
       );
       const canCommit =
+        p.kind === "owner" &&
         v.type === "fact" &&
         classification.supported &&
         evidence.length > 0 &&
@@ -2167,13 +2390,13 @@ export class Brain {
           value: v.field!.value,
           source_id: source.id,
           source_version: source.version,
-          agent: p.kind === "owner" ? "owner" : `agent:${p.grant_id}`,
+          agent: "owner",
           ts: source.captured_at,
           valid_from: v.valid_from ?? this.now(),
           valid_to: v.valid_to,
           recorded_at: this.now(),
           status: "current",
-          authority: p.kind === "owner" ? "owner_literal" : "agent_literal",
+          authority: "owner_literal",
           evidence,
           supersedes: [],
           conflicts_with: [],
@@ -2746,7 +2969,7 @@ export class Brain {
         "brain.ask",
         "brain.diff",
         ...(operations.includes("propose_memory")
-          ? ["brain.propose", "brain.link", "brain.intent"]
+          ? ["brain.propose", "brain.note", "brain.link", "brain.intent"]
           : []),
         ...(operations.includes("forget") ? ["brain.forget"] : []),
       ],
@@ -3729,7 +3952,7 @@ export class Brain {
     );
     // Grants carry no display name, so every connected agent is named generically.
     const agentNames = Object.fromEntries(
-      (this.connections(p) as unknown as { id: string }[]).map((g) => [g.id, "A connected agent"]),
+      (this.connections(p) as unknown as { id: string; client: string }[]).map((g) => [g.id, agentDisplayName(g.client)]),
     );
     return {
       gates,

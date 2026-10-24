@@ -398,3 +398,12 @@ test("a failed search says so, then recovers on the next query", async ({ browse
     await expect(page.getByRole("alert")).toHaveCount(0);
   });
 });
+
+test("away from the local app, Connections says one-step adding is unavailable and keeps manual setup", async ({ browser }) => {
+  await journey(browser, async (page) => {
+    await page.getByRole("button", { name: "Connections", exact: true }).click();
+    await expect(page.getByRole("region", { name: "Codex" })).toContainText("Adding agents in one step works in the BiBrain app on your computer.");
+    await expect(page.getByRole("region", { name: "Codex" }).getByRole("button", { name: "Add to Codex" })).toHaveCount(0);
+    await expect(page.getByRole("region", { name: "Any other agent" }).getByRole("button", { name: "Set up by hand" })).toBeVisible();
+  });
+});

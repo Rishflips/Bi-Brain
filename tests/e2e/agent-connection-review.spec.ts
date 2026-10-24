@@ -13,13 +13,12 @@ test("owner connects Claude Code with bounded access, sees real verification and
     await page
       .getByRole("button", { name: "Connections", exact: true })
       .click();
-    const continuity = page.locator('[data-ui="agent-continuity"]');
-    await expect(continuity).toContainText("Inbox needs a first memory");
-    await expect(page.locator('[data-ui="connection-empty"]')).toContainText(
-      "No agent has access",
-    );
+    const claude = page.getByRole("region", { name: "Claude Code" });
 
-    await page.getByRole("button", { name: "Connect an agent" }).click();
+    await page
+      .getByRole("region", { name: "Any other agent" })
+      .getByRole("button", { name: "Set up by hand" })
+      .click();
     const dialog = page.getByRole("dialog", { name: "Connect an agent" });
     await expect(dialog.getByLabel("Codex")).toBeChecked();
     await expect(dialog.getByLabel("Inbox")).toBeChecked();
@@ -71,10 +70,7 @@ test("owner connects Claude Code with bounded access, sees real verification and
     );
     await guide.getByRole("button", { name: "Done" }).click();
 
-    const row = page.locator('[data-ui="connection-row"]');
-    await expect(row).toContainText("Not connected");
-    await expect(row).toContainText("waiting for first use");
-    await expect(continuity).toContainText("1 waiting for first use");
+    await expect(claude).toContainText("Waiting for its first call");
 
     const verified = await page.evaluate(
       async (connectionKey) =>
@@ -92,14 +88,12 @@ test("owner connects Claude Code with bounded access, sees real verification and
     );
     expect(verified).toBe(200);
     await page.reload();
-    await expect(row).toContainText("Connected");
-    await expect(row).toContainText("Verified");
-    await expect(continuity).toContainText("1 connected agent");
+    await expect(claude).toContainText("Connected");
+    await expect(claude).toContainText("last used");
 
-    await row.getByRole("button", { name: "Revoke access" }).click();
-    await expect(row).toContainText("Revoked");
-    await expect(row).toContainText("Access ended");
-    await expect(continuity).toContainText("No agent using this project yet");
+    await claude.getByRole("button", { name: "Revoke", exact: true }).click();
+    await expect(claude.getByText(/Earlier connections \(1\)/)).toBeVisible();
+    await expect(claude).not.toContainText("last used");
     const denied = await page.evaluate(
       async (connectionKey) =>
         (
@@ -129,9 +123,13 @@ test("guided connection remains usable at 320px in dark appearance", async ({
     await page
       .getByRole("button", { name: "Connections", exact: true })
       .click();
-    await page.getByRole("button", { name: "Connect an agent" }).click();
+    await page
+      .getByRole("region", { name: "Any other agent" })
+      .getByRole("button", { name: "Set up by hand" })
+      .click();
     const dialog = page.getByRole("dialog", { name: "Connect an agent" });
     await expect(dialog).toBeVisible();
+    await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
     await expect(dialog.getByLabel("Codex")).toBeChecked();
     await expect(dialog.getByLabel("Read only")).toBeChecked();
     await dialog

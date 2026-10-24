@@ -1,0 +1,19 @@
+/* Connections v2. Layout classes are prefixed cx-; buttons, tags, alerts and links reuse tv- from today.css. */
+.cx { display: grid; gap: 20px; min-width: 0; }
+.cx-tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 320px), 1fr)); gap: 16px; }
+.cx-tile { display: grid; gap: 12px; align-content: start; min-width: 0; padding: 16px; border: 1px solid var(--line); border-radius: 14px; background: var(--surface); }
+.cx-tile h2 { margin: 0; font-size: 18px; }
+.cx-head { display: flex; gap: 12px; align-items: center; min-width: 0; }
+.cx-head-text { display: grid; gap: 2px; min-width: 0; }
+.cx-mark { flex: none; display: grid; place-items: center; width: 36px; height: 36px; border-radius: 10px; border: 1px solid var(--line); font-weight: 750; font-size: 13px; }
+.cx-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
+.cx-row { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; min-width: 0; }
+.cx-row-text { display: grid; gap: 2px; min-width: 0; overflow-wrap: anywhere; }
+.cx-strong { margin: 0; font-weight: 650; }
+.cx-add { display: grid; gap: 12px; min-width: 0; }
+.cx-field { display: grid; gap: 4px; min-width: 0; border: 0; padding: 0; margin: 0; }
+.cx-field input[type="text"], .cx-field select { width: 100%; box-sizing: border-box; font: inherit; padding: 9px 12px; border-radius: 10px; border: 1px solid var(--line); background: var(--surface); color: inherit; }
+.cx-field input:focus-visible, .cx-field select:focus-visible, .cx-add summary:focus-visible { outline: 2px solid var(--green); outline-offset: 2px; }
+.cx-file { margin: 0; padding: 10px 12px; border-radius: 10px; border: 1px solid var(--line); font-size: 13px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.cx-add summary, .cx-ended summary { cursor: pointer; font-weight: 650; }
+.cx-add p, .cx-add small, .cx-add label, .cx-head-text p { overflow-wrap: anywhere; }

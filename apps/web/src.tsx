@@ -15,14 +15,16 @@ import sample from "../../fixtures/beta-launch.json" with { type: "json" };
 import { EvidenceList } from "./components.tsx";
 import { SignIn, ConnectionUnavailable, type RuntimeMode } from "./sign-in.tsx";
 import { BrandLockup } from "./brand.tsx";
+import { takePairToken } from "./pair-link.ts";
 import { TodayView } from "./today/TodayView.tsx";
 import "./today/today.css";
 import { BrainView } from "./brain/BrainView.tsx";
 import { SourceView } from "./brain/SourceView.tsx";
 import type { OpenSourceOptions } from "./today/types.ts";
 import "./brain/brain.css";
+import { ConnectionsView } from "./connections/ConnectionsView.tsx";
+import "./connections/connections.css";
 import {
-  AgentContinuityWorkspace,
   AgentClientPicker,
   AgentSetupGuide,
   agentSetupCommand,
@@ -229,6 +231,9 @@ function Modal({
     </dialog>
   );
 }
+// Taken at module load so the one-time token leaves the address bar before
+// anything else reads location.hash.
+let pendingPairToken = takePairToken(location, history);
 function App() {
   const navFromHash = () =>
     (
@@ -307,8 +312,6 @@ function App() {
     receipt: Entity;
     goal: Entity;
   } | null>(null);
-  const [knowledgePages, setKnowledgePages] = useState<any[]>([]);
-  const [knowledgeProject, setKnowledgeProject] = useState("");
   const [briefCount, setBriefCount] = useState<number | null | "unavailable">(
     null,
   );
@@ -332,7 +335,7 @@ function App() {
     for (const g of grants)
       if (g.status === "Connected")
         for (const id of g.projects ?? [])
-          (map[id] ??= []).push("A connected agent");
+          (map[id] ??= []).push(g.client_name ?? "A connected agent");
     return map;
   }, [grants]);
   const [adapterSelection, setAdapterSelection] = useState<any>(null);
@@ -348,7 +351,6 @@ function App() {
   const [dark, setDark] = useState(
     () => localStorage.getItem("brain-theme") === "dark",
   );
-  const knowledgeReadSeq = useRef(0);
   useEffect(() => {
     const update = () => setNav(navFromHash());
     window.addEventListener("popstate", update);
@@ -439,13 +441,9 @@ function App() {
     });
     setPrefs(null);
     setBriefCount(null);
-    knowledgeReadSeq.current += 1;
-    setKnowledgeProject("");
-    setKnowledgePages([]);
     setGrants([]);
     setBilling(null);
     setScope("inbox");
-    setKnowledgePages([]);
     setIdentityDisclosure(null);
     setDialog(null);
     setConfirmation("");
@@ -533,6 +531,22 @@ function App() {
     }
     setRuntime(meta);
     let session: SessionInfo | null = null;
+    if (pendingPairToken && meta.mode === "local") {
+      const token = pendingPairToken;
+      pendingPairToken = null;
+      try {
+        const s = await api<{ csrf: string }>("/session/pair-link/redeem", {
+          token,
+        });
+        csrf = s.csrf;
+      } catch (e) {
+        setError(
+          e instanceof Error
+            ? e.message
+            : "This link was already used or has expired. Use the installation code instead.",
+        );
+      }
+    }
     try {
       const value = await api("/session");
       if (isSessionInfo(value)) session = value;
@@ -616,26 +630,6 @@ function App() {
     );
     void refresh().catch(() => {});
   }, [paired, demo, refresh]);
-  useEffect(() => {
-    if (!paired || demo) return;
-    const project = scope || "inbox";
-    const read = ++knowledgeReadSeq.current;
-    if (knowledgeProject !== project) {
-      setKnowledgeProject(project);
-      setKnowledgePages([]);
-    }
-    api<any[]>(
-      `/pages?project_id=${encodeURIComponent(project)}&include_retired=true`,
-    )
-      .then((pages) => {
-        if (read !== knowledgeReadSeq.current) return;
-        setKnowledgePages(pages);
-      })
-      .catch(() => {
-        if (read !== knowledgeReadSeq.current) return;
-        setKnowledgePages([]);
-      });
-  }, [paired, demo, scope, today]);
   useEffect(() => {
     if (!paired || demo) return;
     let active = true;
@@ -823,47 +817,7 @@ function App() {
   }
   const projectName = (id: string) =>
     projects.find((p) => p.id === id)?.title ?? "Project";
-  const scopedKnowledgePages =
-    knowledgeProject === (scope || "inbox") ? knowledgePages : [];
   const connectionProject = scope || "inbox";
-  const connectionSources = notes.filter(
-    (item) => item.project_id === connectionProject,
-  );
-  const connectionMemories = scopedKnowledgePages.reduce(
-    (count, page) => count + (page.current?.length ?? 0),
-    0,
-  );
-  const connectionBrief = today.briefs.find(
-    (item: Entity) =>
-      item.project_id === connectionProject && item.data.status === "current",
-  );
-  const connectionActiveGoal = today.goals.find(
-    (item: Entity) =>
-      item.project_id === connectionProject && item.data.status === "active",
-  );
-  const connectionGoal =
-    connectionActiveGoal ??
-    today.goals.find(
-      (item: Entity) =>
-        item.project_id === connectionProject && item.data.status === "paused",
-    );
-  const projectGrants = grants.filter((grant) =>
-    grant.projects?.includes(connectionProject),
-  );
-  const currentProjectGrants = projectGrants.filter(
-    (grant) => grant.status !== "Revoked",
-  );
-  const pastProjectGrants = projectGrants.filter(
-    (grant) => grant.status === "Revoked",
-  );
-  const connectedProjectAgents = currentProjectGrants.filter(
-    (grant) => grant.status === "Connected",
-  ).length;
-  const waitingProjectAgents = currentProjectGrants.filter(
-    (grant) => grant.status === "Not connected",
-  ).length;
-  const connectionHasReviewedContext =
-    connectionMemories > 0 || !!connectionActiveGoal;
   const field = (label: string, child: React.ReactNode) => (
     <label className="field">
       {label}
@@ -1121,37 +1075,19 @@ function App() {
             />
           ) : nav === "Connections" ? (
             <section className="connections-view" data-ui="connections">
-              <p className="eyebrow">YOUR BRAIN, ANY AGENT</p>
-              <h1>Connections</h1>
-              <p className="lede">
-                Let another agent continue the work without making you explain
-                everything again.
-              </p>
-              <AgentContinuityWorkspace
-                projects={projects}
-                projectId={connectionProject}
-                projectTitle={projectName(connectionProject)}
-                originals={connectionSources.length}
-                memories={connectionMemories}
-                openQuestions={connectionBrief?.data.unknowns?.length ?? 0}
-                goalTitle={connectionGoal?.data.title ?? null}
-                connectedAgents={connectedProjectAgents}
-                waitingAgents={waitingProjectAgents}
-                hasReviewedContext={connectionHasReviewedContext}
-                onProjectChange={setScope}
-                onPreviewHandoff={() =>
+              <ConnectionsView
+                api={api}
+                projects={projects.map((p: any) => ({ id: p.id, title: p.title }))}
+                projectId={scope || "inbox"}
+                grants={grants}
+                onChanged={refresh}
+                onPreviewHandoff={(projectId) =>
                   void act(async () => {
-                    setHandoff(
-                      await api("/handoffs", {
-                        project_id: connectionProject,
-                      }),
-                    );
+                    setHandoff(await api("/handoffs", { project_id: projectId }));
                     setDialog("handoff");
                   })
                 }
-                onConnect={() => connectAgent()}
-                onSave={saveDialog}
-                onReview={() => setNav("Today")}
+                onManualSetup={() => connectAgent()}
               />
               <details>
                 <summary>Choose identity details an agent may receive</summary>
@@ -1210,120 +1146,6 @@ function App() {
                   Save identity sharing
                 </button>
               </details>
-              <div className="section-heading connection-heading">
-                <div>
-                  <p className="section-kicker">LIVE CONTINUITY</p>
-                  <h2>Who can use this project</h2>
-                  <p>
-                    Give Codex or Claude Code temporary access to only the work
-                    you choose. A key alone never counts as connected.
-                  </p>
-                </div>
-              </div>
-              {currentProjectGrants.length ? (
-                currentProjectGrants.map((g) => (
-                  <article
-                    key={g.id}
-                    className="connection-row"
-                    data-ui="connection-row"
-                  >
-                    <div className="row">
-                      <div>
-                        <h3>Agent access</h3>
-                        <p className="connection-status-copy">
-                          {g.status === "Connected"
-                            ? `Verified ${new Date(g.last_verified_at).toLocaleString()}`
-                            : g.status === "Revoked"
-                              ? "Access ended"
-                              : g.status === "Needs attention"
-                                ? "This key has expired"
-                                : "Key created · waiting for first use"}
-                        </p>
-                      </div>
-                      <span
-                        className={`pill connection-status connection-status-${String(g.status).toLowerCase().replaceAll(" ", "-")}`}
-                      >
-                        {g.status}
-                      </span>
-                    </div>
-                    <p>
-                      {g.projects.map(projectName).join(", ")} ·{" "}
-                      {g.operations.includes("propose_memory")
-                        ? "Read and propose memories"
-                        : "Read only"}
-                    </p>
-                    <small>
-                      Expires {new Date(g.expires_at).toLocaleString()}
-                    </small>
-                    <div className="actions">
-                      {g.status === "Needs attention" ? (
-                        <button
-                          type="button"
-                          onClick={() => connectAgent(g.projects)}
-                        >
-                          Create fresh access
-                        </button>
-                      ) : null}
-                      <button
-                        type="button"
-                        onClick={() =>
-                          void act(async () => {
-                            await api(`/agent-grants/${g.id}`, {}, "DELETE");
-                            await refresh();
-                            setNotice("Agent access revoked immediately.");
-                          })
-                        }
-                      >
-                        Revoke access
-                      </button>
-                    </div>
-                  </article>
-                ))
-              ) : (
-                <div className="connection-empty" data-ui="connection-empty">
-                  <strong>No agent has access.</strong>
-                  <p>
-                    Your saved work stays private. You can still copy a handoff,
-                    or connect one agent when you are ready.
-                  </p>
-                </div>
-              )}
-              {pastProjectGrants.length ? (
-                <details className="connection-history">
-                  <summary>
-                    Past connections ({pastProjectGrants.length})
-                  </summary>
-                  {pastProjectGrants.map((g) => (
-                    <article
-                      key={g.id}
-                      className="connection-row"
-                      data-ui="connection-row"
-                    >
-                      <div className="row">
-                        <div>
-                          <h3>Ended agent access</h3>
-                          <p className="connection-status-copy">Access ended</p>
-                        </div>
-                        <span className="pill connection-status">Revoked</span>
-                      </div>
-                      <p>
-                        {g.projects.map(projectName).join(", ")} ·{" "}
-                        {g.operations.includes("propose_memory")
-                          ? "Read and propose memories"
-                          : "Read only"}
-                      </p>
-                      <div className="actions">
-                        <button
-                          type="button"
-                          onClick={() => connectAgent(g.projects)}
-                        >
-                          Create fresh access
-                        </button>
-                      </div>
-                    </article>
-                  ))}
-                </details>
-              ) : null}
               <h2>Bring more context in</h2>
               <article>
                 <h3>Bring in files or conversations</h3>
@@ -2870,6 +2692,7 @@ function App() {
                     e.preventDefault();
                     void act(async () => {
                       const result = await api("/agent-grants", {
+                        client: agentClient,
                         projects: grantProjects,
                         operations: canWrite
                           ? ["read", "propose_memory"]

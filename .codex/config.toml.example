@@ -1,4 +1,5 @@
-# Copy this file to .codex/config.toml only on a trusted local checkout.
+# BiBrain's Connections screen writes this file for you: open Connections and choose "Add to Codex".
+# This example is only for setting it up by hand. Copy it to .codex/config.toml on a trusted local checkout.
 # Keep BRAIN_AGENT_TOKEN in the environment; never put it in this file.
 [mcp_servers.bibrain]
 command = "node"

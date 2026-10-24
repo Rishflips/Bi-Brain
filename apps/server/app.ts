@@ -4,7 +4,9 @@ import rateLimit from "@fastify/rate-limit";
 import staticPlugin from "@fastify/static";
 import { randomBytes, timingSafeEqual } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { resolve, dirname } from "node:path";
+import { homedir } from "node:os";
+import { resolve, dirname, delimiter } from "node:path";
+import { fileURLToPath } from "node:url";
 import { z } from "zod";
 import { Brain } from "../../packages/domain/service.ts";
 import { BrainError, hash } from "../../packages/domain/logic.ts";
@@ -20,6 +22,7 @@ import { deploymentPolicy } from "./deployment.ts";
 import type { PaddleBillingService } from "../../packages/runtime/paddle-billing.ts";
 import type { DodoBillingService } from "../../packages/runtime/dodo-billing.ts";
 import { registerBillingRoutes } from "./billing-routes.ts";
+import { agentConnect, LOCAL_ONLY_REASON, type AgentConnectConfig } from "./agent-connect.ts";
 
 const LOGIN_PATH = "/auth/login";
 const CORRELATION_COOKIE = "brain_login";
@@ -103,6 +106,8 @@ export async function createApp(
     decisionCapability?: () => { available: boolean; reason: string };
     /** Closed managed billing. Legacy Paddle injection supports historical tests. */
     billing?: PaddleBillingService | DodoBillingService;
+    /** One-step agent setup. Tests override the folders and paths it looks at. */
+    agents?: Partial<AgentConnectConfig>;
   } = {},
 ) {
   const managed = options.managed;
@@ -130,9 +135,10 @@ export async function createApp(
     throw new Error(
       "The OIDC callback path must be one fixed absolute path without a query or fragment.",
     );
+  const localPort = Number(process.env.BRAIN_PORT ?? 4317);
   const deployment = deploymentPolicy(
     options.publicOrigin ?? process.env.BRAIN_PUBLIC_ORIGIN,
-    Number(process.env.BRAIN_PORT ?? 4317),
+    localPort,
   );
   if (managed && !deployment.secure)
     throw new Error("Managed mode requires an explicit HTTPS public origin.");
@@ -144,6 +150,21 @@ export async function createApp(
   const localBrain: Brain | undefined = managed
     ? undefined
     : (brain ?? new Brain(new Storage()));
+  const agentHome = process.env.BRAIN_AGENT_HOME ?? homedir();
+  const agentPath = process.env.BRAIN_AGENT_PATH ?? process.env.PATH ?? "";
+  const agents = localBrain
+    ? agentConnect(localBrain, {
+        available: !managed && !deployment.secure,
+        reason: LOCAL_ONLY_REASON,
+        dataDir: dirname(localBrain.store.path),
+        apiOrigin: deployment.origin ?? `http://127.0.0.1:${localPort}`,
+        node: process.execPath,
+        cli: fileURLToPath(new URL("../cli/bibrain.mjs", import.meta.url)),
+        home: agentHome,
+        pathDirs: agentPath.split(delimiter),
+        ...options.agents,
+      })
+    : null;
   const app = Fastify({
     bodyLimit: 4 * 1048576,
     logger: false,
@@ -288,6 +309,8 @@ export async function createApp(
       req.url === "/api/v1/health/live" ||
       req.url === "/api/v1/runtime" ||
       req.url === "/api/v1/session/pair" ||
+      req.url === "/api/v1/session/pair-link" ||
+      req.url === "/api/v1/session/pair-link/redeem" ||
       requestPath(req.url) === "/api/v1/billing/webhook"
     )
       return;
@@ -400,18 +423,43 @@ export async function createApp(
   if (managed) {
     // Managed accounts never use local pairing; the control store sessions
     // are the only browser credential. Fail closed with an explicit message.
-    app.post(
+    for (const path of [
       "/api/v1/session/pair",
-      { config: { rateLimit: { max: 10, timeWindow: 60000 } } },
-      () => {
-        throw new BrainError(
-          "PAIRING_UNAVAILABLE",
-          "This server uses managed sign-in; local pairing is unavailable.",
-          403,
-        );
-      },
-    );
+      "/api/v1/session/pair-link",
+      "/api/v1/session/pair-link/redeem",
+    ])
+      app.post(
+        path,
+        { config: { rateLimit: { max: 10, timeWindow: 60000 } } },
+        () => {
+          throw new BrainError(
+            "PAIRING_UNAVAILABLE",
+            "This server uses managed sign-in; local pairing is unavailable.",
+            403,
+          );
+        },
+      );
   } else {
+    // One-time links are for the person's own computer, like one-step adding.
+    const linksAllowed = !deployment.secure;
+    const linksUnavailable = () => {
+      throw new BrainError(
+        "PAIRING_UNAVAILABLE",
+        "Sign-in links are only available when BiBrain runs on this computer.",
+        403,
+      );
+    };
+    const startSession = (reply: FastifyReply) => {
+      const { token, csrf } = localBrain!.issueSession();
+      reply.setCookie("brain_session", token, {
+        httpOnly: true,
+        secure: deployment.secure,
+        sameSite: "strict",
+        path: "/",
+        maxAge: 7 * 86400,
+      });
+      return { csrf };
+    };
     app.post(
       "/api/v1/session/pair",
       { config: { rateLimit: { max: 10, timeWindow: 60000 } } },
@@ -428,15 +476,45 @@ export async function createApp(
             "The installation code did not match.",
             401,
           );
-        const { token, csrf } = localBrain!.issueSession();
-        reply.setCookie("brain_session", token, {
-          httpOnly: true,
-          secure: deployment.secure,
-          sameSite: "strict",
-          path: "/",
-          maxAge: 7 * 86400,
-        });
-        return { csrf };
+        return startSession(reply);
+      },
+    );
+    app.post(
+      "/api/v1/session/pair-link",
+      { config: { rateLimit: { max: 10, timeWindow: 60000 } } },
+      (req) => {
+        if (!linksAllowed) return linksUnavailable();
+        const { secret } = z
+          .object({ secret: z.string().max(200) })
+          .strict()
+          .parse(req.body);
+        const expected = Buffer.from(pairSecret!);
+        const got = Buffer.from(secret);
+        if (got.length !== expected.length || !timingSafeEqual(got, expected))
+          throw new BrainError(
+            "UNAUTHORIZED",
+            "The installation code did not match.",
+            401,
+          );
+        return localBrain!.issuePairLink();
+      },
+    );
+    app.post(
+      "/api/v1/session/pair-link/redeem",
+      { config: { rateLimit: { max: 10, timeWindow: 60000 } } },
+      (req, reply) => {
+        if (!linksAllowed) return linksUnavailable();
+        const { token } = z
+          .object({ token: z.string().regex(/^[0-9a-f]{64}$/u) })
+          .strict()
+          .parse(req.body);
+        if (!localBrain!.redeemPairLink(token))
+          throw new BrainError(
+            "UNAUTHORIZED",
+            "This link was already used or has expired. Use the installation code instead.",
+            401,
+          );
+        return startSession(reply);
       },
     );
   }
@@ -878,9 +956,29 @@ export async function createApp(
       );
     return grant;
   });
-  app.delete("/api/v1/agent-grants/:id", (req) =>
-    req.brain.revoke(req.principal, params(req)),
-  );
+  app.delete("/api/v1/agent-grants/:id", (req) => {
+    const id = params(req);
+    const revoked = req.brain.revoke(req.principal, id);
+    agents?.forget(id);
+    return revoked;
+  });
+  const agentsUnavailable = {
+    available: false,
+    reason: LOCAL_ONLY_REASON,
+    clients: [],
+  };
+  app.get("/api/v1/agents", (req) => {
+    req.brain.owner(req.principal);
+    return agents ? agents.status(req.principal) : agentsUnavailable;
+  });
+  app.post("/api/v1/agents/preview", (req) => {
+    if (!agents) throw new BrainError("LOCAL_ONLY", agentsUnavailable.reason, 403);
+    return agents.preview(req.principal, req.body);
+  });
+  app.post("/api/v1/agents/connect", (req) => {
+    if (!agents) throw new BrainError("LOCAL_ONLY", agentsUnavailable.reason, 403);
+    return agents.connect(req.principal, req.body);
+  });
   app.post("/api/v1/agent/verify", (req) => req.brain.verify(req.principal));
   app.get("/api/v1/agent/capabilities", (req) =>
     req.brain.agentCapabilities(req.principal),
@@ -951,6 +1049,9 @@ export async function createApp(
   });
   app.post("/api/v1/agent/propose", (req) =>
     req.brain.propose(req.principal, req.body, key(req)),
+  );
+  app.post("/api/v1/agent/note", (req) =>
+    req.brain.agentNote(req.principal, req.body, key(req)),
   );
   app.post("/api/v1/agent/link", (req) =>
     req.brain.agentLink(req.principal, req.body),

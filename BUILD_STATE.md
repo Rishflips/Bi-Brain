@@ -2,6 +2,69 @@
 
 Updated: 2026-10-23
 
+## 2026-10-23 — Plug-and-play Connections (branch reframe/connections-v2)
+
+- `npx --no-install bibrain` (new private workspace `apps/cli`) starts BiBrain from the
+  BiBrain folder and opens the browser already signed in through a single-use
+  `#pair=` link (two-minute expiry, stripped from the address bar). `bibrain
+  open` reopens it and `bibrain connect` is the connector an agent starts. The
+  local server detects Codex, Claude Code and Cursor and, from a button, writes
+  that client's project file in a chosen folder (never changing an existing
+  file). The access key is created by BiBrain and rests in BiBrain's data
+  folder (`data/agent-keys`, mode 0600), not in the project file or the
+  browser; Revoke deletes the key file.
+- Connections shows one tile per agent (Add, Waiting for its first call,
+  Connected after a real authenticated call, Revoke, earlier connections) and
+  an "Any other agent" tile for Preview handoff and Set up by hand; a grant
+  with no named agent is listed there. The continuity workspace
+  (`AgentContinuityWorkspace` and its CSS) is removed.
+- Agents no longer accept their own proposals: every agent proposal queues for
+  review on Today. A new `brain.note` session note turns decisions (each with a
+  topic) and open questions into suggestions that wait for review; a note with
+  a secret-looking line is quarantined. `scripts/native-client-proof.ts` now
+  uses the one-step path and cleans up even if connecting fails.
+
+Verified in this worktree at the final branch head, after the final review's fix
+wave (Windows, Node 24.19.0):
+
+- `npm ci`: succeeded with the new workspace. `npm run typecheck`: clean.
+  `npm run lint`: clean. `npm run build`: clean.
+- `npm run brain-eval`: 4/4 passed.
+- `npx vitest run --reporter=dot`: 160 files, 1655 passed, 8 skipped, 0
+  failed, in one run. An earlier full run on this branch had 7 load timeouts
+  in three `managed-decision-*` files that this branch does not touch; they
+  passed when run alone.
+- `npx playwright test --workers=1` (after `npm run build`): 100 passed, 0
+  failed, 5.5m. By project: main 69, today-v2 20, connections 6, today-v2-bar
+  4, empty-brain 1. The run before it had 2 timing failures in specs this
+  branch does not change (`app.spec.ts` delete dialog, `first-note-layout-review`
+  320px); both passed alone (9/9) and in this full run. `docs/screenshots` was
+  restored afterwards.
+- The remaining minor findings are listed in
+  `docs/superpowers/plans/2026-10-23-connections-v2-followups.md`.
+
+Known limits:
+
+- `bibrain` is not published to npm. Run `npx --no-install bibrain` from the
+  BiBrain folder; `--no-install` makes npx refuse to fetch a registry package
+  of that name when it is run from the wrong folder (checked on npm 11.17:
+  it cancels instead of installing);
+  generated agent files call `node` with absolute paths, never `npx`.
+- One-step adding works only in the local app. The hosted edition uses "Set up
+  by hand".
+- Real Codex and Claude Code runs are the owner's
+  `scripts/native-client-proof.ts` (`BRAIN_NATIVE_PROOF=1`), not CI. That script
+  has not been run on this branch, so there is no native Codex, Claude Code or
+  Cursor result for the one-step path yet. Automated tests drive the real stdio
+  connector with the MCP SDK client against a real local server.
+- The access key rests in BiBrain's data folder, as the installation code does.
+  One-step connections last 90 days unless revoked.
+- `npx --no-install bibrain start` (the build, the server start and the health wait) and the
+  real browser opener have not been run on the owner's machine. That includes
+  whether Windows `rundll32 url.dll,FileProtocolHandler` keeps the `#pair=`
+  fragment. The `open` hand-off is covered by a test with a stubbed browser.
+- Local V1 only; no real model run.
+
 ## 2026-10-23 — Your brain v2 (branch reframe/your-brain-v2)
 
 - Your brain is a project list plus one page per project: header with Preview
