@@ -1,6 +1,6 @@
 # Owner-directed harness milestone record
 
-Follow [SOL6_HARNESS_AND_SUITE_BUILD.md](../prompts/SOL6_HARNESS_AND_SUITE_BUILD.md) in order. [BUILD_STATE.md](../BUILD_STATE.md) has the actual command record and blocked validation. A checked box means the gate, not just its implementation, passed.
+Follow [SOL6_HARNESS_AND_SUITE_BUILD.md](history/prompts/SOL6_HARNESS_AND_SUITE_BUILD.md) in order. [BUILD_STATE.md](../BUILD_STATE.md) has the actual command record and blocked validation. A checked box means the gate, not just its implementation, passed.
 
 - [x] S0 baseline, inventory, authority ADR and three repaired regression checks.
 - [ ] S1 portable evidence, scanner, journal, migration, complete deletion foundation. Capture/rebuild, injected publish recovery, quarantine, restore barrier, migration/rollback and resumable history purge pass; exhaustive crash points and disk-full remain open.

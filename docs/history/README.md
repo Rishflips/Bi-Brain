@@ -14,5 +14,9 @@ These documents describe how BiBrain got here. They are kept word for word, but 
 | [SHIP_AUDIT_2026-10-07.md](SHIP_AUDIT_2026-10-07.md) | The independent deployment and ship audit |
 | [PRODUCTION_READINESS_2026-10-18.md](PRODUCTION_READINESS_2026-10-18.md) | The production readiness review |
 | [PRICING_PROPOSAL_2026-10-21.md](PRICING_PROPOSAL_2026-10-21.md) | The hosted pricing proposal (billing is paused) |
+| [prompts/](prompts/) | The Codex-era build prompts (`BUILD_WITH_SOL`, `SOL6_HARNESS_AND_SUITE_BUILD`) and two early prompt drafts (`PREPARE_BRIEF`, `REVIEW_ASSUMPTION`) |
+| [scripts/validate_build_pack.py](scripts/validate_build_pack.py) | The original build-pack validator; it is no longer run |
+
+The original prototype source archive (`design/bibrain-prototype-source.zip`) was removed from the tree on 2026-10-25. It is still in git history, and the built prototype is `design/bibrain-prototype.html`.
 
 Links inside these documents were written for their original locations, so some point at files that have since moved. Moved files live in this folder, and `design.md` is now [docs/DESIGN_BRIEF.md](../DESIGN_BRIEF.md).
