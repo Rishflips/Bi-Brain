@@ -24,21 +24,24 @@ Updated: 2026-10-23
   a secret-looking line is quarantined. `scripts/native-client-proof.ts` now
   uses the one-step path and cleans up even if connecting fails.
 
-Verified in this worktree (branch head 9d17cec plus the Task 10 changes):
+Verified in this worktree at the final branch head, after the final review's fix
+wave (Windows, Node 24.19.0):
 
 - `npm ci`: succeeded with the new workspace. `npm run typecheck`: clean.
   `npm run lint`: clean. `npm run build`: clean.
 - `npm run brain-eval`: 4/4 passed.
-- `npx vitest run --reporter=dot` (1624s): 160 files, 1657 tests: 1642
-  passed, 8 skipped, 7 failed. All 7 failures were 15 s or 20 s timeouts in
-  `tests/integration/managed-decision-accounting.test.ts` (1),
-  `managed-decision-advisory-persistence-review.test.ts` (1) and
-  `managed-decision-advisory-store.test.ts` (5), none of which this branch
-  touches. Run alone, those three files passed: 3 files, 101 tests, 0 failed
-  (206 s). The full run did not complete green in one pass.
+- `npx vitest run --reporter=dot`: 160 files, 1655 passed, 8 skipped, 0
+  failed, in one run. An earlier full run on this branch had 7 load timeouts
+  in three `managed-decision-*` files that this branch does not touch; they
+  passed when run alone.
 - `npx playwright test --workers=1` (after `npm run build`): 100 passed, 0
-  failed, 4.7m. By project: main 69, today-v2 20, connections 6, today-v2-bar
-  4, empty-brain 1. `docs/screenshots` was restored afterwards.
+  failed, 5.5m. By project: main 69, today-v2 20, connections 6, today-v2-bar
+  4, empty-brain 1. The run before it had 2 timing failures in specs this
+  branch does not change (`app.spec.ts` delete dialog, `first-note-layout-review`
+  320px); both passed alone (9/9) and in this full run. `docs/screenshots` was
+  restored afterwards.
+- The remaining minor findings are listed in
+  `docs/superpowers/plans/2026-10-23-connections-v2-followups.md`.
 
 Known limits:
 
