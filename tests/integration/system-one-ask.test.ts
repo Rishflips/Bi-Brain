@@ -113,6 +113,17 @@ describe("prepareAsk", () => {
       expect(headers.Authorization).toBe(`Bearer ${key}`);
     });
 
+    it("never sends a key to a local endpoint", async () => {
+      let headers: any;
+      const fetcher = (async (_u: string, init: RequestInit) => {
+        headers = init.headers;
+        return new Response(JSON.stringify(plain));
+      }) as unknown as typeof fetch;
+      await prepareAsk({ ...ollama, key: "k".repeat(40) }, "note: x", questions, fetcher).execute(new AbortController().signal);
+      expect(headers.Authorization).toBeUndefined();
+      expect(headers["Content-Type"]).toBe("application/json");
+    });
+
     it.each([
       ["another host", { endpoint: "https://evil.example/v1/systemone", key: "k".repeat(40) }],
       ["another path", { endpoint: "https://ollama.com/api/chat", key: "k".repeat(40) }],

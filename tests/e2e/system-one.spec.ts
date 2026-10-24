@@ -63,7 +63,7 @@ test("sorting help is switched on in Settings and a note is filed with Keep", as
   const consent = page.getByLabel(/Let BiBrain sort new notes with/);
   // The worker publishes its status a moment after start; the box enables once it has.
   await expect(consent).toBeEnabled({ timeout: 20000 });
-  await expect(consent).toHaveAccessibleName(`Let BiBrain sort new notes with ${LABEL} (costs count against the limits below)`);
+  await expect(consent).toHaveAccessibleName(`Let BiBrain sort new notes with ${LABEL}. Costs count against the limits below.`);
   await consent.check();
   await page.getByRole("button", { name: "Save preferences" }).click();
   await expect(page.getByText("Background preferences saved.")).toBeVisible();

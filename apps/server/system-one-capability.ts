@@ -1,7 +1,7 @@
 import type { Storage } from "../../packages/storage/index.ts";
+import { WORKER_FRESH_MS, workerRunning } from "../../packages/domain/system-one.ts";
 
-/** The worker must have beaten its heart this recently for sorting help to be offered. */
-export const WORKER_FRESH_MS = 30_000;
+export { WORKER_FRESH_MS };
 const WORKER_REASON = "Sorting help needs BiBrain's background worker to be running.";
 
 /**
@@ -17,8 +17,7 @@ export function systemOneCapability(store: Storage, clock: () => Date) {
     try {
       const status = store.setting<{ configured?: boolean; reason?: string } | null>("system_one_status", null);
       const beat = store.setting<string | null>("worker_heartbeat", null);
-      const age = beat ? clock().getTime() - Date.parse(beat) : Number.POSITIVE_INFINITY;
-      if (status?.configured === true && age >= 0 && age < WORKER_FRESH_MS) return { ready: true, reason: "ready" };
+      if (status?.configured === true && workerRunning(beat, clock())) return { ready: true, reason: "ready" };
       if (status && status.configured !== true && status.reason) return { ready: false, reason: status.reason };
     } catch {
       /* An unreadable setting is "not ready", never "ready". */

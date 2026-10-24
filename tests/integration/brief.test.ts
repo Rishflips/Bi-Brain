@@ -69,8 +69,9 @@ describe("buildBrief", () => {
       entity("gate", id, { status: "queued", entity: id, field: { aspect: "statement", value: "x" }, evidence: [ev("s1", "x")], actor: "owner", ...extra }, created_at);
     input.gates.push(
       gate("g-older", "2026-10-21T09:00:00Z"),
-      gate("g-newer-quiet", "2026-10-22T09:00:00Z", { s1_quiet: true, s1_answer_id: "a1" }),
+      gate("g-newer-quiet", "2026-10-22T09:00:00Z"),
     );
+    input.quiet = { "g-newer-quiet": "a1" };
     const out = buildBrief(input, now);
     expect(out.items.map((i) => i.target.id)).toEqual(["g-older", "g-newer-quiet"]);
     expect(out.items[0].quiet).toBeUndefined();

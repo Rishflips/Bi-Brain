@@ -83,6 +83,7 @@ type SortingStatus = {
   label: string | null;
   reason: string | null;
   wanted: boolean;
+  worker_running: boolean;
   answers: number;
   reviewed: number;
   last_error: string | null;
@@ -91,6 +92,7 @@ type SortingStatus = {
 function sortingLine(status: SortingStatus, prefs: Preferences): string {
   if (!status.configured)
     return `Off on this computer: ${status.reason ?? "sorting help is not set up."}`;
+  if (!status.worker_running) return "Waiting for BiBrain's background worker to start.";
   if (prefs.daily_cap_micro_usd <= 0) return "Needs a daily limit above $0 below.";
   if (prefs.per_job_cap_micro_usd <= 0) return "Needs a per-note limit above $0 below.";
   if (!prefs.enabled) return "Needs background help turned on below.";
@@ -1697,8 +1699,8 @@ function App() {
                             }}
                           />{" "}
                           Let BiBrain sort new notes with{" "}
-                          {sorting.label ?? "the sorting service"} (costs count
-                          against the limits below)
+                          {sorting.label ?? "the sorting service"}. Costs count
+                          against the limits below.
                         </label>
                       </div>
                     ) : null}

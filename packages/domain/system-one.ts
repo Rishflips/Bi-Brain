@@ -6,6 +6,13 @@ import type { AskAnswer, AskQuestion } from "../providers/system-one-ask.ts";
  * titles appear only as option descriptions, never as option ids.
  */
 export const S1_STATE_LIMIT = 8000;
+/** The worker must have beaten its heart this recently to count as running. */
+export const WORKER_FRESH_MS = 30_000;
+/** Whether a worker heartbeat is fresh by the brain's own clock. The one rule for status and consent. */
+export function workerRunning(beat: string | null | undefined, now: Date): boolean {
+  const age = beat ? now.getTime() - Date.parse(beat) : Number.POSITIVE_INFINITY;
+  return age >= 0 && age < WORKER_FRESH_MS;
+}
 export const S1_THRESHOLDS = { file: 0.7, review: 0.7, quiet: 0.3, changes: 0.5 } as const;
 const MAX_TARGETS = 15;
 

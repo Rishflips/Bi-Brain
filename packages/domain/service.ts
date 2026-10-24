@@ -46,7 +46,7 @@ import {
   type AdvisoryRecord,
 } from "./decision-advisory.ts";
 import { extractReviewableMemory } from "./memory-understanding.ts";
-import { adviseFrom, type S1Advice, type S1Context } from "./system-one.ts";
+import { adviseFrom, workerRunning, type S1Advice, type S1Context } from "./system-one.ts";
 import type { AskResult } from "../providers/system-one-ask.ts";
 import { buildBrief, gateFitsBrief, type BriefInput, type BriefJob } from "./brief.ts";
 import { buildProjectView } from "./project-view.ts";
@@ -1783,11 +1783,15 @@ export class Brain {
         ? patch.decision_provider_enabled === true
         : rawDecision;
       if (explicitDecision && decisionEnabled) {
-        const decisionReady = this.decisionCapability?.().ready === true;
+        const capability = this.decisionCapability?.();
+        const decisionReady = capability?.ready === true;
         if (!decisionReady || tenantBlocked || centrallyUnusable)
           throw new BrainError(
             "BUDGET_BLOCKED",
-            "Additional background checks are not available yet.",
+            // Local mode says why in the worker's words; managed mode keeps its message.
+            !this.spending && !decisionReady && capability?.reason
+              ? capability.reason
+              : "Additional background checks are not available yet.",
             409,
           );
       }
@@ -4037,6 +4041,7 @@ export class Brain {
       sources,
       fileSuggestions,
       projectTitles,
+      quiet: this.store.setting<Record<string, string>>("brief_quiet", {}),
       dismissed: this.store.setting<string[]>("brief_dismissed", []),
       confirmations: this.store.setting<Record<string, string>>("claim_confirmations", {}),
       agentNames,
@@ -4119,20 +4124,21 @@ export class Brain {
         answer_id: answerId,
         status: "queued",
       });
-    if (advice.quiet)
+    if (advice.quiet) {
+      // The mark lives in a setting, never on the card, so a card drawn before the
+      // answer arrived keeps its version and still accepts.
+      const quiet = { ...this.store.setting<Record<string, string>>("brief_quiet", {}) };
       for (const row of this.store.all<{ id: string }>("SELECT id FROM entities WHERE project_id=? AND kind='gate'", project)) {
         const gate = this.entity(owner, row.id);
         const cites = ((gate.data.evidence ?? []) as Evidence[]).some(
           (e) => e.source_id === sourceId && Number(e.source_version) === version,
         );
         if (gate.data.status !== "queued" || !cites) continue;
-        try {
-          this.revise(gate, { ...gate.data, s1_quiet: true, s1_answer_id: answerId });
-        } catch (e) {
-          // A review the owner just changed is left alone; anything else is a real error.
-          if (!(e instanceof BrainError && e.code === "VERSION_CONFLICT")) throw e;
-        }
+        delete quiet[gate.id];
+        quiet[gate.id] = answerId;
       }
+      this.store.set("brief_quiet", Object.fromEntries(Object.entries(quiet).slice(-2000)));
+    }
     if (advice.review)
       for (const goal of this.entities(owner, "goal")) {
         if (goal.project_id !== project || goal.data.status !== "active" || !goal.data.preparation_enabled) continue;
@@ -4141,7 +4147,14 @@ export class Brain {
           project,
           goal.id,
         );
-        if (!pending)
+        const since = new Date(this.clock().getTime() - 24 * 60 * 60 * 1000).toISOString();
+        const recent = this.store.get(
+          "SELECT id FROM jobs WHERE project_id=? AND kind='review_changed_assumption' AND json_extract(payload,'$.goal_id')=? AND created_at>?",
+          project,
+          goal.id,
+          since,
+        );
+        if (!pending && !recent)
           this.enqueue(project, "review_changed_assumption", { goal_id: goal.id, principal: owner, manual: false, woken_by: answerId });
       }
   }
@@ -4178,7 +4191,8 @@ export class Brain {
   }
   /** The answers behind a review: the one that quieted it, else any for its cited source version. */
   private gateAnswerIds(gate: Entity): string[] {
-    if (typeof gate.data.s1_answer_id === "string") return [gate.data.s1_answer_id];
+    const quieted = this.store.setting<Record<string, string>>("brief_quiet", {})[gate.id];
+    if (typeof quieted === "string") return [quieted];
     const ids = new Set<string>();
     for (const e of (gate.data.evidence ?? []) as Evidence[])
       for (const a of this.s1Answers(e.source_id, Number(e.source_version))) ids.add(a.id);
@@ -4256,6 +4270,7 @@ export class Brain {
     return {
       configured,
       label: configured ? (published?.label ?? null) : null,
+      worker_running: workerRunning(this.store.setting<string | null>("worker_heartbeat", null), this.clock()),
       reason: configured
         ? null
         : (published?.reason ?? "Sorting help status appears once BiBrain's background worker starts."),

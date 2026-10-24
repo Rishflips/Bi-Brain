@@ -4,7 +4,7 @@
  * Agents and CI never run it; they use a loopback fake server instead.
  *
  * Put BRAIN_SYSTEM1_LIVE=1 on its own line in .env and run `npm run proof:sorting`, or in
- * PowerShell: $env:BRAIN_SYSTEM1_LIVE=1; npm run proof:sorting
+ * PowerShell: $env:BRAIN_SYSTEM1_LIVE=1; npm run proof:sorting, then Remove-Item Env:BRAIN_SYSTEM1_LIVE
  * Remove the line from .env afterwards so it is never left on.
  *
  * Configure it like the app does (see docs/PROVIDERS.md): BRAIN_SYSTEM1_PROVIDER plus the key,
@@ -27,7 +27,7 @@ async function run(): Promise<number> {
   if (process.env.BRAIN_SYSTEM1_LIVE !== "1") {
     console.log("This proof sends three real requests and spends your sorting-help quota.");
     console.log("Run it yourself: put BRAIN_SYSTEM1_LIVE=1 on its own line in .env and run npm run proof:sorting,");
-    console.log("or in PowerShell: $env:BRAIN_SYSTEM1_LIVE=1; npm run proof:sorting. Remove the line from .env afterwards.");
+    console.log("or in PowerShell: $env:BRAIN_SYSTEM1_LIVE=1; npm run proof:sorting, then run Remove-Item Env:BRAIN_SYSTEM1_LIVE (or close the window). Remove the line from .env afterwards.");
     return 0;
   }
 

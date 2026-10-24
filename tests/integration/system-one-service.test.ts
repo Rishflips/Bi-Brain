@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -114,7 +114,7 @@ describe("System 1 in the service", () => {
   const gateFor = (b: Brain, project: string, sourceId: string, version: number, extra: Record<string, any> = {}) =>
     b.createEntity(project, "gate", {
       raw_id: sourceId, type: "fact", entity: "northstar", field: { aspect: "status", value: "active" },
-      evidence: [{ source_id: sourceId, source_version: version, start: 0, end: 4, quote: "nort" }],
+      evidence: [{ source_id: sourceId, source_version: version, start: 0, end: 4, quote: "Nort" }],
       status: "queued", reasons: [], actor: "owner", ...extra,
     });
 
@@ -153,20 +153,60 @@ describe("System 1 in the service", () => {
     const old = gateFor(b, p.id, source_id, 1);
     const newer = gateFor(b, p.id, source_id, 2);
     b.recordSystemOneResult({ id: "j1", project_id: p.id }, source_id, 1, result({ show: 0.1, project: "stay" }));
-    expect(b.entity(owner, old.id).data.s1_quiet).toBe(true);
-    expect(b.entity(owner, newer.id).data.s1_quiet).toBeUndefined();
+    const quiet = b.store.setting<Record<string, string>>("brief_quiet", {});
+    expect(Object.keys(quiet)).toEqual([old.id]);
+    expect(b.entity(owner, old.id).version).toBe(old.version);
+    expect(b.brief(owner).items.find((i) => i.target.id === newer.id)?.quiet).toBeUndefined();
   });
 
-  it("skips a card the owner changed at the same moment, without an error", () => {
+  it("quieting a card leaves its version alone, so a card drawn earlier still accepts", () => {
     const b = setup();
     const p = b.createProject(owner, "Northstar");
     const { source_id } = b.capture(owner, { project_id: p.id, title: "S", body: "Northstar plan notes", visibility: "project" }) as any;
     const gate = gateFor(b, p.id, source_id, 1);
-    const real = b.revise.bind(b);
-    vi.spyOn(b, "revise").mockImplementationOnce((e: any, d: any) => { real(e, { ...e.data, touched: true }); return real(e, d); });
+    const drawn = b.brief(owner).items.find((i) => i.target.id === gate.id)!;
     expect(b.recordSystemOneResult({ id: "j1", project_id: p.id }, source_id, 1, result({ show: 0.1, project: "stay" })).recorded).toBe(true);
-    const after = b.entity(owner, gate.id);
-    expect(after.data.touched).toBe(true);
-    expect(after.data.s1_quiet).toBeUndefined();
+    expect(b.entity(owner, gate.id).version).toBe(drawn.target.version);
+    expect(b.brief(owner).items.find((i) => i.target.id === gate.id)?.quiet).toBe(true);
+    expect(() => b.reviewGate(owner, gate.id, { action: "accept", expected_version: drawn.target.version })).not.toThrow();
+  });
+
+  it("logs a dismissed quiet card against its answer through the quiet map", () => {
+    const b = setup();
+    const p = b.createProject(owner, "Northstar");
+    const { source_id } = b.capture(owner, { project_id: p.id, title: "S", body: "Northstar plan notes", visibility: "project" }) as any;
+    const gate = gateFor(b, p.id, source_id, 1);
+    b.recordSystemOneResult({ id: "j1", project_id: p.id }, source_id, 1, result({ show: 0.1, project: "stay" }));
+    const answerId = b.store.setting<Record<string, string>>("brief_quiet", {})[gate.id];
+    expect(answerId).toBeTruthy();
+    const card = b.brief(owner).items.find((i) => i.target.id === gate.id)!;
+    b.dismissBriefItem(owner, { signature: card.signature });
+    expect(b.systemOneLog(owner).rows.filter((r) => r.action === "dismiss" && r.question === "show").map((r) => r.answer_id)).toEqual([answerId]);
+  });
+
+  it("wakes a goal's review at most once a day", () => {
+    let now = new Date("2026-10-24T09:00:00Z");
+    const dir = mkdtempSync(join(tmpdir(), "s1-wake-test-"));
+    cleanup.push(() => rmSync(dir, { recursive: true, force: true }));
+    const s = new Storage(join(dir, "brain.sqlite"), { vault: join(dir, "vault") });
+    cleanup.push(() => { try { s.close(); } catch {} });
+    const b = new Brain(s, () => now, undefined, undefined, undefined, undefined, () => ({ ready: true, reason: "test" }));
+    b.prefs(owner, { ...b.prefs(owner), enabled: true, decision_provider_enabled: true, daily_cap_micro_usd: 50_000, per_job_cap_micro_usd: 5_000 });
+    const p = b.createProject(owner, "Northstar");
+    const goal = b.goal(owner, { project_id: p.id, title: "Launch", success_criteria: "Ship in November" });
+    b.editGoal(owner, goal.id, { expected_version: goal.version, preparation_enabled: true });
+    const { source_id } = b.capture(owner, { project_id: p.id, title: "S", body: "Interviews moved the date.", visibility: "project" }) as any;
+    const woken = () => b.store.all("SELECT id FROM jobs WHERE kind='review_changed_assumption' AND json_extract(payload,'$.woken_by') IS NOT NULL").length;
+    const finish = () => b.store.run("UPDATE jobs SET status='succeeded' WHERE kind='review_changed_assumption'");
+    b.recordSystemOneResult({ id: "j1", project_id: p.id }, source_id, 1, result({ review: 0.9, project: "stay" }));
+    finish();
+    now = new Date("2026-10-24T09:50:00Z");
+    b.editSource(owner, source_id, { title: "S", body: "Interviews moved the date again.", expected_version: 1 });
+    b.recordSystemOneResult({ id: "j2", project_id: p.id }, source_id, 2, result({ review: 0.9, project: "stay" }));
+    expect(woken()).toBe(1);
+    now = new Date("2026-10-25T10:00:00Z");
+    b.editSource(owner, source_id, { title: "S", body: "Interviews moved the date a third time.", expected_version: 2 });
+    b.recordSystemOneResult({ id: "j3", project_id: p.id }, source_id, 3, result({ review: 0.9, project: "stay" }));
+    expect(woken()).toBe(2);
   });
 });

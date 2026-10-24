@@ -30,6 +30,8 @@ export type BriefInput = {
   failedJobs: BriefJob[];
   sources: BriefSourceRef[];
   dismissed: string[];
+  /** Gate id to the sorting-help answer that judged it not worth showing first. */
+  quiet?: Record<string, string>;
   confirmations: Record<string, string>;
   agentNames: Record<string, string>;
   /** Queued "file this note" suggestions whose source is still the version that was sorted. */
@@ -106,7 +108,7 @@ export function buildBrief(input: BriefInput, now: Date): { items: BriefItem[]; 
       created_at: g.created_at,
       aspect: field.aspect,
       value: text(field.value),
-      ...(g.data.s1_quiet === true ? { quiet: true as const } : {}),
+      ...(Object.hasOwn(input.quiet ?? {}, g.id) ? { quiet: true as const } : {}),
     });
   }
 

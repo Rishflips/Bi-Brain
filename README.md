@@ -133,7 +133,7 @@ Restart BiBrain, then open Settings and find "Background help & spending":
 
 The "Sorting help" card then reads "On · …". Until then it names what is missing: "Needs background help turned on below." (step 1), "Needs a daily limit above $0 below." (the daily cap), "Needs a per-note limit above $0 below." (the per-preparation cap), or "Waiting for your consent below." (step 3).
 
-The key stays in BiBrain's background worker and is never sent to the browser. A local Ollama needs no key: set `BRAIN_SYSTEM1_PROVIDER=ollama` and `BRAIN_SYSTEM1_ENDPOINT=http://127.0.0.1:11434/v1/systemone` (not yet tested against a real local Ollama). Details and the owner-run live check are in [Providers](docs/PROVIDERS.md); run it as: put `BRAIN_SYSTEM1_LIVE=1` on its own line in `.env` and run `npm run proof:sorting`, or in PowerShell run `$env:BRAIN_SYSTEM1_LIVE=1; npm run proof:sorting`. Remove the line from `.env` afterwards so it is never left on.
+The key stays in BiBrain's background worker and is never sent to the browser. A local Ollama needs no key: set `BRAIN_SYSTEM1_PROVIDER=ollama` and `BRAIN_SYSTEM1_ENDPOINT=http://127.0.0.1:11434/v1/systemone` (not yet tested against a real local Ollama). Details and the owner-run live check are in [Providers](docs/PROVIDERS.md); run it as: put `BRAIN_SYSTEM1_LIVE=1` on its own line in `.env` and run `npm run proof:sorting`, or in PowerShell run `$env:BRAIN_SYSTEM1_LIVE=1; npm run proof:sorting`, then run `Remove-Item Env:BRAIN_SYSTEM1_LIVE` (or close the window). Remove the line from `.env` afterwards so it is never left on.
 
 No provider key is required. Without one, BiBrain keeps originals, search,
 review, and labeled extractive previews available locally. Data is stored in

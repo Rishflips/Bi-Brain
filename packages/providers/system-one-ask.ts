@@ -208,7 +208,9 @@ async function perform(resolved: ResolvedSystemOneConfig, json: string, question
   };
   if (signal.aborted) throw new SystemOneError("PROVIDER_ABORTED", "Cancelled before it was sent.", 499, false);
   const headers: Record<string, string> = { "Content-Type": "application/json" };
-  if (resolved.key) headers.Authorization = `Bearer ${resolved.key}`;
+  // A local endpoint is never handed a credential, even when one is configured.
+  const local = OLLAMA_LOOPBACK_HOSTS.has(new URL(resolved.endpoint).hostname);
+  if (resolved.key && !local) headers.Authorization = `Bearer ${resolved.key}`;
   const res = await fetcher(resolved.endpoint, { method: "POST", headers, body: json, signal, redirect: "error" });
   if (!res.ok) {
     res.body?.cancel().catch(() => undefined);
