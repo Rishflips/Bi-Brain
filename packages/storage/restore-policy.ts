@@ -1,6 +1,6 @@
 import type { Storage } from "./index.ts";
 import { paidProcessingBlockedSetting } from "./spend.ts";
-import { clearRecallIndex, fillRecallIndex } from "./recall-index.ts";
+import { purgeRef } from "./recall-index.ts";
 import {
   attemptReferencesSource,
   purgeDecisionAttempts,
@@ -92,6 +92,7 @@ export function purgeRetainedDeletedSource(store: Storage, sourceId: string) {
       () => new Date(),
     );
     store.run("DELETE FROM source_fts WHERE source_id=?", sourceId);
+    purgeRef(store, "original", sourceId);
     store.run("DELETE FROM source_versions WHERE source_id=?", sourceId);
     for (const entity of store.all<{ id: string; data: string }>(
       "SELECT id,data FROM entities",
@@ -104,13 +105,12 @@ export function purgeRetainedDeletedSource(store: Storage, sourceId: string) {
         [entity.data, ...versions.map((version) => version.data)].some((data) =>
           data.includes(`\"${sourceId}\"`),
         )
-      )
+      ) {
+        purgeRef(store, "fact", entity.id);
         store.run("DELETE FROM entities WHERE id=?", entity.id);
+      }
     }
     store.run("DELETE FROM idempotency");
     store.run("DELETE FROM imports");
-    // The sweep above deletes entities that mention the source by id; refill so their fact rows leave the file too.
-    clearRecallIndex(store);
-    fillRecallIndex(store);
   });
 }

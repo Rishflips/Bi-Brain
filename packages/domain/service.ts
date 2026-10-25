@@ -11,7 +11,7 @@ import {
   type GateResult,
 } from "./claims.ts";
 import { Storage } from "../storage/index.ts";
-import { fillRecallIndex, purgeRef, recallCountsForSource, syncClaim, syncSource } from "../storage/recall-index.ts";
+import { invalidateRecallIndex, purgeRef, recallCountsForSource, syncClaim, syncClaimsCiting, syncSource } from "../storage/recall-index.ts";
 import {
   captureSchema,
   outputSchema,
@@ -1094,6 +1094,8 @@ export class Brain {
         v.body,
       );
       syncSource(this.store, id);
+      // A visibility change can make claims that cite this source owner-only (or not) in the index.
+      if ((v.visibility ?? s.visibility) !== s.visibility) syncClaimsCiting(this.store, id);
       this.invalidate(s.project_id);
       if (project !== s.project_id) this.invalidate(project);
       this.enqueue(project, "derive_brief", { principal: p });
@@ -3735,7 +3737,7 @@ export class Brain {
     if (!r)
       throw new BrainError("NOT_FOUND", "Import preview unavailable.", 404);
     const m = JSON.parse(r.manifest);
-    return this.store.transaction(() => {
+    const imported = this.store.transaction(() => {
       for (const project of m.payload.projects)
         this.store.run(
           "INSERT OR IGNORE INTO projects VALUES(?,?,?)",
@@ -3973,7 +3975,8 @@ export class Brain {
           s.title,
           s.body,
         );
-      fillRecallIndex(this.store);
+      // Stays one transaction so the import is atomic. The index is emptied and flagged incomplete in it; the refill below runs in batches.
+      invalidateRecallIndex(this.store);
       for (const pr of m.payload.projects) {
         this.invalidate(pr.id);
         this.enqueue(pr.id, "derive_brief", { principal: p });
@@ -3981,6 +3984,8 @@ export class Brain {
       this.store.run("DELETE FROM imports WHERE id=?", id);
       return { imported: true };
     });
+    this.store.rebuildRecallIndex();
+    return imported;
   }
   brief(p: Principal) {
     this.owner(p);
@@ -4122,6 +4127,8 @@ export class Brain {
         cost_micro_usd: result.cost_micro_usd,
         advice,
       });
+      // The topic and durable hints of this answer are part of the source's recall rows.
+      syncSource(this.store, sourceId);
       this.applySystemOneAdvice(ctx.project_id, sourceId, version, answer.id, advice);
       return { recorded: true, advice };
     });

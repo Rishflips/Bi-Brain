@@ -12,6 +12,7 @@ import {
   chunkPrefix,
   durableBoost,
   factRows,
+  rebuildRecallIndex,
   recallRowsFor,
   recallRowsInDb,
   recallIndexComplete,
@@ -36,6 +37,19 @@ function setup(opts: { vault?: boolean } = {}) {
   });
   return { dir, s, b: new Brain(s, () => new Date("2026-10-25T09:00:00Z")) };
 }
+const s1Result = (durable: number): any => ({
+  model: "clef-flash",
+  usage: { input_tokens: 300, output_tokens: 0 },
+  cost_micro_usd: 27,
+  price_version: "cf-clef-flash-2026-10-01",
+  policy_version: "system-one-ask-v1",
+  answers: [
+    { id: "durable", type: "noul", probability: durable },
+    { id: "project", type: "choice", choice: "stay", confidence: 0.5, probabilities: {} },
+    { id: "review", type: "noul", probability: 0.1 },
+    { id: "show", type: "noul", probability: 0.9 },
+  ],
+});
 /** A claim with exact code-point evidence, through the owner review path. `separate: true` and a unique title keep a repeated entity/value pair from being folded into an earlier, already-reviewed source. */
 let acceptCount = 0;
 function acceptStatus(b: Brain, project: string, entity: string, value: string) {
@@ -70,6 +84,17 @@ describe("chunkBody", () => {
     expect(giant.at(-1)!.end).toBe(5000);
     expect(chunkBody("   \n\n  ")).toEqual([]);
   });
+  it("never exceeds 1,200 code points when a short last sentence would be prepended, and never duplicates a whole chunk", () => {
+    const body = "Short tail. " + "x".repeat(1500) + ". " + "Another short one. " + "y".repeat(1100) + ".";
+    const points = Array.from(body);
+    const chunks = chunkBody(body);
+    for (const c of chunks) {
+      expect(Array.from(c.text).length).toBeLessThanOrEqual(1200);
+      expect(points.slice(c.start, c.end).join("")).toBe(c.text);
+    }
+    expect(chunks[1].start).toBeGreaterThanOrEqual(chunks[0].end);
+    expect(chunks.at(-1)!.end).toBe(points.length);
+  });
   it("builds a deterministic prefix with the capture-time topic when present", () => {
     expect(chunkPrefix("Launch notes", "Northstar", "2026-10-18T10:00:00.000Z", null)).toBe("Launch notes · Northstar · 2026-10-18");
     expect(chunkPrefix("Launch notes", "Northstar", "2026-10-18T10:00:00.000Z", "Launch")).toBe("Launch notes · Northstar · 2026-10-18 · Launch");
@@ -96,6 +121,11 @@ describe("factRows", () => {
     expect(factRows({ claim: claim({ aspect: "statement", value: "x", authority: "owner_private" }), projectTitle: "P" })[0].visibility).toBe("owner");
     expect(factRows({ claim: claim({ status: "retired" }), projectTitle: "P" })[0].status).toBe("history");
     expect(factRows({ claim: claim({ evidence: [] }), projectTitle: "P" })).toEqual([]);
+  });
+  it("makes a fact owner-only when any of its evidence sources is private", () => {
+    const two = { evidence: [{ source_id: "pub", source_version: 1, start: 0, end: 1, quote: "N" }, { source_id: "priv", source_version: 1, start: 0, end: 1, quote: "N" }] };
+    expect(factRows({ claim: claim(two), projectTitle: "P", privateSources: new Set(["priv"]) })[0].visibility).toBe("owner");
+    expect(factRows({ claim: claim(two), projectTitle: "P", privateSources: new Set(["other"]) })[0].visibility).toBe("project");
   });
 });
 
@@ -134,6 +164,19 @@ describe("migration 7 and maintenance", () => {
     const words = ["cobalt", "amber", "launch", "palette", "Northstar", "beta", "Ana", "Marco"];
     const sentence = () => Array.from({ length: 12 }, () => words[Math.floor(rnd() * words.length)]).join(" ") + ".";
     for (let step = 0; step < 60; step++) {
+      const extra = rnd();
+      if (extra < 0.12 && sources.length) {
+        const src = sources[Math.floor(rnd() * sources.length)];
+        try {
+          b.recordSystemOneResult({ id: `job${step}`, project_id: "inbox" }, src.id, src.version, s1Result(rnd() < 0.5 ? 0.8 : 0.1));
+        } catch {}
+      } else if (extra < 0.2 && sources.length) {
+        const src = sources[Math.floor(rnd() * sources.length)];
+        try {
+          const edited = b.editSource(owner, src.id, { title: `Flipped ${step}`, body: sentence(), visibility: rnd() < 0.5 ? "private" : "project", expected_version: src.version });
+          src.version = edited.version;
+        } catch {}
+      }
       const roll = rnd();
       if (roll < 0.35 || sources.length === 0) {
         const r = b.capture(owner, { project_id: rnd() < 0.5 ? "inbox" : project.id, title: `Note ${step}`, body: Array.from({ length: 1 + Math.floor(rnd() * 40) }, sentence).join(rnd() < 0.3 ? "\n\n" : " "), visibility: rnd() < 0.2 ? "private" : "project", separate: true }) as any;
@@ -177,7 +220,9 @@ describe("migration 7 and maintenance", () => {
       }
       expect(recallRowsInDb(s)).toEqual(recallRowsFor(s.portableState()));
     }
+    expect(s.get<any>("SELECT count(*) AS n FROM entities WHERE kind='s1_answer'")!.n).toBeGreaterThan(0);
     s.rebuild();
+    expect(recallIndexComplete(s)).toBe(true);
     expect(recallRowsInDb(s)).toEqual(recallRowsFor(s.portableState()));
     expect(JSON.stringify(s.portableState())).not.toContain("recall_chunks");
   }, 120_000);
@@ -225,6 +270,78 @@ describe("migration 7 and maintenance", () => {
     purgeRetainedDeletedSource(s, saved.source_id);
     expect(s.all("SELECT id FROM recall_chunks WHERE kind='fact'")).toEqual([]);
     expect(s.all("SELECT c.id FROM recall_chunks c LEFT JOIN entities e ON e.id=c.ref_id WHERE c.kind='fact' AND e.id IS NULL")).toEqual([]);
+  });
+
+  it("a sorting answer arriving after capture re-weights the note in the index", () => {
+    const { s, b } = setup();
+    const saved = b.capture(owner, { title: "Plan", body: "The launch colour is cobalt.", visibility: "project" }) as any;
+    expect(s.get<any>("SELECT boost FROM recall_chunks WHERE ref_id=?", saved.source_id)!.boost).toBe(1);
+    expect(b.recordSystemOneResult({ id: "j1", project_id: "inbox" }, saved.source_id, 1, s1Result(0.8)).recorded).toBe(true);
+    expect(s.get<any>("SELECT boost FROM recall_chunks WHERE ref_id=?", saved.source_id)!.boost).toBe(1.15);
+    expect(recallRowsInDb(s)).toEqual(recallRowsFor(s.portableState()));
+  });
+
+  it("a crash in the middle of a rebuild leaves the index flagged incomplete and the next open finishes it", () => {
+    const { dir, s, b } = setup();
+    for (let i = 0; i < 3; i++) b.capture(owner, { title: `N${i}`, body: `Note number ${i} about cobalt.`, visibility: "project", separate: true });
+    const real = s.transaction.bind(s);
+    let calls = 0;
+    (s as any).transaction = (fn: () => unknown) => {
+      if (++calls === 3) throw new Error("crash");
+      return real(fn);
+    };
+    expect(() => rebuildRecallIndex(s, 1)).toThrow("crash");
+    (s as any).transaction = real;
+    expect(recallIndexComplete(s)).toBe(false);
+    s.close();
+    const again = new Storage(join(dir, "brain.sqlite"));
+    cleanup.push(() => {
+      try {
+        again.close();
+      } catch {}
+    });
+    expect(recallIndexComplete(again)).toBe(true);
+    expect(recallRowsInDb(again).length).toBe(3);
+    expect(recallRowsInDb(again)).toEqual(recallRowsFor(again.portableState()));
+    rebuildRecallIndex(again, 1);
+    expect(recallRowsInDb(again)).toEqual(recallRowsFor(again.portableState()));
+  });
+
+  it("forgetting a note is not blocked by another live note that shares its paragraph, and leaves that note indexed", () => {
+    const { s, b } = setup({ vault: true });
+    const body = "The shared GRANITE paragraph appears in two notes.";
+    const a = b.capture(owner, { title: "First", body, visibility: "project", separate: true }) as any;
+    const other = b.capture(owner, { title: "Second", body, visibility: "project", separate: true }) as any;
+    const result = b.removeSource(owner, a.source_id, 1, true) as any;
+    expect(result.proof.index_gone).toBe(true);
+    expect(result.proof.per_store.sqlite_recall_text_matches).toBe(0);
+    expect(s.all("SELECT id FROM recall_chunks WHERE ref_id=?", other.source_id)).toHaveLength(1);
+  });
+
+  it("the restore-policy purge removes only the erased source's rows and leaves other rows untouched", () => {
+    const { s, b } = setup();
+    const keep = b.capture(owner, { title: "Keep", body: "Keep this cobalt note.", visibility: "project", separate: true }) as any;
+    const gone = b.capture(owner, { title: "Gone", body: "Gone status active", visibility: "project", separate: true }) as any;
+    const gate = b.entities(owner, "gate").find((g) => g.data.raw_id === gone.source_id)!;
+    b.reviewGate(owner, gate.id, { action: "accept", expected_version: gate.version });
+    const keptIds = s.all<any>("SELECT id FROM recall_chunks WHERE ref_id=?", keep.source_id).map((r) => r.id);
+    s.run("UPDATE sources SET state='deleted' WHERE id=?", gone.source_id);
+    purgeRetainedDeletedSource(s, gone.source_id);
+    expect(s.all<any>("SELECT id FROM recall_chunks WHERE ref_id=?", keep.source_id).map((r) => r.id)).toEqual(keptIds);
+    expect(recallRowsInDb(s)).toEqual(recallRowsFor(s.portableState()));
+  });
+
+  it("a claim that cites a private source is owner-only, and follows the source when its visibility changes", () => {
+    const { s, b } = setup();
+    const secret = b.capture(owner, { title: "Secret", body: "Northstar status active", visibility: "private" }) as any;
+    const claim = b.createEntity("inbox", "claim", {
+      entity: "Northstar", aspect: "status", value: "active", status: "current", authority: "owner_reviewed", recorded_at: "2026-10-02T00:00:00.000Z",
+      evidence: [{ source_id: secret.source_id, source_version: 1, start: 0, end: 9, quote: "Northstar" }],
+    });
+    expect(s.get<any>("SELECT visibility FROM recall_chunks WHERE ref_id=?", claim.id)!.visibility).toBe("owner");
+    b.editSource(owner, secret.source_id, { title: "Secret", body: "Northstar status active", visibility: "project", expected_version: 1 });
+    expect(s.get<any>("SELECT visibility FROM recall_chunks WHERE ref_id=?", claim.id)!.visibility).toBe("project");
+    expect(recallRowsInDb(s)).toEqual(recallRowsFor(s.portableState()));
   });
 
   it("any query string yields rows or nothing, never a SQLite error, when passed through the match parameter as a quoted term", () => {

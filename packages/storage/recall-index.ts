@@ -98,9 +98,11 @@ export function chunkBody(body: string): Chunk[] {
       const have = cur.end - cur.start;
       if (grown <= CHUNK_TARGET || (have < CHUNK_MIN && grown <= CHUNK_HARD)) cur.end = piece.end;
       else {
+        // The overlap is the previous chunk's last sentence. It is dropped when that sentence is the whole previous chunk
+        // (it would only duplicate it) or when prepending it would push the new chunk past the hard cap.
+        const overlapStart: number = last && last.end - last.start <= OVERLAP_MAX && last.start > cur.start ? last.start : piece.start;
         emit();
-        const overlap = last && last.end - last.start <= OVERLAP_MAX ? last.start : piece.start;
-        cur = { start: overlap, end: piece.end };
+        cur = { start: piece.end - overlapStart <= CHUNK_HARD ? overlapStart : piece.start, end: piece.end };
       }
     }
     last = piece;
@@ -170,12 +172,18 @@ export function originalRows(input: {
 
 const validTime = (t: unknown): t is string => typeof t === "string" && !Number.isNaN(Date.parse(t));
 
-export function factRows(input: { claim: { id: string; project_id: string; version: number; created_at: string; data: any }; projectTitle: string }): RecallRow[] {
+/** A claim is owner-only when it is a name or preference, owner-private, or cites any private source (defense in depth). */
+export function factRows(input: {
+  claim: { id: string; project_id: string; version: number; created_at: string; data: any };
+  projectTitle: string;
+  privateSources?: ReadonlySet<string>;
+}): RecallRow[] {
   const d = parsed(input.claim.data);
   if (!Array.isArray(d.evidence) || d.evidence.length === 0) return [];
   if (d.status !== "current" && d.status !== "retired") return [];
   const text = factText(String(d.entity), String(d.aspect), d.value);
-  const ownerOnly = d.aspect === "name" || d.aspect === "preference" || d.authority === "owner_private";
+  const citesPrivate = (d.evidence as any[]).some((e) => input.privateSources?.has(String(e?.source_id)));
+  const ownerOnly = d.aspect === "name" || d.aspect === "preference" || d.authority === "owner_private" || citesPrivate;
   const recorded = [d.recorded_at, d.edited_at].filter(validTime).sort().at(-1) ?? input.claim.created_at;
   return [
     {
@@ -203,15 +211,18 @@ const rowOrder = (a: RecallRow, b: RecallRow) =>
 export function recallRowsFor(state: PortableState): RecallRow[] {
   const titles = new Map<string, string>(state.projects.map((p: any) => [p.id, p.title]));
   const rows: RecallRow[] = [];
+  const answersByProject = new Map<string, { kind: string; data: any }[]>();
+  for (const e of state.entities) if (e.kind === "s1_answer") answersByProject.set(e.project_id, [...(answersByProject.get(e.project_id) ?? []), e]);
+  const privateSources = new Set<string>(state.sources.filter((x: any) => x.visibility === "private").map((x: any) => x.id));
   for (const s of state.sources) {
     if (s.state !== "active") continue;
     const v = state.source_versions.find((x: any) => x.source_id === s.id && x.version === s.version);
     if (!v) continue;
-    rows.push(...originalRows({ source: s, version: v, projectTitle: titles.get(s.project_id) ?? "Project", hints: s1HintsFor(state.entities, s.id, s.version) }));
+    rows.push(...originalRows({ source: s, version: v, projectTitle: titles.get(s.project_id) ?? "Project", hints: s1HintsFor(answersByProject.get(s.project_id) ?? [], s.id, s.version) }));
   }
   for (const e of state.entities) {
     if (e.kind !== "claim") continue;
-    rows.push(...factRows({ claim: e, projectTitle: titles.get(e.project_id) ?? "Project" }));
+    rows.push(...factRows({ claim: e, projectTitle: titles.get(e.project_id) ?? "Project", privateSources }));
   }
   return rows.sort(rowOrder);
 }
@@ -243,24 +254,66 @@ function projectTitle(store: Storage, id: string): string {
   return store.get<{ title: string }>("SELECT title FROM projects WHERE id=?", id)?.title ?? "Project";
 }
 
-/** Recomputes the rows for one source from the database. Withdrawn, deleted or missing sources end with no rows. */
-export function syncSource(store: Storage, sourceId: string) {
+const NO_HINTS: S1Hints = { durable: null, topic: null, answer_id: null };
+const hintKey = (projectId: string, sourceId: string, version: number) => JSON.stringify([projectId, sourceId, version]);
+type HintMap = Map<string, S1Hints>;
+
+/** Capture-time hints for many sources at once: one pass over the s1 answers (of the given projects, using the project/kind index), first answer per source version wins. */
+function s1HintMap(store: Storage, projectIds?: string[]): HintMap {
+  const map: HintMap = new Map();
+  const rows = projectIds
+    ? projectIds.length
+      ? store.all<{ id: string; project_id: string; data: string }>(
+          `SELECT id,project_id,data FROM entities WHERE kind='s1_answer' AND project_id IN (${projectIds.map(() => "?").join(",")}) ORDER BY id`,
+          ...projectIds,
+        )
+      : []
+    : store.all<{ id: string; project_id: string; data: string }>("SELECT id,project_id,data FROM entities WHERE kind='s1_answer' ORDER BY id");
+  for (const r of rows) {
+    const d = parsed(r.data);
+    const key = hintKey(r.project_id, String(d.source_id), Number(d.source_version));
+    if (!map.has(key)) map.set(key, s1HintsFor([{ kind: "s1_answer", data: d, id: r.id } as any], String(d.source_id), Number(d.source_version)));
+  }
+  return map;
+}
+
+/** Recomputes the rows for one source from the database. Withdrawn, deleted or missing sources end with no rows. Bulk callers pass a preloaded hint map. */
+export function syncSource(store: Storage, sourceId: string, hints?: HintMap) {
   const s = store.get<any>("SELECT * FROM sources WHERE id=?", sourceId);
   if (!s || s.state !== "active") return purgeRef(store, "original", sourceId);
   const v = store.get<{ title: string; body: string }>("SELECT title,body FROM source_versions WHERE source_id=? AND version=?", sourceId, s.version);
   if (!v) return purgeRef(store, "original", sourceId);
-  const answers = store.all<{ id: string; kind: string; data: string }>(
-    "SELECT id,kind,data FROM entities WHERE kind='s1_answer' AND json_extract(data,'$.source_id')=? AND json_extract(data,'$.source_version')=?",
-    sourceId,
-    s.version,
-  );
-  replaceRows(store, "original", sourceId, originalRows({ source: s, version: v, projectTitle: projectTitle(store, s.project_id), hints: s1HintsFor(answers, sourceId, s.version) }));
+  const found = hints
+    ? (hints.get(hintKey(s.project_id, sourceId, s.version)) ?? NO_HINTS)
+    : s1HintsFor(
+        store.all<{ id: string; kind: string; data: string }>(
+          "SELECT id,kind,data FROM entities WHERE project_id=? AND kind='s1_answer' AND json_extract(data,'$.source_id')=? AND json_extract(data,'$.source_version')=? ORDER BY id",
+          s.project_id,
+          sourceId,
+          s.version,
+        ),
+        sourceId,
+        s.version,
+      );
+  replaceRows(store, "original", sourceId, originalRows({ source: s, version: v, projectTitle: projectTitle(store, s.project_id), hints: found }));
 }
 
 export function syncClaim(store: Storage, claimId: string) {
   const c = store.get<any>("SELECT * FROM entities WHERE id=? AND kind='claim'", claimId);
   if (!c) return purgeRef(store, "fact", claimId);
-  replaceRows(store, "fact", claimId, factRows({ claim: c, projectTitle: projectTitle(store, c.project_id) }));
+  const d = parsed(c.data);
+  const cited = [...new Set<string>((Array.isArray(d.evidence) ? d.evidence : []).map((e: any) => String(e?.source_id)))];
+  const privateSources = new Set<string>(
+    cited.length
+      ? store.all<{ id: string }>(`SELECT id FROM sources WHERE visibility='private' AND id IN (${cited.map(() => "?").join(",")})`, ...cited).map((r) => r.id)
+      : [],
+  );
+  replaceRows(store, "fact", claimId, factRows({ claim: c, projectTitle: projectTitle(store, c.project_id), privateSources }));
+}
+
+/** Re-syncs every claim that cites the source (its visibility may have changed). The LIKE only narrows; syncClaim decides. */
+export function syncClaimsCiting(store: Storage, sourceId: string) {
+  for (const c of store.all<{ id: string }>("SELECT id FROM entities WHERE kind='claim' AND data LIKE ?", `%"${sourceId}"%`)) syncClaim(store, c.id);
 }
 
 export function clearRecallIndex(store: Storage) {
@@ -268,28 +321,43 @@ export function clearRecallIndex(store: Storage) {
   store.run("DELETE FROM recall_chunks");
 }
 
-/** Refills the whole index from the current tables. The caller owns the transaction. */
+/** Refills the whole index from the current tables in the caller's transaction. Small brains and tests only; production paths use rebuildRecallIndex. */
 export function fillRecallIndex(store: Storage) {
   clearRecallIndex(store);
-  for (const s of store.all<{ id: string }>("SELECT id FROM sources WHERE state='active'")) syncSource(store, s.id);
+  const hints = s1HintMap(store);
+  for (const s of store.all<{ id: string }>("SELECT id FROM sources WHERE state='active'")) syncSource(store, s.id, hints);
   for (const c of store.all<{ id: string }>("SELECT id FROM entities WHERE kind='claim'")) syncClaim(store, c.id);
   store.set(RECALL_INDEX_BUILT, RECALL_INDEX_VERSION);
 }
 
-/** Backfill in short transactions: at most `batch` sources per transaction, then every claim, then the flag. Idempotent. */
+/** Empties the index and marks it incomplete, so a caller can commit it with a base-table change and then rebuild in batches. */
+export function invalidateRecallIndex(store: Storage) {
+  clearRecallIndex(store);
+  store.set(RECALL_INDEX_BUILT, 0);
+}
+
+/**
+ * Backfill in short transactions: at most `batch` sources, then `batch` claims, per transaction. The built flag is cleared in the
+ * first transaction and set in the last, so a crash in between is retried by the next open. Idempotent.
+ */
 export function rebuildRecallIndex(store: Storage, batch = 200) {
-  store.transaction(() => clearRecallIndex(store));
-  const sources = store.all<{ id: string }>("SELECT id FROM sources WHERE state='active' ORDER BY id");
+  store.transaction(() => invalidateRecallIndex(store));
+  const sources = store.all<{ id: string; project_id: string }>("SELECT id,project_id FROM sources WHERE state='active' ORDER BY id");
   for (let i = 0; i < sources.length; i += batch) {
     const slice = sources.slice(i, i + batch);
     store.transaction(() => {
-      for (const s of slice) syncSource(store, s.id);
+      const hints = s1HintMap(store, [...new Set(slice.map((x) => x.project_id))]);
+      for (const x of slice) syncSource(store, x.id, hints);
     });
   }
-  store.transaction(() => {
-    for (const c of store.all<{ id: string }>("SELECT id FROM entities WHERE kind='claim'")) syncClaim(store, c.id);
-    store.set(RECALL_INDEX_BUILT, RECALL_INDEX_VERSION);
-  });
+  const claims = store.all<{ id: string }>("SELECT id FROM entities WHERE kind='claim' ORDER BY id");
+  for (let i = 0; i < claims.length; i += batch) {
+    const slice = claims.slice(i, i + batch);
+    store.transaction(() => {
+      for (const c of slice) syncClaim(store, c.id);
+    });
+  }
+  store.transaction(() => store.set(RECALL_INDEX_BUILT, RECALL_INDEX_VERSION));
 }
 
 export function recallIndexComplete(store: Storage): boolean {
@@ -318,12 +386,23 @@ export function searchRecallChunks(
     .map((r) => ({ ...r, boost: Number(r.boost), score: Number(r.score) }));
 }
 
-/** What the forget proof reads: rows left for the id, chunks whose text is still a passage of a retained body, fact rows whose claim is gone, embedded rows. */
+/**
+ * What the forget proof reads: rows left for the id, original chunks of the forgotten source that still match a retained body plus
+ * original rows whose source is no longer active, fact rows whose claim is gone, embedded rows. Another live note that happens to share
+ * a paragraph is not counted.
+ */
 export function recallCountsForSource(store: Storage, sourceId: string, bodies: string[]) {
   const rows = Number(store.get<{ n: number }>("SELECT count(*) AS n FROM recall_chunks WHERE ref_id=?", sourceId)?.n ?? 0);
   const retained = bodies.filter((b) => b.trim().length > 0);
-  const texts = retained.length ? store.all<{ text: string }>("SELECT text FROM recall_chunks WHERE kind='original'").filter((r) => retained.some((b) => b.includes(r.text))).length : 0;
+  const own = retained.length
+    ? store.all<{ text: string }>("SELECT text FROM recall_chunks WHERE kind='original' AND ref_id=?", sourceId).filter((r) => retained.some((b) => b.includes(r.text))).length
+    : 0;
+  const orphanOriginals = Number(
+    store.get<{ n: number }>(
+      "SELECT count(*) AS n FROM recall_chunks c LEFT JOIN sources s ON s.id=c.ref_id AND s.state='active' WHERE c.kind='original' AND s.id IS NULL",
+    )?.n ?? 0,
+  );
   const orphanFacts = Number(store.get<{ n: number }>("SELECT count(*) AS n FROM recall_chunks c LEFT JOIN entities e ON e.id=c.ref_id WHERE c.kind='fact' AND e.id IS NULL")?.n ?? 0);
   const embedded = Number(store.get<{ n: number }>("SELECT count(*) AS n FROM recall_chunks WHERE ref_id=? AND embedding IS NOT NULL", sourceId)?.n ?? 0);
-  return { rows, text_matches: texts, orphan_facts: orphanFacts, embedded };
+  return { rows, text_matches: own + orphanOriginals, orphan_facts: orphanFacts, embedded };
 }

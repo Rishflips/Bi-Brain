@@ -11,7 +11,7 @@ import {
 import { Vault, type PortableState } from "./vault.ts";
 import { detectSecrets } from "./secrets.ts";
 import { applyRestoreSafetyBarrier, withdrawAllAdvisories } from "./restore-policy.ts";
-import { RECALL_DDL, fillRecallIndex, recallIndexComplete, rebuildRecallIndex } from "./recall-index.ts";
+import { RECALL_DDL, invalidateRecallIndex, recallIndexComplete, rebuildRecallIndex } from "./recall-index.ts";
 export class Storage {
   readonly db: DatabaseSync;
   vault?: Vault;
@@ -229,7 +229,9 @@ export class Storage {
             this.run(
               "INSERT INTO source_fts SELECT s.id,v.title,v.body FROM sources s JOIN source_versions v ON s.id=v.source_id AND s.version=v.version WHERE s.state='active'",
             );
-            fillRecallIndex(this);
+            // Derived text of the entities deleted above must not survive; the index is rebuilt in batches by the
+            // backfill at the end of the constructor (the flag is cleared here, in the same transaction).
+            invalidateRecallIndex(this);
           });
           writeFileSync(
             resolve(vault.protectedRoot, "migration.json"),
@@ -444,8 +446,10 @@ export class Storage {
       this.run(
         "INSERT INTO source_fts SELECT s.id,v.title,v.body FROM sources s JOIN source_versions v ON s.id=v.source_id AND s.version=v.version WHERE s.state='active'",
       );
-      fillRecallIndex(this);
+      // The base tables changed; clear the index and its flag atomically with them, then refill in batches.
+      invalidateRecallIndex(this);
     });
+    this.rebuildRecallIndex();
   }
   /** Rebuilds the derived recall index in batches of 200 sources per transaction. Idempotent. */
   rebuildRecallIndex() {
