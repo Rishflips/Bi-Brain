@@ -11,6 +11,7 @@ import {
   type GateResult,
 } from "./claims.ts";
 import { Storage } from "../storage/index.ts";
+import { fillRecallIndex, purgeRef, recallCountsForSource, syncClaim, syncSource } from "../storage/recall-index.ts";
 import {
   captureSchema,
   outputSchema,
@@ -453,6 +454,7 @@ export class Brain {
       JSON.stringify(data),
       e.created_at,
     );
+    if (kind === "claim") syncClaim(this.store, id);
     return e;
   }
   revise(e: Entity, data: Record<string, any>) {
@@ -477,6 +479,7 @@ export class Brain {
       JSON.stringify(data),
       this.now(),
     );
+    if (e.kind === "claim") syncClaim(this.store, e.id);
     // Any goal revision (including the reasoning worker's signature/notification
     // bookkeeping) invalidates advisories bound to the PREVIOUS goal entity
     // version. Withdraw them so a stale judgment is never actively readable or
@@ -612,6 +615,7 @@ export class Brain {
           v.title,
           v.body,
         );
+        syncSource(this.store, id);
         this.invalidate(v.project_id);
         const job = this.enqueue(v.project_id, "derive_brief", {
           principal: p,
@@ -1089,6 +1093,7 @@ export class Brain {
         v.title,
         v.body,
       );
+      syncSource(this.store, id);
       this.invalidate(s.project_id);
       if (project !== s.project_id) this.invalidate(project);
       this.enqueue(project, "derive_brief", { principal: p });
@@ -1113,6 +1118,7 @@ export class Brain {
           id,
         );
         this.store.run("DELETE FROM source_fts WHERE source_id=?", id);
+        purgeRef(this.store, "original", id);
         this.invalidate(s.project_id);
         if (purge) {
           const copiedBodies = this.store
@@ -1235,8 +1241,10 @@ export class Brain {
               row.project_id === s.project_id ||
               depends(JSON.parse(row.data)) ||
               versions.some((v) => depends(JSON.parse(v.data)))
-            )
+            ) {
+              if (row.kind === "claim") purgeRef(this.store, "fact", row.id);
               this.store.run("DELETE FROM entities WHERE id=?", row.id);
+            }
           }
           this.store.run("DELETE FROM idempotency");
           this.store.run("DELETE FROM imports");
@@ -1308,6 +1316,7 @@ export class Brain {
           id,
         )?.n ?? 0,
       );
+      const recall = recallCountsForSource(this.store, id, sourceBodies);
       const derived =
         Number(
           this.store.get(
@@ -1340,9 +1349,15 @@ export class Brain {
         search === 0 &&
         derived === 0 &&
         derivedText === 0 &&
+        recall.rows === 0 &&
+        recall.text_matches === 0 &&
+        recall.orphan_facts === 0 &&
         backup.absent;
       const embeddingStores = this.store.all(
         "SELECT name FROM sqlite_master WHERE type='table' AND name LIKE '%embedding%'",
+      );
+      const embeddedRows = Number(
+        this.store.get<{ n: number }>("SELECT count(*) AS n FROM recall_chunks WHERE embedding IS NOT NULL")?.n ?? 0,
       );
       const edgeStores = this.store.all(
         "SELECT name FROM sqlite_master WHERE type='table' AND name LIKE '%edge%'",
@@ -1353,7 +1368,7 @@ export class Brain {
         deletion_generation: this.store.vault!.generation(),
         file_gone: files.file_gone && vaultHistoryText === false,
         index_gone: indexGone,
-        embedding_gone: embeddingStores.length === 0,
+        embedding_gone: embeddingStores.length === 0 && recall.embedded === 0,
         graph_edge_gone: edgeStores.length === 0 && derived === 0,
         per_store: {
           ...files.evidence,
@@ -1361,11 +1376,14 @@ export class Brain {
           sqlite_search_rows: search,
           sqlite_derived_references: derived,
           sqlite_derived_text_matches: derivedText,
+          sqlite_recall_rows: recall.rows,
+          sqlite_recall_text_matches: recall.text_matches,
+          sqlite_recall_orphan_facts: recall.orphan_facts,
           managed_history_text_match: vaultHistoryText,
           migration_backup: backup,
           embeddings: {
-            configured: embeddingStores.length > 0,
-            active_artifacts: embeddingStores.length ? "unverified" : 0,
+            configured: embeddedRows > 0,
+            active_artifacts: recall.embedded,
           },
           graph: {
             configured: edgeStores.length > 0,
@@ -3955,6 +3973,7 @@ export class Brain {
           s.title,
           s.body,
         );
+      fillRecallIndex(this.store);
       for (const pr of m.payload.projects) {
         this.invalidate(pr.id);
         this.enqueue(pr.id, "derive_brief", { principal: p });

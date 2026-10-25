@@ -73,7 +73,7 @@ describe("agent grants", () => {
     cleanup.push(() => reopened.close());
     const cols = reopened.all("PRAGMA table_info(grants)").map((c: any) => c.name);
     expect(cols).toEqual(expect.arrayContaining(["client", "folder"]));
-    expect(reopened.get("SELECT max(version) AS v FROM migrations")?.v).toBe(6);
+    expect(reopened.get("SELECT max(version) AS v FROM migrations")?.v).toBe(7);
   });
 
   it("keeps unknown clients generic", () => {

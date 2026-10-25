@@ -1,5 +1,6 @@
 import type { Storage } from "./index.ts";
 import { paidProcessingBlockedSetting } from "./spend.ts";
+import { clearRecallIndex, fillRecallIndex } from "./recall-index.ts";
 import {
   attemptReferencesSource,
   purgeDecisionAttempts,
@@ -108,5 +109,8 @@ export function purgeRetainedDeletedSource(store: Storage, sourceId: string) {
     }
     store.run("DELETE FROM idempotency");
     store.run("DELETE FROM imports");
+    // The sweep above deletes entities that mention the source by id; refill so their fact rows leave the file too.
+    clearRecallIndex(store);
+    fillRecallIndex(store);
   });
 }

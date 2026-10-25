@@ -11,6 +11,7 @@ import {
 import { Vault, type PortableState } from "./vault.ts";
 import { detectSecrets } from "./secrets.ts";
 import { applyRestoreSafetyBarrier, withdrawAllAdvisories } from "./restore-policy.ts";
+import { RECALL_DDL, fillRecallIndex, recallIndexComplete, rebuildRecallIndex } from "./recall-index.ts";
 export class Storage {
   readonly db: DatabaseSync;
   vault?: Vault;
@@ -34,7 +35,7 @@ export class Storage {
       Number(
         this.db.prepare("SELECT max(version) AS version FROM migrations").get()
           ?.version,
-      ) > 6
+      ) > 7
     ) {
       this.db.close();
       throw new Error(
@@ -158,6 +159,12 @@ export class Storage {
         "INSERT OR IGNORE INTO migrations VALUES(6,strftime('%Y-%m-%dT%H:%M:%fZ','now'));",
       );
     });
+    // Migration 7: the derived recall index. DDL and marker commit together; the
+    // backfill runs AFTER the constructor's vault checks, in short batches.
+    this.transaction(() => {
+      this.db.exec(RECALL_DDL);
+      this.db.exec("INSERT OR IGNORE INTO migrations VALUES(7,strftime('%Y-%m-%dT%H:%M:%fZ','now'));");
+    });
     const vaultRoot =
       options.vault ??
       (arguments.length === 0
@@ -222,6 +229,7 @@ export class Storage {
             this.run(
               "INSERT INTO source_fts SELECT s.id,v.title,v.body FROM sources s JOIN source_versions v ON s.id=v.source_id AND s.version=v.version WHERE s.state='active'",
             );
+            fillRecallIndex(this);
           });
           writeFileSync(
             resolve(vault.protectedRoot, "migration.json"),
@@ -263,6 +271,7 @@ export class Storage {
       if (recoveringFromExistingVault)
         this.transaction(() => withdrawAllAdvisories(this, () => new Date()));
     }
+    if (!recallIndexComplete(this)) this.rebuildRecallIndex();
   }
   sanitizeMigrationBackup() {
     if (!this.vault) return { configured: false, sanitized: false };
@@ -435,7 +444,12 @@ export class Storage {
       this.run(
         "INSERT INTO source_fts SELECT s.id,v.title,v.body FROM sources s JOIN source_versions v ON s.id=v.source_id AND s.version=v.version WHERE s.state='active'",
       );
+      fillRecallIndex(this);
     });
+  }
+  /** Rebuilds the derived recall index in batches of 200 sources per transaction. Idempotent. */
+  rebuildRecallIndex() {
+    rebuildRecallIndex(this, 200);
   }
   setting<T>(key: string, fallback: T): T {
     const row = this.get("SELECT value FROM settings WHERE key=?", key);

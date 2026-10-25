@@ -25,7 +25,7 @@ it("a prepared admission retains its actual clean-baseline evidence rather than 
     expect(retained.length).toBeGreaterThan(0);
     expect(retained[0]).toMatchObject({ schema: 1, account_id: f.account_id,
       incarnation: f.binding.tenant_incarnation, provisioning_generation: f.binding.provisioning_generation,
-      tenant_schema_version: 6, provider_dispatches: 0, legacy_reservations: 0, paid_processing_blocked: false });
+      tenant_schema_version: 7, provider_dispatches: 0, legacy_reservations: 0, paid_processing_blocked: false });
     expect(f.admit(prepared.preflight_id).state).toBe("admitted");
   } finally { f.close(); }
 });
