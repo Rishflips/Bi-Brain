@@ -11,7 +11,7 @@ import {
   type GateResult,
 } from "./claims.ts";
 import { Storage } from "../storage/index.ts";
-import { invalidateRecallIndex, purgeRef, recallCountsForSource, syncClaim, syncClaimsCiting, syncSource } from "../storage/recall-index.ts";
+import { invalidateRecallIndex, purgeRef, recallCountsForSource, recallIndexComplete, searchRecallChunks, syncClaim, syncClaimsCiting, syncSource, type RecallVisibility } from "../storage/recall-index.ts";
 import {
   captureSchema,
   outputSchema,
@@ -54,6 +54,23 @@ import { buildProjectView } from "./project-view.ts";
 import { questionWords, rankAnswers } from "./ask.ts";
 import { factText } from "./facts.ts";
 import { SEARCH_LIMIT, findInBrain } from "./brain-search.ts";
+import {
+  CANDIDATES_PER_LIST,
+  FOUND_NEXT_STEP,
+  NEAR_MISSES_MAX,
+  NO_MATCH_NEXT_STEP,
+  buildFtsQuery,
+  dedupe,
+  deterministicSignals,
+  deterministicStatus,
+  factFreshness,
+  fuse,
+  recallInputSchema,
+  whyFor,
+  type Candidate,
+  type RecallHit,
+  type RecallResult,
+} from "./recall.ts";
 import {
   attemptReferencesSource,
   claimDecisionAttempt,
@@ -100,6 +117,7 @@ function managedBlockedMessage(
     return "Managed paid processing is not enabled; saved work stays available.";
   return null;
 }
+const questionWordsOf = (h: RecallHit) => new Set(questionWords(h.kind === "fact" ? h.text : `${h.title} ${h.quote}`));
 export class Brain {
   constructor(
     readonly store: Storage,
@@ -3373,6 +3391,111 @@ export class Brain {
       after,
       changed: JSON.stringify(before) !== JSON.stringify(after),
     };
+  }
+  /** Deterministic recall: authorization before the SQL and again per hit. The only path the owner's screens use. */
+  recallCore(p: Principal, input: unknown): RecallResult {
+    return this.recallInternal(p, recallInputSchema.parse(input)).result;
+  }
+  recallInternal(p: Principal, v: { query: string; project_id?: string; history: boolean; limit: number }) {
+    const now = this.clock();
+    const scope = (v.project_id
+      ? [this.store.get<{ id: string; title: string }>("SELECT id,title FROM projects WHERE id=?", v.project_id)].filter((x): x is { id: string; title: string } => !!x)
+      : (this.projects(p) as { id: string; title: string }[])
+    ).map(({ id, title }) => ({ id, title }));
+    for (const project of scope) this.access(p, project.id);
+    if (v.project_id && !scope.length) throw new BrainError("NOT_FOUND", "Item unavailable.", 404);
+    const index_complete = recallIndexComplete(this.store);
+    const base = { query: v.query, projects: scope, history: v.history, index_complete };
+    const empty = (status: RecallResult["status"], candidates: number): RecallResult => ({
+      status, as_of: now.toISOString(), searched: { ...base, candidates }, hits: [], near_misses: [], next_step: status === "no_match" ? NO_MATCH_NEXT_STEP : FOUND_NEXT_STEP,
+    });
+    const fts = buildFtsQuery(v.query);
+    const ids = scope.map((pr) => pr.id);
+    const marks = ids.map(() => "?").join(",");
+    // Names only (never evidence): the distinct entities of current claims in scope, with the agent exclusions. One SQL, no claim loading.
+    const agentOnly = p.kind === "owner" ? "" : " AND json_extract(data,'$.aspect') NOT IN ('name','preference') AND coalesce(json_extract(data,'$.authority'),'') <> 'owner_private'";
+    const entityNames = ids.length
+      ? [...new Set(this.store.all<{ entity: unknown }>(`SELECT DISTINCT json_extract(data,'$.entity') AS entity FROM entities WHERE kind='claim' AND project_id IN (${marks}) AND json_extract(data,'$.status')='current'${agentOnly}`, ...ids).map((r) => r.entity).filter((x): x is string => typeof x === "string" && x.length > 0))]
+      : [];
+    if (!fts.match) return { result: empty("no_match", 0), ranked: [] as Candidate[], authorized: [] as RecallHit[], signals: deterministicSignals([], [], entityNames), entityNames, scope };
+    const visibilities: RecallVisibility[] = p.kind === "owner" ? ["project", "private", "owner"] : ["project"];
+    const status = v.history ? "any" : "current";
+    const search = (match: string, kind: "fact" | "original") => searchRecallChunks(this.store, { match, kind, projects: ids, visibilities, status, limit: CANDIDATES_PER_LIST });
+    const lists = {
+      facts: search(fts.match, "fact"),
+      originals: search(fts.match, "original"),
+      // One RRF list: the two kinds are interleaved by BM25 score (more negative is better), not concatenated.
+      phrase: fts.phrase ? [...search(fts.phrase, "fact"), ...search(fts.phrase, "original")].sort((a, b) => a.score - b.score) : [],
+    };
+    const confirmations = this.store.setting<Record<string, string>>("claim_confirmations", {});
+    const titles = new Map(scope.map((pr) => [pr.id, pr.title]));
+    // Claims are verified per project, once, and only for projects that have a fact candidate.
+    const claimCache = new Map<string, Entity[]>();
+    const claimsFor = (projectId: string) => {
+      if (!claimCache.has(projectId)) claimCache.set(projectId, this.currentClaims(p, projectId, v.history));
+      return claimCache.get(projectId)!;
+    };
+    const authorized: { candidate: Candidate; hit: RecallHit }[] = [];
+    for (const candidate of fuse(lists, now)) {
+      const r = candidate.row;
+      const project = { id: r.project_id, title: titles.get(r.project_id) ?? "Project" };
+      try {
+        if (r.kind === "original") {
+          const s = this.source(p, r.ref_id);
+          if (s.version !== r.ref_version || s.state !== "active") continue;
+          const quote = Array.from(s.body).slice(r.start, r.end).join("");
+          if (quote !== r.text) continue;
+          authorized.push({ candidate, hit: { kind: "original", id: s.id, version: s.version, project, title: s.title, quote, start: r.start, end: r.end, captured_at: s.captured_at, freshness: "current", why: whyFor(fts.terms, `${s.title} ${quote}`), score: candidate.fused } });
+        } else {
+          const claims = claimsFor(r.project_id);
+          const c = claims.find((x) => x.id === r.ref_id);
+          if (!c || c.version !== r.ref_version) continue;
+          const replacedBy = claims.find((x) => x.data.status === "current" && Array.isArray(x.data.supersedes) && x.data.supersedes.includes(c.id))?.id ?? null;
+          if (c.data.status !== "current" && !v.history) continue;
+          const fresh = factFreshness(c, confirmations, replacedBy, now);
+          authorized.push({ candidate, hit: { kind: "fact", id: c.id, project, text: r.text, recorded_at: String(c.data.recorded_at ?? c.created_at), checked_at: fresh.checked_at, freshness: fresh.freshness, replaced_by: replacedBy, evidence: (c.data.evidence as Evidence[]).map((e) => ({ source_id: e.source_id, source_version: e.source_version, quote: e.quote })), why: whyFor(fts.terms, r.text), score: candidate.fused } });
+        }
+      } catch {
+        /* an index row that outlived its item or its grant is dropped from every field */
+      }
+    }
+    const ranked = authorized.map((a) => a.candidate);
+    const signals = deterministicSignals(fts.terms, ranked, entityNames);
+    const { kept, spill } = dedupe(authorized.map((a) => a.hit));
+    const hits = kept.slice(0, v.limit);
+    const statusOut = deterministicStatus(signals);
+    const nearPool = [...kept.slice(v.limit), ...spill];
+    const near_misses = statusOut === "found" ? [] : nearPool.slice(0, NEAR_MISSES_MAX).map((h) => ({
+      kind: h.kind, id: h.id, title: h.kind === "fact" ? h.text : h.title,
+      reason: `matched ${fts.terms.filter((t) => questionWordsOf(h).has(t)).length} of ${fts.terms.length} terms`,
+    }));
+    const result: RecallResult = { status: statusOut, as_of: now.toISOString(), searched: { ...base, candidates: ranked.length }, hits, near_misses, next_step: statusOut === "no_match" ? NO_MATCH_NEXT_STEP : FOUND_NEXT_STEP };
+    return { result, ranked, authorized: authorized.map((a) => a.hit), signals, entityNames, scope };
+  }
+  /** One item by id for an agent: the full original (any version it may see) or the full fact with its history. */
+  agentOpen(p: Principal, input: unknown) {
+    const v = z
+      .object({ id: z.string().min(1).max(100), version: z.number().int().positive().optional(), compare_version: z.number().int().positive().optional() })
+      .strict()
+      .parse(input);
+    const sourceRow = this.store.get<{ project_id: string }>("SELECT project_id FROM sources WHERE id=? AND state!='deleted'", v.id);
+    const entityRow = sourceRow ? undefined : this.store.get<{ project_id: string; kind: string; version: number }>("SELECT project_id,kind,version FROM entities WHERE id=?", v.id);
+    const project = sourceRow?.project_id ?? entityRow?.project_id;
+    if (!project || (entityRow && entityRow.kind !== "claim")) throw new BrainError("NOT_FOUND", "Item unavailable.", 404);
+    // A retired fact is only found by agentGet when a version is named, so a recalled history hit opens at its own version.
+    const item = this.agentGet(p, project, v.id, v.version ?? (entityRow?.kind === "claim" ? entityRow.version : undefined));
+    if (item.kind === "claim") {
+      const claim = item.item as Entity;
+      const siblings = this.currentClaims(p, project, true);
+      (item as any).item = {
+        ...claim,
+        replaced_by: siblings.find((x) => x.data.status === "current" && Array.isArray(x.data.supersedes) && x.data.supersedes.includes(claim.id))?.id ?? null,
+        replaces: (claim.data.supersedes ?? []).filter((id: string) => siblings.some((x) => x.id === id)),
+      };
+    }
+    if (v.compare_version === undefined) return item;
+    const before = this.agentGet(p, project, v.id, v.compare_version);
+    return { ...item, compare: { from_version: v.compare_version, to_version: v.version ?? (item.item as any).version, changed: JSON.stringify(before) !== JSON.stringify({ kind: item.kind, item: item.item }), before } };
   }
   agentForget(p: Principal, project: string, id: string, expected: number) {
     const grant = this.grant(p);
