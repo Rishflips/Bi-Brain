@@ -1,3 +1,4 @@
+import { randomInt } from "node:crypto";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -63,8 +64,8 @@ test("managed accounts stay isolated across sign-in, capture, sign-out and re-lo
 
   let contextA: BrowserContext | undefined;
   let contextB: BrowserContext | undefined;
-  const markerA = `SYNTHETIC_ACCOUNT_A ${Date.now()}`;
-  const markerB = `SYNTHETIC_ACCOUNT_B ${Date.now()}`;
+  const markerA = `SYNTHETICALPHA ${randomInt(1e9, 2e9)}`;
+  const markerB = `SYNTHETICBRAVO ${randomInt(3e9, 4e9)}`;
   try {
     // The public runtime metadata advertises a real managed sign-in link and no
     // local pairing, so the UI can never present pairing as managed login.
