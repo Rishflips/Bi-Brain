@@ -327,6 +327,10 @@ function App() {
     [confirmation, setConfirmation] = useState("");
   const preferencesDirty = useRef(false);
   const sortingConsentTouched = useRef(false);
+  // Recall help is its own consent, loaded and saved beside the preferences and never part of them.
+  const [recallHelp, setRecallHelp] = useState(false);
+  const [savedRecallHelp, setSavedRecallHelp] = useState(false);
+  const recallConsentTouched = useRef(false);
   const [consentOverride, setConsentOverride] = useState<boolean | null>(null);
   // An INDEPENDENT override for the separate decision-stage consent. It is never
   // derived from the master override; an omitted field preserves the RAW stored
@@ -431,7 +435,7 @@ function App() {
   }, [dark]);
   const refresh = useCallback(async () => {
     const generation = authGeneration;
-    const [p, n, t, settings, g, paidPlan, sortingStatus] = await Promise.all([
+    const [p, n, t, settings, g, paidPlan, sortingStatus, recall] = await Promise.all([
       api("/projects"),
       api("/search"),
       api("/today"),
@@ -440,6 +444,8 @@ function App() {
       api<BillingStatus>("/billing/status"),
       // Sorting help is optional: a failed read says so on its card, never fails the rest.
       api<SortingStatus>("/system-one/status").catch(() => null),
+      // A failed read leaves recall help shown as off.
+      api<{ enabled: boolean }>("/preferences/recall-help").catch(() => ({ enabled: false })),
     ]);
     // A response that arrives after sign-out or an account change must not
     // restore the previous account's data.
@@ -453,6 +459,8 @@ function App() {
     setBilling(paidPlan);
     setSorting(sortingStatus);
     setSortingUnavailable(sortingStatus === null);
+    if (!recallConsentTouched.current) setRecallHelp(recall.enabled === true);
+    setSavedRecallHelp(recall.enabled === true);
   }, []);
   /**
    * Clears every piece of per-account UI state: fetched data, chosen scope,
@@ -473,6 +481,9 @@ function App() {
     setPrefs(null);
     setSorting(null);
     setSortingUnavailable(false);
+    setRecallHelp(false);
+    setSavedRecallHelp(false);
+    recallConsentTouched.current = false;
     setSavedPrefs(null);
     setBriefCount(null);
     setGrants([]);
@@ -1432,6 +1443,7 @@ function App() {
                     prefs.decision_provider_enabled !== savedPrefs.decision_provider_enabled) ? (
                     <p className="muted">Save to apply.</p>
                   ) : null}
+                  <p className="muted">{savedRecallHelp ? "Recall help: on" : "Recall help: off"}</p>
                   {sorting?.configured && sorting.last_error ? (
                     <p className="muted">Last problem: {sorting.last_error}</p>
                   ) : null}
@@ -1504,6 +1516,28 @@ function App() {
                         }
                         setPrefs(saved);
                         setSavedPrefs(saved);
+                        if (runtime?.mode !== "managed") {
+                          if (recallConsentTouched.current) {
+                            try {
+                              const r = await api<{ enabled: boolean }>("/preferences/recall-help", { enabled: recallHelp }, "PATCH");
+                              setRecallHelp(r.enabled);
+                              setSavedRecallHelp(r.enabled);
+                            } catch (error) {
+                              // A refused "on" says why and the box goes back to what is saved.
+                              setRecallHelp(savedRecallHelp);
+                              throw error;
+                            } finally {
+                              recallConsentTouched.current = false;
+                            }
+                          } else {
+                            // Switching sorting help off also withdraws recall help; show what is stored now.
+                            const r = await api<{ enabled: boolean }>("/preferences/recall-help").catch(() => null);
+                            if (r) {
+                              setRecallHelp(r.enabled);
+                              setSavedRecallHelp(r.enabled);
+                            }
+                          }
+                        }
                         api<SortingStatus>("/system-one/status")
                           .then((now) => {
                             setSorting(now);
@@ -1701,6 +1735,19 @@ function App() {
                           Let BiBrain sort new notes with{" "}
                           {sorting.label ?? "the sorting service"}. Costs count
                           against the limits below.
+                        </label>
+                        <label>
+                          <input
+                            type="checkbox"
+                            checked={recallHelp}
+                            disabled={!recallHelp && !(sorting.configured && prefs.decision_provider_enabled)}
+                            onChange={(e) => {
+                              recallConsentTouched.current = true;
+                              setRecallHelp(e.target.checked);
+                            }}
+                          />{" "}
+                          Recall help: when a connected agent asks a question, BiBrain may send that question, the matching passages and the names of your projects and topics to the same service to pick the right ones. Off by default.
+                          {!recallHelp && !(sorting.configured && prefs.decision_provider_enabled) && <span className="muted"> Needs sorting help on first.</span>}
                         </label>
                       </div>
                     ) : null}

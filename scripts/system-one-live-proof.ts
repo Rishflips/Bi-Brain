@@ -54,9 +54,9 @@ async function run(): Promise<number> {
     { id: "hydra", title: "Hydra" },
   ];
   const notes: { name: string; ctx: S1Context }[] = [
-    { name: "A decision, in the Inbox", ctx: { note: "We decided Northstar ships with one plan.", title: "Plan decision", project_id: "inbox", projects, hasCurrentFacts: false } },
-    { name: "An open question, in Northstar", ctx: { note: "Still unclear: who owns the launch email?", title: "Launch email", project_id: "northstar", projects, hasCurrentFacts: true } },
-    { name: "Small talk, in Hydra", ctx: { note: "Lunch was good.", title: "Lunch", project_id: "hydra", projects, hasCurrentFacts: false } },
+    { name: "A decision, in the Inbox", ctx: { note: "We decided Northstar ships with one plan.", title: "Plan decision", project_id: "inbox", projects, hasCurrentFacts: false, entityNames: [] } },
+    { name: "An open question, in Northstar", ctx: { note: "Still unclear: who owns the launch email?", title: "Launch email", project_id: "northstar", projects, hasCurrentFacts: true, entityNames: [] } },
+    { name: "Small talk, in Hydra", ctx: { note: "Lunch was good.", title: "Lunch", project_id: "hydra", projects, hasCurrentFacts: false, entityNames: [] } },
   ];
   const estimated = config.provider === "ollama";
   console.log(`Service: ${label}  model: ${config.model}`);

@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { friendlyError } from "../today/BriefCard.tsx";
 import { shortDate } from "../brain/format.ts";
+import { secondFileLabel } from "./second-file.ts";
 import type { Api, Grant } from "./types.ts";
 
 type Props = {
@@ -48,6 +49,22 @@ export function ConnectionList({ api, grants, projects, hint = "", onChanged }: 
                   Reads {title(g.projects)} · {g.operations.includes("propose_memory") ? "suggests memories" : "read only"}
                   {g.folder ? ` · ${g.folder}` : ""}
                 </p>
+                {g.files
+                  .filter((f) => f.role !== "server")
+                  .map((f) => (
+                    <p key={f.path} className="tv-faint cx-second">
+                      {secondFileLabel(g, f)}
+                      {f.state === "exists" && (
+                        <>
+                          {" "}
+                          <button type="button" className="tv-btn tv-ghost tv-sm" onClick={() => void navigator.clipboard.writeText(f.contents)}>
+                            Copy
+                          </button>
+                          <span> {g.client === "claude-code" ? "Paste it into the file, or run /hooks in Claude Code." : "Paste it into the file."}</span>
+                        </>
+                      )}
+                    </p>
+                  ))}
                 {g.status !== "Connected" && g.folder && hint && <p className="tv-faint">{hint}</p>}
               </div>
               <button

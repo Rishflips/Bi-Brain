@@ -1,6 +1,6 @@
 # HTTP API contract
 
-**Harness transition:** Owner GUI source capture remains at `/api/v1/sources`; direct agent capture is denied. Agents use `/api/v1/agent/propose` through the shared gate. Scoped current-truth `/api/v1/agent/search` defaults to accepted pages; `mode=raw` or `mode=historical` is explicit. Capability-filtered MCP names and their HTTP backing routes are documented in [AGENT_INTEGRATION.md](AGENT_INTEGRATION.md). Earlier endpoint descriptions below are retained for the local preview and may describe pre-harness behavior; the new harness has not cleared S4 release verification.
+**Harness transition:** Owner GUI source capture remains at `/api/v1/sources`; direct agent capture is denied. Agents use `/api/v1/agent/propose` through the shared gate. Scoped `/api/v1/agent/recall` returns ranked, cited hits (current facts first, originals next; `history=true` adds replaced and retired facts) and `/api/v1/agent/open` reads one hit by id, optionally comparing two versions. Capability-filtered MCP names and their HTTP backing routes are documented in [AGENT_INTEGRATION.md](AGENT_INTEGRATION.md). Earlier endpoint descriptions below are retained for the local preview and may describe pre-harness behavior; the new harness has not cleared S4 release verification.
 
 Prefix: /api/v1. JSON request and response bodies except exports/import uploads and the
 raw signed Paddle webhook. Validate with runtime schemas. This is the normative contract;
@@ -70,6 +70,11 @@ Use 404 for inaccessible resource IDs where revealing existence would leak infor
 | POST /jobs/:id/cancel             | None                                          | Cancellation intent; late output fenced                                                                                                     |
 | POST /jobs/:id/retry              | None                                          | New bounded attempt if permitted                                                                                                            |
 | GET/PATCH /preferences/background | Time zone, digest, cap, enabled               | Validated owner preferences                                                                                                                 |
+| GET/PATCH /preferences/recall-help | `{enabled}` (PATCH) | Owner only; its own setting, not part of the background preferences. `true` is accepted only while sorting help is on |
+| GET /agent/recall                 | query, project_id optional, history, limit (default 8, max 20) | Agent grant with `read`: ranked, cited hits with freshness (`current`, `stale`, `replaced`, `retired`); `no_match` is a normal 200 |
+| GET /agent/open                   | id, version optional, compare_version optional | Agent grant with `read`: one fact or original by hit id; an expired current claim is 404 on an unversioned read |
+| POST /agent/recall-push           | prompt (500 chars), session_id (hash), first_prompt, seen, client | Agent grant with `read`: `{level, text, hit_ids, digest}` (level is `full`, `pointer` or `none`) for the prompt hook; logs one content-free row |
+| GET /recall/log                   | None                                          | Owner only (403 for agents): time, connection, level, counts, latency and whether the judge ran; never a prompt, id or passage |
 | GET /connections                  | None                                          | Redacted status and grants                                                                                                                  |
 | POST /agent-grants                | projects, operations, expires_at              | Token shown once; stored as hash                                                                                                            |
 | DELETE /agent-grants/:id          | None                                          | Immediate revocation and cache invalidation                                                                                                 |
@@ -110,7 +115,7 @@ Cache keys include principal/grant version, project, object versions, and provid
 
 # Harness transition endpoints
 
-An owner can `POST /api/v1/sources/:id/claim-proposals` with `{expected_version,entity,field:{aspect:"status",value},quote}` to queue a claim against an exact passage in the current source version. The owner then accepts or rejects it through the existing gate review endpoint. Agent `brain.intent` requests retain typed propose/update/close action, target ID and expected version, with optional success criteria and due/review times; owner approval applies the versioned goal transition.
+An owner can `POST /api/v1/sources/:id/claim-proposals` with `{expected_version,entity,field:{aspect:"status",value},quote}` to queue a claim against an exact passage in the current source version. The owner then accepts or rejects it through the existing gate review endpoint. Agent `brain_intent` requests retain typed propose/update/close action, target ID and expected version, with optional success criteria and due/review times; owner approval applies the versioned goal transition.
 
 The owner may call `POST /api/v1/import-adapters/preview` with `{kind:"folder"|"chat",project_id,entries:[{path,content}]}` and then `POST /api/v1/import-adapters/apply` with `{selection,checkpoint}`. The checkpoint is the preview SHA-256; a changed selection is rejected. The deletion response includes `proof` when a vault is configured; `GET /api/v1/forget-proofs/:id` retrieves the persisted owner-only result. Every false proof bit means managed deletion is incomplete. Embedding/graph `configured:false` means no such active store was found, not that an external service was inspected.
 

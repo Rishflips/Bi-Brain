@@ -35,7 +35,7 @@ function clientFor(provider: Provider, fetcher: typeof fetch): SystemOneClient {
 }
 
 /** A Clef-shaped answer built from the questions actually asked. */
-function answerFor(provider: Provider, body: any, over: { project?: string; broken?: boolean } = {}): Response {
+function answerFor(provider: Provider, body: any, over: { project?: string; broken?: boolean; topic?: string } = {}): Response {
   const answers: Record<string, any> = {};
   for (const [id, q] of Object.entries<any>(body.questions)) {
     if (q.type === "noul") {
@@ -43,7 +43,7 @@ function answerFor(provider: Provider, body: any, over: { project?: string; brok
       continue;
     }
     const ids = Object.keys(q.criteria);
-    const choice = id === "project" && over.project ? over.project : ids[0];
+    const choice = id === "project" && over.project ? over.project : id === "topic" && over.topic ? over.topic : ids[0];
     const probabilities = Object.fromEntries(ids.map((x) => [x, x === choice ? 0.9 : 0.1 / (ids.length - 1)]));
     // A broken answer names an option the request never offered.
     answers[id] = { type: "choice", choice: over.broken && id === "project" ? "not-offered" : choice, confidence: 0.9, probabilities };
@@ -188,6 +188,58 @@ describe("the worker runs sorting help", () => {
     expect(t.ledgerRows()).toHaveLength(1);
   });
 
+  /** Current claims whose evidence is the given source, project-visible and reviewed. */
+  const claimOn = (t: ReturnType<typeof setup>, project: string, entity: string, sourceId: string, over: Record<string, unknown> = {}) =>
+    t.brain.createEntity(project, "claim", { entity, aspect: "statement", value: "active", status: "current", authority: "owner_reviewed", valid_from: "2026-10-23T00:00:00.000Z", recorded_at: "2026-10-23T00:00:00.000Z", evidence: [{ source_id: sourceId, source_version: 1, start: 0, end: 9, quote: "Northstar" }], supersedes: [], conflicts_with: [], ...over });
+
+  it("records the topic names it actually sent, even when the project's names change during the request", async () => {
+    const t = setup();
+    const p = t.brain.createProject(owner, "Northstar");
+    const seed = t.brain.capture(owner, { project_id: p.id, title: "Status", body: "Northstar status active", visibility: "project" }) as any;
+    claimOn(t, p.id, "Zeta project", seed.source_id);
+    const plan = t.brain.capture(owner, { project_id: p.id, title: "Plan", body: "The plan for the quarter is to ship.", visibility: "project" }) as any;
+    let added = false;
+    t.setBehave((body) => {
+      // While the model is thinking about the plan, a new name that sorts first appears in the project.
+      if (String(body.state).includes("quarter") && !added) {
+        added = true;
+        claimOn(t, p.id, "Alpha project", seed.source_id);
+      }
+      return answerFor("ollama", body, { topic: "t1" });
+    });
+    await t.drain();
+    expect(added).toBe(true);
+    const sent = t.calls.bodies.find((b) => String(b.state).includes("quarter"));
+    expect(JSON.stringify(sent.questions.topic)).toContain("The name: Zeta project");
+    expect(JSON.stringify(sent.questions.topic)).not.toContain("Alpha project");
+    const answer = t.brain.entities(owner, "s1_answer").find((a: any) => a.data.source_id === plan.source_id)!;
+    expect(answer.data.topic_options).toEqual(["Zeta project"]);
+    const row = t.store.get<any>("SELECT prefix FROM recall_chunks WHERE ref_id=?", plan.source_id)!;
+    expect(row.prefix).toContain("Zeta project");
+    expect(row.prefix).not.toContain("Alpha project");
+  });
+
+  it("never puts a name backed by a private or unloadable source on the wire, in the context or in the stored options", async () => {
+    const t = setup();
+    const p = t.brain.createProject(owner, "Northstar");
+    const seed = t.brain.capture(owner, { project_id: p.id, title: "Status", body: "Northstar status active", visibility: "project" }) as any;
+    const secret = t.brain.capture(owner, { project_id: p.id, title: "Private", body: "Northstar private notes", visibility: "private" }) as any;
+    claimOn(t, p.id, "Open topic", seed.source_id);
+    claimOn(t, p.id, "Hidden private topic", secret.source_id);
+    claimOn(t, p.id, "Hidden ghost topic", "src-does-not-exist");
+    claimOn(t, p.id, "Mixed evidence topic", seed.source_id, { evidence: [{ source_id: seed.source_id, source_version: 1, start: 0, end: 9, quote: "Northstar" }, { source_id: secret.source_id, source_version: 1, start: 0, end: 9, quote: "Northstar" }] });
+    const saved = t.brain.capture(owner, { project_id: p.id, title: "Plan", body: "The plan for the quarter is to ship.", visibility: "project" }) as any;
+    expect(t.brain.systemOneContext(saved.source_id, 1)!.entityNames).toEqual(["Open topic"]);
+    await t.drain();
+    expect(t.calls.n).toBeGreaterThan(0);
+    for (const body of t.calls.bodies) {
+      const wire = JSON.stringify(body);
+      expect(wire).toContain("Open topic");
+      for (const hidden of ["Hidden private topic", "Hidden ghost topic", "Mixed evidence topic"]) expect(wire).not.toContain(hidden);
+    }
+    for (const a of t.brain.entities(owner, "s1_answer")) expect(JSON.stringify(a.data.topic_options ?? [])).not.toMatch(/Hidden|Mixed/);
+  });
+
   it("says why in Settings when a note is not sent because it looks like a secret", async () => {
     const t = setup();
     publishSystemOneStatus(t.brain, { configured: true, label: "Ollama (estimated cost)" });
@@ -195,7 +247,7 @@ describe("the worker runs sorting help", () => {
     t.brain.capture(owner, { project_id: "inbox", title: "Keys", body: "Use sk-abcdefghijklmnopqrstuvwxyz0123456789 for the build.", visibility: "project" });
     expect(t.job()).toBeUndefined();
     // Drive the job directly with a context that holds the secret.
-    t.brain.systemOneContext = () => ({ note: "Use sk-abcdefghijklmnopqrstuvwxyz0123456789 for the build.", title: "Keys", project_id: "inbox", projects: [], hasCurrentFacts: false });
+    t.brain.systemOneContext = () => ({ note: "Use sk-abcdefghijklmnopqrstuvwxyz0123456789 for the build.", title: "Keys", project_id: "inbox", projects: [], hasCurrentFacts: false, entityNames: [] });
     const client = clientFor("ollama", (async () => { throw new Error("must not be called"); }) as unknown as typeof fetch);
     const r = await runSystemOneJob(
       { brain: t.brain, ledger: t.ledger, client, owner, leaseOwner: "w" },

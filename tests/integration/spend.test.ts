@@ -239,7 +239,7 @@ describe("per-dispatch accounting", () => {
       store.close();
 
       store = new Storage(path);
-      expect(Number(store.get("SELECT max(version) AS v FROM migrations")!.v)).toBe(6);
+      expect(Number(store.get("SELECT max(version) AS v FROM migrations")!.v)).toBe(7);
       expect(Number(store.get("SELECT count(*) AS n FROM migrations WHERE version=4")!.n)).toBe(
         1,
       );
@@ -537,7 +537,7 @@ describe("per-dispatch accounting", () => {
 
       const reopened = new Storage(backup);
       const reopenedLedger = new DispatchLedger(reopened, clock.now);
-      expect(Number(reopened.get("SELECT max(version) AS v FROM migrations")!.v)).toBe(6);
+      expect(Number(reopened.get("SELECT max(version) AS v FROM migrations")!.v)).toBe(7);
       expect(reopened.get("SELECT count(*) AS n FROM provider_dispatches")!.n).toBe(1);
       expect(reopenedLedger.get(call.call_id)!.state).toBe("settled");
       expect(reopenedLedger.jobSpend(job.id)).toBe(6);

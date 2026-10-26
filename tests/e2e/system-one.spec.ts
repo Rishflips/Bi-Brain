@@ -67,6 +67,10 @@ test("sorting help is switched on in Settings and a note is filed with Keep", as
   await consent.check();
   await page.getByRole("button", { name: "Save preferences" }).click();
   await expect(page.getByText("Background preferences saved.")).toBeVisible();
+  await page.getByRole("checkbox", { name: /^Recall help: when a connected agent asks a question/ }).check();
+  await page.getByRole("button", { name: "Save preferences" }).click();
+  await expect(page.getByText("Background preferences saved.")).toBeVisible();
+  await expect(card.getByText("Recall help: on")).toBeVisible();
   await expect(card.getByText(`On · ${LABEL} · 0 notes sorted, 0 reviewed`)).toBeVisible();
 
   // A project, then a note that clearly belongs to it.

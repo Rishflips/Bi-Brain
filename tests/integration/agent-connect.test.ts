@@ -152,6 +152,90 @@ describe("agentConnect", () => {
     expect(existsSync(done.file)).toBe(false);
   });
 
+  it("previews and writes both files for Claude Code, records their state, and keeps the key out of every file", () => {
+    const { b, svc, folder, dataDir } = setup();
+    const pv = svc.preview(owner, { client: "claude-code", project_id: "inbox", folder });
+    expect(pv.files.map((f) => [f.role, f.path, f.exists])).toEqual([
+      ["server", join(folder, ".mcp.json"), false],
+      ["hook", join(folder, ".claude", "settings.local.json"), false],
+    ]);
+    const done = svc.connect(owner, { connection_id: pv.connection_id, client: "claude-code", project_id: "inbox", folder, access: "read" });
+    expect(done.files.map((f) => [f.role, f.state])).toEqual([["server", "written"], ["hook", "written"]]);
+    expect(readFileSync(join(folder, ".claude", "settings.local.json"), "utf8")).toBe(pv.files[1].contents);
+    const key = JSON.parse(readFileSync(join(dataDir, "agent-keys", `${pv.connection_id}.json`), "utf8")).key;
+    for (const f of done.files) expect(f.contents).not.toContain(key);
+    expect(JSON.stringify(pv)).not.toContain(key);
+    expect(b.connections(owner)[0].files.map((f) => [f.role, f.state])).toEqual([["server", "written"], ["hook", "written"]]);
+  });
+  it("never changes an existing hook file: the server file is still written, the state says exists, and the snippet is returned", () => {
+    const { b, svc, folder } = setup();
+    mkdirSync(join(folder, ".claude"));
+    writeFileSync(join(folder, ".claude", "settings.local.json"), '{"permissions":{"allow":[]}}\n');
+    const pv = svc.preview(owner, { client: "claude-code", project_id: "inbox", folder });
+    expect(pv.files[1].exists).toBe(true);
+    const done = svc.connect(owner, { connection_id: pv.connection_id, client: "claude-code", project_id: "inbox", folder, access: "suggest" });
+    expect(done.files.map((f) => [f.role, f.state])).toEqual([["server", "written"], ["hook", "exists"]]);
+    expect(done.files[1].contents).toContain("mcp__bibrain__brain_recall");
+    expect(readFileSync(join(folder, ".claude", "settings.local.json"), "utf8")).toBe('{"permissions":{"allow":[]}}\n');
+    expect(existsSync(join(folder, ".mcp.json"))).toBe(true);
+    expect(b.connections(owner)[0]).toMatchObject({ status: "Not connected", files: [{ role: "server", state: "written" }, { role: "hook", state: "exists" }] });
+  });
+  it("refuses a linked .claude folder or a linked .cursor/rules folder, and a file named .claude, before anything is written", () => {
+    const { b, svc, folder, dataDir } = setup();
+    const elsewhere = join(dirname(folder), "elsewhere-claude");
+    mkdirSync(elsewhere);
+    symlinkSync(elsewhere, join(folder, ".claude"), "junction");
+    expect(() => svc.preview(owner, { client: "claude-code", project_id: "inbox", folder })).toThrow(/linked \.claude folder/);
+    rmSync(join(folder, ".claude"), { recursive: true, force: true });
+    mkdirSync(join(folder, ".cursor"));
+    symlinkSync(elsewhere, join(folder, ".cursor", "rules"), "junction");
+    expect(() => svc.preview(owner, { client: "cursor", project_id: "inbox", folder })).toThrow(/linked \.cursor\/rules folder/);
+    rmSync(join(folder, ".cursor"), { recursive: true, force: true });
+    writeFileSync(join(folder, ".claude"), "a file where a folder must be");
+    const id = "22222222-2222-4222-8222-222222222222";
+    expect(() => svc.connect(owner, { connection_id: id, client: "claude-code", project_id: "inbox", folder, access: "read" })).toThrow(/file named \.claude/);
+    expect(b.connections(owner)).toEqual([]);
+    expect(existsSync(join(dataDir, "agent-keys", `${id}.json`))).toBe(false);
+    expect(existsSync(join(folder, ".mcp.json"))).toBe(false);
+  });
+  it("rolls back the grant, the key and the already written server file when the second write fails", () => {
+    // `.cursor` is a real folder (so the pre-checks pass) but `.cursor/rules` is a FILE: the server file is written first,
+    // then `mkdirSync(.cursor/rules, { recursive: true })` throws EEXIST on every platform, which is not the "exists" path
+    // (that one is EEXIST from the `wx` write of the second file itself) and must roll everything back.
+    const { b, svc, folder, dataDir } = setup();
+    mkdirSync(join(folder, ".cursor"));
+    writeFileSync(join(folder, ".cursor", "rules"), "a file where a folder must be");
+    const pv = svc.preview(owner, { client: "cursor", project_id: "inbox", folder });
+    expect(() => svc.connect(owner, { connection_id: pv.connection_id, client: "cursor", project_id: "inbox", folder, access: "read" })).toThrow(/could not write \.cursor\/rules\/bibrain\.mdc/);
+    // Rolled back exactly as a failed key write is: the grant is revoked (a Revoked row stays), the key file and the server file are gone.
+    expect(b.connections(owner).map((c) => [c.status, c.files])).toEqual([["Revoked", []]]);
+    expect(existsSync(join(dataDir, "agent-keys", `${pv.connection_id}.json`))).toBe(false);
+    expect(existsSync(join(folder, ".cursor", "mcp.json"))).toBe(false);
+    expect(readFileSync(join(folder, ".cursor", "rules"), "utf8")).toBe("a file where a folder must be");
+  });
+  it("writes the Codex hook file next to its config, keeps spaces in paths intact, and forgets the recorded files with the key", () => {
+    const { b, s, svc, folder, config } = setup();
+    const spaced = { ...config, node: "C:\\Program Files\\nodejs\\node.exe", cli: "C:\\Users\\Ana\\Bi Brain\\apps\\cli\\bibrain.mjs" };
+    const spacedSvc = agentConnect(b, spaced);
+    const pv = spacedSvc.preview(owner, { client: "codex", project_id: "inbox", folder });
+    const done = spacedSvc.connect(owner, { connection_id: pv.connection_id, client: "codex", project_id: "inbox", folder, access: "read" });
+    expect(done.files.map((f) => [f.role, f.state])).toEqual([["server", "written"], ["hook", "written"]]);
+    const written = JSON.parse(readFileSync(join(folder, ".codex", "hooks.json"), "utf8"));
+    const command: string = written.hooks.UserPromptSubmit[0].hooks[0].command;
+    expect(command.startsWith('node "C:/Users/Ana/Bi Brain/apps/cli/bibrain.mjs" hook codex --connection ')).toBe(true);
+    expect(command).not.toContain("\\");
+    expect(s.setting(`agent_files:${pv.connection_id}`, [])).toHaveLength(2);
+    svc.forget(pv.connection_id);
+    expect(s.setting(`agent_files:${pv.connection_id}`, "gone")).toEqual("gone");
+  });
+  it("creates .cursor/rules and writes the rule file once", () => {
+    const { svc, folder } = setup();
+    const pv = svc.preview(owner, { client: "cursor", project_id: "inbox", folder });
+    const done = svc.connect(owner, { connection_id: pv.connection_id, client: "cursor", project_id: "inbox", folder, access: "read" });
+    expect(done.files.map((f) => [f.role, f.state])).toEqual([["server", "written"], ["rule", "written"]]);
+    expect(readFileSync(join(folder, ".cursor", "rules", "bibrain.mdc"), "utf8")).toContain("alwaysApply: true");
+  });
+
   it("is unavailable away from the local app", () => {
     const { b, config, folder } = setup();
     const remote = agentConnect(b, { ...config, available: false, reason: "Adding agents in one step works in the BiBrain app on your computer." });

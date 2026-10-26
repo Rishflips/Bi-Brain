@@ -36,6 +36,8 @@ import {
 import { loadConfig } from "../server/config.ts";
 import { Worker } from "./engine.ts";
 import { publishSystemOneStatus } from "./system-one.ts";
+import { startJudgeLoop } from "./recall-judge.ts";
+import { LocalDispatchAccounting } from "./accounting.ts";
 import { systemOneFromEnv } from "../../packages/providers/system-one-env.ts";
 import { ManagedWorker } from "./managed.ts";
 import { BoundedFetchTransport } from "../../packages/providers/bounded-fetch.ts";
@@ -503,6 +505,16 @@ if (config.mode === "managed") {
     undefined,
     sorting.config ? { config: sorting.config } : null,
   );
+  // The recall judge runs only here, beside sorting help, so the key never leaves this process.
+  const judge = sorting.config
+    ? startJudgeLoop({
+        brain,
+        ledger: new LocalDispatchAccounting(storage, brain.clock),
+        client: { config: sorting.config },
+        owner: brain.ownerPrincipal(),
+        workerId: worker.id,
+      })
+    : null;
   let running = true;
   const stop = () => {
     running = false;
@@ -518,5 +530,6 @@ if (config.mode === "managed") {
       await sleep(2000);
     }
   }
+  await judge?.stop();
   storage.close();
 }

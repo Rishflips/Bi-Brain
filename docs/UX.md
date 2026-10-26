@@ -117,6 +117,7 @@ taken.
 - **Watch.** Each project card on Today, and each project header in Your brain except Inbox, has a Watch switch. It is on by default. An unwatched project says "Quiet: not on Today": it adds nothing to the Brief, gets no sorting help and no scheduled reviews, and everything stays in Your brain. Inbox is always watched. The state lives in settings and is not part of exports.
 - **File in card.** When sorting help is on and fairly sure an Inbox note belongs in a project, the Brief shows "File in Northstar?" with Keep and Dismiss. Keep moves the note as a new version and says "Moved to Northstar."; if the note changed meanwhile it fails with a plain version-conflict message and moves nothing. Nothing is filed without Keep.
 - **Sorting help card (Settings).** Says in plain words whether sorting help is on, off, waiting for the background worker or missing setup, shows the last problem if any, and downloads the review log (what was suggested and what the owner did, never note text). Hidden in managed mode. To turn it on: Settings, "Background help & spending", tick "Turn on background help (sorting new notes and preparing reviews)", set the daily and per-preparation caps above 0, tick "Let BiBrain sort new notes with <service>", then Save preferences. Each "Needs …" or "Waiting …" line names the one control still missing.
+- **Recall help (Settings).** A separate checkbox under the sorting-help one, saved with its own setting and not part of the background preferences. The label reads: "Recall help: when a connected agent asks a question, BiBrain may send that question, the matching passages and the names of your projects and topics to the same service to pick the right ones. Off by default." Off by default; needs sorting help on, and while it is not the box is disabled with "Needs sorting help on first." It can reorder, drop to "near misses", and lower or raise how much is pushed, but only among notes BiBrain already found and the agent may see; it never adds notes, changes which projects are searched or hides an exact name match. Your own Ask bar and Your brain search never use it. Hidden in managed mode.
 
 ## Prepared item
 
@@ -140,7 +141,7 @@ Not useful removes the item from the active queue and optionally records a reaso
 
 The project list sits on the left. Open a project to see True now, Open questions, Originals, Needs a decision here and Goals.
 Open a fact or an original to view the retained original with the cited passage highlighted, the fact's history and the facts taken from it.
-Search covers facts and originals. It respects access scope and deletion before matching and snippets.
+Search covers facts and originals through the same ranked recall agents use; it never calls a model. It respects access scope and deletion before matching and snippets.
 No-result state: No matching notes. Try a different word or save something new.
 
 The selected project opens as a compact page built only from authorized saved
@@ -185,16 +186,24 @@ managed or remotely served BiBrain, or when this computer cannot be checked) the
 tile says why and points to "Set up by hand". Add asks for the project, the
 project folder where the agent is opened, and what it may do: "Read and suggest
 (recommended)" or "Read only". "See the file BiBrain will add" shows the exact
-file before anything is written. BiBrain writes only that file in the folder and
-never changes an existing one; if the file exists it writes nothing and shows the
-lines to add by hand. The access key stays in BiBrain's data folder on this
+files before anything is written: the server entry and, for Claude Code and
+Codex, a prompt hook that recalls from the brain on every prompt (Cursor gets a
+rule file instead). BiBrain writes only those files in the folder and never
+changes an existing one; if a file exists it writes nothing, the connection reads
+"Recall on every prompt: add it yourself" (Cursor: "Rule file: add it yourself")
+and a Copy button gives the exact lines to add by hand. The access key stays in BiBrain's data folder on this
 computer and is never shown in the page. Focus returns to the Add button on
 cancel.
 
 **Waiting.** After Add, the connection reads "Waiting for its first call", with
 the project, the access level and the folder. A key that exists is never treated
 as an active agent, and a hint tells the person to open the agent in that folder
-and approve BiBrain once.
+and approve BiBrain once. When the hook was written the line under the
+connection reads "Recall on every prompt: on after your next prompt" until
+BiBrain has recorded a push, then "Recall on every prompt: on" ("Rule file added"
+for Cursor). For Codex it reads "Recall on every prompt: on after Codex trusts
+the hook" until the first push, because Codex runs a project hook only after the
+person trusts it in `/hooks`.
 
 **Connected.** The status becomes "Connected · last used {date}" only after the
 agent's first real authenticated call.

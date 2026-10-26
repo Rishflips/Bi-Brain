@@ -88,13 +88,13 @@ it("migrates a genuine tenant v4 database without rewriting original content, ra
   let store: Storage | undefined;
   try {
     store = new Storage(f.path);
-    expect(store.get("SELECT MAX(version) AS version FROM migrations")?.version).toBe(6);
+    expect(store.get("SELECT MAX(version) AS version FROM migrations")?.version).toBe(7);
     expect(store.get("SELECT name FROM sqlite_master WHERE type='table' AND name='advisory_attempts'")?.name).toBe("advisory_attempts");
     expect(store.all("SELECT * FROM provider_dispatches ORDER BY call_id")).toEqual(f.before.dispatches);
     expect(store.all("SELECT * FROM reservations ORDER BY job_id")).toEqual(f.before.legacy);
     expect(store.all("SELECT * FROM source_versions ORDER BY source_id,version")).toEqual(f.before.sources);
     expect(store.all("SELECT * FROM entities ORDER BY id")).toEqual(f.before.goals);
-    expect(store.all("SELECT * FROM settings ORDER BY key")).toEqual(f.before.prefs);
+    expect(store.all("SELECT * FROM settings WHERE key<>'recall_index_built' ORDER BY key")).toEqual(f.before.prefs);
     store.close(); store = new Storage(f.path);
     expect(store.get("SELECT COUNT(*) AS count FROM migrations WHERE version=5")?.count).toBe(1);
     expect(store.all("SELECT * FROM provider_dispatches ORDER BY call_id")).toEqual(f.before.dispatches);
@@ -129,12 +129,12 @@ it("refuses a future tenant schema without changing retained data or financial a
   const f = fixture();
   try {
     const db = new DatabaseSync(f.path);
-    db.prepare("INSERT INTO migrations VALUES(?,?)").run(7, at);
+    db.prepare("INSERT INTO migrations VALUES(?,?)").run(8, at);
     db.close();
     expect(() => new Storage(f.path)).toThrow(/newer Bi Brain version/);
     const check = new DatabaseSync(f.path);
     try {
-      expect(check.prepare("SELECT MAX(version) AS version FROM migrations").get()?.version).toBe(7);
+      expect(check.prepare("SELECT MAX(version) AS version FROM migrations").get()?.version).toBe(8);
       expect(check.prepare("SELECT * FROM provider_dispatches ORDER BY call_id").all()).toEqual(f.before.dispatches);
       expect(check.prepare("SELECT * FROM source_versions ORDER BY source_id,version").all()).toEqual(f.before.sources);
     } finally { check.close(); }

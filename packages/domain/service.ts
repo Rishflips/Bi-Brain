@@ -11,6 +11,7 @@ import {
   type GateResult,
 } from "./claims.ts";
 import { Storage } from "../storage/index.ts";
+import { invalidateRecallIndex, purgeRef, recallCountsForSource, recallIndexComplete, searchRecallChunks, syncClaim, syncClaimsCiting, syncSource, type RecallVisibility } from "../storage/recall-index.ts";
 import {
   captureSchema,
   outputSchema,
@@ -46,13 +47,35 @@ import {
   type AdvisoryRecord,
 } from "./decision-advisory.ts";
 import { extractReviewableMemory } from "./memory-understanding.ts";
-import { adviseFrom, workerRunning, type S1Advice, type S1Context } from "./system-one.ts";
-import type { AskResult } from "../providers/system-one-ask.ts";
+import { adviseFrom, S1_TOPIC_MAX, workerRunning, type S1Advice, type S1Context } from "./system-one.ts";
+import type { AskAnswer, AskQuestion, AskResult } from "../providers/system-one-ask.ts";
+import { JUDGE_CANDIDATES_MAX, JUDGE_DAILY_COUNT_CAP, JUDGE_DEADLINE_MS, JUDGE_MIN_REMAINING_MICRO_USD, JUDGE_POLL_MS, JUDGE_RESULT_KEY, JUDGE_STATE_KEY, applyJudge, buildJudgeQuestions, buildJudgeState, judgeSignals, judgedStatus } from "./recall-judge.ts";
 import { buildBrief, gateFitsBrief, type BriefInput, type BriefJob } from "./brief.ts";
 import { buildProjectView } from "./project-view.ts";
-import { questionWords, rankAnswers } from "./ask.ts";
+import { questionWords, type AskHit } from "./ask.ts";
 import { factText } from "./facts.ts";
-import { SEARCH_LIMIT, findInBrain } from "./brain-search.ts";
+import { SEARCH_LIMIT, findInBrain, snippetFor } from "./brain-search.ts";
+import {
+  CANDIDATES_PER_LIST,
+  FOUND_NEXT_STEP,
+  NEAR_MISSES_MAX,
+  NO_MATCH_NEXT_STEP,
+  RECALL_LIMIT_MAX,
+  buildFtsQuery,
+  dedupe,
+  deterministicSignals,
+  deterministicStatus,
+  factFreshness,
+  fuse,
+  recallInputSchema,
+  whyFor,
+  type Candidate,
+  type FactHit as RecallFactHit,
+  type OriginalHit as RecallOriginalHit,
+  type RecallHit,
+  type RecallResult,
+} from "./recall.ts";
+import { RECALL_LOG_MAX, PUSH_HITS_MAX, filterSeen, fitFull, hitIsRelated, hitIsStrong, pushLevel, recallPushSchema, renderDigest, renderPointer, type JudgeSignals, type PushLevel } from "./recall-push.ts";
 import {
   attemptReferencesSource,
   claimDecisionAttempt,
@@ -63,6 +86,8 @@ import {
   type AdvisoryClaimResult,
 } from "../storage/decision-advisory.ts";
 const PAIR_LINK_MS = 120_000;
+/** One file BiBrain wrote (or left alone because it already existed) when an agent was added. Mirrors the server's type; no domain-to-server import. */
+type WrittenFile = { path: string; role: "server" | "hook" | "rule"; state: "written" | "exists"; contents: string };
 export const defaults: Preferences = {
   enabled: false,
   time_zone: "Asia/Calcutta",
@@ -99,6 +124,7 @@ function managedBlockedMessage(
     return "Managed paid processing is not enabled; saved work stays available.";
   return null;
 }
+const questionWordsOf = (h: RecallHit) => new Set(questionWords(h.kind === "fact" ? h.text : `${h.title} ${h.quote}`));
 export class Brain {
   constructor(
     readonly store: Storage,
@@ -453,6 +479,7 @@ export class Brain {
       JSON.stringify(data),
       e.created_at,
     );
+    if (kind === "claim") syncClaim(this.store, id);
     return e;
   }
   revise(e: Entity, data: Record<string, any>) {
@@ -477,6 +504,7 @@ export class Brain {
       JSON.stringify(data),
       this.now(),
     );
+    if (e.kind === "claim") syncClaim(this.store, e.id);
     // Any goal revision (including the reasoning worker's signature/notification
     // bookkeeping) invalidates advisories bound to the PREVIOUS goal entity
     // version. Withdraw them so a stale judgment is never actively readable or
@@ -612,6 +640,7 @@ export class Brain {
           v.title,
           v.body,
         );
+        syncSource(this.store, id);
         this.invalidate(v.project_id);
         const job = this.enqueue(v.project_id, "derive_brief", {
           principal: p,
@@ -1089,6 +1118,9 @@ export class Brain {
         v.title,
         v.body,
       );
+      syncSource(this.store, id);
+      // A visibility change can make claims that cite this source owner-only (or not) in the index.
+      if ((v.visibility ?? s.visibility) !== s.visibility) syncClaimsCiting(this.store, id);
       this.invalidate(s.project_id);
       if (project !== s.project_id) this.invalidate(project);
       this.enqueue(project, "derive_brief", { principal: p });
@@ -1113,6 +1145,7 @@ export class Brain {
           id,
         );
         this.store.run("DELETE FROM source_fts WHERE source_id=?", id);
+        purgeRef(this.store, "original", id);
         this.invalidate(s.project_id);
         if (purge) {
           const copiedBodies = this.store
@@ -1235,8 +1268,10 @@ export class Brain {
               row.project_id === s.project_id ||
               depends(JSON.parse(row.data)) ||
               versions.some((v) => depends(JSON.parse(v.data)))
-            )
+            ) {
+              if (row.kind === "claim") purgeRef(this.store, "fact", row.id);
               this.store.run("DELETE FROM entities WHERE id=?", row.id);
+            }
           }
           this.store.run("DELETE FROM idempotency");
           this.store.run("DELETE FROM imports");
@@ -1308,6 +1343,7 @@ export class Brain {
           id,
         )?.n ?? 0,
       );
+      const recall = recallCountsForSource(this.store, id, sourceBodies);
       const derived =
         Number(
           this.store.get(
@@ -1340,9 +1376,15 @@ export class Brain {
         search === 0 &&
         derived === 0 &&
         derivedText === 0 &&
+        recall.rows === 0 &&
+        recall.text_matches === 0 &&
+        recall.orphan_facts === 0 &&
         backup.absent;
       const embeddingStores = this.store.all(
         "SELECT name FROM sqlite_master WHERE type='table' AND name LIKE '%embedding%'",
+      );
+      const embeddedRows = Number(
+        this.store.get<{ n: number }>("SELECT count(*) AS n FROM recall_chunks WHERE embedding IS NOT NULL")?.n ?? 0,
       );
       const edgeStores = this.store.all(
         "SELECT name FROM sqlite_master WHERE type='table' AND name LIKE '%edge%'",
@@ -1353,7 +1395,7 @@ export class Brain {
         deletion_generation: this.store.vault!.generation(),
         file_gone: files.file_gone && vaultHistoryText === false,
         index_gone: indexGone,
-        embedding_gone: embeddingStores.length === 0,
+        embedding_gone: embeddingStores.length === 0 && recall.embedded === 0,
         graph_edge_gone: edgeStores.length === 0 && derived === 0,
         per_store: {
           ...files.evidence,
@@ -1361,11 +1403,14 @@ export class Brain {
           sqlite_search_rows: search,
           sqlite_derived_references: derived,
           sqlite_derived_text_matches: derivedText,
+          sqlite_recall_rows: recall.rows,
+          sqlite_recall_text_matches: recall.text_matches,
+          sqlite_recall_orphan_facts: recall.orphan_facts,
           managed_history_text_match: vaultHistoryText,
           migration_backup: backup,
           embeddings: {
-            configured: embeddingStores.length > 0,
-            active_artifacts: embeddingStores.length ? "unverified" : 0,
+            configured: embeddedRows > 0,
+            active_artifacts: recall.embedded,
           },
           graph: {
             configured: edgeStores.length > 0,
@@ -1811,6 +1856,16 @@ export class Brain {
         effective.decision_provider_enabled !== true
       )
         this.store.transaction(() => this.withdrawAllAdvisories());
+      // Recall help rides on sorting help: switching sorting help or either cap off withdraws it too,
+      // so a stored "on" can never outlive the consent it depends on.
+      if (
+        (effective.enabled !== true ||
+          effective.decision_provider_enabled !== true ||
+          !(effective.daily_cap_micro_usd > 0) ||
+          !(effective.per_job_cap_micro_usd > 0)) &&
+        this.store.setting<unknown>("recall_help_enabled", false) === true
+      )
+        this.store.set("recall_help_enabled", false);
     }
     const stored = this.store.setting("preferences", defaults);
     // A historical record without the decision field reads as false; the stored
@@ -1822,6 +1877,25 @@ export class Brain {
     return tenantBlocked || centrallyUnusable
       ? { ...normalized, provider_enabled: false }
       : normalized;
+  }
+  /** The recall-help consent. Its own setting, never a preference field: managed code round-trips `prefs()` into a strict schema. */
+  recallHelp(p: Principal): { enabled: boolean } {
+    this.owner(p);
+    return { enabled: this.store.setting<unknown>("recall_help_enabled", false) === true };
+  }
+  /** An explicit true is admitted only while sorting help is genuinely on; false is always accepted. A model or browser flag can never self-grant it. */
+  setRecallHelp(p: Principal, input: unknown): { enabled: boolean } {
+    this.owner(p);
+    const v = z.object({ enabled: z.boolean() }).strict().parse(input);
+    if (v.enabled) {
+      if (this.tenantId !== undefined) throw new BrainError("BUDGET_BLOCKED", "Recall help runs on the local app only.", 409);
+      const prefs = this.prefs(p);
+      const capability = this.decisionCapability?.();
+      if (capability?.ready !== true || prefs.enabled !== true || prefs.decision_provider_enabled !== true || !(prefs.daily_cap_micro_usd > 0) || !(prefs.per_job_cap_micro_usd > 0))
+        throw new BrainError("BUDGET_BLOCKED", "Recall help needs sorting help to be on first.", 409);
+    }
+    this.store.set("recall_help_enabled", v.enabled);
+    return { enabled: v.enabled };
   }
   /**
    * RAW stored DECISION-stage consent for this owner (never the effective getter,
@@ -2250,6 +2324,7 @@ export class Brain {
         client: g.client ?? "other",
         client_name: agentDisplayName(g.client),
         folder: g.folder ?? null,
+        files: this.store.setting<WrittenFile[]>(`agent_files:${g.id}`, []),
         status: g.revoked_at
           ? "Revoked"
           : g.expires_at <= this.now()
@@ -2257,6 +2332,10 @@ export class Brain {
             : g.last_verified_at
               ? "Connected"
               : "Not connected",
+        recall: (() => {
+          const rows = this.store.setting<{ at: string; grant_id: string; level: PushLevel }[]>("recall_log", []).filter((r) => r.grant_id === g.id);
+          return { pushes: rows.length, last_push_at: rows.at(-1)?.at ?? null, last_level: rows.at(-1)?.level ?? null };
+        })(),
       }));
   }
   createGrant(p: Principal, input: unknown) {
@@ -2913,41 +2992,74 @@ export class Brain {
       });
     });
   }
+  /** Whether one claim is visible to this principal in its project: the single rule `currentClaims` and the recall verifier share. */
+  claimVisible(p: Principal, project: string, c: Entity, includeRetired: boolean): boolean {
+    const at = this.clock().getTime();
+    return (
+      c.project_id === project &&
+      (includeRetired ||
+        (c.data.status === "current" &&
+          Date.parse(c.data.valid_from) <= at &&
+          (!c.data.valid_to || at < Date.parse(c.data.valid_to)))) &&
+      (!c.data.evidence?.length ||
+        (() => {
+          try {
+            if (c.data.status === "current")
+              this.checkEvidence(p, project, c.data.evidence);
+            else
+              for (const e of c.data.evidence as Evidence[]) {
+                const source = this.source(p, e.source_id, e.source_version);
+                if (
+                  source.project_id !== project ||
+                  Array.from(source.body).slice(e.start, e.end).join("") !==
+                    e.quote
+                )
+                  throw new Error("Historical evidence unavailable");
+              }
+            return true;
+          } catch {
+            return false;
+          }
+        })()) &&
+      (p.kind === "owner" ||
+        (c.data.aspect !== "name" &&
+          c.data.aspect !== "preference" &&
+          c.data.authority !== "owner_private"))
+    );
+  }
   currentClaims(p: Principal, project: string, includeRetired = false) {
     this.access(p, project);
-    const at = this.clock().getTime();
-    return this.entities(this.ownerPrincipal(), "claim").filter(
-      (c) =>
-        c.project_id === project &&
-        (includeRetired ||
-          (c.data.status === "current" &&
-            Date.parse(c.data.valid_from) <= at &&
-            (!c.data.valid_to || at < Date.parse(c.data.valid_to)))) &&
-        (!c.data.evidence?.length ||
-          (() => {
-            try {
-              if (c.data.status === "current")
-                this.checkEvidence(p, project, c.data.evidence);
-              else
-                for (const e of c.data.evidence as Evidence[]) {
-                  const source = this.source(p, e.source_id, e.source_version);
-                  if (
-                    source.project_id !== project ||
-                    Array.from(source.body).slice(e.start, e.end).join("") !==
-                      e.quote
-                  )
-                    throw new Error("Historical evidence unavailable");
-                }
-              return true;
-            } catch {
-              return false;
-            }
-          })()) &&
-        (p.kind === "owner" ||
-          (c.data.aspect !== "name" &&
-            c.data.aspect !== "preference" &&
-            c.data.authority !== "owner_private")),
+    return this.entities(this.ownerPrincipal(), "claim").filter((c) =>
+      this.claimVisible(p, project, c, includeRetired),
     );
+  }
+  /** One claim by id, only when it is visible to `p`; no other claim is loaded or verified. */
+  visibleClaim(p: Principal, project: string, id: string, includeRetired: boolean): Entity | null {
+    try {
+      this.access(p, project);
+      const c = this.entity(this.ownerPrincipal(), id);
+      return c.kind === "claim" && this.claimVisible(p, project, c, includeRetired) ? c : null;
+    } catch (e) {
+      if (e instanceof BrainError && e.code === "NOT_FOUND") return null;
+      throw e;
+    }
+  }
+  /** Which current claims in these projects supersede which claim: target id -> superseding ids. One indexed-by-project scan, only rows that supersede something. */
+  supersessions(projects: string[]): Map<string, string[]> {
+    const out = new Map<string, string[]>();
+    if (!projects.length) return out;
+    const rows = this.store.all<{ id: string; target: string }>(
+      `SELECT e.id AS id, j.value AS target FROM entities e, json_each(json_extract(e.data,'$.supersedes')) j
+       WHERE e.kind='claim' AND e.project_id IN (${projects.map(() => "?").join(",")}) AND json_extract(e.data,'$.status')='current'`,
+      ...projects,
+    );
+    for (const r of rows) out.set(r.target, [...(out.get(r.target) ?? []), r.id]);
+    return out;
+  }
+  /** The visible current claim that supersedes `claimId`, if any. */
+  supersededBy(p: Principal, project: string, claimId: string, includeRetired: boolean, known?: Map<string, string[]>): string | null {
+    for (const id of (known ?? this.supersessions([project])).get(claimId) ?? []) if (this.visibleClaim(p, project, id, includeRetired)) return id;
+    return null;
   }
   pages(p: Principal, project: string, query = "", includeRetired = false) {
     this.access(p, project);
@@ -3024,15 +3136,17 @@ export class Brain {
     return {
       operations,
       tools: [
-        "brain.search",
-        "brain.get",
-        "brain.ask",
-        "brain.diff",
+        "brain_recall",
+        "brain_open",
         ...(operations.includes("propose_memory")
-          ? ["brain.propose", "brain.note", "brain.link", "brain.intent"]
+          ? ["brain_note", "brain_propose", "brain_intent", "brain_link"]
           : []),
-        ...(operations.includes("forget") ? ["brain.forget"] : []),
+        ...(operations.includes("forget") ? ["brain_forget"] : []),
       ],
+      projects: (this.projects(p) as { id: string; title: string }[]).map(
+        ({ id, title }) => ({ id, title }),
+      ),
+      surface: "v2" as const,
     };
   }
   handoff(p: Principal, project: string) {
@@ -3175,6 +3289,7 @@ export class Brain {
       ),
     };
   }
+  /** No HTTP route since surface v2. */
   agentSearch(
     p: Principal,
     project: string,
@@ -3209,6 +3324,7 @@ export class Brain {
       next_offset: offset + limit,
     };
   }
+  /** No HTTP route since surface v2. */
   agentGet(p: Principal, project: string, id: string, version?: number) {
     this.access(p, project);
     try {
@@ -3232,7 +3348,7 @@ export class Brain {
         if (!historical)
           throw new BrainError("NOT_FOUND", "Revision unavailable.", 404);
         const data = JSON.parse(historical.data);
-        if (p.kind === "agent" && ["name", "preference"].includes(data.aspect))
+        if (p.kind === "agent" && (["name", "preference"].includes(data.aspect) || data.authority === "owner_private"))
           throw new BrainError("NOT_FOUND", "Item unavailable.", 404);
         for (const ref of data.evidence ?? []) {
           const source = this.source(p, ref.source_id, ref.source_version);
@@ -3301,6 +3417,7 @@ export class Brain {
       return { kind: e.kind, item: this.entity(p, id) };
     throw new BrainError("NOT_FOUND", "Item unavailable.", 404);
   }
+  /** No HTTP route since surface v2. */
   agentAsk(p: Principal, project: string, question: string) {
     this.access(p, project);
     question = z.string().trim().min(1).max(500).parse(question);
@@ -3335,24 +3452,343 @@ export class Brain {
         "Literal evidence and owner reviews are not independent truth verification.",
     };
   }
-  agentDiff(
-    p: Principal,
-    project: string,
-    id: string,
-    fromVersion: number,
-    toVersion: number,
-  ) {
-    this.access(p, project);
-    const before = this.agentGet(p, project, id, fromVersion);
-    const after = this.agentGet(p, project, id, toVersion);
-    return {
-      id,
-      from_version: fromVersion,
-      to_version: toVersion,
-      before,
-      after,
-      changed: JSON.stringify(before) !== JSON.stringify(after),
+  /** Deterministic recall: authorization before the SQL and again per hit. The only path the owner's screens use. */
+  recallCore(p: Principal, input: unknown): RecallResult {
+    return this.recallInternal(p, recallInputSchema.parse(input)).result;
+  }
+  /**
+   * The agent read verb: the deterministic core, sharpened by the optional judge when the owner allowed it.
+   * The judge can drop hits to near misses, reorder them, move `found` and `partial` either way and raise or lower the push level;
+   * it only ever works among candidates the core already found and the agent may see, and it never adds a hit or widens the scope.
+   */
+  async recall(p: Principal, input: unknown): Promise<RecallResult> {
+    const v = recallInputSchema.parse(input);
+    const internal = this.recallInternal(p, v);
+    const judged = await this.judgeRanked(p, internal, v.query);
+    if (!judged.signals) return internal.result;
+    const hits = this.judgedHits(internal, judged, internal.result.hits);
+    const status = internal.result.status === "no_match" ? "no_match" : judgedStatus(judged.signals);
+    const seen = new Set<string>();
+    const near = status === "found"
+      ? []
+      : [
+          ...judged.demoted.map((c) => ({ kind: c.row.kind, id: c.row.ref_id, title: c.row.kind === "fact" ? c.row.text : c.row.prefix.split(" · ")[0], reason: "judged not relevant" })),
+          ...internal.result.near_misses,
+        ]
+          .filter((n) => !hits.some((h) => h.kind === n.kind && h.id === n.id) && !seen.has(`${n.kind}:${n.id}`) && !!seen.add(`${n.kind}:${n.id}`))
+          .slice(0, NEAR_MISSES_MAX);
+    return { ...internal.result, status, hits, near_misses: near, next_step: status === "no_match" ? NO_MATCH_NEXT_STEP : FOUND_NEXT_STEP };
+  }
+  /** The per-prompt push for a hook: deterministic recall as the grant, a level, bounded text, and a content-free log row. */
+  async recallPush(p: Principal, input: unknown) {
+    if (p.kind !== "agent") throw new BrainError("FORBIDDEN", "Use an agent token.", 403);
+    const grant = this.grant(p)!;
+    if (!grant.operations.includes("read")) throw new BrainError("NOT_FOUND", "Item unavailable.", 404);
+    const v = recallPushSchema.parse(input);
+    const started = Date.now();
+    const quiet = { level: "none" as PushLevel, text: "", hit_ids: [] as string[], digest: false };
+    const finish = (out: typeof quiet, extra: { candidates: number; judged: boolean }) => {
+      // A push that reached the brain proves the connection works, exactly like /agent/verify.
+      this.store.run("UPDATE grants SET last_verified_at=? WHERE id=?", this.now(), p.grant_id);
+      const log = this.store.setting<unknown[]>("recall_log", []);
+      log.push({ at: this.now(), grant_id: p.grant_id, client: v.client, level: out.level, candidates: extra.candidates, hits: out.hit_ids.length, latency_ms: Date.now() - started, judged: extra.judged });
+      this.store.set("recall_log", log.slice(-RECALL_LOG_MAX));
+      return out;
     };
+    if (detectSecrets(v.prompt).length) return finish(quiet, { candidates: 0, judged: false });
+    const internal = this.recallInternal(p, { query: v.prompt, history: false, limit: PUSH_HITS_MAX });
+    const candidates = internal.result.searched.candidates;
+    const judge = await this.judgeForPush(p, internal);
+    let level = pushLevel(internal.signals, judge.signals);
+    const hits = filterSeen(judge.hits, v.seen);
+    // Everything the agent already holds from this session is not sent again. When that removed hits, the level is re-read on what is left:
+    // `full` only while the best remaining hit is itself a strong match, `pointer` for an exact entity match or a remaining related hit, else quiet.
+    if (level === "full" && hits.length < judge.hits.length) {
+      const terms = internal.signals.terms;
+      if (!hits.length || !hitIsStrong(terms, hits[0])) level = internal.signals.exactEntity || hits.some((h) => hitIsRelated(terms, h)) ? "pointer" : "none";
+    }
+    // A judge may rate a candidate relevant that did not survive into the hits; a full push with nothing to show is never sent.
+    if (level === "full" && !hits.length) level = internal.signals.exactEntity ? "pointer" : "none";
+    const names = internal.signals.topNames.length ? internal.signals.topNames : internal.entityNames;
+    let text = "";
+    let used: RecallHit[] = [];
+    if (level === "full") {
+      const fit = fitFull(hits, internal.result.as_of);
+      text = fit.text;
+      used = fit.used;
+    } else if (level === "pointer") text = renderPointer(names);
+    let digest = false;
+    // The digest rides only on a pointer or full push: a `none` prompt stays completely quiet, first prompt or not.
+    if (v.first_prompt && level !== "none") {
+      const d = this.digestFor(internal.scope, names);
+      if (d) {
+        digest = true;
+        // The digest normally ends with the same pointer line, so a pointer push is then the digest alone.
+        text = level === "pointer" && d.includes(text) ? d : `${d}\n\n${text}`;
+      }
+    }
+    if (text && detectSecrets(text).length) return finish(quiet, { candidates, judged: judge.judged });
+    return finish({ level, text, hit_ids: used.map((h) => h.id), digest }, { candidates, judged: judge.judged });
+  }
+  /** The judge for a hook push: the same advisory application as `recall`; without a judge the deterministic hits stand. */
+  protected async judgeForPush(p: Principal, internal: ReturnType<Brain["recallInternal"]>): Promise<{ signals: JudgeSignals | null; hits: RecallHit[]; judged: boolean }> {
+    const judged = await this.judgeRanked(p, internal, internal.result.searched.query);
+    if (!judged.signals) return { signals: null, hits: internal.result.hits, judged: false };
+    return { signals: judged.signals, hits: this.judgedHits(internal, judged, internal.result.hits), judged: true };
+  }
+  /** Drops demoted hits and reorders the rest by the judged rank. A hit maps back to its candidate by kind, id and (for a chunk) start; nothing outside `hits` can appear. */
+  private judgedHits(internal: ReturnType<Brain["recallInternal"]>, judged: { ranked: Candidate[]; demoted: Candidate[] }, hits: RecallHit[]): RecallHit[] {
+    const order = new Map(judged.ranked.map((c, i) => [c.key, i]));
+    const demoted = new Set(judged.demoted.map((c) => c.key));
+    const keyOf = (h: RecallHit) => internal.ranked.find((c) => c.row.kind === h.kind && c.row.ref_id === h.id && (h.kind === "fact" || c.row.start === h.start))?.key ?? `${h.kind}:${h.id}`;
+    const keyed = hits.map((h, i) => ({ h, i, key: keyOf(h) }));
+    return keyed
+      .filter((k) => !demoted.has(k.key))
+      .sort((a, b) => (order.get(a.key) ?? 1e9 + a.i) - (order.get(b.key) ?? 1e9 + b.i))
+      .map((k) => k.h);
+  }
+  /** Counts and three recent titles by SQL (no bodies, no claim verification): the digest is a map of the brain, not evidence. Only what an agent may see: project-visible originals and facts the recall index marks project-visible. */
+  private digestFor(scope: { id: string; title: string }[], names: string[]): string {
+    if (!scope.length) return "";
+    const ids = scope.map((s) => s.id);
+    const marks = ids.map(() => "?").join(",");
+    const facts = Number(this.store.get<{ n: number }>(`SELECT count(DISTINCT ref_id) AS n FROM recall_chunks WHERE kind='fact' AND status='current' AND visibility='project' AND project_id IN (${marks})`, ...ids)?.n ?? 0);
+    const originals = Number(this.store.get<{ n: number }>(`SELECT count(*) AS n FROM sources WHERE state='active' AND visibility='project' AND project_id IN (${marks})`, ...ids)?.n ?? 0);
+    const recent = this.store.all<{ title: string; at: string }>(
+      `SELECT v.title AS title, s.captured_at AS at FROM sources s JOIN source_versions v ON v.source_id=s.id AND v.version=s.version WHERE s.state='active' AND s.visibility='project' AND s.project_id IN (${marks}) ORDER BY s.captured_at DESC, s.rowid DESC LIMIT 3`,
+      ...ids,
+    );
+    return renderDigest({ projects: scope, facts, originals, recent, names });
+  }
+  /** What was pushed to agents and when: levels, counts and latency. Never a prompt, an id or a passage. */
+  recallLog(p: Principal) {
+    this.owner(p);
+    return { rows: this.store.setting<{ at: string; grant_id: string; client: string; level: PushLevel; candidates: number; hits: number; latency_ms: number; judged: boolean }[]>("recall_log", []) };
+  }
+  /** Whether a judge call may be queued right now. Every reason is a plain sentence; none is an error to the agent. */
+  recallJudgeAllowed(): { ok: boolean; reason: string } {
+    if (this.tenantId !== undefined) return { ok: false, reason: "Recall help runs on the local app only." };
+    if (this.store.setting<unknown>("recall_help_enabled", false) !== true) return { ok: false, reason: "Recall help is off." };
+    const prefs = this.prefs(this.ownerPrincipal());
+    if (prefs.enabled !== true || prefs.decision_provider_enabled !== true || !(prefs.daily_cap_micro_usd > 0) || !(prefs.per_job_cap_micro_usd > 0)) return { ok: false, reason: "Sorting help is off." };
+    const status = this.store.setting<{ configured?: boolean } | null>("system_one_status", null);
+    if (status?.configured !== true) return { ok: false, reason: "Sorting help is not set up on this computer." };
+    if (!workerRunning(this.store.setting<string | null>("worker_heartbeat", null), this.clock())) return { ok: false, reason: "BiBrain's background worker is not running." };
+    const remaining = new DispatchLedger(this.store, this.clock).summary({ per_job_micro_usd: prefs.per_job_cap_micro_usd, daily_micro_usd: prefs.daily_cap_micro_usd, time_zone: prefs.time_zone }).remaining_micro_usd;
+    // Below this floor a judge call cannot be reserved anyway; refusing here keeps the agent from waiting 900 ms for nothing.
+    if (remaining < JUDGE_MIN_REMAINING_MICRO_USD) return { ok: false, reason: "Today's spending limit is reached." };
+    // A half-open range on created_at uses the jobs_kind_created index (judge rows are never deleted: the ledger references them).
+    const dayStart = `${this.now().slice(0, 10)}T00:00:00.000Z`;
+    const dayEnd = new Date(Date.parse(dayStart) + 86_400_000).toISOString();
+    const count = Number(this.store.get<{ n: number }>("SELECT count(*) AS n FROM jobs WHERE kind='recall_judge' AND created_at>=? AND created_at<?", dayStart, dayEnd)?.n ?? 0);
+    if (count >= JUDGE_DAILY_COUNT_CAP) return { ok: false, reason: "Recall help reached its limit of 2,000 checks today." };
+    return { ok: true, reason: "ready" };
+  }
+  /** Queues one judge job with its state in settings. Returns the request id, or null when the state cannot be sent. */
+  enqueueRecallJudge(state: string, questions: AskQuestion[], requestHash: string): string | null {
+    if (detectSecrets(state).length) return null;
+    const id = randomUUID();
+    const now = this.now();
+    const deadline = new Date(this.clock().getTime() + JUDGE_DEADLINE_MS).toISOString();
+    this.store.transaction(() => {
+      this.store.run(
+        "INSERT INTO jobs(id,project_id,kind,payload,status,max_attempts,next_at,created_at,deadline_at) VALUES(?,?,?,?,?,?,?,?,?)",
+        id, "inbox", "recall_judge", JSON.stringify({ request_id: id, state_hash: requestHash }), "queued", 1, now, now, deadline,
+      );
+      this.store.set(JUDGE_STATE_KEY(id), { state, questions, request_hash: requestHash, created_at: now });
+    });
+    return id;
+  }
+  /** Polls for the worker's answers every 25 ms until the deadline, then gives up quietly; a judge job that ended without answers ends the wait at once. */
+  async awaitRecallJudge(requestId: string, deadlineMs: number): Promise<AskAnswer[] | null> {
+    const until = Date.now() + Math.floor(deadlineMs);
+    while (Date.now() < until) {
+      const result = this.store.setting<{ answers: AskAnswer[] } | null>(JUDGE_RESULT_KEY(requestId), null);
+      if (result) {
+        this.store.run("DELETE FROM settings WHERE key=?", JUDGE_RESULT_KEY(requestId));
+        return Array.isArray(result.answers) ? result.answers : null;
+      }
+      const job = this.store.get<{ status: string }>("SELECT status FROM jobs WHERE id=? AND kind='recall_judge'", requestId);
+      if (!job || job.status === "failed" || job.status === "cancelled") return null;
+      await new Promise((r) => setTimeout(r, JUDGE_POLL_MS));
+    }
+    // Given up: a job no worker has taken is fenced so none ever pays for it, and the question and passages go now, not at the next sweep.
+    // A running job is left to its worker, which re-checks the deadline before spending and drops a result nobody will read.
+    this.store.transaction(() => {
+      const cancelled = this.store.run("UPDATE jobs SET status='cancelled',fence=fence+1 WHERE id=? AND kind='recall_judge' AND status='queued'", requestId).changes;
+      if (cancelled) this.store.run("DELETE FROM settings WHERE key=?", JUDGE_STATE_KEY(requestId));
+      this.store.run("DELETE FROM settings WHERE key=?", JUDGE_RESULT_KEY(requestId));
+    });
+    return null;
+  }
+  /** Runs the judge for an agent recall when allowed; the deterministic candidates are the only inputs and the only possible outputs. Owner paths never get here. */
+  private async judgeRanked(p: Principal, internal: ReturnType<Brain["recallInternal"]>, request: string): Promise<{ signals: JudgeSignals | null; ranked: Candidate[]; demoted: Candidate[] }> {
+    const none = { signals: null, ranked: internal.ranked, demoted: [] as Candidate[] };
+    if (p.kind !== "agent" || internal.ranked.length === 0 || detectSecrets(request).length) return none;
+    try {
+      return await this.judgeRankedOnce(internal, request, none);
+    } catch {
+      // The judge is optional help: a storage or spending-state fault falls back to the deterministic answer, never an error to the agent.
+      return none;
+    }
+  }
+  private async judgeRankedOnce(internal: ReturnType<Brain["recallInternal"]>, request: string, none: { signals: null; ranked: Candidate[]; demoted: Candidate[] }): Promise<{ signals: JudgeSignals | null; ranked: Candidate[]; demoted: Candidate[] }> {
+    if (!this.recallJudgeAllowed().ok) return none;
+    const top = internal.ranked.slice(0, JUDGE_CANDIDATES_MAX);
+    // Agents only ever see project-visible rows; the filter states the rule again for the judge.
+    if (top.some((c) => c.row.visibility !== "project")) return none;
+    const titles = new Map(internal.scope.map((s) => [s.id, s.title]));
+    const state = buildJudgeState({
+      today: this.now().slice(0, 10),
+      request,
+      names: [...new Set([...internal.scope.map((s) => s.title), ...internal.entityNames])],
+      candidates: top.map((c) => ({ kind: c.row.kind, date: c.row.recorded_at.slice(0, 10), project: titles.get(c.row.project_id) ?? "Project", title: c.row.kind === "original" ? c.row.prefix.split(" · ")[0] : null, text: c.row.text })),
+    });
+    const questions = buildJudgeQuestions(top.length);
+    const requestId = this.enqueueRecallJudge(state, questions, hash(state));
+    if (!requestId) return none;
+    const answers = await this.awaitRecallJudge(requestId, JUDGE_DEADLINE_MS);
+    const signals = answers ? judgeSignals(answers, top.length) : null;
+    if (!signals) return none;
+    // An exact entity match is never hidden: facts about a named entity in the request stay, whatever the judge says.
+    const named = new Set(internal.entityNames.map((n) => questionWords(n).join(" ")));
+    const entityOf = (c: Candidate) => {
+      const lead = `${titles.get(c.row.project_id) ?? ""} · `;
+      return c.row.prefix.startsWith(lead) ? c.row.prefix.slice(lead.length) : "";
+    };
+    const pinned = new Set(top.filter((c) => c.row.kind === "fact" && named.has(questionWords(entityOf(c)).join(" "))).map((c) => c.key));
+    const applied = applyJudge(top, signals, pinned);
+    return { signals, ranked: [...applied.kept, ...internal.ranked.slice(JUDGE_CANDIDATES_MAX)], demoted: applied.demoted };
+  }
+  /** Entity names of current facts this principal may see whose every word is in `terms`; at most the matching claims are loaded. */
+  private visibleEntityNames(p: Principal, scope: { id: string; title: string }[], terms: Set<string>, visibilities: RecallVisibility[]): string[] {
+    if (!terms.size || !scope.length) return [];
+    const titles = new Map(scope.map((pr) => [pr.id, pr.title]));
+    const rows = this.store.all<{ ref_id: string; ref_version: number; project_id: string; prefix: string }>(
+      `SELECT DISTINCT ref_id,ref_version,project_id,prefix FROM recall_chunks WHERE kind='fact' AND status='current' AND project_id IN (${scope.map(() => "?").join(",")}) AND visibility IN (${visibilities.map(() => "?").join(",")})`,
+      ...scope.map((pr) => pr.id),
+      ...visibilities,
+    );
+    const names = new Set<string>();
+    for (const r of rows) {
+      const lead = `${titles.get(r.project_id) ?? ""} · `;
+      const entity = r.prefix.startsWith(lead) ? r.prefix.slice(lead.length) : "";
+      const words = questionWords(entity);
+      if (!words.length || names.has(entity) || !words.every((w) => terms.has(w))) continue;
+      const c = this.visibleClaim(p, r.project_id, r.ref_id, false);
+      if (c && Number(c.version) === Number(r.ref_version) && Array.isArray(c.data.evidence) && c.data.evidence.length > 0) names.add(entity);
+    }
+    return [...names];
+  }
+  recallInternal(p: Principal, v: { query: string; project_id?: string; history: boolean; limit: number }) {
+    const now = this.clock();
+    const scope = (v.project_id
+      ? [this.store.get<{ id: string; title: string }>("SELECT id,title FROM projects WHERE id=?", v.project_id)].filter((x): x is { id: string; title: string } => !!x)
+      : (this.projects(p) as { id: string; title: string }[])
+    ).map(({ id, title }) => ({ id, title }));
+    for (const project of scope) this.access(p, project.id);
+    if (v.project_id && !scope.length) throw new BrainError("NOT_FOUND", "Item unavailable.", 404);
+    const index_complete = recallIndexComplete(this.store);
+    const base = { query: v.query, projects: scope, history: v.history, index_complete };
+    const empty = (status: RecallResult["status"], candidates: number): RecallResult => ({
+      status, as_of: now.toISOString(), searched: { ...base, candidates }, hits: [], near_misses: [], next_step: status === "no_match" ? NO_MATCH_NEXT_STEP : FOUND_NEXT_STEP,
+    });
+    const fts = buildFtsQuery(v.query);
+    const ids = scope.map((pr) => pr.id);
+    const visibilities: RecallVisibility[] = p.kind === "owner" ? ["project", "private", "owner"] : ["project"];
+    // Entity names for the exact-entity signal. A name counts only when its words are all in the query and a claim of that name passes the same
+    // visibility rules recall applies to this principal (current, valid now, evidence readable, no owner-only facts for agents), so a name never
+    // confirms an item the principal cannot see. Only claims whose name could match are loaded.
+    const termSet = new Set(fts.terms);
+    const entityNames = ids.length ? this.visibleEntityNames(p, scope, termSet, visibilities) : [];
+    if (!fts.match) return { result: empty("no_match", 0), ranked: [] as Candidate[], authorized: [] as RecallHit[], signals: deterministicSignals([], [], entityNames), entityNames, scope };
+    const status = v.history ? "any" : "current";
+    const search = (match: string, kind: "fact" | "original") => searchRecallChunks(this.store, { match, kind, projects: ids, visibilities, status, limit: CANDIDATES_PER_LIST });
+    const lists = {
+      facts: search(fts.match, "fact"),
+      originals: search(fts.match, "original"),
+      // One RRF list: the two kinds are interleaved by BM25 score (more negative is better), not concatenated.
+      phrase: fts.phrase ? [...search(fts.phrase, "fact"), ...search(fts.phrase, "original")].sort((a, b) => a.score - b.score) : [],
+    };
+    const confirmations = this.store.setting<Record<string, string>>("claim_confirmations", {});
+    const titles = new Map(scope.map((pr) => [pr.id, pr.title]));
+    const authorized: { candidate: Candidate; hit: RecallHit }[] = [];
+    // Built once, and only if a fact candidate survives verification.
+    let supersessions: Map<string, string[]> | undefined;
+    for (const candidate of fuse(lists, now)) {
+      const r = candidate.row;
+      const project = { id: r.project_id, title: titles.get(r.project_id) ?? "Project" };
+      try {
+        if (r.kind === "original") {
+          const s = this.source(p, r.ref_id);
+          if (s.version !== r.ref_version || s.state !== "active") continue;
+          const quote = Array.from(s.body).slice(r.start, r.end).join("");
+          if (quote !== r.text) continue;
+          authorized.push({ candidate, hit: { kind: "original", id: s.id, version: s.version, project, title: s.title, quote, start: r.start, end: r.end, captured_at: s.captured_at, freshness: "current", why: whyFor(fts.terms, `${s.title} ${quote}`), score: candidate.fused } });
+        } else {
+          // Only this candidate is loaded and verified. A claim without evidence is a hypothesis and is never presented as a fact to anyone.
+          const c = this.visibleClaim(p, r.project_id, r.ref_id, v.history);
+          if (!c || c.version !== r.ref_version || !Array.isArray(c.data.evidence) || c.data.evidence.length === 0) continue;
+          supersessions ??= this.supersessions(ids);
+          const replacedBy = this.supersededBy(p, r.project_id, c.id, v.history, supersessions);
+          const fresh = factFreshness(c, confirmations, replacedBy, now);
+          authorized.push({ candidate, hit: { kind: "fact", id: c.id, project, text: r.text, recorded_at: String(c.data.recorded_at ?? c.created_at), checked_at: fresh.checked_at, freshness: fresh.freshness, replaced_by: replacedBy, evidence: (c.data.evidence as Evidence[]).map((e) => ({ source_id: e.source_id, source_version: e.source_version, quote: e.quote })), why: whyFor(fts.terms, r.text), score: candidate.fused } });
+        }
+      } catch (e) {
+        // An index row that outlived its item or its grant is dropped from every field. Anything else is a real fault and must surface.
+        if (!(e instanceof BrainError && (e.code === "NOT_FOUND" || e.code === "SOURCE_STALE"))) throw e;
+      }
+    }
+    const ranked = authorized.map((a) => a.candidate);
+    const signals = deterministicSignals(fts.terms, ranked, entityNames);
+    const { kept, spill } = dedupe(authorized.map((a) => a.hit));
+    const hits = kept.slice(0, v.limit);
+    const statusOut = deterministicStatus(signals);
+    const nearPool = [...kept.slice(v.limit), ...spill];
+    const near_misses = statusOut === "found" ? [] : nearPool.slice(0, NEAR_MISSES_MAX).map((h) => ({
+      kind: h.kind, id: h.id, title: h.kind === "fact" ? h.text : h.title,
+      reason: `matched ${fts.terms.filter((t) => questionWordsOf(h).has(t)).length} of ${fts.terms.length} terms`,
+    }));
+    const result: RecallResult = { status: statusOut, as_of: now.toISOString(), searched: { ...base, candidates: ranked.length }, hits, near_misses, next_step: statusOut === "no_match" ? NO_MATCH_NEXT_STEP : FOUND_NEXT_STEP };
+    return { result, ranked, authorized: authorized.map((a) => a.hit), signals, entityNames, scope };
+  }
+  /** One item by id for an agent: the full original (any version it may see) or the full fact with its history. */
+  agentOpen(p: Principal, input: unknown) {
+    const v = z
+      .object({ id: z.string().min(1).max(100), version: z.number().int().positive().optional(), compare_version: z.number().int().positive().optional() })
+      .strict()
+      .parse(input);
+    const sourceRow = this.store.get<{ project_id: string }>("SELECT project_id FROM sources WHERE id=? AND state!='deleted'", v.id);
+    const entityRow = sourceRow ? undefined : this.store.get<{ project_id: string; kind: string; version: number; status: string | null }>("SELECT project_id,kind,version,json_extract(data,'$.status') AS status FROM entities WHERE id=?", v.id);
+    const project = sourceRow?.project_id ?? entityRow?.project_id;
+    if (!project || (entityRow && entityRow.kind !== "claim")) throw new BrainError("NOT_FOUND", "Item unavailable.", 404);
+    // A current claim opens like any current item: one that has expired or not started yet is not found without a version, exactly as recall withholds it.
+    // A retired or replaced claim has no "current" view, so it opens at its own latest version (this is how a history recall hit is opened).
+    const defaultVersion = entityRow?.kind === "claim" && entityRow.status !== "current" ? entityRow.version : undefined;
+    const raw = this.agentGet(p, project, v.id, v.version ?? defaultVersion);
+    let item: { kind: string; item: unknown } = raw;
+    if (raw.kind === "claim") {
+      const claim = raw.item as Entity;
+      // Freshness is the claim's state now, whichever version was asked for.
+      const live = this.entity(this.ownerPrincipal(), v.id);
+      const replacedBy = this.supersededBy(p, project, live.id, true);
+      const fresh = factFreshness(live, this.store.setting<Record<string, string>>("claim_confirmations", {}), replacedBy, this.clock());
+      item = {
+        kind: "claim",
+        item: {
+          ...claim,
+          freshness: fresh.freshness,
+          checked_at: fresh.checked_at,
+          current_version: live.version,
+          replaced_by: replacedBy,
+          replaces: ((live.data.supersedes ?? []) as string[]).filter((id) => this.visibleClaim(p, project, id, true)),
+        },
+      };
+    }
+    if (v.compare_version === undefined) return item;
+    const before = this.agentGet(p, project, v.id, v.compare_version);
+    // Compared on the raw stored items, never the augmented view, so `changed` means the stored item differs.
+    return { ...item, compare: { from_version: v.compare_version, to_version: v.version ?? (raw.item as any).version, changed: JSON.stringify(before) !== JSON.stringify(raw), before } };
   }
   agentForget(p: Principal, project: string, id: string, expected: number) {
     const grant = this.grant(p);
@@ -3717,7 +4153,7 @@ export class Brain {
     if (!r)
       throw new BrainError("NOT_FOUND", "Import preview unavailable.", 404);
     const m = JSON.parse(r.manifest);
-    return this.store.transaction(() => {
+    const imported = this.store.transaction(() => {
       for (const project of m.payload.projects)
         this.store.run(
           "INSERT OR IGNORE INTO projects VALUES(?,?,?)",
@@ -3955,6 +4391,8 @@ export class Brain {
           s.title,
           s.body,
         );
+      // Stays one transaction so the import is atomic. The index is emptied and flagged incomplete in it; the refill below runs in batches.
+      invalidateRecallIndex(this.store);
       for (const pr of m.payload.projects) {
         this.invalidate(pr.id);
         this.enqueue(pr.id, "derive_brief", { principal: p });
@@ -3962,6 +4400,8 @@ export class Brain {
       this.store.run("DELETE FROM imports WHERE id=?", id);
       return { imported: true };
     });
+    this.store.rebuildRecallIndex();
+    return imported;
   }
   brief(p: Principal) {
     this.owner(p);
@@ -4078,7 +4518,24 @@ export class Brain {
         .filter((x) => x.watched)
         .map(({ id, title }) => ({ id, title })),
       hasCurrentFacts: this.currentClaims(owner, s.project_id).length > 0,
+      entityNames: this.topicNames(owner, s.project_id),
     };
+  }
+  /** Entity names an agent could read: no name or preference facts, nothing owner-private, nothing citing a private source. Owner-only facts never ride along under the sorting consent. */
+  private topicNames(owner: Principal, project: string): string[] {
+    const names = this.currentClaims(owner, project)
+      .filter((c) => c.data.aspect !== "name" && c.data.aspect !== "preference" && c.data.authority !== "owner_private")
+      .filter((c) =>
+        ((c.data.evidence ?? []) as Evidence[]).every((e) => {
+          try {
+            return this.source(owner, e.source_id).visibility !== "private";
+          } catch {
+            return false;
+          }
+        }),
+      )
+      .map((c) => String(c.data.entity));
+    return [...new Set(names)].sort().slice(0, S1_TOPIC_MAX);
   }
   /** Stores one answer per source version and applies its advice, all in one short transaction. */
   recordSystemOneResult(
@@ -4086,6 +4543,8 @@ export class Brain {
     sourceId: string,
     version: number,
     result: AskResult,
+    /** The topic names that were sent with the questions; stored as-is so `tN` resolves against what the model saw. Defaults to a fresh read. */
+    sentEntityNames?: string[],
   ): { recorded: boolean; advice: S1Advice | null } {
     return this.store.transaction(() => {
       const ctx = this.systemOneContext(sourceId, version);
@@ -4097,12 +4556,15 @@ export class Brain {
         source_version: version,
         job_id: job.id,
         answers: result.answers,
+        topic_options: (sentEntityNames ?? ctx.entityNames).slice(0, S1_TOPIC_MAX),
         model: result.model,
         policy_version: result.policy_version,
         price_version: result.price_version,
         cost_micro_usd: result.cost_micro_usd,
         advice,
       });
+      // The topic and durable hints of this answer are part of the source's recall rows.
+      syncSource(this.store, sourceId);
       this.applySystemOneAdvice(ctx.project_id, sourceId, version, answer.id, advice);
       return { recorded: true, advice };
     });
@@ -4426,19 +4888,46 @@ export class Brain {
   searchBrain(p: Principal, input: unknown) {
     this.owner(p);
     const v = z.object({ q: z.string().trim().min(2).max(200) }).strict().parse(input);
-    const projects = this.projects(p) as { id: string }[];
-    const claims = projects.flatMap((project) => this.currentClaims(p, project.id));
-    return findInBrain(v.q, claims, this.sources(p), SEARCH_LIMIT);
+    const literal = () => {
+      const projects = this.projects(p) as { id: string }[];
+      const claims = projects.flatMap((project) => this.currentClaims(p, project.id));
+      return findInBrain(v.q, claims, this.sources(p), SEARCH_LIMIT);
+    };
+    // Words under three characters never become FTS terms; the literal search is the only one that can see them.
+    if (v.q.split(/\s+/u).some((w) => Array.from(w).length < 3)) return literal();
+    const internal = this.recallInternal(p, { query: v.q, history: false, limit: RECALL_LIMIT_MAX });
+    const facts = internal.result.hits.filter((h): h is RecallFactHit => h.kind === "fact").slice(0, SEARCH_LIMIT);
+    // Originals come from the authorized set before dedupe, so a chunk folded into its fact still lists its note.
+    const seen = new Set<string>();
+    const originals = internal.authorized
+      .filter((h): h is RecallOriginalHit => h.kind === "original")
+      .filter((h) => !seen.has(h.id) && seen.add(h.id))
+      .slice(0, SEARCH_LIMIT);
+    if (facts.length === 0 && originals.length === 0) return literal();
+    return {
+      facts: facts.map((f) => {
+        const claim = this.entity(p, f.id);
+        return { id: f.id, project_id: f.project.id, text: f.text, evidence: (claim.data.evidence as Evidence[]).map((e) => ({ source_id: e.source_id, source_version: e.source_version, start: e.start, end: e.end, quote: e.quote })) };
+      }),
+      originals: originals.map((o) => ({ id: o.id, project_id: o.project.id, version: o.version, title: o.title, snippet: snippetFor(o.quote, o.title, v.q) })),
+    };
   }
   ask(p: Principal, input: unknown) {
     this.owner(p);
     const v = z.object({ q: z.string().trim().min(1).max(500) }).strict().parse(input);
     if (!questionWords(v.q).length)
       throw new BrainError("INVALID_INPUT", "Ask with a few words, for example: When does the beta open?");
-    const projects = this.projects(p) as { id: string }[];
-    const claims = projects.flatMap((project) => this.currentClaims(p, project.id));
-    const sources = projects.flatMap((project) => this.sources(p, project.id));
-    const hits = rankAnswers(v.q, claims, sources, 3);
+    // Over-fetch, then show each fact and each note once: recall may keep two passages of one note, the Ask bar lists the best one.
+    const result = this.recallCore(p, { query: v.q, history: false, limit: 6 });
+    const seen = new Set<string>();
+    const hits: AskHit[] = result.hits
+      .filter((h) => !seen.has(`${h.kind}:${h.id}`) && seen.add(`${h.kind}:${h.id}`))
+      .slice(0, 3)
+      .map((h) =>
+        h.kind === "fact"
+          ? { type: "fact", id: h.id, project_id: h.project.id, text: h.text, evidence: h.evidence.map((e) => ({ source_id: e.source_id, source_version: e.source_version, quote: e.quote })) }
+          : { type: "original", id: h.id, project_id: h.project.id, title: h.title, snippet: snippetFor(h.quote, h.title, v.q), source_version: h.version },
+      );
     return { question: v.q, hits, answered: hits.length > 0 };
   }
   status(p: Principal) {
@@ -4560,7 +5049,7 @@ export class Brain {
           allowance: central.allowance,
         },
         jobs: this.store.all(
-          "SELECT id,kind,status,error,project_id FROM jobs ORDER BY created_at DESC LIMIT 20",
+          "SELECT id,kind,status,error,project_id FROM jobs WHERE kind<>'recall_judge' ORDER BY created_at DESC LIMIT 20",
         ),
       };
     }
@@ -4618,13 +5107,14 @@ export class Brain {
         allowance: null,
       },
       jobs: this.store.all(
-        "SELECT id,kind,status,error,project_id FROM jobs ORDER BY created_at DESC LIMIT 20",
+        "SELECT id,kind,status,error,project_id FROM jobs WHERE kind<>'recall_judge' ORDER BY created_at DESC LIMIT 20",
       ),
     };
   }
   job(p: Principal, id: string) {
     const j = this.store.get("SELECT * FROM jobs WHERE id=?", id);
-    if (!j) throw new BrainError("NOT_FOUND", "Item unavailable.", 404);
+    // Judge rows belong to the recall fast lane alone: they are never shown, cancelled or retried by hand.
+    if (!j || j.kind === "recall_judge") throw new BrainError("NOT_FOUND", "Item unavailable.", 404);
     this.access(p, j.project_id);
     if (p.kind === "agent") {
       const payload = JSON.parse(j.payload);

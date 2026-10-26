@@ -32,7 +32,7 @@ You save a note once, or your coding agents write one when they finish work. BiB
 ## What you get
 
 - **Today.** One bar that saves a note or answers a question from what you have kept, with the original quoted. Below it is a Brief of at most three things that changed. Each one shows its evidence, and you can Keep, Fix or Dismiss it (with Undo). Project cards each have a Watch switch.
-- **Your brain.** Pick a project to see its facts that are true now (edit them as new versions), its open questions and its originals. Open any fact to see the exact passage it came from, highlighted, with its history. Search covers facts and originals across projects.
+- **Your brain.** Pick a project to see its facts that are true now (edit them as new versions), its open questions and its originals. Open any fact to see the exact passage it came from, highlighted, with its history. Search covers facts and originals across projects through the same ranked recall agents use.
 - **Connections.** One tile each for Codex, Claude Code and Cursor:
   - **Add:** writes the agent's project file in one step, without the access key.
   - **Status:** shows "Connected" only after the agent's first real call.
@@ -78,8 +78,10 @@ No account, subscription or model key is needed. Your data stays in `data/brain.
 
 1. Open **Connections**.
 2. On the Codex, Claude Code or Cursor tile, choose **Add to …**.
-3. Pick the project and the folder where you open that agent. BiBrain shows the exact file it will add, and never changes an existing file.
+3. Pick the project and the folder where you open that agent. BiBrain shows the exact files it will add (the server entry; for Claude Code and Codex a prompt hook that recalls from your brain on every prompt, which Codex runs after you trust it once; for Cursor a rule file), and never changes an existing file.
 4. Open the agent in that folder and approve BiBrain once.
+
+Agents read through one tool, `brain_recall`, which returns ranked, cited hits or says plainly that nothing is recorded.
 
 The tile says **Connected** after the agent's first call. The access key stays in BiBrain's data folder on your computer and is never written into your project. Agents can read their project and suggest; they cannot accept their own suggestions.
 
@@ -125,17 +127,17 @@ A few details:
 
 ## Status
 
-BiBrain is a working **single-owner local app**. This table is the honest state as of 2026-10-25. The verified details and the commands that ran are in [BUILD_STATE.md](BUILD_STATE.md).
+BiBrain is a working **single-owner local app**. This table is the honest state as of 2026-10-27. The verified details and the commands that ran are in [BUILD_STATE.md](BUILD_STATE.md).
 
 | Area | State |
 | --- | --- |
-| Local app: Today, Your brain, Connections, Settings | Works end to end; verified on Windows with 1,757 Vitest tests and 104 Playwright browser tests |
-| One-step agent connections | Verified locally; real Codex and Claude Code runs are owner-run |
+| Local app: Today, Your brain, Connections, Settings | Works end to end; verified on Windows with 1,866 Vitest tests and 105 Playwright browser tests |
+| One-step agent connections with recall on every prompt | Verified locally against fake servers; real Codex and Claude Code runs are owner-run (`npm run proof:recall`) |
 | Sorting help with Clef | Built and tested against a fake server; a live run is owner-run |
 | Self-hosting on your own server | Supported: [Self-hosting](docs/SELF_HOSTING.md) and `deploy/compose.yaml` |
 | Hosted edition and payments | Paused; the code is kept but not deployed |
 
-Next on the roadmap: better memory and retrieval (embeddings, freshness and a retrieval test set), then removing the paused hosted machinery. See the [reframe brief](docs/REFRAME_BRIEF.md).
+Next on the roadmap: embeddings as a second retrieval list (plan 5b), then removing the paused hosted machinery. See the [reframe brief](docs/REFRAME_BRIEF.md).
 
 ## How it is built
 

@@ -47,7 +47,7 @@ Record the exact Git commit, image ID, host/runtime versions and evidence in you
 
 ## Native agents and optional models
 
-The adapter runs **locally in your native client over stdio** and calls this server's HTTPS API. Install this repository and `npm ci` on the client machine, then use the absolute-path example in [LOCAL_RUN](LOCAL_RUN.md) with `BRAIN_API_URL=https://your.actual.hostname`. Store `BRAIN_AGENT_TOKEN` in private client configuration. The eight-tool contract remains grant-filtered. This package does not implement a public HTTP MCP/OAuth server or automatic native-session injection.
+The adapter runs **locally in your native client over stdio** and calls this server's HTTPS API. Install this repository and `npm ci` on the client machine, then use the absolute-path example in [LOCAL_RUN](LOCAL_RUN.md) with `BRAIN_API_URL=https://your.actual.hostname`. Store `BRAIN_AGENT_TOKEN` in private client configuration. The seven-tool contract (see [AGENT_INTEGRATION](AGENT_INTEGRATION.md)) remains grant-filtered. This package does not implement a public HTTP MCP/OAuth server or automatic native-session injection.
 
 Paid model processing is disabled by default. If explicitly enabled later, pass the backend-only variables listed in `.env.example` through a protected Compose override/environment file outside Git; apply them to the `brain` service. Domain interpolation alone does not pass every variable from an env file into the container. Never pass provider secrets to Caddy or frontend assets. Configure current model/prices, sharing permission and budgets in the app before dispatch. Live model quality/cost reconciliation remains a separate gate.
 

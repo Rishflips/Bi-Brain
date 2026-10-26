@@ -12,10 +12,15 @@ This works in the local app on your own computer. The hosted edition uses
 2. Open **Connections** and choose **Add to Codex** (or **Add to Claude Code**
    or **Add to Cursor**).
 3. Pick the project and the project folder where you open the agent.
-4. Open **See the file BiBrain will add** and check it. BiBrain writes only that
-   one file in the folder. If the file already exists, BiBrain changes nothing and
-   shows the exact lines to add yourself. The file points at BiBrain on this
-   computer, so keep it out of shared version control.
+4. Open **See the file BiBrain will add** and check both files: the server entry
+   and, for Claude Code and Codex, a prompt hook (`.claude/settings.local.json`
+   or `.codex/hooks.json`) that runs BiBrain's recall on every prompt. Claude
+   Code's file pre-approves only the two read-only tools (`brain_recall`,
+   `brain_open`). Cursor gets `.cursor/rules/bibrain.mdc` instead. BiBrain writes
+   only new files. If a file already exists, BiBrain changes nothing and the tile
+   shows "Recall on every prompt: add it yourself" with a **Copy** button; paste
+   the lines into the file or, in Claude Code, run `/hooks`. The files point at
+   BiBrain on this computer, so keep them out of shared version control.
 5. Open the agent in that folder and approve BiBrain once.
 6. The tile says **Waiting for its first call** until the agent really uses
    BiBrain, then **Connected**.
@@ -32,6 +37,44 @@ Status, 2026-10-21: the bounded read-only workflow below passed in actual fresh
 Codex CLI 0.156.1 and Claude Code 2.1.283 sessions. This does not certify arbitrary
 native write/propose/forget workflows or every future client version.
 
+## Hooks
+
+The prompt hook is a small command, `bibrain hook <agent>`, that the agent runs
+before it handles each prompt.
+
+- It sends the first 500 characters of the prompt and a hash of the session id to
+  BiBrain on this computer, never anywhere else (it refuses any address that is
+  not loopback). It skips very short prompts, slash or bang commands, and
+  anything that looks like a secret.
+- It writes `data/hook-state/<connection>.json`: hashes of the ids already shown
+  in each of the 20 most recent sessions, so a repeated prompt adds nothing new.
+  Never a prompt, a passage or the access key.
+- Its total budget is 1,500 ms, including starting Node. It never blocks a prompt:
+  on any problem it prints nothing and exits successfully.
+- What comes back is a short factual note (or nothing) that the agent receives
+  with the prompt. Ordinary prompts, such as coding questions, get nothing.
+
+Codex: BiBrain writes `.codex/hooks.json` because the format is confirmed in the
+official Codex documentation (`CODEX_HOOKS_CONFIRMED` in
+`packages/domain/agents.ts`). Codex loads a project hook only after you trust
+the folder's `.codex/` layer and the hook itself in `/hooks`, so the tile says
+"Recall on every prompt: on after Codex trusts the hook" until BiBrain has
+recorded a push. Until you trust it, Codex relies on the server instructions and
+tool descriptions.
+
+Windows: the hook command is written with forward slashes and never starts with
+a quote, because PowerShell reads a line that starts with a quoted string as an
+expression and `cmd /c` strips the first and last quote of such a line. The first
+token is the Node path when it has no space or shell-special character
+(`C:/nodejs/node.exe "C:/.../bibrain.mjs" hook ...`), otherwise the bare word
+`node` (`node "C:/.../bibrain.mjs" hook ...`); only the arguments are
+double-quoted. The form is designed to parse the same way in Git Bash,
+PowerShell and `cmd.exe`, but it has not been observed running natively in any
+shell, including Claude Code's and Codex's own, and the tests only assert the
+string. When the bare `node` is used, the `node` found on the PATH of the agent
+must be Node 24.19 or later, because the hook uses that runtime. The owner-run
+recall proof below decides.
+
 ## Recorded native acceptance
 
 Both clients used their existing subscription sign-in, synthetic disposable SQLite
@@ -46,6 +89,13 @@ paid API key, or BiBrain provider activation was used. Subscription quota was us
 | Owner-reviewed correction replaces earlier current answer | Pass                 | Pass                 |
 | Private and other-project original reads                  | 404 / 404            | 404 / 404            |
 | Revocation during the open native session                 | Next verify/read 401 | Next verify/read 401 |
+
+That run was made on 2026-10-21, before the agent tools were renamed to
+`brain_recall`, `brain_open`, `brain_note`, `brain_propose`, `brain_intent`,
+`brain_link` and `brain_forget`; the earlier dotted names are gone. The read
+rows above describe the earlier surface and have not been re-observed with
+`brain_recall` and `brain_open`. `scripts/native-client-proof.ts` now uses the new
+names and is owner-run.
 
 The native sessions called the real stdio adapter and loopback HTTP services.
 An operator fixture accepted the two predefined synthetic review gates between
@@ -82,6 +132,44 @@ set `BRAIN_NATIVE_CODEX_ENTRY` or `BRAIN_NATIVE_CLAUDE_BINARY` to explicit paths
 Codex uses GPT-6 Sol for this proof. The observed Claude subscription selected
 `claude-opus-5-5`. These are compatibility observations, not recommendations or
 BiBrain live reasoning quality/cost evidence.
+
+## Recall proof (owner-run)
+
+`scripts/recall-agent-proof.ts` measures whether a real agent uses BiBrain. It
+connects through the real one-step path in a disposable folder (so the hook is
+written too), seeds six reviewed facts and three originals plus a private note
+and another project's note as canaries, then runs ten prompts (six that need the
+brain, four that do not) three times each (`BRAIN_PROOF_REPEATS`, 1 to 5). It
+counts what the loopback server saw, not what the model says about itself. It
+spends subscription quota, so only the owner runs it, and it refuses to start
+without `BRAIN_RECALL_PROOF=1`.
+
+```powershell
+$env:BRAIN_RECALL_PROOF = '1'
+node --import tsx scripts/recall-agent-proof.ts claude
+$env:BRAIN_PROOF_NO_HOOK = '1'; node --import tsx scripts/recall-agent-proof.ts claude; Remove-Item Env:BRAIN_PROOF_NO_HOOK
+node --import tsx scripts/recall-agent-proof.ts codex
+Remove-Item Env:BRAIN_RECALL_PROOF
+```
+
+`BRAIN_PROOF_NO_HOOK=1` removes the `hooks` key from the written file before the
+run, so only the tool surface is measured; compare the tool-call rates between
+the two runs. `npm run proof:recall` runs the same script. For Codex, the
+headless run only loads the project hook if Codex has been told to trust it, so
+the bar below also requires that the hook fired at least once when it is on.
+
+Pass bar, per client: at least 5 of the 6 should-retrieve prompts answered
+correctly with a cited id in at least one run; no `full` push and at most one
+`pointer` push across the four should-not prompts; and neither canary appears
+anywhere. With the hook on, at least one push must have reached BiBrain
+(`hook_fired`); otherwise the two should-not checks would pass without measuring
+anything and the run fails. The report also records pass-all-runs counts, the tool-call rate and the
+median hook latency. Reports land in `data/recall-<client>-<hook|nohook>-proof.json`
+(file mode 0600, ignored by Git, never containing the key). The script prints one
+JSON line and exits 1 when the bar is not met.
+
+Status: not yet run against native Codex or Claude Code. CI and agents only
+exercise the refusal path.
 
 ## Set up by hand
 

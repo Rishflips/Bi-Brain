@@ -15,8 +15,9 @@ export function workerRunning(beat: string | null | undefined, now: Date): boole
 }
 export const S1_THRESHOLDS = { file: 0.7, review: 0.7, quiet: 0.3, changes: 0.5 } as const;
 const MAX_TARGETS = 15;
+export const S1_TOPIC_MAX = 15;
 
-export type S1Context = { note: string; title: string; project_id: string; projects: { id: string; title: string }[]; hasCurrentFacts: boolean };
+export type S1Context = { note: string; title: string; project_id: string; projects: { id: string; title: string }[]; hasCurrentFacts: boolean; entityNames: string[] };
 export type S1Advice = { kind: string | null; file_to: string | null; changes_fact: boolean | null; review: boolean; quiet: boolean };
 
 const safeId = (id: string) => (/^[A-Za-z0-9_.-]{1,64}$/u.test(id) ? id : null);
@@ -66,6 +67,15 @@ export function buildQuestions(ctx: S1Context): { state: string; questions: AskQ
     { id: "review", type: "noul", instructions: "Would a careful reader want to look deeper at how the `note` affects the project's plans?" },
     { id: "show", type: "noul", instructions: "Is the `note` worth showing the owner on today's short list of changes?" },
   );
+  questions.push({ id: "durable", type: "noul", instructions: "Would a teammate still need the `note` a month from now?" });
+  const names = ctx.entityNames.slice(0, S1_TOPIC_MAX);
+  if (names.length > 0)
+    questions.push({
+      id: "topic",
+      type: "choice",
+      instructions: "Which known name is the `note` mainly about? Choose none when no name fits.",
+      options: [{ id: "none", description: "None of these names" }, ...names.map((n, i) => ({ id: `t${i + 1}`, description: `The name: ${Array.from(n).slice(0, 200).join("")}` }))],
+    });
   return { state, questions };
 }
 
