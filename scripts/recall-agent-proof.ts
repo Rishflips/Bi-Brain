@@ -94,10 +94,13 @@ try {
   for (const name of ["OPENAI_API_KEY", "ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "BRAIN_DODO_API_KEY", "BRAIN_DODO_WEBHOOK_SECRET", "BRAIN_DECISION_API_KEY", "OLLAMA_API_KEY"]) delete env[name as keyof typeof env];
   const appData = process.env.APPDATA ?? "";
   const executable = client === "codex" ? process.execPath : (process.env.BRAIN_NATIVE_CLAUDE_BINARY ?? join(appData, "npm/node_modules/@anthropic-ai/claude-code/bin/claude.exe"));
+  // --restricted ignores project and local settings files, so the settings.local.json
+  // BiBrain wrote is passed with --settings, which restricted mode still applies.
+  const claudeSettings = hookFile?.state === "written" ? ["--settings", hookFile.path] : [];
   const argsFor = (prompt: string) =>
     client === "codex"
       ? [process.env.BRAIN_NATIVE_CODEX_ENTRY ?? join(appData, "npm/node_modules/@openai/codex/bin/codex.js"), "exec", "--ignore-user-config", "--ephemeral", "--skip-git-repo-check", "--json", "--sandbox", "read-only", "--model", "gpt-6-sol", prompt]
-      : ["--print", "--restricted", "--tools", "", "--strict-mcp-config", "--mcp-config", join(folder, ".mcp.json"), "--allowedTools", "mcp__bibrain__*", "--permission-mode", "dontAsk", "--no-session-persistence", "--output-format", "json", prompt];
+      : ["--print", "--restricted", ...claudeSettings, "--tools", "", "--strict-mcp-config", "--mcp-config", join(folder, ".mcp.json"), "--allowedTools", "mcp__bibrain__*", "--permission-mode", "dontAsk", "--no-session-persistence", "--output-format", "json", prompt];
   for (const prompt of PROMPTS)
     for (let repeat = 0; repeat < repeats; repeat++) {
       currentPrompt = prompt.id;
