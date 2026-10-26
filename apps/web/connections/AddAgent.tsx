@@ -116,11 +116,18 @@ export function AddAgent({ api, info, projects, projectId, lastFolder, onCancel,
         <summary>See the file BiBrain will add</summary>
         {preview ? (
           <>
-            <p className="tv-faint">{preview.file}</p>
-            <pre className="cx-file" data-testid="agent-file">
-              {preview.contents}
-            </pre>
+            {preview.files.map((f) => (
+              <div key={f.path}>
+                <p className="tv-faint">{f.path}</p>
+                <pre className="cx-file" data-testid={f.role === "server" ? "agent-file" : "agent-file-hook"}>
+                  {f.contents}
+                </pre>
+              </div>
+            ))}
             <p className="tv-faint">The access key stays in BiBrain on this computer, never in this file. An existing file is never changed. This file points at BiBrain on this computer, so keep it out of shared version control.</p>
+            {preview.files.length > 1 && (
+              <p className="tv-faint">The second file turns on recall on every prompt. Only two read-only tools are pre-approved; nothing in it can write.</p>
+            )}
           </>
         ) : (
           <p className="tv-faint">Enter the project folder to see the file.</p>

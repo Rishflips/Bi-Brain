@@ -85,6 +85,8 @@ import {
   type AdvisoryClaimResult,
 } from "../storage/decision-advisory.ts";
 const PAIR_LINK_MS = 120_000;
+/** One file BiBrain wrote (or left alone because it already existed) when an agent was added. Mirrors the server's type; no domain-to-server import. */
+type WrittenFile = { path: string; role: "server" | "hook" | "rule"; state: "written" | "exists"; contents: string };
 export const defaults: Preferences = {
   enabled: false,
   time_zone: "Asia/Calcutta",
@@ -2292,6 +2294,7 @@ export class Brain {
         client: g.client ?? "other",
         client_name: agentDisplayName(g.client),
         folder: g.folder ?? null,
+        files: this.store.setting<WrittenFile[]>(`agent_files:${g.id}`, []),
         status: g.revoked_at
           ? "Revoked"
           : g.expires_at <= this.now()

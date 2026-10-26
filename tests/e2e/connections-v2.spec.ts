@@ -1,5 +1,5 @@
 import { expect, test, type BrowserContext, type Page } from "@playwright/test";
-import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -111,4 +111,30 @@ test("a connection with no named agent is listed under Any other agent and can b
   await expect(other).toContainText("Waiting for its first call", { timeout: 10_000 });
   await other.getByRole("button", { name: "Revoke" }).click();
   await expect(other.getByText(/Earlier connections \(1\)/)).toBeVisible();
+});
+
+test("Claude Code gets the server file and the prompt hook, and an existing hook file is left alone", async ({ page }) => {
+  await open(page);
+  const folder = mkdtempSync(join(tmpdir(), "bibrain-proj-"));
+  const claude = tile(page, "Claude Code");
+  await claude.getByRole("button", { name: "Add to Claude Code" }).click();
+  await claude.getByLabel("Project folder on this computer").fill(folder);
+  await claude.getByText("See the file BiBrain will add").click();
+  await expect(claude.getByTestId("agent-file-hook")).toContainText("mcp__bibrain__brain_recall");
+  await expect(claude.getByText("The second file turns on recall on every prompt. Only two read-only tools are pre-approved; nothing in it can write.")).toBeVisible();
+  await claude.getByRole("button", { name: "Add to Claude Code", exact: true }).last().click();
+  await expect(claude).toContainText("Recall on every prompt: on");
+  const hook = readFileSync(join(folder, ".claude", "settings.local.json"), "utf8");
+  expect(hook).toContain('"timeout": 5');
+  expect(hook).not.toMatch(/[0-9a-f]{64}/);
+  const second = mkdtempSync(join(tmpdir(), "bibrain-proj-"));
+  mkdirSync(join(second, ".claude"));
+  writeFileSync(join(second, ".claude", "settings.local.json"), "{}\n");
+  await claude.getByRole("button", { name: "Add to Claude Code" }).click();
+  await claude.getByLabel("Project folder on this computer").fill(second);
+  await claude.getByRole("button", { name: "Add to Claude Code", exact: true }).last().click();
+  await expect(claude).toContainText("Recall on every prompt: add it yourself");
+  await expect(claude.getByText("Paste it into the file, or run /hooks in Claude Code.")).toBeVisible();
+  expect(readFileSync(join(second, ".claude", "settings.local.json"), "utf8")).toBe("{}\n");
+  expect(existsSync(join(second, ".mcp.json"))).toBe(true);
 });
