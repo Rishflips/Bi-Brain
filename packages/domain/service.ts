@@ -3458,7 +3458,8 @@ export class Brain {
   }
   /**
    * The agent read verb: the deterministic core, sharpened by the optional judge when the owner allowed it.
-   * The judge can only drop hits to near misses, reorder them and lower `found` to `partial`; every hit is one the core already authorized.
+   * The judge can drop hits to near misses, reorder them, move `found` and `partial` either way and raise or lower the push level;
+   * it only ever works among candidates the core already found and the agent may see, and it never adds a hit or widens the scope.
    */
   async recall(p: Principal, input: unknown): Promise<RecallResult> {
     const v = recallInputSchema.parse(input);

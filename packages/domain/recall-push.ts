@@ -15,9 +15,13 @@ export const PUSH_FOOTER = "Not recorded here is not the same as false. More is 
 export const cpLength = (s: string) => Array.from(s).length;
 const cutTo = (s: string, max: number) => (cpLength(s) <= max ? s : Array.from(s).slice(0, Math.max(0, max - 1)).join("") + "…");
 const NAME_MAX = 80;
-/** One line of plain text: every run of whitespace, control and format characters (newlines, tabs, U+2028/2029, zero-width and bidi marks) becomes one space, so stored text can never start a new line inside the push. */
+/**
+ * One line of plain text: every run of whitespace and control characters (newlines, tabs, U+2028/2029) becomes one space, so stored text can never start a new line inside the push.
+ * Other format characters (soft hyphen, zero-width space, bidi marks and isolates) are deleted without a space. U+200C and U+200D are kept:
+ * Persian, Urdu, Hindi and Malayalam words and emoji sequences change when a joiner is removed or replaced by a space.
+ */
 export const oneLine = (s: string, max?: number) => {
-  const flat = s.replace(/[\s\p{Cc}\p{Cf}]+/gu, " ").trim();
+  const flat = s.replace(/(?![‌‍])\p{Cf}/gu, "").replace(/[\s\p{Cc}]+/gu, " ").trim();
   return max === undefined ? flat : cutTo(flat, max);
 };
 export type PushLevel = "full" | "pointer" | "none";
@@ -94,7 +98,7 @@ export function renderDigest(d: { projects: { title: string }[]; facts: number; 
   const recent = d.recent.slice(0, 3).map((r) => `${oneLine(r.title, NAME_MAX)} (${r.at.slice(0, 10)})`).join(", ");
   const parts = [
     `The owner's brain (bibrain) covers ${projects}: ${d.facts} current facts and ${d.originals} originals.`,
-    recent ? `Recently changed: ${recent}.` : "",
+    recent ? `Recent: ${recent}.` : "",
     renderPointer(d.names.length ? d.names : d.projects.map((p) => p.title)),
   ].filter(Boolean);
   let text = parts.join(" ");
