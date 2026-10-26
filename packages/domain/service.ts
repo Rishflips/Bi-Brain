@@ -4384,6 +4384,8 @@ export class Brain {
     sourceId: string,
     version: number,
     result: AskResult,
+    /** The topic names that were sent with the questions; stored as-is so `tN` resolves against what the model saw. Defaults to a fresh read. */
+    sentEntityNames?: string[],
   ): { recorded: boolean; advice: S1Advice | null } {
     return this.store.transaction(() => {
       const ctx = this.systemOneContext(sourceId, version);
@@ -4395,7 +4397,7 @@ export class Brain {
         source_version: version,
         job_id: job.id,
         answers: result.answers,
-        topic_options: ctx.entityNames.slice(0, S1_TOPIC_MAX),
+        topic_options: (sentEntityNames ?? ctx.entityNames).slice(0, S1_TOPIC_MAX),
         model: result.model,
         policy_version: result.policy_version,
         price_version: result.price_version,

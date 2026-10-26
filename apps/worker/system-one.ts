@@ -1,7 +1,7 @@
 import type { Brain } from "../../packages/domain/service.ts";
 import type { Principal } from "../../packages/contracts/index.ts";
 import { BrainError } from "../../packages/domain/logic.ts";
-import { buildQuestions } from "../../packages/domain/system-one.ts";
+import { buildQuestions, S1_TOPIC_MAX } from "../../packages/domain/system-one.ts";
 import type {
   DispatchSpec,
   JobLease,
@@ -126,6 +126,8 @@ async function sortOneNote(
   if (!ctx) return { outcome: "cancelled" };
   // 5. A secret or a bound is refused before anything is reserved.
   let ask: PreparedAsk;
+  // The exact names offered as topic options; a `tN` answer is resolved against this list, not a later read.
+  const sentNames = ctx.entityNames.slice(0, S1_TOPIC_MAX);
   try {
     const { state, questions } = buildQuestions(ctx);
     ask = prepareAsk(client.config, state, questions, client.fetcher);
@@ -184,7 +186,7 @@ async function sortOneNote(
   const settled = ledger.settle(record.call_id, result.cost_micro_usd);
   if (settled.actual_micro_usd !== null && settled.actual_micro_usd > settled.reserved_micro_usd)
     throw new BrainError("BUDGET_EXHAUSTED", "Sorting help used more than its estimate; it is paused until reconciled.", 409);
-  const published = brain.recordSystemOneResult(job, source_id, source_version, result);
+  const published = brain.recordSystemOneResult(job, source_id, source_version, result, sentNames);
   if (!published.recorded) return { outcome: "cancelled" };
   noteStatus(brain, { last_ok_at: brain.now(), last_error: undefined });
   return { outcome: "recorded" };
