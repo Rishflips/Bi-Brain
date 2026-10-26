@@ -210,7 +210,7 @@ describe("agentConnect", () => {
     // Rolled back exactly as a failed key write is: the grant is revoked (a Revoked row stays), the key file and the server file are gone.
     expect(b.connections(owner).map((c) => [c.status, c.files])).toEqual([["Revoked", []]]);
     expect(existsSync(join(dataDir, "agent-keys", `${pv.connection_id}.json`))).toBe(false);
-    expect(existsSync(join(folder, ".mcp.json"))).toBe(false);
+    expect(existsSync(join(folder, ".cursor", "mcp.json"))).toBe(false);
     expect(readFileSync(join(folder, ".cursor", "rules"), "utf8")).toBe("a file where a folder must be");
   });
   it("writes the Codex hook file next to its config, keeps spaces in paths intact, and forgets the recorded files with the key", () => {

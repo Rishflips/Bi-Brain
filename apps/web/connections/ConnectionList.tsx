@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { friendlyError } from "../today/BriefCard.tsx";
 import { shortDate } from "../brain/format.ts";
+import { secondFileLabel } from "./second-file.ts";
 import type { Api, Grant } from "./types.ts";
 
 type Props = {
@@ -52,13 +53,7 @@ export function ConnectionList({ api, grants, projects, hint = "", onChanged }: 
                   .filter((f) => f.role !== "server")
                   .map((f) => (
                     <p key={f.path} className="tv-faint cx-second">
-                      {f.role === "hook"
-                        ? f.state === "written"
-                          ? "Recall on every prompt: on"
-                          : "Recall on every prompt: add it yourself"
-                        : f.state === "written"
-                          ? "Rule file added"
-                          : "Rule file: add it yourself"}
+                      {secondFileLabel(g, f)}
                       {f.state === "exists" && (
                         <>
                           {" "}

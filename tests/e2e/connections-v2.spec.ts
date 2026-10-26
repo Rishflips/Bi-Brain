@@ -31,10 +31,12 @@ test("Codex is found, added to a folder in one step, connected by its first call
   await codex.getByText("See the file BiBrain will add").click();
   const preview = codex.getByTestId("agent-file");
   await expect(preview).toContainText("[mcp_servers.bibrain]");
+  await expect(codex.getByText("This runs BiBrain's recall on every prompt. It pre-approves nothing; Codex asks you to trust it once.")).toBeVisible();
   const contents = (await preview.textContent())!;
   expect(contents).not.toMatch(/[0-9a-f]{64}/);
   await codex.getByRole("button", { name: "Add to Codex", exact: true }).last().click();
   await expect(codex).toContainText("Waiting for its first call");
+  await expect(codex).toContainText("Recall on every prompt: on after Codex trusts the hook");
   const written = readFileSync(join(folder, ".codex", "config.toml"), "utf8");
   expect(written).toBe(contents);
   const id = /"--connection", "([0-9a-f-]{36})"/.exec(written)![1];

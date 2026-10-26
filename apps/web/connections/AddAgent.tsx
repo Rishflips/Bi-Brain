@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { friendlyError } from "../today/BriefCard.tsx";
+import { secondFileHelper } from "./second-file.ts";
 import type { AgentInfo, Api, Preview } from "./types.ts";
 
 type Props = {
@@ -126,7 +127,7 @@ export function AddAgent({ api, info, projects, projectId, lastFolder, onCancel,
             ))}
             <p className="tv-faint">The access key stays in BiBrain on this computer, never in this file. An existing file is never changed. This file points at BiBrain on this computer, so keep it out of shared version control.</p>
             {preview.files.length > 1 && (
-              <p className="tv-faint">The second file turns on recall on every prompt. Only two read-only tools are pre-approved; nothing in it can write.</p>
+              <p className="tv-faint">{secondFileHelper(info.client)}</p>
             )}
           </>
         ) : (
