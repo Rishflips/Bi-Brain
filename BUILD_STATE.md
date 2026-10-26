@@ -68,9 +68,11 @@ What shipped:
   a small recall boost and topics feed the prefix and the known-name list.
 - The optional "Recall help" judge (Settings, off by default, needs sorting help on)
   sends the agent's question, matching passages and project and topic names to
-  Clef, waits at most 900 ms and falls back to the deterministic result. It only
-  lowers noise: it never adds evidence and never hides an exact name match below a
-  pointer. 2,000 judge calls per UTC day, plus the shared daily cap. A job the server
+  Clef, waits at most 900 ms and falls back to the deterministic result. It can
+  reorder, demote to near misses, and lower or raise the push level, but only among
+  candidates BiBrain already found and the agent may see; it never adds a hit,
+  never changes which projects are searched and never hides an exact name match
+  below a pointer. 2,000 judge calls per UTC day, plus the shared daily cap. A job the server
   gave up on is cancelled with its state deleted and never paid after its deadline.
 - `scripts/recall-agent-proof.ts` (`npm run proof:recall`) is the owner-run native
   acceptance, with the hook on and off. CI and agents run only its refusal path.

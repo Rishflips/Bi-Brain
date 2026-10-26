@@ -78,7 +78,7 @@ No account, subscription or model key is needed. Your data stays in `data/brain.
 
 1. Open **Connections**.
 2. On the Codex, Claude Code or Cursor tile, choose **Add to …**.
-3. Pick the project and the folder where you open that agent. BiBrain shows the exact files it will add (the server entry and, for Claude Code, a prompt hook that recalls from your brain on every prompt), and never changes an existing file.
+3. Pick the project and the folder where you open that agent. BiBrain shows the exact files it will add (the server entry; for Claude Code and Codex a prompt hook that recalls from your brain on every prompt, which Codex runs after you trust it once; for Cursor a rule file), and never changes an existing file.
 4. Open the agent in that folder and approve BiBrain once.
 
 Agents read through one tool, `brain_recall`, which returns ranked, cited hits or says plainly that nothing is recorded.

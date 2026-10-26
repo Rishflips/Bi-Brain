@@ -138,15 +138,17 @@ try {
     no_full_on_should_not: quiet.every((p) => !p.levels.includes("full")),
     at_most_one_pointer_on_should_not: quiet.reduce((n, p) => n + p.levels.filter((l) => l === "pointer").length, 0) <= 1,
     no_canary: !canary,
+    // With the hook on, a run where it never fired proves nothing about push levels (the two should-not checks would be vacuous).
+    hook_fired: !hookOn || pushes.length > 0,
   };
-  const passed = checks.should_retrieve_answered_with_citation && checks.no_full_on_should_not && checks.at_most_one_pointer_on_should_not && checks.no_canary;
+  const passed = checks.hook_fired && checks.should_retrieve_answered_with_citation && checks.no_full_on_should_not && checks.at_most_one_pointer_on_should_not && checks.no_canary;
   const report = { client, hook: hookOn ? "on" : "off", repeats, generated_at: new Date().toISOString(), checks, passed, per_prompt: perPrompt, pushes: pushes.length, median_hook_latency_ms: median, hook_latency_sample: hookLatencies, request_statuses: observations.map((o) => ({ prompt: o.prompt, path: o.path, status: o.status })), runs: runs.map((r) => ({ prompt: r.prompt, repeat: r.repeat, code: r.code, ms: r.ms, output: r.output.slice(-6000), stderr: r.stderr.slice(-2000) })), scope: "Synthetic disposable native client, no owner data or paid API credentials; subscription quota used." };
   const serialized = JSON.stringify(report, null, 2);
   if (serialized.includes(token)) throw new Error("Refusing to persist a recall report containing a credential.");
   mkdirSync(resolve("data"), { recursive: true });
   const reportPath = resolve(`data/recall-${client}-${hookOn ? "hook" : "nohook"}-proof.json`);
   writeFileSync(reportPath, serialized, { mode: 0o600 });
-  console.log(JSON.stringify({ client, hook: hookOn ? "on" : "off", passed, checks, median_hook_ms: median, report: reportPath }));
+  console.log(JSON.stringify({ client, hook: hookOn ? "on" : "off", passed, checks, pushes: pushes.length, median_hook_ms: median, report: reportPath }));
   if (!passed) process.exitCode = 1;
 } finally {
   if (connectionId) {

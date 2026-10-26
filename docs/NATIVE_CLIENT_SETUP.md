@@ -63,10 +63,11 @@ recorded a push. Until you trust it, Codex relies on the server instructions and
 tool descriptions.
 
 Windows: the hook command is written with forward slashes and double quotes
-(`"C:/Program Files/nodejs/node.exe" "C:/.../bibrain.mjs" hook ...`) and was
-checked from Claude Code's own shell (Git Bash on Windows). How `cmd.exe /c`
-treats a line that both starts and ends with a quote is not covered until the
-owner-run recall proof below reports it.
+(`"C:/Program Files/nodejs/node.exe" "C:/.../bibrain.mjs" hook ...`) so that Git
+Bash, PowerShell and `cmd.exe` parse it the same way. It has not yet been observed
+running in any shell, including Claude Code's own, and tests only assert the
+string. How `cmd.exe /c` treats a line that both starts and ends with a quote is
+likewise untested. The owner-run recall proof below decides.
 
 ## Recorded native acceptance
 
@@ -148,13 +149,15 @@ Remove-Item Env:BRAIN_RECALL_PROOF
 `BRAIN_PROOF_NO_HOOK=1` removes the `hooks` key from the written file before the
 run, so only the tool surface is measured; compare the tool-call rates between
 the two runs. `npm run proof:recall` runs the same script. For Codex, the
-headless run only loads the project hook if Codex has been told to trust it; the
-report's push count shows whether the hook ran at all.
+headless run only loads the project hook if Codex has been told to trust it, so
+the bar below also requires that the hook fired at least once when it is on.
 
 Pass bar, per client: at least 5 of the 6 should-retrieve prompts answered
 correctly with a cited id in at least one run; no `full` push and at most one
 `pointer` push across the four should-not prompts; and neither canary appears
-anywhere. The report also records pass-all-runs counts, the tool-call rate and the
+anywhere. With the hook on, at least one push must have reached BiBrain
+(`hook_fired`); otherwise the two should-not checks would pass without measuring
+anything and the run fails. The report also records pass-all-runs counts, the tool-call rate and the
 median hook latency. Reports land in `data/recall-<client>-<hook|nohook>-proof.json`
 (file mode 0600, ignored by Git, never containing the key). The script prints one
 JSON line and exits 1 when the bar is not met.
