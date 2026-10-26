@@ -51,14 +51,15 @@ import { adviseFrom, workerRunning, type S1Advice, type S1Context } from "./syst
 import type { AskResult } from "../providers/system-one-ask.ts";
 import { buildBrief, gateFitsBrief, type BriefInput, type BriefJob } from "./brief.ts";
 import { buildProjectView } from "./project-view.ts";
-import { questionWords, rankAnswers } from "./ask.ts";
+import { questionWords, type AskHit } from "./ask.ts";
 import { factText } from "./facts.ts";
-import { SEARCH_LIMIT, findInBrain } from "./brain-search.ts";
+import { SEARCH_LIMIT, findInBrain, snippetFor } from "./brain-search.ts";
 import {
   CANDIDATES_PER_LIST,
   FOUND_NEXT_STEP,
   NEAR_MISSES_MAX,
   NO_MATCH_NEXT_STEP,
+  RECALL_LIMIT_MAX,
   buildFtsQuery,
   dedupe,
   deterministicSignals,
@@ -68,6 +69,8 @@ import {
   recallInputSchema,
   whyFor,
   type Candidate,
+  type FactHit as RecallFactHit,
+  type OriginalHit as RecallOriginalHit,
   type RecallHit,
   type RecallResult,
 } from "./recall.ts";
@@ -4637,19 +4640,41 @@ export class Brain {
   searchBrain(p: Principal, input: unknown) {
     this.owner(p);
     const v = z.object({ q: z.string().trim().min(2).max(200) }).strict().parse(input);
-    const projects = this.projects(p) as { id: string }[];
-    const claims = projects.flatMap((project) => this.currentClaims(p, project.id));
-    return findInBrain(v.q, claims, this.sources(p), SEARCH_LIMIT);
+    const literal = () => {
+      const projects = this.projects(p) as { id: string }[];
+      const claims = projects.flatMap((project) => this.currentClaims(p, project.id));
+      return findInBrain(v.q, claims, this.sources(p), SEARCH_LIMIT);
+    };
+    // Words under three characters never become FTS terms; the literal search is the only one that can see them.
+    if (v.q.split(/\s+/u).some((w) => Array.from(w).length < 3)) return literal();
+    const internal = this.recallInternal(p, { query: v.q, history: false, limit: RECALL_LIMIT_MAX });
+    const facts = internal.result.hits.filter((h): h is RecallFactHit => h.kind === "fact").slice(0, SEARCH_LIMIT);
+    // Originals come from the authorized set before dedupe, so a chunk folded into its fact still lists its note.
+    const seen = new Set<string>();
+    const originals = internal.authorized
+      .filter((h): h is RecallOriginalHit => h.kind === "original")
+      .filter((h) => !seen.has(h.id) && seen.add(h.id))
+      .slice(0, SEARCH_LIMIT);
+    if (facts.length === 0 && originals.length === 0) return literal();
+    return {
+      facts: facts.map((f) => {
+        const claim = this.entity(p, f.id);
+        return { id: f.id, project_id: f.project.id, text: f.text, evidence: (claim.data.evidence as Evidence[]).map((e) => ({ source_id: e.source_id, source_version: e.source_version, start: e.start, end: e.end, quote: e.quote })) };
+      }),
+      originals: originals.map((o) => ({ id: o.id, project_id: o.project.id, version: o.version, title: o.title, snippet: snippetFor(o.quote, o.title, v.q) })),
+    };
   }
   ask(p: Principal, input: unknown) {
     this.owner(p);
     const v = z.object({ q: z.string().trim().min(1).max(500) }).strict().parse(input);
     if (!questionWords(v.q).length)
       throw new BrainError("INVALID_INPUT", "Ask with a few words, for example: When does the beta open?");
-    const projects = this.projects(p) as { id: string }[];
-    const claims = projects.flatMap((project) => this.currentClaims(p, project.id));
-    const sources = projects.flatMap((project) => this.sources(p, project.id));
-    const hits = rankAnswers(v.q, claims, sources, 3);
+    const result = this.recallCore(p, { query: v.q, history: false, limit: 3 });
+    const hits: AskHit[] = result.hits.map((h) =>
+      h.kind === "fact"
+        ? { type: "fact", id: h.id, project_id: h.project.id, text: h.text, evidence: h.evidence.map((e) => ({ source_id: e.source_id, source_version: e.source_version, quote: e.quote })) }
+        : { type: "original", id: h.id, project_id: h.project.id, title: h.title, snippet: snippetFor(h.quote, h.title, v.q), source_version: h.version },
+    );
     return { question: v.q, hits, answered: hits.length > 0 };
   }
   status(p: Principal) {
