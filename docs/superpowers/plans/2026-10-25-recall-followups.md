@@ -134,7 +134,7 @@ Each ruling reads: what was decided, why, and what it costs if wrong.
 - Task 11: pass_cubed name wrong when REPEATS != 3; console median_hook_ms vs report median_hook_latency_ms.
 - Task 11: proof setup before try leaks temp dir on early failure (same as native-client-proof).
 - Task 11: refusal test does not check data/recall-*-proof.json absence.
-- Task 11: whether --restricted Claude Code loads project settings.local.json hooks; recallLog grant_id === connection id.
+- Task 11: whether --restricted Claude Code loads project settings.local.json hooks; recallLog grant_id === connection id. **Answered 2026-10-27 by the first owner run: it does not (`--restricted` ignores project and local settings), so the proof now passes the written file with `--settings`.**
 - Task 11: hook_fired counts any authenticated recall-push request regardless of status/parsed level.
 - Task 11: stale code comments service.ts:3461 (judge only lowers) and agents.ts:75 (states shell parsing as fact). **Fixed in the final wave.**
 
