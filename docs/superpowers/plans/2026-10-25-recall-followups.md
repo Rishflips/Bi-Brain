@@ -143,3 +143,16 @@ Each ruling reads: what was decided, why, and what it costs if wrong.
 - `npm run proof:recall` for Claude Code and Codex, with and without `BRAIN_PROOF_NO_HOOK=1`.
 - `scripts/native-client-proof.ts`.
 - `npm run proof:sorting`. The live Clef sorting call and the judge call have not been made.
+
+## Owner-run proof results
+
+- 2026-10-27, Claude Code 2.1.283, hook on: **passed**.
+  - Six retrieval prompts answered with a citation in all 3 repeats; tool-call rate 1.0.
+  - The hook fired on 30 of 30 prompts, with a median of 3 ms at the server.
+  - Levels: full for five prompts, pointer for one, none for all four generic prompts. No canary leaked.
+  - It needed PR #29 first, because `--restricted` ignores project and local settings.
+- 2026-10-27, Codex 0.156.1, hook on: **failed on setup**. BiBrain received no requests at all.
+  - Cause: Codex loads a project's `.codex/` layer only for trusted projects, and the proof's `--ignore-user-config` hides that trust. The workspace also sat inside this repository, so Codex took the BiBrain repo as the project.
+  - Fix: the workspace now lives in the system temp folder, and the run adds `-c projects.<folder>.trust_level="trusted"`. When the hook is on, it also adds `--dangerously-bypass-hook-trust`, which stands in for the one-time `/hooks` review a person does.
+  - The `-c` override was confirmed with `codex mcp list` at no quota cost.
+  - Same issue still open: `scripts/native-client-proof.ts` has the same Codex workspace and trust problem.
