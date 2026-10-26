@@ -127,11 +127,11 @@ A few details:
 
 ## Status
 
-BiBrain is a working **single-owner local app**. This table is the honest state as of 2026-10-25. The verified details and the commands that ran are in [BUILD_STATE.md](BUILD_STATE.md).
+BiBrain is a working **single-owner local app**. This table is the honest state as of 2026-10-27. The verified details and the commands that ran are in [BUILD_STATE.md](BUILD_STATE.md).
 
 | Area | State |
 | --- | --- |
-| Local app: Today, Your brain, Connections, Settings | Works end to end; verified on Windows with 1,863 Vitest tests and 104 Playwright browser tests |
+| Local app: Today, Your brain, Connections, Settings | Works end to end; verified on Windows with 1,866 Vitest tests and 105 Playwright browser tests |
 | One-step agent connections with recall on every prompt | Verified locally against fake servers; real Codex and Claude Code runs are owner-run (`npm run proof:recall`) |
 | Sorting help with Clef | Built and tested against a fake server; a live run is owner-run |
 | Self-hosting on your own server | Supported: [Self-hosting](docs/SELF_HOSTING.md) and `deploy/compose.yaml` |

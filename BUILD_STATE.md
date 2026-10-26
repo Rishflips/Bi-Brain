@@ -80,20 +80,34 @@ What shipped:
 Docs updated: AGENT_INTEGRATION (Recall push), NATIVE_CLIENT_SETUP (hooks, recall
 proof), PROVIDERS (Recall help), UX, API, README.
 
-Verified in this worktree on 2026-10-27, from the branch head before the final
-whole-branch review (Windows, Node 24.19.0). The controller re-runs these at the
-end and corrects the counts:
+Verified in this worktree on 2026-10-27 after the final whole-branch review and
+its fix wave (Windows, Node 24.19.0):
 
-- `npm run typecheck`, `npm run lint`, `npm run build`: all exit 0.
+- `npm ci`, `npm run typecheck`, `npm run lint`, `npm run build`: all exit 0.
+- `npm audit --audit-level=high`: 0 vulnerabilities.
 - `npm run brain-eval`: 20/20 passed; golden set 46 cases, recall at 5 = 1.00, MRR
   0.97, no-match rate 1.00, positive push rate 1.00, p95 about 60 ms.
-- `npx vitest run --reporter=dot`: 181 files, 1863 passed, 8 skipped, 0 failed, in one run (1132 s).
+- `npx vitest run --reporter=dot`: 181 files, 1866 passed, 8 skipped, 0 failed
+  (1381 s). An earlier full run at the same head had one load timeout in
+  `managed-activation-guard.test.ts`, which this branch does not touch; it passed
+  alone and in this run.
+- `npx playwright test --workers=1`: 105 passed, 0 failed, 6.6m. By project: main 69,
+  today-v2 20, connections 7, today-v2-bar 4, system1 4, empty-brain 1. The run before
+  it had two timeouts under machine load (`first-note-lifecycle-review.spec.ts:5` and
+  the system1 Watch spec); both passed alone and in this run. One earlier run failed
+  `managed.spec.ts` because its two synthetic account markers shared words and a
+  timestamp, so ranked search showed account B its own note; the markers were made
+  distinct, and the isolation assertions are unchanged. `docs/screenshots` was
+  restored after each run.
+- The plan's greps: no quoted dotted tool name remains, and no file under
+  `apps/server`, `packages/domain`, `apps/mcp`, `apps/cli` or `apps/web` reads
+  `BRAIN_DECISION_API_KEY` or `OLLAMA_API_KEY`.
 - `node --import tsx scripts/recall-agent-proof.ts claude` without
   `BRAIN_RECALL_PROOF` prints the refusal and exits 1 (the only part of the proof
   that was run).
-- Not run in this task: `npm ci`, `npm audit` and `npx playwright test`.
-  The Playwright suite and the e2e specs for the renamed tools are covered by the
-  controller's final run, not by this entry.
+- Every task had its own spec and quality review with fix rounds. Fable reviewed the
+  whole branch ("ready with fixes": 0 Critical, 4 Important, 10 Minor); the four
+  Important findings and two one-line minors were fixed and re-reviewed.
 
 Known limits:
 
