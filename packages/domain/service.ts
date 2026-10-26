@@ -74,6 +74,7 @@ import {
   type RecallHit,
   type RecallResult,
 } from "./recall.ts";
+import { RECALL_LOG_MAX, PUSH_HITS_MAX, filterSeen, fitFull, pushLevel, recallPushSchema, renderDigest, renderPointer, type JudgeSignals, type PushLevel } from "./recall-push.ts";
 import {
   attemptReferencesSource,
   claimDecisionAttempt,
@@ -2298,6 +2299,10 @@ export class Brain {
             : g.last_verified_at
               ? "Connected"
               : "Not connected",
+        recall: (() => {
+          const rows = this.store.setting<{ at: string; grant_id: string; level: PushLevel }[]>("recall_log", []).filter((r) => r.grant_id === g.id);
+          return { pushes: rows.length, last_push_at: rows.at(-1)?.at ?? null, last_level: rows.at(-1)?.level ?? null };
+        })(),
       }));
   }
   createGrant(p: Principal, input: unknown) {
@@ -3421,6 +3426,73 @@ export class Brain {
   /** The agent read verb. Task 10 adds the optional judge; until then it is the deterministic core. */
   async recall(p: Principal, input: unknown): Promise<RecallResult> {
     return this.recallCore(p, input);
+  }
+  /** The per-prompt push for a hook: deterministic recall as the grant, a level, bounded text, and a content-free log row. */
+  async recallPush(p: Principal, input: unknown) {
+    if (p.kind !== "agent") throw new BrainError("FORBIDDEN", "Use an agent token.", 403);
+    const grant = this.grant(p)!;
+    if (!grant.operations.includes("read")) throw new BrainError("NOT_FOUND", "Item unavailable.", 404);
+    const v = recallPushSchema.parse(input);
+    const started = Date.now();
+    const quiet = { level: "none" as PushLevel, text: "", hit_ids: [] as string[], digest: false };
+    const finish = (out: typeof quiet, extra: { candidates: number; judged: boolean }) => {
+      // A push that reached the brain proves the connection works, exactly like /agent/verify.
+      this.store.run("UPDATE grants SET last_verified_at=? WHERE id=?", this.now(), p.grant_id);
+      const log = this.store.setting<unknown[]>("recall_log", []);
+      log.push({ at: this.now(), grant_id: p.grant_id, client: v.client, level: out.level, candidates: extra.candidates, hits: out.hit_ids.length, latency_ms: Date.now() - started, judged: extra.judged });
+      this.store.set("recall_log", log.slice(-RECALL_LOG_MAX));
+      return out;
+    };
+    if (detectSecrets(v.prompt).length) return finish(quiet, { candidates: 0, judged: false });
+    const internal = this.recallInternal(p, { query: v.prompt, history: false, limit: PUSH_HITS_MAX });
+    const candidates = internal.result.searched.candidates;
+    const judge = await this.judgeForPush(p, internal);
+    let level = pushLevel(internal.signals, judge.signals);
+    const hits = filterSeen(judge.hits, v.seen);
+    // Everything the agent already holds from this session is not sent again.
+    if (level === "full" && hits.length === 0) level = internal.signals.exactEntity ? "pointer" : "none";
+    const names = internal.signals.topNames.length ? internal.signals.topNames : internal.entityNames;
+    let text = "";
+    let used: RecallHit[] = [];
+    if (level === "full") {
+      const fit = fitFull(hits, internal.result.as_of);
+      text = fit.text;
+      used = fit.used;
+    } else if (level === "pointer") text = renderPointer(names);
+    let digest = false;
+    // The digest rides only on a pointer or full push: a `none` prompt stays completely quiet, first prompt or not.
+    if (v.first_prompt && level !== "none") {
+      const d = this.digestFor(internal.scope, names);
+      if (d) {
+        digest = true;
+        // The digest normally ends with the same pointer line, so a pointer push is then the digest alone.
+        text = level === "pointer" && d.includes(text) ? d : `${d}\n\n${text}`;
+      }
+    }
+    if (text && detectSecrets(text).length) return finish(quiet, { candidates, judged: judge.judged });
+    return finish({ level, text, hit_ids: used.map((h) => h.id), digest }, { candidates, judged: judge.judged });
+  }
+  /** Task 10 replaces this with the Clef judge; until then the deterministic hits stand. */
+  protected async judgeForPush(_p: Principal, internal: ReturnType<Brain["recallInternal"]>): Promise<{ signals: JudgeSignals | null; hits: RecallHit[]; judged: boolean }> {
+    return { signals: null, hits: internal.result.hits, judged: false };
+  }
+  /** Counts and three recent titles by SQL (no bodies, no claim verification): the digest is a map of the brain, not evidence. Only what an agent may see: project-visible originals and facts the recall index marks project-visible. */
+  private digestFor(scope: { id: string; title: string }[], names: string[]): string {
+    if (!scope.length) return "";
+    const ids = scope.map((s) => s.id);
+    const marks = ids.map(() => "?").join(",");
+    const facts = Number(this.store.get<{ n: number }>(`SELECT count(DISTINCT ref_id) AS n FROM recall_chunks WHERE kind='fact' AND status='current' AND visibility='project' AND project_id IN (${marks})`, ...ids)?.n ?? 0);
+    const originals = Number(this.store.get<{ n: number }>(`SELECT count(*) AS n FROM sources WHERE state='active' AND visibility='project' AND project_id IN (${marks})`, ...ids)?.n ?? 0);
+    const recent = this.store.all<{ title: string; at: string }>(
+      `SELECT v.title AS title, s.captured_at AS at FROM sources s JOIN source_versions v ON v.source_id=s.id AND v.version=s.version WHERE s.state='active' AND s.visibility='project' AND s.project_id IN (${marks}) ORDER BY s.captured_at DESC, s.rowid DESC LIMIT 3`,
+      ...ids,
+    );
+    return renderDigest({ projects: scope, facts, originals, recent, names });
+  }
+  /** What was pushed to agents and when: levels, counts and latency. Never a prompt, an id or a passage. */
+  recallLog(p: Principal) {
+    this.owner(p);
+    return { rows: this.store.setting<{ at: string; grant_id: string; client: string; level: PushLevel; candidates: number; hits: number; latency_ms: number; judged: boolean }[]>("recall_log", []) };
   }
   /** Entity names of current facts this principal may see whose every word is in `terms`; at most the matching claims are loaded. */
   private visibleEntityNames(p: Principal, scope: { id: string; title: string }[], terms: Set<string>, visibilities: RecallVisibility[]): string[] {

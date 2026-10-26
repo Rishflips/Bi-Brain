@@ -1027,6 +1027,8 @@ export async function createApp(
       .parse(req.query);
     return req.brain.agentOpen(req.principal, v);
   });
+  app.post("/api/v1/agent/recall-push", (req) => req.brain.recallPush(req.principal, req.body));
+  app.get("/api/v1/recall/log", (req) => req.brain.recallLog(req.principal));
   app.post("/api/v1/agent/propose", (req) =>
     req.brain.propose(req.principal, req.body, key(req)),
   );

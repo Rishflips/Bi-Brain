@@ -5,6 +5,8 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { spawn } from "node:child_process";
 import { detectSecrets } from "../../packages/storage/secrets.ts";
+import { createApp } from "../../apps/server/app.ts";
+import { buildFixture, owner } from "../eval/recall-fixture.ts";
 import { hookOutput, hookSkipReason, hookStatePath, looksLikeSecret, loopbackApi, noteHookState, parseArgs, parseHookStdin, readHookState, sha256 } from "../../apps/cli/lib.mjs";
 
 const cli = resolve("apps/cli/bibrain.mjs");
@@ -179,4 +181,23 @@ describe("bibrain hook", () => {
     expect(JSON.parse(r.stdout).hookSpecificOutput.additionalContext).toContain("brain_recall searches it.");
     expect(f.calls[0].body.client).toBe("codex");
   });
+  it("end to end: the real route returns cited evidence for the hook and flips the connection to Connected", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "bibrain-hook-real-"));
+    cleanup.push(() => rmSync(dir, { recursive: true, force: true }));
+    const fx = buildFixture(join(dir, "fixture.sqlite"));
+    cleanup.push(() => fx.store.close());
+    const app = await createApp(fx.brain, { pairSecret: "test-code", static: false });
+    await app.listen({ host: "127.0.0.1", port: 0 });
+    cleanup.push(() => app.close());
+    const port = (app.server.address() as { port: number }).port;
+    mkdirSync(join(dir, "agent-keys"));
+    writeFileSync(join(dir, "agent-keys", `${ID}.json`), JSON.stringify({ api: `http://127.0.0.1:${port}`, key: fx.agentToken }));
+    expect(fx.brain.connections(owner)[0].status).toBe("Not connected");
+    const r = await run(["claude-code"], event("what color did we pick for the launch"), dir);
+    expect(r.status).toBe(0);
+    const context = JSON.parse(r.stdout).hookSpecificOutput.additionalContext as string;
+    expect(context).toContain("cobalt");
+    expect(context).toContain(fx.ids["fact:launch-color"]);
+    expect(fx.brain.connections(owner)[0].status).toBe("Connected");
+  }, 20_000);
 });
