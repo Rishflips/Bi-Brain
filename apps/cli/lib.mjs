@@ -111,11 +111,11 @@ export function readHookState(path) {
   return { sessions: {} };
 }
 
-/** Remembers the ids pushed into one session: the 20 most recently active sessions, 300 hashes each. Never the prompt, never the key. */
-export function noteHookState(state, sessionHash, ids, now) {
+/** Remembers the ids pushed into one session: the 20 most recently active sessions, 300 hashes each, and whether the session already received the first-prompt digest. Never the prompt, never the key. */
+export function noteHookState(state, sessionHash, ids, now, digested = false) {
   const current = state.sessions[sessionHash] ?? { first_seen: now, last_seen: now, hashes: [] };
   const hashes = [...current.hashes, ...ids.map((id) => sha256(String(id)))].slice(-HOOK_HASHES);
-  const sessions = { ...state.sessions, [sessionHash]: { first_seen: current.first_seen, last_seen: now, hashes } };
+  const sessions = { ...state.sessions, [sessionHash]: { first_seen: current.first_seen, last_seen: now, hashes, digested: current.digested === true || digested === true } };
   const kept = Object.entries(sessions)
     .sort((a, b) => (b[1].last_seen ?? b[1].first_seen) - (a[1].last_seen ?? a[1].first_seen))
     .slice(0, HOOK_SESSIONS);

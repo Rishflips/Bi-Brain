@@ -194,7 +194,7 @@ async function hook() {
     const res = await fetch(`${origin}/api/v1/agent/recall-push`, {
       method: "POST",
       headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
-      body: JSON.stringify({ prompt: firstCodePoints(event.prompt, HOOK_PROMPT_MAX), session_id: sessionHash, first_prompt: !session, seen: session?.hashes ?? [], client }),
+      body: JSON.stringify({ prompt: firstCodePoints(event.prompt, HOOK_PROMPT_MAX), session_id: sessionHash, first_prompt: !session?.digested, seen: session?.hashes ?? [], client }),
       signal: AbortSignal.timeout(remaining),
       redirect: "error",
     });
@@ -202,7 +202,7 @@ async function hook() {
     const body = await res.json();
     if (!body || typeof body !== "object" || !["full", "pointer", "none"].includes(body.level) || typeof body.text !== "string") return;
     const ids = Array.isArray(body.hit_ids) ? body.hit_ids.filter((x) => typeof x === "string") : [];
-    writeHookState(statePath, noteHookState(state, sessionHash, ids, Date.now()));
+    writeHookState(statePath, noteHookState(state, sessionHash, ids, Date.now(), body.digest === true));
     if (body.text) process.stdout.write(hookOutput(body.text));
   } catch {
     /* silent by design */

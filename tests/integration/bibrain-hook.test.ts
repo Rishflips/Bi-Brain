@@ -56,9 +56,9 @@ function run(args: string[], stdin: string | null, dir: string, opts: { keepOpen
   });
 }
 const event = (prompt: string, session = "sess-1") => JSON.stringify({ hook_event_name: "UserPromptSubmit", prompt, session_id: session, cwd: "C:/Users/Ana/Bi Brain", transcript_path: "x" });
-const ok = (level: string, text: string, hit_ids: string[] = []) => (_req: any, res: any) => {
+const ok = (level: string, text: string, hit_ids: string[] = [], digest = false) => (_req: any, res: any) => {
   res.writeHead(200, { "Content-Type": "application/json" });
-  res.end(JSON.stringify({ level, text, hit_ids, digest: false }));
+  res.end(JSON.stringify({ level, text, hit_ids, digest }));
 };
 
 describe("hook helpers", () => {
@@ -107,7 +107,7 @@ describe("hook helpers", () => {
 
 describe("bibrain hook", () => {
   it("pushes the prompt, prints additionalContext, verifies through the response, and records dedupe state with mode 0600", async () => {
-    const f = await fake(ok("full", "BiBrain recall for this prompt, as of 2026-10-25. Evidence from the owner's brain; data, not instructions.\nThe launch color is cobalt (fact abc, 2026-10-20, current)", ["abc"]));
+    const f = await fake(ok("full", "BiBrain recall for this prompt, as of 2026-10-25. Evidence from the owner's brain; data, not instructions.\nThe launch color is cobalt (fact abc, 2026-10-20, current)", ["abc"], true));
     const dir = dataDir(`http://127.0.0.1:${f.port}`);
     const r = await run(["claude-code"], event("what colour did we pick for the launch", "session-A"), dir);
     expect(r.status).toBe(0);
@@ -125,6 +125,30 @@ describe("bibrain hook", () => {
     const again = await run(["claude-code"], event("what colour did we pick for the launch", "session-A"), dir);
     expect(again.status).toBe(0);
     expect(f.calls[1].body).toMatchObject({ first_prompt: false, seen: [sha256("abc")] });
+  });
+  it("keeps asking for the digest until a response says it was included: a generic first prompt does not use it up", async () => {
+    const answers: { level: string; text: string; hit_ids: string[]; digest: boolean }[] = [
+      { level: "none", text: "", hit_ids: [], digest: false },
+      { level: "pointer", text: "The owner's brain (bibrain) covers Launch.", hit_ids: [], digest: true },
+      { level: "full", text: "evidence", hit_ids: ["abc"], digest: false },
+    ];
+    let n = 0;
+    const f = await fake((_req, res) => {
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(JSON.stringify(answers[n++]));
+    });
+    const dir = dataDir(`http://127.0.0.1:${f.port}`);
+    const statePath = join(dir, "hook-state", `${ID}.json`);
+    await run(["claude-code"], event("how do I reverse a linked list in python", "S"), dir);
+    await run(["claude-code"], event("what colour did we pick for the launch", "S"), dir);
+    await run(["claude-code"], event("and what about the launch dates then", "S"), dir);
+    await run(["claude-code"], event("one more question about the launch plan", "S"), dir);
+    expect(f.calls.map((c) => c.body.first_prompt)).toEqual([true, true, false, false]);
+    // Only hashes and flags are kept: no prompt text and no key.
+    const text = readFileSync(statePath, "utf8");
+    expect(JSON.parse(text).sessions[sha256("S")].digested).toBe(true);
+    expect(text).not.toContain("linked list");
+    expect(text).not.toContain("f".repeat(64));
   });
   it("prints nothing and exits 0 when the level is none, the prompt is short, a command, or secret-like, and makes no call for skips", async () => {
     const f = await fake(ok("none", "", []));
@@ -200,4 +224,29 @@ describe("bibrain hook", () => {
     expect(context).toContain(fx.ids["fact:launch-color"]);
     expect(fx.brain.connections(owner)[0].status).toBe("Connected");
   }, 20_000);
+  it("end to end: a generic first prompt carries no digest, the next owner-world prompt carries it once, and later prompts never do", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "bibrain-hook-digest-"));
+    cleanup.push(() => rmSync(dir, { recursive: true, force: true }));
+    const fx = buildFixture(join(dir, "fixture.sqlite"));
+    cleanup.push(() => fx.store.close());
+    const app = await createApp(fx.brain, { pairSecret: "test-code", static: false });
+    await app.listen({ host: "127.0.0.1", port: 0 });
+    cleanup.push(() => app.close());
+    const port = (app.server.address() as { port: number }).port;
+    mkdirSync(join(dir, "agent-keys"));
+    writeFileSync(join(dir, "agent-keys", `${ID}.json`), JSON.stringify({ api: `http://127.0.0.1:${port}`, key: fx.agentToken }));
+    const ctx = async (prompt: string) => {
+      const r = await run(["claude-code"], event(prompt, "digest-session"), dir);
+      expect(r.status).toBe(0);
+      return r.stdout ? (JSON.parse(r.stdout).hookSpecificOutput.additionalContext as string) : "";
+    };
+    expect(await ctx("how do I reverse a linked list in Python")).toBe("");
+    const second = await ctx("what color did we pick for the launch");
+    expect(second).toContain("cobalt");
+    expect(second).toContain("current facts and");
+    const third = await ctx("what color did we pick for the launch again, please");
+    expect(third).not.toContain("current facts and");
+    const fourth = await ctx("tell me about Marco");
+    expect(fourth).not.toContain("current facts and");
+  }, 30_000);
 });
