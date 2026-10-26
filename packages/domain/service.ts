@@ -4669,12 +4669,17 @@ export class Brain {
     const v = z.object({ q: z.string().trim().min(1).max(500) }).strict().parse(input);
     if (!questionWords(v.q).length)
       throw new BrainError("INVALID_INPUT", "Ask with a few words, for example: When does the beta open?");
-    const result = this.recallCore(p, { query: v.q, history: false, limit: 3 });
-    const hits: AskHit[] = result.hits.map((h) =>
-      h.kind === "fact"
-        ? { type: "fact", id: h.id, project_id: h.project.id, text: h.text, evidence: h.evidence.map((e) => ({ source_id: e.source_id, source_version: e.source_version, quote: e.quote })) }
-        : { type: "original", id: h.id, project_id: h.project.id, title: h.title, snippet: snippetFor(h.quote, h.title, v.q), source_version: h.version },
-    );
+    // Over-fetch, then show each fact and each note once: recall may keep two passages of one note, the Ask bar lists the best one.
+    const result = this.recallCore(p, { query: v.q, history: false, limit: 6 });
+    const seen = new Set<string>();
+    const hits: AskHit[] = result.hits
+      .filter((h) => !seen.has(`${h.kind}:${h.id}`) && seen.add(`${h.kind}:${h.id}`))
+      .slice(0, 3)
+      .map((h) =>
+        h.kind === "fact"
+          ? { type: "fact", id: h.id, project_id: h.project.id, text: h.text, evidence: h.evidence.map((e) => ({ source_id: e.source_id, source_version: e.source_version, quote: e.quote })) }
+          : { type: "original", id: h.id, project_id: h.project.id, title: h.title, snippet: snippetFor(h.quote, h.title, v.q), source_version: h.version },
+      );
     return { question: v.q, hits, answered: hits.length > 0 };
   }
   status(p: Principal) {

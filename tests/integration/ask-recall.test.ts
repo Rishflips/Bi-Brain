@@ -28,6 +28,20 @@ describe("the owner's Ask bar on recall", () => {
     const original = out.hits.find((h) => h.type === "original") as any;
     if (original) expect(Object.keys(original).sort()).toEqual(["id", "project_id", "snippet", "source_version", "title", "type"]);
   });
+  it("lists a long note once even when several of its passages match, and still returns distinct hits", () => {
+    const f = setup();
+    // The recall core can keep two passages of one note; the Ask bar shows each note once.
+    const core = f.brain.recallCore(owner, { query: "routine meeting scheduling room bookings travel", limit: 20 });
+    expect(core.hits.filter((h) => h.id === f.ids["src:buried"]).length).toBeGreaterThan(1);
+    const out = f.brain.ask(owner, { q: "routine meeting scheduling room bookings travel" });
+    const keys = out.hits.map((h) => `${h.type}:${h.id}`);
+    expect(new Set(keys).size).toBe(keys.length);
+    expect(out.hits.filter((h) => h.id === f.ids["src:buried"])).toHaveLength(1);
+    const mixed = f.brain.ask(owner, { q: "launch party vendor routine meeting scheduling" });
+    const mixedKeys = mixed.hits.map((h) => `${h.type}:${h.id}`);
+    expect(new Set(mixedKeys).size).toBe(mixedKeys.length);
+    expect(mixed.hits.length).toBeLessThanOrEqual(3);
+  });
   it("sees private originals for the owner, says not answered when nothing matches, and still refuses stopword-only questions", () => {
     const f = setup();
     expect(f.brain.ask(owner, { q: "journal right call" }).hits.some((h) => h.id === f.ids["src:private-journal"])).toBe(true);
