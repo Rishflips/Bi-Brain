@@ -158,6 +158,11 @@ describe("the judge fast lane", () => {
     expect(low.hits.map((h) => h.id)).toContain(t.fx.ids["fact:status-new"]);
     expect(low.status).toBe("partial");
     expect(low.near_misses.length).toBeLessThanOrEqual(3);
+    // A demotion really happened: a hit the core returned moved to near misses as judged not relevant, while the exact-entity fact stayed.
+    const moved = plain.hits.filter((h) => !low.hits.some((k) => k.kind === h.kind && k.id === h.id));
+    expect(moved.length).toBeGreaterThan(0);
+    expect(moved.map((h) => h.id)).not.toContain(t.fx.ids["fact:status-new"]);
+    expect(low.near_misses.some((n) => n.reason === "judged not relevant" && moved.some((h) => h.kind === n.kind && h.id === n.id))).toBe(true);
     t.cache.clear();
     t.setBehave((b) => clefAnswer(b, { extra: true }));
     const extra = await t.withWorker(() => t.brain.recall(t.agent, { query: "Northstar status" }));
@@ -218,12 +223,62 @@ describe("the judge fast lane", () => {
     expect(elapsed).toBeGreaterThanOrEqual(850);
     expect(elapsed).toBeLessThan(1400);
     expect(out.hits[0].id).toBe(t.fx.ids["fact:launch-color"]);
-    expect(t.store.get<any>("SELECT status FROM jobs WHERE kind='recall_judge'")!.status).toBe("queued");
+    // The server fences the job it gave up on and deletes the question and passages at once.
+    expect(t.store.get<any>("SELECT status FROM jobs WHERE kind='recall_judge'")!.status).toBe("cancelled");
+    expect(t.store.all("SELECT key FROM settings WHERE key LIKE 'recall_judge%'")).toEqual([]);
     t.time.now = new Date("2026-10-25T10:30:00.000Z");
     sweepJudgeRows(t.brain);
     expect(t.store.get<any>("SELECT status FROM jobs WHERE kind='recall_judge'")!.status).toBe("cancelled");
     expect(t.store.all("SELECT key FROM settings WHERE key LIKE 'recall_judge%'")).toEqual([]);
     expect(await runJudgeOnce(t.deps, t.cache)).toBe(false);
+  });
+  /** One queued judge job straight into the table, as the server would queue it. */
+  const enqueueOne = (t: ReturnType<typeof judged>, tag: string) =>
+    t.brain.enqueueRecallJudge(
+      buildJudgeState({ today: "2026-10-25", request: `launch color ${tag}`, names: ["Northstar"], candidates: [{ kind: "fact", date: "2026-10-20", project: "Northstar", title: null, text: "the launch color is cobalt" }] }),
+      buildJudgeQuestions(1),
+      `hash-${tag}`,
+    )!;
+  it("never reserves for a job whose deadline is about to pass, and deletes its state", async () => {
+    const t = judged();
+    const id = enqueueOne(t, "late");
+    // Leasable (still ahead of the clock) but with less time left than any call could use.
+    t.store.run("UPDATE jobs SET deadline_at=? WHERE id=?", new Date(t.time.now.getTime() + 100).toISOString(), id);
+    expect(await runJudgeOnce(t.deps, t.cache)).toBe(true);
+    expect(t.calls.n).toBe(0);
+    expect(t.store.all("SELECT 1 FROM provider_dispatches")).toEqual([]);
+    expect(t.store.get<any>("SELECT status FROM jobs WHERE id=?", id)!.status).toBe("cancelled");
+    expect(t.store.all("SELECT key FROM settings WHERE key LIKE 'recall_judge%'")).toEqual([]);
+  });
+  it("releases the hold and sends nothing when consent is withdrawn between reserve and mark", async () => {
+    const t = judged();
+    const id = enqueueOne(t, "flip");
+    class FlipAfterReserve extends LocalDispatchAccounting {
+      reserve(...args: Parameters<LocalDispatchAccounting["reserve"]>) {
+        const record = super.reserve(...args);
+        t.brain.setRecallHelp(owner, { enabled: false });
+        return record;
+      }
+    }
+    expect(await runJudgeOnce({ ...t.deps, ledger: new FlipAfterReserve(t.store, () => t.time.now) }, t.cache)).toBe(true);
+    expect(t.calls.n).toBe(0);
+    expect(t.store.all<any>("SELECT state FROM provider_dispatches")).toEqual([{ state: "released" }]);
+    expect(t.store.get<any>("SELECT status FROM jobs WHERE id=?", id)!.status).toBe("cancelled");
+    expect(t.store.all("SELECT key FROM settings WHERE key LIKE 'recall_judge%'")).toEqual([]);
+  });
+  it("leaves no result or state behind when the job was cancelled while its call was out", async () => {
+    const t = judged();
+    const id = enqueueOne(t, "gone");
+    t.setBehave((b) => {
+      // The server gave up while the request was in flight.
+      t.store.run("UPDATE jobs SET status='cancelled',fence=fence+1 WHERE id=?", id);
+      return clefAnswer(b);
+    });
+    expect(await runJudgeOnce(t.deps, t.cache)).toBe(true);
+    expect(t.calls.n).toBe(1);
+    expect(t.store.all<any>("SELECT state FROM provider_dispatches")).toEqual([{ state: "settled" }]);
+    expect(t.store.get<any>("SELECT status FROM jobs WHERE id=?", id)!.status).toBe("cancelled");
+    expect(t.store.all("SELECT key FROM settings WHERE key LIKE 'recall_judge%'")).toEqual([]);
   });
   it("serves a repeated request from the in-worker cache without a second call or ledger row", async () => {
     const t = judged();

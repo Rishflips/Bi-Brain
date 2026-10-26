@@ -3611,6 +3611,13 @@ export class Brain {
       if (!job || job.status === "failed" || job.status === "cancelled") return null;
       await new Promise((r) => setTimeout(r, JUDGE_POLL_MS));
     }
+    // Given up: a job no worker has taken is fenced so none ever pays for it, and the question and passages go now, not at the next sweep.
+    // A running job is left to its worker, which re-checks the deadline before spending and drops a result nobody will read.
+    this.store.transaction(() => {
+      const cancelled = this.store.run("UPDATE jobs SET status='cancelled',fence=fence+1 WHERE id=? AND kind='recall_judge' AND status='queued'", requestId).changes;
+      if (cancelled) this.store.run("DELETE FROM settings WHERE key=?", JUDGE_STATE_KEY(requestId));
+      this.store.run("DELETE FROM settings WHERE key=?", JUDGE_RESULT_KEY(requestId));
+    });
     return null;
   }
   /** Runs the judge for an agent recall when allowed; the deterministic candidates are the only inputs and the only possible outputs. Owner paths never get here. */

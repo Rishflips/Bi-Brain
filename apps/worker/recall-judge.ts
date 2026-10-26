@@ -15,10 +15,12 @@ import type { SystemOneClient } from "./system-one.ts";
  * The cache holds answers only (probabilities by candidate ordinal), never text.
  */
 export type JudgeDeps = { brain: Brain; ledger: DispatchAccounting; client: SystemOneClient; owner: Principal; workerId: string; fetcher?: typeof fetch };
-type JudgeJob = { id: string; fence: number; payload: { request_id: string; state_hash: string } };
+type JudgeJob = { id: string; fence: number; deadline_at: string; payload: { request_id: string; state_hash: string } };
 type Cache = Map<string, { answers: AskAnswer[]; at: number }>;
 /** The lease and the abort bound for one judge call. Integer milliseconds. */
 const JUDGE_LEASE_MS = 10_000;
+/** A job with less time than this before its deadline is never paid for: the agent would have its deterministic answer before the call returned. */
+export const JUDGE_MIN_LEFT_MS = 150;
 const SWEEP_EVERY_MS = Math.floor(JUDGE_SWEEP_AFTER_MS / 4);
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, Math.floor(ms)));
 
@@ -26,8 +28,8 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, Math.floor(ms)));
 function leaseJudge(brain: Brain, owner: string): JudgeJob | undefined {
   return brain.store.transaction(() => {
     const now = brain.now();
-    const row = brain.store.get<{ id: string; fence: number; payload: string }>(
-      "SELECT id,fence,payload FROM jobs WHERE kind='recall_judge' AND status='queued' AND deadline_at>? ORDER BY created_at LIMIT 1",
+    const row = brain.store.get<{ id: string; fence: number; deadline_at: string; payload: string }>(
+      "SELECT id,fence,deadline_at,payload FROM jobs WHERE kind='recall_judge' AND status='queued' AND deadline_at>? ORDER BY created_at LIMIT 1",
       now,
     );
     if (!row) return undefined;
@@ -39,7 +41,7 @@ function leaseJudge(brain: Brain, owner: string): JudgeJob | undefined {
       fence,
       row.id,
     );
-    return { id: row.id, fence, payload: JSON.parse(row.payload) };
+    return { id: row.id, fence, deadline_at: row.deadline_at, payload: JSON.parse(row.payload) };
   });
 }
 
@@ -68,10 +70,15 @@ export async function runJudgeOnce(deps: JudgeDeps, cache: Cache): Promise<boole
     if (!allowed(brain, owner)) return finishJob(brain, job, "cancelled"), true;
     const stored = brain.store.setting<{ state: string; questions: AskQuestion[]; request_hash: string } | null>(JUDGE_STATE_KEY(job.payload.request_id), null);
     if (!stored || typeof stored.state !== "string" || !Array.isArray(stored.questions)) return finishJob(brain, job, "cancelled"), true;
-    const publish = (answers: AskAnswer[]) => {
-      brain.store.set(JUDGE_RESULT_KEY(job.payload.request_id), { answers, at: brain.now() });
-      finishJob(brain, job, "succeeded");
-    };
+    // The result is written only while this attempt is still current and the server is still waiting; otherwise nothing is left behind.
+    const publish = (answers: AskAnswer[]) =>
+      brain.store.transaction(() => {
+        const done = brain.store.run("UPDATE jobs SET status='succeeded',lease_until=NULL WHERE id=? AND fence=? AND status='running'", job.id, job.fence).changes;
+        if (done && Date.parse(job.deadline_at) > brain.clock().getTime()) brain.store.set(JUDGE_RESULT_KEY(job.payload.request_id), { answers, at: brain.now() });
+        else brain.store.run("DELETE FROM settings WHERE key=?", JUDGE_RESULT_KEY(job.payload.request_id));
+        brain.store.run("DELETE FROM settings WHERE key=?", JUDGE_STATE_KEY(job.payload.request_id));
+      });
+    const timeLeft = () => Date.parse(job.deadline_at) - brain.clock().getTime() >= JUDGE_MIN_LEFT_MS;
     const cached = cache.get(stored.request_hash);
     if (cached && Date.now() - cached.at < JUDGE_CACHE_MS) return publish(cached.answers), true;
     if (cached) cache.delete(stored.request_hash);
@@ -85,11 +92,13 @@ export async function runJudgeOnce(deps: JudgeDeps, cache: Cache): Promise<boole
     }
     const prefs = brain.prefs(owner);
     const limits: SpendLimits = { per_job_micro_usd: prefs.per_job_cap_micro_usd, daily_micro_usd: prefs.daily_cap_micro_usd, time_zone: prefs.time_zone };
+    // Still ours, and still worth paying for: a deadline about to pass means the server has (or will have) answered without us.
     const row = brain.store.get<{ lease_until: string | null }>(
-      "SELECT lease_until FROM jobs WHERE id=? AND status='running' AND lease_owner=? AND fence=?",
+      "SELECT lease_until FROM jobs WHERE id=? AND status='running' AND lease_owner=? AND fence=? AND deadline_at>=?",
       job.id,
       leaseOwner,
       job.fence,
+      new Date(brain.clock().getTime() + JUDGE_MIN_LEFT_MS).toISOString(),
     );
     if (!row?.lease_until) return finishJob(brain, job, "cancelled"), true;
     const lease: JobLease = { job_id: job.id, owner: leaseOwner, fence: job.fence, expires_at: row.lease_until };
@@ -112,6 +121,12 @@ export async function runJudgeOnce(deps: JudgeDeps, cache: Cache): Promise<boole
       return finishJob(brain, job, "cancelled"), true;
     }
     if (reserved.state !== "reserved") return finishJob(brain, job, "cancelled"), true;
+    // Consent, caps or the deadline may have changed while the reserve waited on the lock: refuse before the mark, so the hold is released, not kept.
+    const before = brain.prefs(owner);
+    if (!allowed(brain, owner) || before.per_job_cap_micro_usd < limits.per_job_micro_usd || before.daily_cap_micro_usd < limits.daily_micro_usd || !timeLeft()) {
+      ledger.releaseUndispatched(reserved.call_id);
+      return finishJob(brain, job, "cancelled"), true;
+    }
     try {
       ledger.markDispatched(reserved.call_id, lease);
     } catch (error) {
