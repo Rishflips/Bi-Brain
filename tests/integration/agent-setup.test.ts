@@ -97,11 +97,22 @@ describe("checkFolderShape", () => {
 });
 
 describe("second files", () => {
-  it("writes the Claude Code hook file with forward-slashed, double-quoted Windows paths, two pre-approved read tools and no SessionStart", () => {
+  it("writes the Claude Code hook file with an unquoted first token, forward-slashed double-quoted arguments, two pre-approved read tools and no SessionStart", () => {
     expect(forwardSlashes("C:\\Program Files\\nodejs\\node.exe")).toBe("C:/Program Files/nodejs/node.exe");
+    // A Node path with a space is not used as the first token: the bare word `node` is, so the line never starts with a quote.
     expect(hookCommand("claude-code", launch)).toBe(
-      '"C:/Program Files/nodejs/node.exe" "C:/Users/Ana/Bi Brain/apps/cli/bibrain.mjs" hook claude-code --connection 1b4e28ba-2fa1-41d2-883f-0016d3cca427 --data "C:/Users/Ana/Bi Brain/data"',
+      'node "C:/Users/Ana/Bi Brain/apps/cli/bibrain.mjs" hook claude-code --connection 1b4e28ba-2fa1-41d2-883f-0016d3cca427 --data "C:/Users/Ana/Bi Brain/data"',
     );
+    expect(hookCommand("claude-code", { ...launch, node: "C:\\nodejs\\node.exe" })).toBe(
+      'C:/nodejs/node.exe "C:/Users/Ana/Bi Brain/apps/cli/bibrain.mjs" hook claude-code --connection 1b4e28ba-2fa1-41d2-883f-0016d3cca427 --data "C:/Users/Ana/Bi Brain/data"',
+    );
+    expect(hookCommand("codex", { ...launch, node: "/usr/local/bin/node" }).startsWith('/usr/local/bin/node "')).toBe(true);
+    // Anything a shell would split or interpret in the Node path also falls back to the bare word, and no command ever starts with a quote.
+    for (const node of ["C:\\Program Files\\nodejs\\node.exe", "C:\\a&b\\node.exe", "C:\\100%\\node.exe", "C:\\x(1)\\node.exe"]) {
+      const command = hookCommand("claude-code", { ...launch, node });
+      expect(command.startsWith("node ")).toBe(true);
+      expect(command[0]).not.toBe('"');
+    }
     expect(secondFileTarget("claude-code")).toEqual({ dir: ".claude", file: [".claude", "settings.local.json"], role: "hook" });
     const text = secondFileContents("claude-code", launch)!;
     const parsed = JSON.parse(text);

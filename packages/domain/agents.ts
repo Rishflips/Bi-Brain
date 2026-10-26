@@ -72,10 +72,17 @@ export function secondFileTarget(client: AgentClient): SecondFile | null {
   return SECOND_FILES[client];
 }
 export const forwardSlashes = (path: string) => path.replace(/\\/g, "/");
-/** Forward slashes and double quotes, so cmd.exe, PowerShell and Git Bash all parse the same line. */
+/**
+ * Forward slashes everywhere. The first token is never quoted: a line that starts with a quoted string is an expression in PowerShell, and `cmd /c` strips the first and last quote of such a line.
+ * It is the Node path when that path has nothing a shell would split or interpret, otherwise the bare word `node`, which then has to be Node 24.19 or later on the PATH of the agent.
+ * Only the arguments (the CLI path and the data directory) are double-quoted; the connection id is a UUID and needs none.
+ * This form is designed to parse the same way in Git Bash, PowerShell and cmd.exe. It has not been observed running in any of them, including Claude Code's and Codex's own shell: the owner-run recall proof decides.
+ */
 export function hookCommand(client: "claude-code" | "codex", launch: LaunchSpec): string {
   const q = (s: string) => `"${forwardSlashes(s)}"`;
-  return `${q(launch.node)} ${q(launch.cli)} hook ${client} --connection ${launch.connectionId} --data ${q(launch.dataDir)}`;
+  const exe = forwardSlashes(launch.node);
+  const first = /[\s"'`$&|;<>()^!*?[\]{}~#%]/u.test(exe) ? "node" : exe;
+  return `${first} ${q(launch.cli)} hook ${client} --connection ${launch.connectionId} --data ${q(launch.dataDir)}`;
 }
 export const CURSOR_RULE = [
   "---",

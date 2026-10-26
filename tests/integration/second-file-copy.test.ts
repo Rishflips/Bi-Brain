@@ -10,8 +10,9 @@ describe("second file copy", () => {
     expect(secondFileLabel({ client: "codex", recall: none }, hook)).toBe("Recall on every prompt: on after Codex trusts the hook");
     expect(secondFileLabel({ client: "codex", recall: pushed }, hook)).toBe("Recall on every prompt: on");
   });
-  it("keeps Claude Code on as soon as the file is written, and says add-it-yourself when the file already existed", () => {
-    expect(secondFileLabel({ client: "claude-code", recall: none }, hook)).toBe("Recall on every prompt: on");
+  it("does not say Claude Code recall is on until a prompt has been pushed, and says add-it-yourself when the file already existed", () => {
+    expect(secondFileLabel({ client: "claude-code", recall: none }, hook)).toBe("Recall on every prompt: on after your next prompt");
+    expect(secondFileLabel({ client: "claude-code", recall: pushed }, hook)).toBe("Recall on every prompt: on");
     expect(secondFileLabel({ client: "codex", recall: pushed }, { role: "hook", state: "exists" })).toBe("Recall on every prompt: add it yourself");
     expect(secondFileLabel({ client: "cursor", recall: none }, { role: "rule", state: "written" })).toBe("Rule file added");
     expect(secondFileLabel({ client: "cursor", recall: none }, { role: "rule", state: "exists" })).toBe("Rule file: add it yourself");

@@ -199,9 +199,10 @@ cancel.
 the project, the access level and the folder. A key that exists is never treated
 as an active agent, and a hint tells the person to open the agent in that folder
 and approve BiBrain once. When the hook was written the line under the
-connection reads "Recall on every prompt: on" ("Rule file added" for Cursor). For
-Codex it reads "Recall on every prompt: on after Codex trusts the hook" until
-BiBrain has recorded a push, because Codex runs a project hook only after the
+connection reads "Recall on every prompt: on after your next prompt" until
+BiBrain has recorded a push, then "Recall on every prompt: on" ("Rule file added"
+for Cursor). For Codex it reads "Recall on every prompt: on after Codex trusts
+the hook" until the first push, because Codex runs a project hook only after the
 person trusts it in `/hooks`.
 
 **Connected.** The status becomes "Connected · last used {date}" only after the

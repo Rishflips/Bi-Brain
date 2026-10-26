@@ -125,7 +125,7 @@ test("Claude Code gets the server file and the prompt hook, and an existing hook
   await expect(claude.getByTestId("agent-file-hook")).toContainText("mcp__bibrain__brain_recall");
   await expect(claude.getByText("The second file turns on recall on every prompt. Only two read-only tools are pre-approved; nothing in it can write.")).toBeVisible();
   await claude.getByRole("button", { name: "Add to Claude Code", exact: true }).last().click();
-  await expect(claude).toContainText("Recall on every prompt: on");
+  await expect(claude).toContainText("Recall on every prompt: on after your next prompt");
   const hook = readFileSync(join(folder, ".claude", "settings.local.json"), "utf8");
   expect(hook).toContain('"timeout": 5');
   expect(hook).not.toMatch(/[0-9a-f]{64}/);

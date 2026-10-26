@@ -62,12 +62,18 @@ the folder's `.codex/` layer and the hook itself in `/hooks`, so the tile says
 recorded a push. Until you trust it, Codex relies on the server instructions and
 tool descriptions.
 
-Windows: the hook command is written with forward slashes and double quotes
-(`"C:/Program Files/nodejs/node.exe" "C:/.../bibrain.mjs" hook ...`) so that Git
-Bash, PowerShell and `cmd.exe` parse it the same way. It has not yet been observed
-running in any shell, including Claude Code's own, and tests only assert the
-string. How `cmd.exe /c` treats a line that both starts and ends with a quote is
-likewise untested. The owner-run recall proof below decides.
+Windows: the hook command is written with forward slashes and never starts with
+a quote, because PowerShell reads a line that starts with a quoted string as an
+expression and `cmd /c` strips the first and last quote of such a line. The first
+token is the Node path when it has no space or shell-special character
+(`C:/nodejs/node.exe "C:/.../bibrain.mjs" hook ...`), otherwise the bare word
+`node` (`node "C:/.../bibrain.mjs" hook ...`); only the arguments are
+double-quoted. The form is designed to parse the same way in Git Bash,
+PowerShell and `cmd.exe`, but it has not been observed running natively in any
+shell, including Claude Code's and Codex's own, and the tests only assert the
+string. When the bare `node` is used, the `node` found on the PATH of the agent
+must be Node 24.19 or later, because the hook uses that runtime. The owner-run
+recall proof below decides.
 
 ## Recorded native acceptance
 

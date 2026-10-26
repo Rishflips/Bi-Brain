@@ -222,7 +222,7 @@ describe("agentConnect", () => {
     expect(done.files.map((f) => [f.role, f.state])).toEqual([["server", "written"], ["hook", "written"]]);
     const written = JSON.parse(readFileSync(join(folder, ".codex", "hooks.json"), "utf8"));
     const command: string = written.hooks.UserPromptSubmit[0].hooks[0].command;
-    expect(command.startsWith('"C:/Program Files/nodejs/node.exe" "C:/Users/Ana/Bi Brain/apps/cli/bibrain.mjs" hook codex --connection ')).toBe(true);
+    expect(command.startsWith('node "C:/Users/Ana/Bi Brain/apps/cli/bibrain.mjs" hook codex --connection ')).toBe(true);
     expect(command).not.toContain("\\");
     expect(s.setting(`agent_files:${pv.connection_id}`, [])).toHaveLength(2);
     svc.forget(pv.connection_id);
