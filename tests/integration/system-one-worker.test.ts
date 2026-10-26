@@ -195,7 +195,7 @@ describe("the worker runs sorting help", () => {
     t.brain.capture(owner, { project_id: "inbox", title: "Keys", body: "Use sk-abcdefghijklmnopqrstuvwxyz0123456789 for the build.", visibility: "project" });
     expect(t.job()).toBeUndefined();
     // Drive the job directly with a context that holds the secret.
-    t.brain.systemOneContext = () => ({ note: "Use sk-abcdefghijklmnopqrstuvwxyz0123456789 for the build.", title: "Keys", project_id: "inbox", projects: [], hasCurrentFacts: false });
+    t.brain.systemOneContext = () => ({ note: "Use sk-abcdefghijklmnopqrstuvwxyz0123456789 for the build.", title: "Keys", project_id: "inbox", projects: [], hasCurrentFacts: false, entityNames: [] });
     const client = clientFor("ollama", (async () => { throw new Error("must not be called"); }) as unknown as typeof fetch);
     const r = await runSystemOneJob(
       { brain: t.brain, ledger: t.ledger, client, owner, leaseOwner: "w" },

@@ -47,7 +47,7 @@ import {
   type AdvisoryRecord,
 } from "./decision-advisory.ts";
 import { extractReviewableMemory } from "./memory-understanding.ts";
-import { adviseFrom, workerRunning, type S1Advice, type S1Context } from "./system-one.ts";
+import { adviseFrom, S1_TOPIC_MAX, workerRunning, type S1Advice, type S1Context } from "./system-one.ts";
 import type { AskResult } from "../providers/system-one-ask.ts";
 import { buildBrief, gateFitsBrief, type BriefInput, type BriefJob } from "./brief.ts";
 import { buildProjectView } from "./project-view.ts";
@@ -4359,7 +4359,24 @@ export class Brain {
         .filter((x) => x.watched)
         .map(({ id, title }) => ({ id, title })),
       hasCurrentFacts: this.currentClaims(owner, s.project_id).length > 0,
+      entityNames: this.topicNames(owner, s.project_id),
     };
+  }
+  /** Entity names an agent could read: no name or preference facts, nothing owner-private, nothing citing a private source. Owner-only facts never ride along under the sorting consent. */
+  private topicNames(owner: Principal, project: string): string[] {
+    const names = this.currentClaims(owner, project)
+      .filter((c) => c.data.aspect !== "name" && c.data.aspect !== "preference" && c.data.authority !== "owner_private")
+      .filter((c) =>
+        ((c.data.evidence ?? []) as Evidence[]).every((e) => {
+          try {
+            return this.source(owner, e.source_id).visibility !== "private";
+          } catch {
+            return false;
+          }
+        }),
+      )
+      .map((c) => String(c.data.entity));
+    return [...new Set(names)].sort().slice(0, S1_TOPIC_MAX);
   }
   /** Stores one answer per source version and applies its advice, all in one short transaction. */
   recordSystemOneResult(
@@ -4378,6 +4395,7 @@ export class Brain {
         source_version: version,
         job_id: job.id,
         answers: result.answers,
+        topic_options: ctx.entityNames.slice(0, S1_TOPIC_MAX),
         model: result.model,
         policy_version: result.policy_version,
         price_version: result.price_version,
