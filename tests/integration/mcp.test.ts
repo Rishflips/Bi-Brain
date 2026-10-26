@@ -60,7 +60,12 @@ it("official SDK stdio client proposes through gate, fresh-session recalls raw e
     ).toBe(true);
     expect(
       (await readOnly.listTools()).tools.map((t) => t.name).sort(),
-    ).toEqual(["brain.search", "brain.get", "brain.ask", "brain.diff"].sort());
+    ).toEqual(["brain_recall", "brain_open"].sort());
+    expect(
+      (await readOnly.listTools()).tools.find((t) => t.name === "brain_recall")
+        ?.outputSchema,
+    ).toBeDefined();
+    expect(readOnly.getInstructions()).toContain("call brain_recall");
     const forbidden = await fetch(
       `http://127.0.0.1:${port}/api/v1/agent/propose`,
       {
@@ -85,29 +90,27 @@ it("official SDK stdio client proposes through gate, fresh-session recalls raw e
     });
     const full = await connect(fullGrant.token);
     expect(
-      (await full.listTools()).tools.find((t) => t.name === "brain.forget")
+      (await full.listTools()).tools.find((t) => t.name === "brain_forget")
         ?.annotations?.destructiveHint,
     ).toBe(true);
     expect(
-      (await full.listTools()).tools.find((t) => t.name === "brain.propose")
+      (await full.listTools()).tools.find((t) => t.name === "brain_propose")
         ?.annotations?.readOnlyHint,
     ).toBe(false);
-    expect((await full.listTools()).tools.map((t) => t.name)).toHaveLength(9);
+    expect((await full.listTools()).tools.map((t) => t.name)).toHaveLength(7);
     const first = await connect();
     expect((await first.listTools()).tools.map((t) => t.name).sort()).toEqual(
       [
-        "brain.search",
-        "brain.get",
-        "brain.propose",
-        "brain.note",
-        "brain.link",
-        "brain.ask",
-        "brain.intent",
-        "brain.diff",
+        "brain_recall",
+        "brain_open",
+        "brain_note",
+        "brain_propose",
+        "brain_intent",
+        "brain_link",
       ].sort(),
     );
     const remembered = await first.callTool({
-      name: "brain.propose",
+      name: "brain_propose",
       arguments: {
         project_id: "inbox",
         text: "MCP_UNIQUE_LANTERN 🧠 launch Monday",
@@ -135,14 +138,15 @@ it("official SDK stdio client proposes through gate, fresh-session recalls raw e
     while (await worker.tick()) {}
     const fresh = await connect();
     const context = await fresh.callTool({
-      name: "brain.search",
-      arguments: { project_id: "inbox", query: "LANTERN", mode: "raw" },
+      name: "brain_recall",
+      arguments: { query: "LANTERN" },
     });
+    expect((context as any).structuredContent.status).not.toBe("no_match");
     expect(JSON.stringify(context)).toContain("MCP_UNIQUE_LANTERN");
     expect(JSON.stringify(context)).not.toContain("PRIVATE_MCP_SECRET");
     const denied = await fresh.callTool({
-      name: "brain.get",
-      arguments: { project_id: "inbox", object_id: secret.source_id },
+      name: "brain_open",
+      arguments: { id: secret.source_id },
     });
     expect(denied.isError).toBe(true);
     expect(JSON.stringify(denied)).not.toContain("OTHER_MCP_SECRET");
@@ -153,26 +157,23 @@ it("official SDK stdio client proposes through gate, fresh-session recalls raw e
     });
     while (await worker.tick()) {}
     const corrected = await fresh.callTool({
-      name: "brain.search",
-      arguments: { project_id: "inbox", query: "LANTERN", mode: "raw" },
+      name: "brain_recall",
+      arguments: { query: "LANTERN launch" },
     });
     expect(JSON.stringify(corrected)).toContain("Friday");
     expect(JSON.stringify(corrected)).not.toContain("Monday");
     const delta = await fresh.callTool({
-      name: "brain.diff",
-      arguments: {
-        project_id: "inbox",
-        object_id: sourceId,
-        from_version: 1,
-        to_version: 2,
-      },
+      name: "brain_open",
+      arguments: { id: sourceId, version: 2, compare_version: 1 },
     });
-    expect(JSON.parse((delta.content as any)[0].text).changed).toBe(true);
+    expect(JSON.parse((delta.content as any)[0].text).compare.changed).toBe(
+      true,
+    );
     expect(brain.connections(owner)[0].status).toBe("Connected");
     brain.revoke(owner, grant.id);
     const revoked = await fresh.callTool({
-      name: "brain.search",
-      arguments: { project_id: "inbox", query: "LANTERN" },
+      name: "brain_recall",
+      arguments: { query: "LANTERN" },
     });
     expect(revoked.isError).toBe(true);
     expect(JSON.stringify(revoked)).not.toContain("MCP_UNIQUE_LANTERN");

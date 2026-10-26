@@ -1,6 +1,26 @@
 # Agent integration
 
-**Harness transition (2026-09-28):** The original five-tool table below is historical. Default MCP now registers the owner-directed eight names `brain.search`, `brain.get`, `brain.propose`, `brain.forget`, `brain.link`, `brain.ask`, `brain.intent`, `brain.diff`, filtered by the grant's actual operations. `brain_remember` is removed; clients must send a typed `brain.propose` and handle `commit` or `queue` results. Read-only grants discover only search/get/ask/diff and direct HTTP mutation is denied. A dedicated `forget` grant is required for agent-owned captures. Client-specific enforced binding and native two-client validation remain unverified; the tested local wrapper is the only enforced path. See [HARNESS_MILESTONES.md](HARNESS_MILESTONES.md).
+**Tool contract v2 (2026-10-25):** Default MCP registers seven underscore tools, filtered by the grant's actual operations: `brain_recall` and `brain_open` (grant op `read`), `brain_note`, `brain_propose`, `brain_intent` and `brain_link` (grant op `propose_memory`), and `brain_forget` (grant op `forget`, agent-owned captures only). `project_id` is optional on reads: `brain_recall` searches every project the connection can read unless one is named, and `brain_open` takes only the id from a hit. The earlier eight-name contract with dotted names (search, get, ask, diff and the rest) is gone with no aliases; existing connections pick the new names up on their next session, with their config and key files unchanged. The server also sends short `instructions` that tell an agent when to call `brain_recall` and how to read the result. Read-only grants discover only `brain_recall` and `brain_open`, and direct HTTP mutation is denied. Client-specific enforced binding and native two-client validation remain unverified; the tested local wrapper is the only enforced path. See [HARNESS_MILESTONES.md](HARNESS_MILESTONES.md).
+
+### Result contract
+
+`brain_recall` returns the same JSON as `GET /api/v1/agent/recall` as `structuredContent` (the tool declares an `outputSchema`), with a compact text rendering in `content[0].text` for clients that ignore structured output:
+
+```json
+{
+  "status": "found | partial | no_match",
+  "as_of": "ISO time",
+  "searched": { "query": "...", "projects": [{ "id": "...", "title": "..." }], "history": false, "candidates": 12, "index_complete": true },
+  "hits": [
+    { "kind": "fact", "id": "...", "project": { "id": "...", "title": "..." }, "text": "...", "recorded_at": "...", "checked_at": "...", "freshness": "current | stale | replaced | retired", "replaced_by": null, "evidence": [{ "source_id": "...", "source_version": 1, "quote": "..." }], "why": ["matched: launch, color"], "score": 0.9 },
+    { "kind": "original", "id": "...", "version": 1, "project": { "id": "...", "title": "..." }, "title": "...", "quote": "...", "start": 0, "end": 40, "captured_at": "...", "freshness": "current", "why": [], "score": 0.4 }
+  ],
+  "near_misses": [{ "kind": "fact | original", "id": "...", "title": "...", "reason": "..." }],
+  "next_step": "..."
+}
+```
+
+`no_match` is a normal answer, not an error: nothing recorded matched, `hits` is empty and `isError` stays false. An agent should say the topic is not in the brain instead of filling the gap, and an empty result is not proof that something is false. `isError` is set only for transport or authorization failures (for example a revoked connection). `brain_open` returns the full original or fact for an id; with `compare_version` it adds a `compare` block that says what changed between the two versions.
 
 ## Promise levels
 

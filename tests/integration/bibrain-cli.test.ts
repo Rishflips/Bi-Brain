@@ -66,13 +66,13 @@ describe("bibrain connect", () => {
     cleanup.push(() => client.close());
     await client.connect(transport);
     const { tools } = await client.listTools();
-    expect(tools.map((t) => t.name)).toEqual(expect.arrayContaining(["brain.search", "brain.propose"]));
-    const res = await client.callTool({ name: "brain.search", arguments: { project_id: "inbox", query: "anything" } });
+    expect(tools.map((t) => t.name)).toEqual(expect.arrayContaining(["brain_recall", "brain_propose"]));
+    const res = await client.callTool({ name: "brain_recall", arguments: { query: "anything" } });
     expect(res.isError).toBeFalsy();
     expect(b.connections(owner)[0].status).toBe("Connected");
 
     b.revoke(owner, g.id);
-    const denied = await client.callTool({ name: "brain.search", arguments: { project_id: "inbox", query: "anything" } });
+    const denied = await client.callTool({ name: "brain_recall", arguments: { query: "anything" } });
     expect(denied.isError).toBe(true);
   }, 30_000);
 

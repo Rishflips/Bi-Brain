@@ -1,6 +1,6 @@
 # HTTP API contract
 
-**Harness transition:** Owner GUI source capture remains at `/api/v1/sources`; direct agent capture is denied. Agents use `/api/v1/agent/propose` through the shared gate. Scoped current-truth `/api/v1/agent/search` defaults to accepted pages; `mode=raw` or `mode=historical` is explicit. Capability-filtered MCP names and their HTTP backing routes are documented in [AGENT_INTEGRATION.md](AGENT_INTEGRATION.md). Earlier endpoint descriptions below are retained for the local preview and may describe pre-harness behavior; the new harness has not cleared S4 release verification.
+**Harness transition:** Owner GUI source capture remains at `/api/v1/sources`; direct agent capture is denied. Agents use `/api/v1/agent/propose` through the shared gate. Scoped `/api/v1/agent/recall` returns ranked, cited hits (current facts first, originals next; `history=true` adds replaced and retired facts) and `/api/v1/agent/open` reads one hit by id, optionally comparing two versions. Capability-filtered MCP names and their HTTP backing routes are documented in [AGENT_INTEGRATION.md](AGENT_INTEGRATION.md). Earlier endpoint descriptions below are retained for the local preview and may describe pre-harness behavior; the new harness has not cleared S4 release verification.
 
 Prefix: /api/v1. JSON request and response bodies except exports/import uploads and the
 raw signed Paddle webhook. Validate with runtime schemas. This is the normative contract;
@@ -110,7 +110,7 @@ Cache keys include principal/grant version, project, object versions, and provid
 
 # Harness transition endpoints
 
-An owner can `POST /api/v1/sources/:id/claim-proposals` with `{expected_version,entity,field:{aspect:"status",value},quote}` to queue a claim against an exact passage in the current source version. The owner then accepts or rejects it through the existing gate review endpoint. Agent `brain.intent` requests retain typed propose/update/close action, target ID and expected version, with optional success criteria and due/review times; owner approval applies the versioned goal transition.
+An owner can `POST /api/v1/sources/:id/claim-proposals` with `{expected_version,entity,field:{aspect:"status",value},quote}` to queue a claim against an exact passage in the current source version. The owner then accepts or rejects it through the existing gate review endpoint. Agent `brain_intent` requests retain typed propose/update/close action, target ID and expected version, with optional success criteria and due/review times; owner approval applies the versioned goal transition.
 
 The owner may call `POST /api/v1/import-adapters/preview` with `{kind:"folder"|"chat",project_id,entries:[{path,content}]}` and then `POST /api/v1/import-adapters/apply` with `{selection,checkpoint}`. The checkpoint is the preview SHA-256; a changed selection is rejected. The deletion response includes `proof` when a vault is configured; `GET /api/v1/forget-proofs/:id` retrieves the persisted owner-only result. Every false proof bit means managed deletion is incomplete. Embedding/graph `configured:false` means no such active store was found, not that an external service was inspected.
 
