@@ -2951,41 +2951,74 @@ export class Brain {
       });
     });
   }
+  /** Whether one claim is visible to this principal in its project: the single rule `currentClaims` and the recall verifier share. */
+  claimVisible(p: Principal, project: string, c: Entity, includeRetired: boolean): boolean {
+    const at = this.clock().getTime();
+    return (
+      c.project_id === project &&
+      (includeRetired ||
+        (c.data.status === "current" &&
+          Date.parse(c.data.valid_from) <= at &&
+          (!c.data.valid_to || at < Date.parse(c.data.valid_to)))) &&
+      (!c.data.evidence?.length ||
+        (() => {
+          try {
+            if (c.data.status === "current")
+              this.checkEvidence(p, project, c.data.evidence);
+            else
+              for (const e of c.data.evidence as Evidence[]) {
+                const source = this.source(p, e.source_id, e.source_version);
+                if (
+                  source.project_id !== project ||
+                  Array.from(source.body).slice(e.start, e.end).join("") !==
+                    e.quote
+                )
+                  throw new Error("Historical evidence unavailable");
+              }
+            return true;
+          } catch {
+            return false;
+          }
+        })()) &&
+      (p.kind === "owner" ||
+        (c.data.aspect !== "name" &&
+          c.data.aspect !== "preference" &&
+          c.data.authority !== "owner_private"))
+    );
+  }
   currentClaims(p: Principal, project: string, includeRetired = false) {
     this.access(p, project);
-    const at = this.clock().getTime();
-    return this.entities(this.ownerPrincipal(), "claim").filter(
-      (c) =>
-        c.project_id === project &&
-        (includeRetired ||
-          (c.data.status === "current" &&
-            Date.parse(c.data.valid_from) <= at &&
-            (!c.data.valid_to || at < Date.parse(c.data.valid_to)))) &&
-        (!c.data.evidence?.length ||
-          (() => {
-            try {
-              if (c.data.status === "current")
-                this.checkEvidence(p, project, c.data.evidence);
-              else
-                for (const e of c.data.evidence as Evidence[]) {
-                  const source = this.source(p, e.source_id, e.source_version);
-                  if (
-                    source.project_id !== project ||
-                    Array.from(source.body).slice(e.start, e.end).join("") !==
-                      e.quote
-                  )
-                    throw new Error("Historical evidence unavailable");
-                }
-              return true;
-            } catch {
-              return false;
-            }
-          })()) &&
-        (p.kind === "owner" ||
-          (c.data.aspect !== "name" &&
-            c.data.aspect !== "preference" &&
-            c.data.authority !== "owner_private")),
+    return this.entities(this.ownerPrincipal(), "claim").filter((c) =>
+      this.claimVisible(p, project, c, includeRetired),
     );
+  }
+  /** One claim by id, only when it is visible to `p`; no other claim is loaded or verified. */
+  visibleClaim(p: Principal, project: string, id: string, includeRetired: boolean): Entity | null {
+    try {
+      this.access(p, project);
+      const c = this.entity(this.ownerPrincipal(), id);
+      return c.kind === "claim" && this.claimVisible(p, project, c, includeRetired) ? c : null;
+    } catch (e) {
+      if (e instanceof BrainError && e.code === "NOT_FOUND") return null;
+      throw e;
+    }
+  }
+  /** Which current claims in these projects supersede which claim: target id -> superseding ids. One indexed-by-project scan, only rows that supersede something. */
+  supersessions(projects: string[]): Map<string, string[]> {
+    const out = new Map<string, string[]>();
+    if (!projects.length) return out;
+    const rows = this.store.all<{ id: string; target: string }>(
+      `SELECT e.id AS id, j.value AS target FROM entities e, json_each(json_extract(e.data,'$.supersedes')) j
+       WHERE e.kind='claim' AND e.project_id IN (${projects.map(() => "?").join(",")}) AND json_extract(e.data,'$.status')='current'`,
+      ...projects,
+    );
+    for (const r of rows) out.set(r.target, [...(out.get(r.target) ?? []), r.id]);
+    return out;
+  }
+  /** The visible current claim that supersedes `claimId`, if any. */
+  supersededBy(p: Principal, project: string, claimId: string, includeRetired: boolean, known?: Map<string, string[]>): string | null {
+    for (const id of (known ?? this.supersessions([project])).get(claimId) ?? []) if (this.visibleClaim(p, project, id, includeRetired)) return id;
+    return null;
   }
   pages(p: Principal, project: string, query = "", includeRetired = false) {
     this.access(p, project);
@@ -3270,7 +3303,7 @@ export class Brain {
         if (!historical)
           throw new BrainError("NOT_FOUND", "Revision unavailable.", 404);
         const data = JSON.parse(historical.data);
-        if (p.kind === "agent" && ["name", "preference"].includes(data.aspect))
+        if (p.kind === "agent" && (["name", "preference"].includes(data.aspect) || data.authority === "owner_private"))
           throw new BrainError("NOT_FOUND", "Item unavailable.", 404);
         for (const ref of data.evidence ?? []) {
           const source = this.source(p, ref.source_id, ref.source_version);
@@ -3396,6 +3429,26 @@ export class Brain {
   recallCore(p: Principal, input: unknown): RecallResult {
     return this.recallInternal(p, recallInputSchema.parse(input)).result;
   }
+  /** Entity names of current facts this principal may see whose every word is in `terms`; at most the matching claims are loaded. */
+  private visibleEntityNames(p: Principal, scope: { id: string; title: string }[], terms: Set<string>, visibilities: RecallVisibility[]): string[] {
+    if (!terms.size || !scope.length) return [];
+    const titles = new Map(scope.map((pr) => [pr.id, pr.title]));
+    const rows = this.store.all<{ ref_id: string; ref_version: number; project_id: string; prefix: string }>(
+      `SELECT DISTINCT ref_id,ref_version,project_id,prefix FROM recall_chunks WHERE kind='fact' AND status='current' AND project_id IN (${scope.map(() => "?").join(",")}) AND visibility IN (${visibilities.map(() => "?").join(",")})`,
+      ...scope.map((pr) => pr.id),
+      ...visibilities,
+    );
+    const names = new Set<string>();
+    for (const r of rows) {
+      const lead = `${titles.get(r.project_id) ?? ""} · `;
+      const entity = r.prefix.startsWith(lead) ? r.prefix.slice(lead.length) : "";
+      const words = questionWords(entity);
+      if (!words.length || names.has(entity) || !words.every((w) => terms.has(w))) continue;
+      const c = this.visibleClaim(p, r.project_id, r.ref_id, false);
+      if (c && Number(c.version) === Number(r.ref_version) && Array.isArray(c.data.evidence) && c.data.evidence.length > 0) names.add(entity);
+    }
+    return [...names];
+  }
   recallInternal(p: Principal, v: { query: string; project_id?: string; history: boolean; limit: number }) {
     const now = this.clock();
     const scope = (v.project_id
@@ -3411,14 +3464,13 @@ export class Brain {
     });
     const fts = buildFtsQuery(v.query);
     const ids = scope.map((pr) => pr.id);
-    const marks = ids.map(() => "?").join(",");
-    // Names only (never evidence): the distinct entities of current claims in scope, with the agent exclusions. One SQL, no claim loading.
-    const agentOnly = p.kind === "owner" ? "" : " AND json_extract(data,'$.aspect') NOT IN ('name','preference') AND coalesce(json_extract(data,'$.authority'),'') <> 'owner_private'";
-    const entityNames = ids.length
-      ? [...new Set(this.store.all<{ entity: unknown }>(`SELECT DISTINCT json_extract(data,'$.entity') AS entity FROM entities WHERE kind='claim' AND project_id IN (${marks}) AND json_extract(data,'$.status')='current'${agentOnly}`, ...ids).map((r) => r.entity).filter((x): x is string => typeof x === "string" && x.length > 0))]
-      : [];
-    if (!fts.match) return { result: empty("no_match", 0), ranked: [] as Candidate[], authorized: [] as RecallHit[], signals: deterministicSignals([], [], entityNames), entityNames, scope };
     const visibilities: RecallVisibility[] = p.kind === "owner" ? ["project", "private", "owner"] : ["project"];
+    // Entity names for the exact-entity signal. A name counts only when its words are all in the query and a claim of that name passes the same
+    // visibility rules recall applies to this principal (current, valid now, evidence readable, no owner-only facts for agents), so a name never
+    // confirms an item the principal cannot see. Only claims whose name could match are loaded.
+    const termSet = new Set(fts.terms);
+    const entityNames = ids.length ? this.visibleEntityNames(p, scope, termSet, visibilities) : [];
+    if (!fts.match) return { result: empty("no_match", 0), ranked: [] as Candidate[], authorized: [] as RecallHit[], signals: deterministicSignals([], [], entityNames), entityNames, scope };
     const status = v.history ? "any" : "current";
     const search = (match: string, kind: "fact" | "original") => searchRecallChunks(this.store, { match, kind, projects: ids, visibilities, status, limit: CANDIDATES_PER_LIST });
     const lists = {
@@ -3429,13 +3481,9 @@ export class Brain {
     };
     const confirmations = this.store.setting<Record<string, string>>("claim_confirmations", {});
     const titles = new Map(scope.map((pr) => [pr.id, pr.title]));
-    // Claims are verified per project, once, and only for projects that have a fact candidate.
-    const claimCache = new Map<string, Entity[]>();
-    const claimsFor = (projectId: string) => {
-      if (!claimCache.has(projectId)) claimCache.set(projectId, this.currentClaims(p, projectId, v.history));
-      return claimCache.get(projectId)!;
-    };
     const authorized: { candidate: Candidate; hit: RecallHit }[] = [];
+    // Built once, and only if a fact candidate survives verification.
+    let supersessions: Map<string, string[]> | undefined;
     for (const candidate of fuse(lists, now)) {
       const r = candidate.row;
       const project = { id: r.project_id, title: titles.get(r.project_id) ?? "Project" };
@@ -3447,16 +3495,17 @@ export class Brain {
           if (quote !== r.text) continue;
           authorized.push({ candidate, hit: { kind: "original", id: s.id, version: s.version, project, title: s.title, quote, start: r.start, end: r.end, captured_at: s.captured_at, freshness: "current", why: whyFor(fts.terms, `${s.title} ${quote}`), score: candidate.fused } });
         } else {
-          const claims = claimsFor(r.project_id);
-          const c = claims.find((x) => x.id === r.ref_id);
-          if (!c || c.version !== r.ref_version) continue;
-          const replacedBy = claims.find((x) => x.data.status === "current" && Array.isArray(x.data.supersedes) && x.data.supersedes.includes(c.id))?.id ?? null;
-          if (c.data.status !== "current" && !v.history) continue;
+          // Only this candidate is loaded and verified. A claim without evidence is a hypothesis and is never presented as a fact to anyone.
+          const c = this.visibleClaim(p, r.project_id, r.ref_id, v.history);
+          if (!c || c.version !== r.ref_version || !Array.isArray(c.data.evidence) || c.data.evidence.length === 0) continue;
+          supersessions ??= this.supersessions(ids);
+          const replacedBy = this.supersededBy(p, r.project_id, c.id, v.history, supersessions);
           const fresh = factFreshness(c, confirmations, replacedBy, now);
           authorized.push({ candidate, hit: { kind: "fact", id: c.id, project, text: r.text, recorded_at: String(c.data.recorded_at ?? c.created_at), checked_at: fresh.checked_at, freshness: fresh.freshness, replaced_by: replacedBy, evidence: (c.data.evidence as Evidence[]).map((e) => ({ source_id: e.source_id, source_version: e.source_version, quote: e.quote })), why: whyFor(fts.terms, r.text), score: candidate.fused } });
         }
-      } catch {
-        /* an index row that outlived its item or its grant is dropped from every field */
+      } catch (e) {
+        // An index row that outlived its item or its grant is dropped from every field. Anything else is a real fault and must surface.
+        if (!(e instanceof BrainError && (e.code === "NOT_FOUND" || e.code === "SOURCE_STALE"))) throw e;
       }
     }
     const ranked = authorized.map((a) => a.candidate);
@@ -3479,23 +3528,36 @@ export class Brain {
       .strict()
       .parse(input);
     const sourceRow = this.store.get<{ project_id: string }>("SELECT project_id FROM sources WHERE id=? AND state!='deleted'", v.id);
-    const entityRow = sourceRow ? undefined : this.store.get<{ project_id: string; kind: string; version: number }>("SELECT project_id,kind,version FROM entities WHERE id=?", v.id);
+    const entityRow = sourceRow ? undefined : this.store.get<{ project_id: string; kind: string; version: number; status: string | null }>("SELECT project_id,kind,version,json_extract(data,'$.status') AS status FROM entities WHERE id=?", v.id);
     const project = sourceRow?.project_id ?? entityRow?.project_id;
     if (!project || (entityRow && entityRow.kind !== "claim")) throw new BrainError("NOT_FOUND", "Item unavailable.", 404);
-    // A retired fact is only found by agentGet when a version is named, so a recalled history hit opens at its own version.
-    const item = this.agentGet(p, project, v.id, v.version ?? (entityRow?.kind === "claim" ? entityRow.version : undefined));
-    if (item.kind === "claim") {
-      const claim = item.item as Entity;
-      const siblings = this.currentClaims(p, project, true);
-      (item as any).item = {
-        ...claim,
-        replaced_by: siblings.find((x) => x.data.status === "current" && Array.isArray(x.data.supersedes) && x.data.supersedes.includes(claim.id))?.id ?? null,
-        replaces: (claim.data.supersedes ?? []).filter((id: string) => siblings.some((x) => x.id === id)),
+    // A current claim opens like any current item: one that has expired or not started yet is not found without a version, exactly as recall withholds it.
+    // A retired or replaced claim has no "current" view, so it opens at its own latest version (this is how a history recall hit is opened).
+    const defaultVersion = entityRow?.kind === "claim" && entityRow.status !== "current" ? entityRow.version : undefined;
+    const raw = this.agentGet(p, project, v.id, v.version ?? defaultVersion);
+    let item: { kind: string; item: unknown } = raw;
+    if (raw.kind === "claim") {
+      const claim = raw.item as Entity;
+      // Freshness is the claim's state now, whichever version was asked for.
+      const live = this.entity(this.ownerPrincipal(), v.id);
+      const replacedBy = this.supersededBy(p, project, live.id, true);
+      const fresh = factFreshness(live, this.store.setting<Record<string, string>>("claim_confirmations", {}), replacedBy, this.clock());
+      item = {
+        kind: "claim",
+        item: {
+          ...claim,
+          freshness: fresh.freshness,
+          checked_at: fresh.checked_at,
+          current_version: live.version,
+          replaced_by: replacedBy,
+          replaces: ((live.data.supersedes ?? []) as string[]).filter((id) => this.visibleClaim(p, project, id, true)),
+        },
       };
     }
     if (v.compare_version === undefined) return item;
     const before = this.agentGet(p, project, v.id, v.compare_version);
-    return { ...item, compare: { from_version: v.compare_version, to_version: v.version ?? (item.item as any).version, changed: JSON.stringify(before) !== JSON.stringify({ kind: item.kind, item: item.item }), before } };
+    // Compared on the raw stored items, never the augmented view, so `changed` means the stored item differs.
+    return { ...item, compare: { from_version: v.compare_version, to_version: v.version ?? (raw.item as any).version, changed: JSON.stringify(before) !== JSON.stringify(raw), before } };
   }
   agentForget(p: Principal, project: string, id: string, expected: number) {
     const grant = this.grant(p);

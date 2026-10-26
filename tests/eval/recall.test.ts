@@ -1,11 +1,12 @@
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { randomUUID } from "node:crypto";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { Storage } from "../../packages/storage/index.ts";
 import { Brain } from "../../packages/domain/service.ts";
-import { buildFixture, owner, type Fixture } from "./recall-fixture.ts";
+import { buildFixture, claim, owner, type Fixture } from "./recall-fixture.ts";
 import { deterministicLevel } from "../../packages/domain/recall.ts";
 import type { RecallResult } from "../../packages/domain/recall.ts";
 
@@ -32,6 +33,120 @@ const idsIn = (r: RecallResult) => [...r.hits.map((h) => h.id), ...r.near_misses
 // The caller's own query is echoed in `searched.query`; it is input, not retrieved data, so canary scans blank it.
 const everywhere = (r: RecallResult) => JSON.stringify({ ...r, searched: { ...r.searched, query: "" } });
 const positives = () => golden.cases.filter((c) => c.tags.includes("positive"));
+
+/** A throwaway fixture for tests that mutate the brain. */
+function scratch<T>(fn: (f: Fixture, northstar: string) => T): T {
+  const d = mkdtempSync(join(tmpdir(), "recall-scratch-"));
+  const f = buildFixture(join(d, "brain.sqlite"));
+  try {
+    return fn(f, f.ids["project:northstar"]);
+  } finally {
+    vi.restoreAllMocks();
+    f.store.close();
+    rmSync(d, { recursive: true, force: true });
+  }
+}
+const note = (f: Fixture, project: string, title: string, body: string, visibility: "project" | "private" = "project") => {
+  const r = f.brain.capture(owner, { project_id: project, title, body, visibility, separate: true }) as any;
+  return { id: r.source_id as string, body, version: 1 };
+};
+const fact = (f: Fixture, key: string, project: string, source: { id: string; body: string; version: number }, c: Omit<Parameters<typeof claim>[5], "recorded_at"> & { recorded_at?: string }) =>
+  claim(f.brain, key, f.ids, project, source, { recorded_at: "2026-10-24T10:00:00.000Z", ...c });
+
+describe("recall fix round 1", () => {
+  it("an expired fact is withheld from recall and from an unversioned open; with history it is marked retired, and a replaced fact opens marked replaced", () => {
+    scratch((f, ns) => {
+      const src = note(f, ns, "Offer note", "The early-bird offer code is MANGO7 for partners.");
+      fact(f, "fact:expired", ns, src, { entity: "Early bird offer", aspect: "statement", value: "code MANGO7", quote: "The early-bird offer code is MANGO7", valid_to: "2026-10-24T00:00:00.000Z" });
+      const id = f.ids["fact:expired"];
+      for (const principal of [owner, f.agent]) {
+        expect(f.brain.recallCore(principal, { query: "early bird offer code" }).hits.map((h) => h.id)).not.toContain(id);
+        const past = f.brain.recallCore(principal, { query: "early bird offer code", history: true }).hits.find((h) => h.id === id);
+        expect(past?.freshness).toBe("retired");
+      }
+      expect(() => f.brain.agentOpen(f.agent, { id })).toThrow(/unavailable/i);
+      const opened = f.brain.agentOpen(f.agent, { id, version: 1 }) as any;
+      expect(opened.item.freshness).toBe("retired");
+      const old = f.brain.agentOpen(f.agent, { id: f.ids["fact:status-old"] }) as any;
+      expect(old.item.freshness).toBe("replaced");
+      expect(old.item.replaced_by).toBe(f.ids["fact:status-new"]);
+      expect((f.brain.agentOpen(f.agent, { id: f.ids["fact:launch-color"] }) as any).item.freshness).toBe("current");
+    });
+  });
+  it("an exact entity name never confirms a fact whose only evidence is private (existence oracle)", () => {
+    scratch((f, ns) => {
+      const priv = note(f, ns, "Private ledger", "Zorbex Initiative status is on hold pending the audit.", "private");
+      fact(f, "fact:zorbex", ns, priv, { entity: "Zorbex Initiative", aspect: "status", value: "on hold", quote: "Zorbex Initiative status is on hold" });
+      for (const history of [false, true]) {
+        const { result, signals, entityNames } = f.brain.recallInternal(f.agent, { query: "Zorbex Initiative", history, limit: 8 });
+        expect(result).toMatchObject({ status: "no_match", hits: [], near_misses: [] });
+        expect(signals.exactEntity).toBe(false);
+        expect(deterministicLevel(signals)).toBe("none");
+        expect(entityNames).toEqual([]);
+        expect(everywhere(result)).not.toContain("Zorbex");
+      }
+      const mine = f.brain.recallInternal(owner, { query: "Zorbex Initiative", history: false, limit: 8 });
+      expect(mine.signals.exactEntity).toBe(true);
+      expect(mine.result.hits.map((h) => h.id)).toContain(f.ids["fact:zorbex"]);
+    });
+  });
+  it("an unevidenced claim (hypothesis) is excluded explicitly, and an unexpected fault is not swallowed", () => {
+    scratch((f, ns) => {
+      const id = randomUUID();
+      f.brain.createEntity(ns, "claim", { entity: "Wibble plan", aspect: "statement", value: "unevidenced guess", status: "current", authority: "owner_reviewed", valid_from: "2026-10-24T10:00:00.000Z", recorded_at: "2026-10-24T10:00:00.000Z", evidence: [], supersedes: [], conflicts_with: [] }, id);
+      // The index never holds such a claim; plant a row anyway to prove the service itself refuses to present it.
+      const planted = f.store.run(
+        "INSERT INTO recall_chunks(kind,ref_id,ref_version,project_id,visibility,status,ordinal,start,end,text,prefix,recorded_at,boost) VALUES('fact',?,1,?,'project','current',0,0,30,'Wibble plan: unevidenced guess','Northstar · Wibble plan','2026-10-24T00:00:00.000Z',1)",
+        id,
+        ns,
+      );
+      f.store.run("INSERT INTO recall_fts(rowid,text,prefix) VALUES(?,?,?)", Number(planted.lastInsertRowid), "Wibble plan: unevidenced guess", "Northstar · Wibble plan");
+      for (const principal of [owner, f.agent]) {
+        const r = f.brain.recallCore(principal, { query: "wibble unevidenced guess" });
+        expect(everywhere(r)).not.toContain(id);
+        expect(r.searched.candidates).toBe(0);
+      }
+      vi.spyOn(f.brain, "source").mockImplementation(() => {
+        throw new TypeError("boom");
+      });
+      expect(() => f.brain.recallCore(owner, { query: "launch notes cobalt palette" })).toThrow("boom");
+    });
+  });
+  it("a historical version never opens an owner-private or private-evidence fact for an agent", () => {
+    scratch((f, ns) => {
+      const open = note(f, ns, "Policy note", "The refund window is 30 days for annual plans.");
+      const priv = note(f, ns, "Private policy", "The partner rebate is 12 percent for the largest accounts.", "private");
+      fact(f, "fact:pub", ns, open, { entity: "Refund window", aspect: "statement", value: "30 days", quote: "The refund window is 30 days" });
+      fact(f, "fact:ownerpriv", ns, open, { entity: "Annual plans", aspect: "statement", value: "owner only", quote: "for annual plans", authority: "owner_private" });
+      fact(f, "fact:privev", ns, priv, { entity: "Partner rebate", aspect: "statement", value: "12 percent", quote: "The partner rebate is 12 percent" });
+      for (const key of ["fact:pub", "fact:ownerpriv", "fact:privev"]) f.brain.reviseClaim(owner, f.ids[key], { expected_version: 1, value: "revised" });
+      expect((f.brain.agentOpen(f.agent, { id: f.ids["fact:pub"], version: 1 }) as any).kind).toBe("claim");
+      for (const key of ["fact:ownerpriv", "fact:privev"]) {
+        expect(() => f.brain.agentOpen(f.agent, { id: f.ids[key], version: 1 }), `${key} version`).toThrow(/unavailable/i);
+        expect(() => f.brain.agentOpen(f.agent, { id: f.ids[key], version: 2 }), `${key} current`).toThrow(/unavailable/i);
+        expect(() => f.brain.agentOpen(f.agent, { id: f.ids[key], compare_version: 1 }), `${key} compare`).toThrow(/unavailable/i);
+      }
+    });
+  });
+  it("compare reports changed only when the stored item differs", () => {
+    scratch((f, ns) => {
+      const src = note(f, ns, "Menu", "Lunch is served at noon.");
+      fact(f, "fact:menu", ns, src, { entity: "Lunch", aspect: "statement", value: "noon", quote: "Lunch is served at noon" });
+      f.brain.reviseClaim(owner, f.ids["fact:menu"], { expected_version: 1, value: "one oclock" });
+      const id = f.ids["fact:menu"];
+      const changed = (input: Record<string, unknown>) => (f.brain.agentOpen(f.agent, input) as any).compare.changed;
+      expect(changed({ id, compare_version: 1 })).toBe(true);
+      expect(changed({ id, version: 1, compare_version: 2 })).toBe(true);
+      expect(changed({ id, version: 2, compare_version: 2 })).toBe(false);
+      expect(changed({ id, version: 1, compare_version: 1 })).toBe(false);
+      expect(changed({ id, compare_version: 2 })).toBe(false);
+      const plain = note(f, ns, "Shopping list", "Buy oat milk.");
+      f.brain.editSource(owner, plain.id, { title: "Shopping list", body: "Buy oat milk and rice.", expected_version: 1 });
+      expect(changed({ id: plain.id, compare_version: 1 })).toBe(true);
+      expect(changed({ id: plain.id, version: 2, compare_version: 2 })).toBe(false);
+    });
+  });
+});
 
 describe("recall golden set v1", () => {
   it("recall@5 on positives is at least 0.90 and MRR at least 0.75", () => {
@@ -155,28 +270,49 @@ describe("recall golden set v1", () => {
     expect(() => fx.brain.agentOpen(fx.agent, { id: "no-such-id" })).toThrow();
     expect(() => fx.brain.agentOpen(fx.agent, { id: fx.ids["project:northstar"] })).toThrow();
   });
-  it("recall over a 5,000-chunk brain stays under 300 ms at p95", () => {
+  it("recall over a 6,000-chunk brain with 300 current and 60 retired facts stays under 300 ms at p95, in both modes", () => {
     const d = mkdtempSync(join(tmpdir(), "recall-latency-"));
     const s = new Storage(join(d, "brain.sqlite"));
     try {
       const b = new Brain(s, () => new Date("2026-10-25T09:00:00.000Z"));
       const filler = "The committee discussed timelines, hiring plans and vendor contracts in detail before adjourning for lunch. ";
+      const claimIds: Record<string, string> = {};
       // No outer transaction: Brain.capture opens its own (BEGIN IMMEDIATE cannot nest). 1,000 notes × 6 paragraphs ≈ 6,000 chunks, a 20 percent margin over the bar.
-      for (let i = 0; i < 1000; i++)
-        b.capture(owner, { title: `Note ${i}`, body: Array.from({ length: 6 }, (_, j) => filler.repeat(8) + ` Marker ${i}-${j}.`).join("\n\n"), visibility: "project", separate: true });
-      expect(Number(s.get("SELECT count(*) AS n FROM recall_chunks")!.n)).toBeGreaterThanOrEqual(5000);
-      const times: number[] = [];
-      for (let i = 0; i < 40; i++) {
-        const t = performance.now();
-        b.recallCore(owner, { query: `vendor contracts marker ${i * 20}` });
-        times.push(performance.now() - t);
+      for (let i = 0; i < 1000; i++) {
+        const body = Array.from({ length: 6 }, (_, j) => filler.repeat(8) + ` Marker ${i}-${j}.`).join("\n\n");
+        const r = b.capture(owner, { title: `Note ${i}`, body, visibility: "project", separate: true }) as any;
+        // Facts that the queries below hit: 300 current ones, then 60 retired ones, each with exact evidence in its note.
+        if (i < 360) {
+          const project = String(s.get<{ project_id: string }>("SELECT project_id FROM sources WHERE id=?", r.source_id)!.project_id);
+          claim(b, `fact:${i}`, claimIds, project, { id: r.source_id, body, version: 1 }, {
+            entity: `Vendor contract ${i}`, aspect: "statement", value: `vendor contracts marker ${i}-0`, quote: `Marker ${i}-0`, recorded_at: "2026-10-20T10:00:00.000Z", status: i < 300 ? "current" : "retired",
+          });
+        }
       }
-      times.sort((a, b) => a - b);
-      metrics.latency_p95_ms = times[Math.floor(times.length * 0.95)];
+      expect(Number(s.get("SELECT count(*) AS n FROM recall_chunks WHERE kind='original'")!.n)).toBeGreaterThanOrEqual(5000);
+      expect(Number(s.get("SELECT count(*) AS n FROM recall_chunks WHERE kind='fact' AND status='current'")!.n)).toBe(300);
+      expect(Number(s.get("SELECT count(*) AS n FROM recall_chunks WHERE kind='fact' AND status='history'")!.n)).toBe(60);
+      const p95 = (history: boolean) => {
+        const times: number[] = [];
+        let factHits = 0;
+        for (let i = 0; i < 40; i++) {
+          const n = history ? 300 + (i % 60) : i * 7;
+          const t = performance.now();
+          const r = b.recallCore(owner, { query: `vendor contract ${n} marker ${n}`, history });
+          times.push(performance.now() - t);
+          factHits += r.hits.filter((h) => h.kind === "fact").length;
+        }
+        expect(factHits, `facts are exercised (history ${history})`).toBeGreaterThan(0);
+        times.sort((x, y) => x - y);
+        return times[Math.floor(times.length * 0.95)];
+      };
+      metrics.latency_p95_ms = p95(false);
+      metrics.latency_history_p95_ms = p95(true);
       expect(metrics.latency_p95_ms).toBeLessThan(300);
+      expect(metrics.latency_history_p95_ms).toBeLessThan(300);
     } finally {
       s.close();
       rmSync(d, { recursive: true, force: true });
     }
-  }, 60_000);
+  }, 240_000);
 });

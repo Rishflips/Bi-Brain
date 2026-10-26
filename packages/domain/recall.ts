@@ -79,11 +79,14 @@ export function fuse(lists: { facts: RecallMatch[]; originals: RecallMatch[]; ph
 export type Freshness = "current" | "stale" | "replaced" | "retired";
 const validTime = (t: unknown): t is string => typeof t === "string" && !Number.isNaN(Date.parse(t));
 
-/** `replaced` when a current claim supersedes it, `retired` for any other non-current claim (history mode only), else stale or current by age. */
+/** `replaced` when a current claim supersedes it, `retired` for any other non-current or expired claim (history mode only), else stale or current by age. */
 export function factFreshness(claim: { id: string; created_at: string; data: any }, confirmations: Record<string, string>, replacedBy: string | null, now: Date) {
   const checked_at = [claim.data.recorded_at, claim.data.edited_at, confirmations[claim.id]].filter(validTime).sort().at(-1) ?? claim.created_at;
   const stale = Date.parse(checked_at) < now.getTime() - STALE_DAYS * 86_400_000;
-  const retired = claim.data.status !== undefined && claim.data.status !== "current";
+  // Outside its validity window counts as retired even while the claim row still says current.
+  const at = now.getTime();
+  const outside = (validTime(claim.data.valid_to) && Date.parse(claim.data.valid_to) <= at) || (validTime(claim.data.valid_from) && Date.parse(claim.data.valid_from) > at);
+  const retired = (claim.data.status !== undefined && claim.data.status !== "current") || outside;
   return { checked_at, freshness: (replacedBy ? "replaced" : retired ? "retired" : stale ? "stale" : "current") as Freshness };
 }
 

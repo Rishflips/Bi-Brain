@@ -18,7 +18,7 @@ export function quoteRange(body: string, quote: string) {
 }
 
 /** A current (or retired) claim with exact evidence, written through the entity path so the index follows. */
-function claim(b: Brain, key: string, ids: Record<string, string>, project: string, source: { id: string; body: string; version: number }, c: { entity: string; aspect: string; value: unknown; quote: string; recorded_at: string; status?: "current" | "retired"; supersedes?: string[]; authority?: string }) {
+export function claim(b: Brain, key: string, ids: Record<string, string>, project: string, source: { id: string; body: string; version: number }, c: { entity: string; aspect: string; value: unknown; quote: string; recorded_at: string; status?: "current" | "retired"; supersedes?: string[]; authority?: string; valid_to?: string }) {
   const range = quoteRange(source.body, c.quote);
   const id = `11111111-0000-4000-8000-${String(Object.keys(ids).length + 1).padStart(12, "0")}` as `${string}-${string}-${string}-${string}-${string}`;
   b.createEntity(project, "claim", {
@@ -26,7 +26,7 @@ function claim(b: Brain, key: string, ids: Record<string, string>, project: stri
     valid_from: c.recorded_at, recorded_at: c.recorded_at, source_id: source.id, source_version: source.version, agent: "owner", ts: c.recorded_at,
     evidence: [{ source_id: source.id, source_version: source.version, start: range.start, end: range.end, quote: c.quote }],
     supersedes: c.supersedes ?? [], conflicts_with: [],
-    ...(c.status === "retired" ? { valid_to: "2026-10-20T00:00:00.000Z", retirement_reason: "owner_corrected" } : {}),
+    ...(c.status === "retired" ? { valid_to: "2026-10-20T00:00:00.000Z", retirement_reason: "owner_corrected" } : c.valid_to ? { valid_to: c.valid_to } : {}),
   }, id);
   ids[key] = id;
   return id;
