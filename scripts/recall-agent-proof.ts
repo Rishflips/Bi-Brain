@@ -4,6 +4,7 @@
  * loopback server, never trusted from the model's own account of itself. */
 import { spawn } from "node:child_process";
 import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join, resolve, sep } from "node:path";
 import { Storage } from "../packages/storage/index.ts";
 import { Brain } from "../packages/domain/service.ts";
@@ -19,9 +20,12 @@ const repo = process.cwd();
 const base = resolve("test-results");
 mkdirSync(base, { recursive: true });
 const root = mkdtempSync(join(base, `recall-${client}-`));
-const workspace = join(root, "workspace");
+// The workspace lives outside this repository: inside it, Codex would treat the BiBrain
+// repo as the project (reading its AGENTS.md and looking for .codex/ at the repo root).
+const workspaceBase = realpathSync.native(tmpdir());
+const workspacePrefix = join(workspaceBase, "bibrain-recall-ws-");
+const workspace = realpathSync.native(mkdtempSync(workspacePrefix));
 const dataDir = join(root, "data");
-mkdirSync(workspace);
 mkdirSync(dataDir);
 const store = new Storage(join(root, "brain.sqlite"));
 const brain = new Brain(store);
@@ -97,9 +101,15 @@ try {
   // --restricted ignores project and local settings files, so the settings.local.json
   // BiBrain wrote is passed with --settings, which restricted mode still applies.
   const claudeSettings = hookFile?.state === "written" ? ["--settings", hookFile.path] : [];
+  // Codex loads a project's .codex/ layer only when the project is trusted, and trust lives
+  // in the user config that --ignore-user-config skips. A -c override trusts this disposable
+  // workspace; its key path is split on dots, so the folder path must not contain one.
+  // --dangerously-bypass-hook-trust stands in for the one-time /hooks review a person does.
+  if (client === "codex" && folder.includes(".")) throw new Error(`The temporary folder ${folder} contains a dot, so Codex cannot be told to trust it. Set TEMP to a folder without dots and run again.`);
+  const codexTrust = ["-c", `projects.${folder}.trust_level="trusted"`, ...(hookOn ? ["--dangerously-bypass-hook-trust"] : [])];
   const argsFor = (prompt: string) =>
     client === "codex"
-      ? [process.env.BRAIN_NATIVE_CODEX_ENTRY ?? join(appData, "npm/node_modules/@openai/codex/bin/codex.js"), "exec", "--ignore-user-config", "--ephemeral", "--skip-git-repo-check", "--json", "--sandbox", "read-only", "--model", "gpt-6-sol", prompt]
+      ? [process.env.BRAIN_NATIVE_CODEX_ENTRY ?? join(appData, "npm/node_modules/@openai/codex/bin/codex.js"), "exec", "--ignore-user-config", ...codexTrust, "--ephemeral", "--skip-git-repo-check", "--json", "--sandbox", "read-only", "--model", "gpt-6-sol", prompt]
       : ["--print", "--restricted", ...claudeSettings, "--tools", "", "--strict-mcp-config", "--mcp-config", join(folder, ".mcp.json"), "--allowedTools", "mcp__bibrain__*", "--permission-mode", "dontAsk", "--no-session-persistence", "--output-format", "json", prompt];
   for (const prompt of PROMPTS)
     for (let repeat = 0; repeat < repeats; repeat++) {
@@ -161,5 +171,7 @@ try {
   await app.close();
   store.close();
   if (!resolve(root).startsWith(base + sep)) throw new Error("Refusing cleanup outside the disposable proof directory.");
+  if (!workspace.startsWith(workspacePrefix)) throw new Error("Refusing cleanup outside the disposable proof workspace.");
   rmSync(root, { recursive: true, force: true });
+  rmSync(workspace, { recursive: true, force: true });
 }
