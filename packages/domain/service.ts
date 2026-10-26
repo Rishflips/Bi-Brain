@@ -48,7 +48,8 @@ import {
 } from "./decision-advisory.ts";
 import { extractReviewableMemory } from "./memory-understanding.ts";
 import { adviseFrom, S1_TOPIC_MAX, workerRunning, type S1Advice, type S1Context } from "./system-one.ts";
-import type { AskResult } from "../providers/system-one-ask.ts";
+import type { AskAnswer, AskQuestion, AskResult } from "../providers/system-one-ask.ts";
+import { JUDGE_CANDIDATES_MAX, JUDGE_DAILY_COUNT_CAP, JUDGE_DEADLINE_MS, JUDGE_MIN_REMAINING_MICRO_USD, JUDGE_POLL_MS, JUDGE_RESULT_KEY, JUDGE_STATE_KEY, applyJudge, buildJudgeQuestions, buildJudgeState, judgeSignals, judgedStatus } from "./recall-judge.ts";
 import { buildBrief, gateFitsBrief, type BriefInput, type BriefJob } from "./brief.ts";
 import { buildProjectView } from "./project-view.ts";
 import { questionWords, type AskHit } from "./ask.ts";
@@ -1855,6 +1856,16 @@ export class Brain {
         effective.decision_provider_enabled !== true
       )
         this.store.transaction(() => this.withdrawAllAdvisories());
+      // Recall help rides on sorting help: switching sorting help or either cap off withdraws it too,
+      // so a stored "on" can never outlive the consent it depends on.
+      if (
+        (effective.enabled !== true ||
+          effective.decision_provider_enabled !== true ||
+          !(effective.daily_cap_micro_usd > 0) ||
+          !(effective.per_job_cap_micro_usd > 0)) &&
+        this.store.setting<unknown>("recall_help_enabled", false) === true
+      )
+        this.store.set("recall_help_enabled", false);
     }
     const stored = this.store.setting("preferences", defaults);
     // A historical record without the decision field reads as false; the stored
@@ -1866,6 +1877,25 @@ export class Brain {
     return tenantBlocked || centrallyUnusable
       ? { ...normalized, provider_enabled: false }
       : normalized;
+  }
+  /** The recall-help consent. Its own setting, never a preference field: managed code round-trips `prefs()` into a strict schema. */
+  recallHelp(p: Principal): { enabled: boolean } {
+    this.owner(p);
+    return { enabled: this.store.setting<unknown>("recall_help_enabled", false) === true };
+  }
+  /** An explicit true is admitted only while sorting help is genuinely on; false is always accepted. A model or browser flag can never self-grant it. */
+  setRecallHelp(p: Principal, input: unknown): { enabled: boolean } {
+    this.owner(p);
+    const v = z.object({ enabled: z.boolean() }).strict().parse(input);
+    if (v.enabled) {
+      if (this.tenantId !== undefined) throw new BrainError("BUDGET_BLOCKED", "Recall help runs on the local app only.", 409);
+      const prefs = this.prefs(p);
+      const capability = this.decisionCapability?.();
+      if (capability?.ready !== true || prefs.enabled !== true || prefs.decision_provider_enabled !== true || !(prefs.daily_cap_micro_usd > 0) || !(prefs.per_job_cap_micro_usd > 0))
+        throw new BrainError("BUDGET_BLOCKED", "Recall help needs sorting help to be on first.", 409);
+    }
+    this.store.set("recall_help_enabled", v.enabled);
+    return { enabled: v.enabled };
   }
   /**
    * RAW stored DECISION-stage consent for this owner (never the effective getter,
@@ -3426,9 +3456,27 @@ export class Brain {
   recallCore(p: Principal, input: unknown): RecallResult {
     return this.recallInternal(p, recallInputSchema.parse(input)).result;
   }
-  /** The agent read verb. Task 10 adds the optional judge; until then it is the deterministic core. */
+  /**
+   * The agent read verb: the deterministic core, sharpened by the optional judge when the owner allowed it.
+   * The judge can only drop hits to near misses, reorder them and lower `found` to `partial`; every hit is one the core already authorized.
+   */
   async recall(p: Principal, input: unknown): Promise<RecallResult> {
-    return this.recallCore(p, input);
+    const v = recallInputSchema.parse(input);
+    const internal = this.recallInternal(p, v);
+    const judged = await this.judgeRanked(p, internal, v.query);
+    if (!judged.signals) return internal.result;
+    const hits = this.judgedHits(internal, judged, internal.result.hits);
+    const status = internal.result.status === "no_match" ? "no_match" : judgedStatus(judged.signals);
+    const seen = new Set<string>();
+    const near = status === "found"
+      ? []
+      : [
+          ...judged.demoted.map((c) => ({ kind: c.row.kind, id: c.row.ref_id, title: c.row.kind === "fact" ? c.row.text : c.row.prefix.split(" · ")[0], reason: "judged not relevant" })),
+          ...internal.result.near_misses,
+        ]
+          .filter((n) => !hits.some((h) => h.kind === n.kind && h.id === n.id) && !seen.has(`${n.kind}:${n.id}`) && !!seen.add(`${n.kind}:${n.id}`))
+          .slice(0, NEAR_MISSES_MAX);
+    return { ...internal.result, status, hits, near_misses: near, next_step: status === "no_match" ? NO_MATCH_NEXT_STEP : FOUND_NEXT_STEP };
   }
   /** The per-prompt push for a hook: deterministic recall as the grant, a level, bounded text, and a content-free log row. */
   async recallPush(p: Principal, input: unknown) {
@@ -3458,6 +3506,8 @@ export class Brain {
       const terms = internal.signals.terms;
       if (!hits.length || !hitIsStrong(terms, hits[0])) level = internal.signals.exactEntity || hits.some((h) => hitIsRelated(terms, h)) ? "pointer" : "none";
     }
+    // A judge may rate a candidate relevant that did not survive into the hits; a full push with nothing to show is never sent.
+    if (level === "full" && !hits.length) level = internal.signals.exactEntity ? "pointer" : "none";
     const names = internal.signals.topNames.length ? internal.signals.topNames : internal.entityNames;
     let text = "";
     let used: RecallHit[] = [];
@@ -3479,9 +3529,22 @@ export class Brain {
     if (text && detectSecrets(text).length) return finish(quiet, { candidates, judged: judge.judged });
     return finish({ level, text, hit_ids: used.map((h) => h.id), digest }, { candidates, judged: judge.judged });
   }
-  /** Task 10 replaces this with the Clef judge; until then the deterministic hits stand. */
-  protected async judgeForPush(_p: Principal, internal: ReturnType<Brain["recallInternal"]>): Promise<{ signals: JudgeSignals | null; hits: RecallHit[]; judged: boolean }> {
-    return { signals: null, hits: internal.result.hits, judged: false };
+  /** The judge for a hook push: the same advisory application as `recall`; without a judge the deterministic hits stand. */
+  protected async judgeForPush(p: Principal, internal: ReturnType<Brain["recallInternal"]>): Promise<{ signals: JudgeSignals | null; hits: RecallHit[]; judged: boolean }> {
+    const judged = await this.judgeRanked(p, internal, internal.result.searched.query);
+    if (!judged.signals) return { signals: null, hits: internal.result.hits, judged: false };
+    return { signals: judged.signals, hits: this.judgedHits(internal, judged, internal.result.hits), judged: true };
+  }
+  /** Drops demoted hits and reorders the rest by the judged rank. A hit maps back to its candidate by kind, id and (for a chunk) start; nothing outside `hits` can appear. */
+  private judgedHits(internal: ReturnType<Brain["recallInternal"]>, judged: { ranked: Candidate[]; demoted: Candidate[] }, hits: RecallHit[]): RecallHit[] {
+    const order = new Map(judged.ranked.map((c, i) => [c.key, i]));
+    const demoted = new Set(judged.demoted.map((c) => c.key));
+    const keyOf = (h: RecallHit) => internal.ranked.find((c) => c.row.kind === h.kind && c.row.ref_id === h.id && (h.kind === "fact" || c.row.start === h.start))?.key ?? `${h.kind}:${h.id}`;
+    const keyed = hits.map((h, i) => ({ h, i, key: keyOf(h) }));
+    return keyed
+      .filter((k) => !demoted.has(k.key))
+      .sort((a, b) => (order.get(a.key) ?? 1e9 + a.i) - (order.get(b.key) ?? 1e9 + b.i))
+      .map((k) => k.h);
   }
   /** Counts and three recent titles by SQL (no bodies, no claim verification): the digest is a map of the brain, not evidence. Only what an agent may see: project-visible originals and facts the recall index marks project-visible. */
   private digestFor(scope: { id: string; title: string }[], names: string[]): string {
@@ -3500,6 +3563,94 @@ export class Brain {
   recallLog(p: Principal) {
     this.owner(p);
     return { rows: this.store.setting<{ at: string; grant_id: string; client: string; level: PushLevel; candidates: number; hits: number; latency_ms: number; judged: boolean }[]>("recall_log", []) };
+  }
+  /** Whether a judge call may be queued right now. Every reason is a plain sentence; none is an error to the agent. */
+  recallJudgeAllowed(): { ok: boolean; reason: string } {
+    if (this.tenantId !== undefined) return { ok: false, reason: "Recall help runs on the local app only." };
+    if (this.store.setting<unknown>("recall_help_enabled", false) !== true) return { ok: false, reason: "Recall help is off." };
+    const prefs = this.prefs(this.ownerPrincipal());
+    if (prefs.enabled !== true || prefs.decision_provider_enabled !== true || !(prefs.daily_cap_micro_usd > 0) || !(prefs.per_job_cap_micro_usd > 0)) return { ok: false, reason: "Sorting help is off." };
+    const status = this.store.setting<{ configured?: boolean } | null>("system_one_status", null);
+    if (status?.configured !== true) return { ok: false, reason: "Sorting help is not set up on this computer." };
+    if (!workerRunning(this.store.setting<string | null>("worker_heartbeat", null), this.clock())) return { ok: false, reason: "BiBrain's background worker is not running." };
+    const remaining = new DispatchLedger(this.store, this.clock).summary({ per_job_micro_usd: prefs.per_job_cap_micro_usd, daily_micro_usd: prefs.daily_cap_micro_usd, time_zone: prefs.time_zone }).remaining_micro_usd;
+    // Below this floor a judge call cannot be reserved anyway; refusing here keeps the agent from waiting 900 ms for nothing.
+    if (remaining < JUDGE_MIN_REMAINING_MICRO_USD) return { ok: false, reason: "Today's spending limit is reached." };
+    // A half-open range on created_at uses the jobs_kind_created index (judge rows are never deleted: the ledger references them).
+    const dayStart = `${this.now().slice(0, 10)}T00:00:00.000Z`;
+    const dayEnd = new Date(Date.parse(dayStart) + 86_400_000).toISOString();
+    const count = Number(this.store.get<{ n: number }>("SELECT count(*) AS n FROM jobs WHERE kind='recall_judge' AND created_at>=? AND created_at<?", dayStart, dayEnd)?.n ?? 0);
+    if (count >= JUDGE_DAILY_COUNT_CAP) return { ok: false, reason: "Recall help reached its limit of 2,000 checks today." };
+    return { ok: true, reason: "ready" };
+  }
+  /** Queues one judge job with its state in settings. Returns the request id, or null when the state cannot be sent. */
+  enqueueRecallJudge(state: string, questions: AskQuestion[], requestHash: string): string | null {
+    if (detectSecrets(state).length) return null;
+    const id = randomUUID();
+    const now = this.now();
+    const deadline = new Date(this.clock().getTime() + JUDGE_DEADLINE_MS).toISOString();
+    this.store.transaction(() => {
+      this.store.run(
+        "INSERT INTO jobs(id,project_id,kind,payload,status,max_attempts,next_at,created_at,deadline_at) VALUES(?,?,?,?,?,?,?,?,?)",
+        id, "inbox", "recall_judge", JSON.stringify({ request_id: id, state_hash: requestHash }), "queued", 1, now, now, deadline,
+      );
+      this.store.set(JUDGE_STATE_KEY(id), { state, questions, request_hash: requestHash, created_at: now });
+    });
+    return id;
+  }
+  /** Polls for the worker's answers every 25 ms until the deadline, then gives up quietly; a judge job that ended without answers ends the wait at once. */
+  async awaitRecallJudge(requestId: string, deadlineMs: number): Promise<AskAnswer[] | null> {
+    const until = Date.now() + Math.floor(deadlineMs);
+    while (Date.now() < until) {
+      const result = this.store.setting<{ answers: AskAnswer[] } | null>(JUDGE_RESULT_KEY(requestId), null);
+      if (result) {
+        this.store.run("DELETE FROM settings WHERE key=?", JUDGE_RESULT_KEY(requestId));
+        return Array.isArray(result.answers) ? result.answers : null;
+      }
+      const job = this.store.get<{ status: string }>("SELECT status FROM jobs WHERE id=? AND kind='recall_judge'", requestId);
+      if (!job || job.status === "failed" || job.status === "cancelled") return null;
+      await new Promise((r) => setTimeout(r, JUDGE_POLL_MS));
+    }
+    return null;
+  }
+  /** Runs the judge for an agent recall when allowed; the deterministic candidates are the only inputs and the only possible outputs. Owner paths never get here. */
+  private async judgeRanked(p: Principal, internal: ReturnType<Brain["recallInternal"]>, request: string): Promise<{ signals: JudgeSignals | null; ranked: Candidate[]; demoted: Candidate[] }> {
+    const none = { signals: null, ranked: internal.ranked, demoted: [] as Candidate[] };
+    if (p.kind !== "agent" || internal.ranked.length === 0 || detectSecrets(request).length) return none;
+    try {
+      return await this.judgeRankedOnce(internal, request, none);
+    } catch {
+      // The judge is optional help: a storage or spending-state fault falls back to the deterministic answer, never an error to the agent.
+      return none;
+    }
+  }
+  private async judgeRankedOnce(internal: ReturnType<Brain["recallInternal"]>, request: string, none: { signals: null; ranked: Candidate[]; demoted: Candidate[] }): Promise<{ signals: JudgeSignals | null; ranked: Candidate[]; demoted: Candidate[] }> {
+    if (!this.recallJudgeAllowed().ok) return none;
+    const top = internal.ranked.slice(0, JUDGE_CANDIDATES_MAX);
+    // Agents only ever see project-visible rows; the filter states the rule again for the judge.
+    if (top.some((c) => c.row.visibility !== "project")) return none;
+    const titles = new Map(internal.scope.map((s) => [s.id, s.title]));
+    const state = buildJudgeState({
+      today: this.now().slice(0, 10),
+      request,
+      names: [...new Set([...internal.scope.map((s) => s.title), ...internal.entityNames])],
+      candidates: top.map((c) => ({ kind: c.row.kind, date: c.row.recorded_at.slice(0, 10), project: titles.get(c.row.project_id) ?? "Project", title: c.row.kind === "original" ? c.row.prefix.split(" · ")[0] : null, text: c.row.text })),
+    });
+    const questions = buildJudgeQuestions(top.length);
+    const requestId = this.enqueueRecallJudge(state, questions, hash(state));
+    if (!requestId) return none;
+    const answers = await this.awaitRecallJudge(requestId, JUDGE_DEADLINE_MS);
+    const signals = answers ? judgeSignals(answers, top.length) : null;
+    if (!signals) return none;
+    // An exact entity match is never hidden: facts about a named entity in the request stay, whatever the judge says.
+    const named = new Set(internal.entityNames.map((n) => questionWords(n).join(" ")));
+    const entityOf = (c: Candidate) => {
+      const lead = `${titles.get(c.row.project_id) ?? ""} · `;
+      return c.row.prefix.startsWith(lead) ? c.row.prefix.slice(lead.length) : "";
+    };
+    const pinned = new Set(top.filter((c) => c.row.kind === "fact" && named.has(questionWords(entityOf(c)).join(" "))).map((c) => c.key));
+    const applied = applyJudge(top, signals, pinned);
+    return { signals, ranked: [...applied.kept, ...internal.ranked.slice(JUDGE_CANDIDATES_MAX)], demoted: applied.demoted };
   }
   /** Entity names of current facts this principal may see whose every word is in `terms`; at most the matching claims are loaded. */
   private visibleEntityNames(p: Principal, scope: { id: string; title: string }[], terms: Set<string>, visibilities: RecallVisibility[]): string[] {
@@ -4890,7 +5041,7 @@ export class Brain {
           allowance: central.allowance,
         },
         jobs: this.store.all(
-          "SELECT id,kind,status,error,project_id FROM jobs ORDER BY created_at DESC LIMIT 20",
+          "SELECT id,kind,status,error,project_id FROM jobs WHERE kind<>'recall_judge' ORDER BY created_at DESC LIMIT 20",
         ),
       };
     }
@@ -4948,13 +5099,14 @@ export class Brain {
         allowance: null,
       },
       jobs: this.store.all(
-        "SELECT id,kind,status,error,project_id FROM jobs ORDER BY created_at DESC LIMIT 20",
+        "SELECT id,kind,status,error,project_id FROM jobs WHERE kind<>'recall_judge' ORDER BY created_at DESC LIMIT 20",
       ),
     };
   }
   job(p: Principal, id: string) {
     const j = this.store.get("SELECT * FROM jobs WHERE id=?", id);
-    if (!j) throw new BrainError("NOT_FOUND", "Item unavailable.", 404);
+    // Judge rows belong to the recall fast lane alone: they are never shown, cancelled or retried by hand.
+    if (!j || j.kind === "recall_judge") throw new BrainError("NOT_FOUND", "Item unavailable.", 404);
     this.access(p, j.project_id);
     if (p.kind === "agent") {
       const payload = JSON.parse(j.payload);
