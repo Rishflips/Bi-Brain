@@ -74,7 +74,7 @@ import {
   type RecallHit,
   type RecallResult,
 } from "./recall.ts";
-import { RECALL_LOG_MAX, PUSH_HITS_MAX, filterSeen, fitFull, pushLevel, recallPushSchema, renderDigest, renderPointer, type JudgeSignals, type PushLevel } from "./recall-push.ts";
+import { RECALL_LOG_MAX, PUSH_HITS_MAX, filterSeen, fitFull, hitIsRelated, hitIsStrong, pushLevel, recallPushSchema, renderDigest, renderPointer, type JudgeSignals, type PushLevel } from "./recall-push.ts";
 import {
   attemptReferencesSource,
   claimDecisionAttempt,
@@ -3449,8 +3449,12 @@ export class Brain {
     const judge = await this.judgeForPush(p, internal);
     let level = pushLevel(internal.signals, judge.signals);
     const hits = filterSeen(judge.hits, v.seen);
-    // Everything the agent already holds from this session is not sent again.
-    if (level === "full" && hits.length === 0) level = internal.signals.exactEntity ? "pointer" : "none";
+    // Everything the agent already holds from this session is not sent again. When that removed hits, the level is re-read on what is left:
+    // `full` only while the best remaining hit is itself a strong match, `pointer` for an exact entity match or a remaining related hit, else quiet.
+    if (level === "full" && hits.length < judge.hits.length) {
+      const terms = internal.signals.terms;
+      if (!hits.length || !hitIsStrong(terms, hits[0])) level = internal.signals.exactEntity || hits.some((h) => hitIsRelated(terms, h)) ? "pointer" : "none";
+    }
     const names = internal.signals.topNames.length ? internal.signals.topNames : internal.entityNames;
     let text = "";
     let used: RecallHit[] = [];
