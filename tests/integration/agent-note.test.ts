@@ -155,11 +155,11 @@ describe("Brain.agentNote", () => {
     expect(b.brief(owner).items).toHaveLength(2);
   });
 
-  it("is offered to suggest grants as brain.note and served over HTTP", async () => {
+  it("is offered to suggest grants as brain_note and served over HTTP", async () => {
     const { b, g } = setup();
-    expect(b.agentCapabilities(b.authenticateAgent(g.token)).tools).toContain("brain.note");
+    expect(b.agentCapabilities(b.authenticateAgent(g.token)).tools).toContain("brain_note");
     const ro = b.createGrant(owner, { projects: ["inbox"], operations: ["read"], expires_at: "2026-11-23T09:00:00.000Z" });
-    expect(b.agentCapabilities(b.authenticateAgent(ro.token)).tools).not.toContain("brain.note");
+    expect(b.agentCapabilities(b.authenticateAgent(ro.token)).tools).not.toContain("brain_note");
     const app = await createApp(b, { pairSecret: "test-code", static: false });
     cleanup.push(() => void app.close());
     const res = await app.inject({

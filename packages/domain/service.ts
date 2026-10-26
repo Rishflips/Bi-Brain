@@ -3098,15 +3098,17 @@ export class Brain {
     return {
       operations,
       tools: [
-        "brain.search",
-        "brain.get",
-        "brain.ask",
-        "brain.diff",
+        "brain_recall",
+        "brain_open",
         ...(operations.includes("propose_memory")
-          ? ["brain.propose", "brain.note", "brain.link", "brain.intent"]
+          ? ["brain_note", "brain_propose", "brain_intent", "brain_link"]
           : []),
-        ...(operations.includes("forget") ? ["brain.forget"] : []),
+        ...(operations.includes("forget") ? ["brain_forget"] : []),
       ],
+      projects: (this.projects(p) as { id: string; title: string }[]).map(
+        ({ id, title }) => ({ id, title }),
+      ),
+      surface: "v2" as const,
     };
   }
   handoff(p: Principal, project: string) {
@@ -3249,6 +3251,7 @@ export class Brain {
       ),
     };
   }
+  /** No HTTP route since surface v2. */
   agentSearch(
     p: Principal,
     project: string,
@@ -3283,6 +3286,7 @@ export class Brain {
       next_offset: offset + limit,
     };
   }
+  /** No HTTP route since surface v2. */
   agentGet(p: Principal, project: string, id: string, version?: number) {
     this.access(p, project);
     try {
@@ -3375,6 +3379,7 @@ export class Brain {
       return { kind: e.kind, item: this.entity(p, id) };
     throw new BrainError("NOT_FOUND", "Item unavailable.", 404);
   }
+  /** No HTTP route since surface v2. */
   agentAsk(p: Principal, project: string, question: string) {
     this.access(p, project);
     question = z.string().trim().min(1).max(500).parse(question);
@@ -3409,28 +3414,13 @@ export class Brain {
         "Literal evidence and owner reviews are not independent truth verification.",
     };
   }
-  agentDiff(
-    p: Principal,
-    project: string,
-    id: string,
-    fromVersion: number,
-    toVersion: number,
-  ) {
-    this.access(p, project);
-    const before = this.agentGet(p, project, id, fromVersion);
-    const after = this.agentGet(p, project, id, toVersion);
-    return {
-      id,
-      from_version: fromVersion,
-      to_version: toVersion,
-      before,
-      after,
-      changed: JSON.stringify(before) !== JSON.stringify(after),
-    };
-  }
   /** Deterministic recall: authorization before the SQL and again per hit. The only path the owner's screens use. */
   recallCore(p: Principal, input: unknown): RecallResult {
     return this.recallInternal(p, recallInputSchema.parse(input)).result;
+  }
+  /** The agent read verb. Task 10 adds the optional judge; until then it is the deterministic core. */
+  async recall(p: Principal, input: unknown): Promise<RecallResult> {
+    return this.recallCore(p, input);
   }
   /** Entity names of current facts this principal may see whose every word is in `terms`; at most the matching claims are loaded. */
   private visibleEntityNames(p: Principal, scope: { id: string; title: string }[], terms: Set<string>, visibilities: RecallVisibility[]): string[] {

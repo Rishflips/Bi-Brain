@@ -15,6 +15,8 @@ async function journey(browser: Browser, run: (page: Page) => Promise<void>) {
 }
 const getJson = (page: Page, url: string) =>
   page.evaluate(async (u) => (await fetch(u, { credentials: "same-origin" })).json(), url);
+// Recall also returns unreviewed originals next to a reviewed fact; the journeys assert on the reviewed facts only.
+const factTexts = (r: any) => r.hits.filter((h: any) => h.kind === "fact").map((h: any) => h.text).join("\n");
 // Saves and leaves the original open, so a test can add a fact from it.
 async function saveAndStay(page: Page, title: string, body: string) {
   await page.getByRole("button", { name: "Save something", exact: false }).first().click();
@@ -41,10 +43,9 @@ test("ordinary capture becomes reviewed current truth and agent retrieval", asyn
     await keep(page, entity);
     await page.getByRole("button", { name: "Your brain", exact: true }).click();
     await expect(page.getByRole("region", { name: "True now" })).toContainText(`${entity} is active.`);
-    const search = await getJson(page, `/api/v1/agent/search?project_id=inbox&query=${entity}`);
-    expect(JSON.stringify(search)).toContain('"value":"active"');
-    const ask = await getJson(page, `/api/v1/agent/ask?project_id=inbox&question=${entity}%20status`);
-    expect(ask.abstained).toBe(false);
+    const recall = await getJson(page, `/api/v1/agent/recall?query=${entity}%20status`);
+    expect(recall.status).toBe("found");
+    expect(JSON.stringify(recall.hits)).toContain(`${entity} is active.`);
   });
 });
 
@@ -71,8 +72,8 @@ test("browser keeps, compares, dismisses and undoes source-cited decision correc
     const key = `Browser${Date.now()} pricing`;
     const save = (value: string) => saveInDialog(page, `Browser decision ${value}`, `${key}: ${value}`);
     const current = async (value: string) => {
-      const answer = await getJson(page, `/api/v1/agent/ask?project_id=inbox&question=${encodeURIComponent(key)}`);
-      expect(answer.answer).toContain(`statement: ${value}`);
+      const answer = await getJson(page, `/api/v1/agent/recall?query=${encodeURIComponent(key)}`);
+      expect(factTexts(answer)).toContain(`: ${value}`);
     };
     await save("free");
     await keep(page, `${key}: free`);
@@ -121,14 +122,14 @@ test("plain language becomes a cited suggestion and only reaches agents after re
     await expect(card).toBeVisible();
     await expect(card).toContainText("November 12");
 
-    const before = await getJson(page, `/api/v1/agent/ask?project_id=inbox&question=${encodeURIComponent(entity)}`);
-    expect(before.abstained).toBe(true);
+    const before = await getJson(page, `/api/v1/agent/recall?query=${encodeURIComponent(entity)}`);
+    expect(before.hits.every((h: any) => h.kind !== "fact")).toBe(true);
 
     await keep(page, entity);
     await page.getByRole("button", { name: "Your brain", exact: true }).click();
     await expect(page.getByRole("region", { name: "True now" })).toContainText("November 12");
-    const after = await getJson(page, `/api/v1/agent/ask?project_id=inbox&question=${encodeURIComponent(entity)}`);
-    expect(after.answer).toContain("November 12");
+    const after = await getJson(page, `/api/v1/agent/recall?query=${encodeURIComponent(entity)}`);
+    expect(factTexts(after)).toContain("November 12");
   });
 });
 
@@ -148,11 +149,11 @@ test("owner can teach a decision from an arbitrary exact passage", async ({ brow
     const card = page.getByRole("article").filter({ hasText: entity });
     await expect(card).toBeVisible();
     await expect(card).toContainText("smaller launch");
-    const before = await getJson(page, `/api/v1/agent/ask?project_id=inbox&question=${encodeURIComponent(entity)}`);
-    expect(before.abstained).toBe(true);
+    const before = await getJson(page, `/api/v1/agent/recall?query=${encodeURIComponent(entity)}`);
+    expect(before.hits.every((h: any) => h.kind !== "fact")).toBe(true);
     await keep(page, entity);
 
-    const answer = await getJson(page, `/api/v1/agent/ask?project_id=inbox&question=${encodeURIComponent(entity)}`);
-    expect(answer.answer).toContain("smaller launch");
+    const answer = await getJson(page, `/api/v1/agent/recall?query=${encodeURIComponent(entity)}`);
+    expect(factTexts(answer)).toContain("smaller launch");
   });
 });

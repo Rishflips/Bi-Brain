@@ -999,69 +999,33 @@ export async function createApp(
   app.get("/api/v1/agent/capabilities", (req) =>
     req.brain.agentCapabilities(req.principal),
   );
-  app.get("/api/v1/agent/search", (req) => {
+  app.get("/api/v1/agent/recall", (req) => {
     const v = z
       .object({
-        project_id: z.string().max(100),
-        query: z.string().max(200),
-        mode: z.enum(["current", "historical", "raw"]).default("current"),
-        offset: z.coerce.number().int().min(0).default(0),
-        limit: z.coerce.number().int().min(1).max(50).default(20),
+        query: z.string().max(2000),
+        project_id: z.string().max(100).optional(),
+        history: z.enum(["true", "false"]).default("false"),
+        limit: z.coerce.number().int().min(1).max(20).default(8),
       })
       .strict()
       .parse(req.query);
-    return req.brain.agentSearch(
-      req.principal,
-      v.project_id,
-      v.query,
-      v.mode,
-      v.offset,
-      v.limit,
-    );
+    return req.brain.recall(req.principal, {
+      query: v.query,
+      project_id: v.project_id,
+      history: v.history === "true",
+      limit: v.limit,
+    });
   });
-  app.get("/api/v1/agent/get", (req) => {
+  app.get("/api/v1/agent/open", (req) => {
     const v = z
       .object({
-        project_id: z.string().max(100),
-        object_id: z.string().max(100),
+        id: z.string().max(100),
         version: z.coerce.number().int().positive().optional(),
+        compare_version: z.coerce.number().int().positive().optional(),
       })
       .strict()
       .parse(req.query);
-    return req.brain.agentGet(
-      req.principal,
-      v.project_id,
-      v.object_id,
-      v.version,
-    );
-  });
-  app.get("/api/v1/agent/ask", (req) => {
-    const v = z
-      .object({
-        project_id: z.string().max(100),
-        question: z.string().max(500),
-      })
-      .strict()
-      .parse(req.query);
-    return req.brain.agentAsk(req.principal, v.project_id, v.question);
-  });
-  app.get("/api/v1/agent/diff", (req) => {
-    const v = z
-      .object({
-        project_id: z.string().max(100),
-        object_id: z.string().max(100),
-        from_version: z.coerce.number().int().positive(),
-        to_version: z.coerce.number().int().positive(),
-      })
-      .strict()
-      .parse(req.query);
-    return req.brain.agentDiff(
-      req.principal,
-      v.project_id,
-      v.object_id,
-      v.from_version,
-      v.to_version,
-    );
+    return req.brain.agentOpen(req.principal, v);
   });
   app.post("/api/v1/agent/propose", (req) =>
     req.brain.propose(req.principal, req.body, key(req)),
