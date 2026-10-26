@@ -22,9 +22,9 @@ afterEach(async () => {
 
 describe("bibrain helpers", () => {
   it("parses commands and flags", () => {
-    expect(parseArgs([])).toEqual({ command: "start", flags: {} });
-    expect(parseArgs(["connect", "--connection", "abc", "--data", "/d"])).toEqual({ command: "connect", flags: { connection: "abc", data: "/d" } });
-    expect(parseArgs(["start", "--no-open"])).toEqual({ command: "start", flags: { "no-open": true } });
+    expect(parseArgs([])).toEqual({ command: "start", flags: {}, positional: [] });
+    expect(parseArgs(["connect", "--connection", "abc", "--data", "/d"])).toEqual({ command: "connect", flags: { connection: "abc", data: "/d" }, positional: [] });
+    expect(parseArgs(["start", "--no-open"])).toEqual({ command: "start", flags: { "no-open": true }, positional: [] });
   });
 
   it("opens the browser without a shell on every platform", () => {

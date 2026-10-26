@@ -4,7 +4,7 @@ import { appendFileSync, existsSync, readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawn, spawnSync } from "node:child_process";
-import { browserCommand, dataDirFor, keyFilePath, parseArgs } from "./lib.mjs";
+import { HOOK_BUDGET_MS, HOOK_CLIENTS, HOOK_PROMPT_MAX, HOOK_STDIN_MS, browserCommand, dataDirFor, firstCodePoints, hookOutput, hookSkipReason, hookStatePath, keyFilePath, loopbackApi, noteHookState, parseArgs, parseHookStdin, readHookState, sha256, writeHookState } from "./lib.mjs";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..");
 // Read the same .env the server reads, so the port, data folder and installation
@@ -12,7 +12,9 @@ const root = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..");
 try {
   if (existsSync(join(root, ".env"))) process.loadEnvFile(join(root, ".env"));
 } catch {}
-const { command, flags } = parseArgs(process.argv.slice(2));
+const { command, flags, positional } = parseArgs(process.argv.slice(2));
+// Process start, so Node's own start-up counts against the hook's time budget.
+const startedAt = performance.timeOrigin;
 const port = Number(process.env.BRAIN_PORT ?? 4317);
 const origin = `http://127.0.0.1:${port}`;
 
@@ -145,17 +147,81 @@ function connect() {
   adapter.on("exit", (code, signal) => process.exit(code ?? (signal ? 1 : 0)));
 }
 
+/** Reads stdin fully, or returns null when nothing arrives within the cap. Always releases stdin, so an open silent pipe cannot keep the process alive. */
+function readStdin(ms) {
+  return new Promise((done) => {
+    if (process.stdin.isTTY) return done(null);
+    const chunks = [];
+    let settled = false;
+    const finish = (value) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      try {
+        process.stdin.pause();
+        process.stdin.destroy();
+      } catch {}
+      done(value);
+    };
+    const timer = setTimeout(() => finish(chunks.length ? Buffer.concat(chunks).toString("utf8") : null), ms);
+    process.stdin.on("data", (c) => chunks.push(c));
+    process.stdin.on("end", () => finish(Buffer.concat(chunks).toString("utf8")));
+    process.stdin.on("error", () => finish(null));
+    process.stdin.resume();
+  });
+}
+
+// A hook must never slow or block the agent: any problem ends silently with exit 0.
+// Exit code 2 would block the prompt, so nothing here can produce it.
+async function hook() {
+  try {
+    const client = String(positional[0] ?? "");
+    if (!HOOK_CLIENTS.includes(client)) return;
+    const raw = await readStdin(HOOK_STDIN_MS);
+    if (raw === null) return;
+    const event = parseHookStdin(raw);
+    if (!event || hookSkipReason(event.prompt)) return;
+    const file = keyFilePath(String(flags.data ?? ""), String(flags.connection ?? ""));
+    const { api, key } = JSON.parse(readFileSync(file, "utf8"));
+    if (typeof key !== "string") return;
+    const origin = loopbackApi(api);
+    const statePath = hookStatePath(String(flags.data), String(flags.connection));
+    const state = readHookState(statePath);
+    const sessionHash = sha256(event.session_id);
+    const session = state.sessions[sessionHash];
+    // performance.timeOrigin is fractional and AbortSignal.timeout needs an integer.
+    const remaining = Math.max(50, Math.floor(HOOK_BUDGET_MS - (Date.now() - startedAt)));
+    const res = await fetch(`${origin}/api/v1/agent/recall-push`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ prompt: firstCodePoints(event.prompt, HOOK_PROMPT_MAX), session_id: sessionHash, first_prompt: !session, seen: session?.hashes ?? [], client }),
+      signal: AbortSignal.timeout(remaining),
+      redirect: "error",
+    });
+    if (!res.ok) return;
+    const body = await res.json();
+    if (!body || typeof body !== "object" || !["full", "pointer", "none"].includes(body.level) || typeof body.text !== "string") return;
+    const ids = Array.isArray(body.hit_ids) ? body.hit_ids.filter((x) => typeof x === "string") : [];
+    writeHookState(statePath, noteHookState(state, sessionHash, ids, Date.now()));
+    if (body.text) process.stdout.write(hookOutput(body.text));
+  } catch {
+    /* silent by design */
+  }
+  process.exitCode = 0;
+}
+
 const help = `bibrain: start BiBrain and connect agents.
 
   npx --no-install bibrain                   Start BiBrain and open it signed in
   npx --no-install bibrain start --no-open   Start BiBrain without the browser
   npx --no-install bibrain open              Open the running BiBrain signed in
+  npx --no-install bibrain hook <agent>      Used by the agent's prompt hook; prints evidence for one prompt
   npx --no-install bibrain help              Show this help
 
 Run these from inside the BiBrain folder. --no-install stops npx from
 downloading a package with this name from npm.
 
-Agents use "bibrain connect" from the file BiBrain writes into a project folder.`;
+Agents use "bibrain connect" and "bibrain hook" from the files BiBrain writes into a project folder.`;
 
 try {
   if (command === "start") await start();
@@ -163,7 +229,8 @@ try {
     if (!(await healthy())) stop(`BiBrain is not running at ${origin}. Run npx --no-install bibrain first.`);
     if (!(await isBiBrain())) notBiBrain();
     await openSignedIn();
-  } else if (command === "connect") connect();
+  } else if (command === "hook") await hook();
+  else if (command === "connect") connect();
   else process.stdout.write(help + "\n");
 } catch (error) {
   if (!(error instanceof Quit)) throw error;
