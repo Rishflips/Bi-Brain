@@ -1,6 +1,6 @@
 # Build state
 
-Updated: 2026-10-25
+Updated: 2026-10-27
 
 This page holds the current, verified state of BiBrain. Each section below
 records one shipped plan of the 2026 reframe, with the commands that ran and
@@ -12,12 +12,106 @@ their real counts. The full delivery log from before the reframe is preserved in
 | Area | State |
 | --- | --- |
 | Local app (Today, Your brain, Connections, Settings) | Works end to end on one computer; verified by Vitest and Playwright on Windows |
-| Agent connections (Codex, Claude Code, Cursor) | One-step Add verified locally; native client runs are owner-run (`scripts/native-client-proof.ts`) |
+| Agent connections (Codex, Claude Code, Cursor) | One-step Add writes the server entry and a prompt hook or rule file, verified locally against fake servers; native client runs are owner-run (`scripts/native-client-proof.ts`, `npm run proof:recall`) |
+| Recall | FTS5 index, ranked recall, hook push; golden set gated in CI; live agent runs owner-run |
 | Sorting help (System 1, Clef via Ollama or Cloudflare) | Built and tested against a fake server; no live call yet, owner runs `npm run proof:sorting` |
 | Watch | Per-project switch, on by default |
 | Licence | AGPL-3.0-only for the app, Apache-2.0 for the agent connector |
 | Hosted edition and payments | Paused; managed code is kept but not deployed, and no real payment has been processed |
-| Next plans | Memory and retrieval (embeddings, freshness, a retrieval test set), then cleanup of the paused hosted code |
+| Next plans | Embeddings as a second retrieval list (plan 5b), then cleanup of the paused hosted code |
+
+## 2026-10-25 — Recall that agents use (branch reframe/recall)
+
+What shipped:
+
+- A derived recall index (migration 7: `recall_chunks` plus an FTS5 table with
+  porter stemming) holds one row per fact and per chunk of up to 1,200 code points
+  of every original. It is kept in step by every write path (capture, edit,
+  review, undo, import, forget, vault rebuild) and rebuilt in batches of at most
+  200 sources; the forget proof counts any orphan fact row. `source_fts` is kept.
+- Recall is deterministic and ranked: fact and original candidates (60 per list)
+  fuse by reciprocal rank (k = 60), with exact-name boosts, then authorization
+  runs before the SQL and again per hit. A hit carries `freshness`: `current`,
+  `stale` (older than 21 days), `replaced`, or `retired` (a non-current claim
+  nobody superseded, or outside its validity window). Hypotheses without evidence
+  never appear. `no_match` is a normal answer with near misses, not an error.
+- A golden set of 46 cases gates CI through `npm run brain-eval` (recall at 5,
+  MRR, no-match rate, positive push rate, p95 latency).
+- The owner's Ask bar and Your brain search use the same recall core and never call
+  a model; `Brain.agentSearch`, `agentGet` and `agentAsk` are internal with no HTTP
+  route.
+- The agent HTTP surface is v2: `GET /api/v1/agent/recall`, `GET /api/v1/agent/open`
+  and `POST /api/v1/agent/recall-push`, plus `GET /api/v1/recall/log` for the owner
+  and `GET`/`PATCH /api/v1/preferences/recall-help`. The v1 agent read routes are
+  removed. An expired current claim is `NOT_FOUND` on an unversioned open.
+- MCP surface v2: server `instructions`, seven underscore tools (`brain_recall`,
+  `brain_open`, `brain_note`, `brain_propose`, `brain_intent`, `brain_link`,
+  `brain_forget`), structured output with an `outputSchema`. The earlier
+  eight-name dotted contract is gone with no aliases; existing connections pick
+  up the new names on their next session.
+- `bibrain hook <client>` (apps/cli) turns a prompt event into a loopback recall
+  push in under 1,500 ms and never blocks a prompt; it keeps only id hashes
+  (`data/hook-state/<connection>.json`).
+- The push policy chooses `full` (at most 2,000 code points), `pointer` (under 200)
+  or `none`; the first prompt of a session adds a digest under 600 (not on `none`);
+  a repeated prompt re-injects nothing new; the footer and header are factual
+  statements; and every push passes secret detection. A content-free recall log
+  records level, counts and latency.
+- Add to agent writes a second file once, with `wx` and never over an existing one:
+  `.claude/settings.local.json` (a UserPromptSubmit hook plus `permissions.allow` of
+  only `brain_recall` and `brain_open`), `.codex/hooks.json` (Codex format
+  confirmed on the official hooks page; `CODEX_HOOKS_CONFIRMED = true`), or
+  `.cursor/rules/bibrain.mdc`. Codex runs a project hook only after the person
+  trusts it in `/hooks`, so its tile says "Recall on every prompt: on after Codex
+  trusts the hook" until a push is recorded. An existing file shows a Copy snippet.
+- Capture-time sorting help can also answer `durable` and `topic`; durable facts get
+  a small recall boost and topics feed the prefix and the known-name list.
+- The optional "Recall help" judge (Settings, off by default, needs sorting help on)
+  sends the agent's question, matching passages and project and topic names to
+  Clef, waits at most 900 ms and falls back to the deterministic result. It only
+  lowers noise: it never adds evidence and never hides an exact name match below a
+  pointer. 2,000 judge calls per UTC day, plus the shared daily cap. A job the server
+  gave up on is cancelled with its state deleted and never paid after its deadline.
+- `scripts/recall-agent-proof.ts` (`npm run proof:recall`) is the owner-run native
+  acceptance, with the hook on and off. CI and agents run only its refusal path.
+
+Docs updated: AGENT_INTEGRATION (Recall push), NATIVE_CLIENT_SETUP (hooks, recall
+proof), PROVIDERS (Recall help), UX, API, README.
+
+Verified in this worktree on 2026-10-27, from the branch head before the final
+whole-branch review (Windows, Node 24.19.0). The controller re-runs these at the
+end and corrects the counts:
+
+- `npm run typecheck`, `npm run lint`, `npm run build`: all exit 0.
+- `npm run brain-eval`: 20/20 passed; golden set 46 cases, recall at 5 = 1.00, MRR
+  0.97, no-match rate 1.00, positive push rate 1.00, p95 about 60 ms.
+- `npx vitest run --reporter=dot`: 181 files, 1863 passed, 8 skipped, 0 failed, in one run (1132 s).
+- `node --import tsx scripts/recall-agent-proof.ts claude` without
+  `BRAIN_RECALL_PROOF` prints the refusal and exits 1 (the only part of the proof
+  that was run).
+- Not run in this task: `npm ci`, `npm audit` and `npx playwright test`.
+  The Playwright suite and the e2e specs for the renamed tools are covered by the
+  controller's final run, not by this entry.
+
+Known limits:
+
+- No live Clef judge call and no live sorting call has been made.
+- The native recall proof (`npm run proof:recall` with and without
+  `BRAIN_PROOF_NO_HOOK=1`, for Codex and Claude Code), `scripts/native-client-proof.ts`
+  and `npm run proof:sorting` are owner-run and have not been executed. There is no
+  native result for the hook, for Codex trusting the hook, or for the Windows
+  quoting of the hook command under `cmd.exe /c`.
+- Embeddings are deferred to plan 5b. Thresholds are initial bands and stay
+  uncalibrated until the recall log has real data.
+- `source_fts` is retained although the owner screens no longer read it.
+- `rankAnswers` (`packages/domain/ask.ts`) and `Brain.agentAsk` are test-only.
+- Wall-clock latency tests may flake under heavy machine load.
+- This plan supersedes some spec text: the spec's section 3 "withheld" wording,
+  section 5.1 "rows swept after an hour" (judge rows now stay and are cancelled
+  past their deadline), section 9.8 "judge can only lower" (a judge may also lift a
+  pointer to full when the candidates answer the prompt) and the `Freshness`
+  contract (now also `retired`).
+- Local V1 only; no real model run.
 
 ## 2026-10-25 — Sorting help with Clef (branch reframe/system1-clef)
 
@@ -84,7 +178,7 @@ Known limits:
   with no named agent is listed there. The continuity workspace
   (`AgentContinuityWorkspace` and its CSS) is removed.
 - Agents no longer accept their own proposals: every agent proposal queues for
-  review on Today. A new `brain.note` session note turns decisions (each with a
+  review on Today. A new `brain_note` session note turns decisions (each with a
   topic) and open questions into suggestions that wait for review; a note with
   a secret-looking line is quarantined. `scripts/native-client-proof.ts` now
   uses the one-step path and cleans up even if connecting fails.

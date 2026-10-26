@@ -77,6 +77,24 @@ Every answer must name an option the request offered; one invalid answer rejects
 
 **Live proof is the owner's.** No live Clef or Ollama call has been made on this branch. After setting the variables above, the owner runs it: Put `BRAIN_SYSTEM1_LIVE=1` on its own line in `.env` and run `npm run proof:sorting`, or in PowerShell run `$env:BRAIN_SYSTEM1_LIVE=1; npm run proof:sorting`, then run `Remove-Item Env:BRAIN_SYSTEM1_LIVE` (or close the window). Remove the line from `.env` afterwards so it is never left on. It sends three synthetic notes as three requests, prints the answers, model, input tokens and cost (labelled estimated for Ollama), never prints the key or account id, refuses a loopback endpoint, and exits 0 only when all three answers validate. It spends quota, so agents and CI never run it; their tests use a loopback fake server.
 
+### Recall help (System 1, local)
+
+Recall help is the second local, advisory use of Clef. After the deterministic retrieval of [recall](AGENT_INTEGRATION.md#recall-push) has produced its candidates, it sends one request per agent question (a `brain_recall` call or a per-prompt push) through the same sorting adapter.
+
+**State.** Bounded and built from the retrieved set only: today's date, the request (up to 500 code points), up to 40 known project and topic names, and up to 12 candidates of 300 code points each (kind, date, project, title and passage). Private-visibility sources are never candidates, the adapter refuses secret-looking text, and candidate text is described to the model as data.
+
+**Questions.** Three kinds in one request: `about_owner` (owner world, general, or unclear), one `rel_n` per candidate (does it help answer the request), and `answered` (answered, partial or none).
+
+**Thresholds.** `full` push needs P(owner world) of 0.6 or more, `answered` or `partial`, and one candidate rated 0.5 or more; `pointer` for P(owner world) from 0.35 to below 0.6, or 0.6 or more with no relevant candidate; `none` needs P(general) of 0.6 or more and no exact name match. A candidate rated below 0.2 moves to near misses; `found` needs `answered` with a margin of 0.2 or more between the top two choices. These are initial bands, uncalibrated until the recall log has data.
+
+**Advisory only.** The judge lowers noise: it may lower a push level, reorder, or demote candidates within the retrieved set. It never adds a hit or widens scope, never hides an exact name match below a pointer, and never changes caps or consent. Its answers pass schema and reference validation like every other model output.
+
+**Consent and limits.** It needs sorting help on plus its own "Recall help" consent in Settings (its own setting, not a background preference, off by default). It shares the daily micro-USD cap with sorting and adds a hard cap of 2,000 judge calls per UTC day. Calls run only in the background worker over the `jobs` table (`recall_judge`); the server waits at most 900 ms and then answers from the deterministic result, cancels the queued job and deletes its state. A job past its deadline is never paid. The worker keeps an identical request's answers in memory for ten minutes, and every judged hit is still one the deterministic recall already authorized for that connection.
+
+**Owner screens never use it.** The Ask bar and Your brain search call the deterministic recall only, so an owner query or private note never reaches the sorting service.
+
+**Live proof is the owner's.** No live Clef call has been made for recall help on this branch; tests use a loopback fake server. The deterministic behaviour is the default and the fallback.
+
 ### Prepared decision contract and default-off managed consumer
 
 `new PreparedDecisionProvider(config, fetcher?).prepareDecision(input)` performs no

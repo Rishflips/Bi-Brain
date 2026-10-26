@@ -2,6 +2,14 @@
 
 Complete milestones in dependency order. A polished mockup is not a substitute for a persistent vertical slice. Check boxes only after attaching evidence in BUILD_STATE.md.
 
+## Current checkpoint — Plan 5 recall (2026-10-25)
+
+Plan: `docs/superpowers/plans/2026-10-25-recall.md`. Evidence: BUILD_STATE.md, section "Recall that agents use".
+
+- [x] Plan 5 recall: migration 7 recall index, deterministic ranked recall with a golden set gate, agent surface v2 (brain_recall/brain_open), per-prompt hook push, optional Clef judge behind consent. Locally verified; native recall proof owner-run.
+- [ ] Owner-run recall proof (scripts/recall-agent-proof.ts) with the hook on and off for Codex and Claude Code.
+- [ ] Plan 5b: embeddings as a second retrieval list, after the recall log has data to calibrate thresholds.
+
 ## Today v2 — 2026-10-23
 
 Plan: `docs/superpowers/plans/2026-10-23-today-v2.md`. Evidence: BUILD_STATE.md, top entry.
