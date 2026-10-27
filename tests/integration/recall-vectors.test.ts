@@ -126,16 +126,54 @@ describe("VectorCache.search", () => {
     const { s, ids, byRef } = seeded();
     const cache = new VectorCache();
     expect(cache.search(s, q()).map((h) => h.ref_id)).toEqual([ids.a, ids.b]);
-    // Another process's write: a second Storage handle (its own SQLite connection) on the same file, so this process's counter never moves.
+    // Another process's write: a second Storage handle (its own SQLite connection) on the same file, written with raw SQL so this process's
+    // generation counter never moves and only SQLite's data_version can tell the cache.
     const again = new Storage(s.path);
     cleanup.push(() => again.close());
-    again.transaction(() => writeEmbeddings(again, KEY, 4, [{ ...byRef(ids.c), vector: vec(1, 0, 0, 0) }]));
+    const g = vectorGeneration();
+    // Row c leaves the scope (it was below the floor anyway), the cache notices, then c rejoins with a better vector.
+    again.run("UPDATE recall_chunks SET embedding=NULL,embedding_model=NULL,embedding_dim=NULL WHERE id=?", byRef(ids.c).id);
+    expect(cache.search(s, q()).map((h) => h.ref_id)).toEqual([ids.a, ids.b]);
+    again.run("UPDATE recall_chunks SET embedding=?,embedding_model=?,embedding_dim=? WHERE id=?", encodeVector(vec(1, 0, 0, 0)), KEY, 4, byRef(ids.c).id);
     expect(cache.search(s, q()).map((h) => h.ref_id)).toEqual([ids.a, ids.c, ids.b]);
     s.transaction(() => purgeRef(s, "original", ids.a));
     expect(cache.search(s, q()).map((h) => h.ref_id)).toEqual([ids.c, ids.b]);
-    again.transaction(() => clearEmbeddings(again));
+    again.run("UPDATE recall_chunks SET embedding=NULL,embedding_model=NULL,embedding_dim=NULL");
+    expect(vectorGeneration()).toBe(g + 1); // only the purge above moved it
     expect(cache.search(s, q())).toEqual([]);
     expect(s.all("SELECT key FROM settings WHERE key LIKE '%vector%' OR key LIKE '%generation%'")).toEqual([]);
+  });
+  it("an unrelated commit by another connection does not rebuild the matrix; a vector change in the scope does; entries the writes outdated are dropped", () => {
+    const { s, ids, byRef } = seeded();
+    const cache = new VectorCache();
+    const again = new Storage(s.path);
+    cleanup.push(() => again.close());
+    expect(cache.search(s, q()).map((h) => h.ref_id)).toEqual([ids.a, ids.b]);
+    expect(cache.builds).toBe(1);
+    // The worker commits leases, ledger rows and status all day: none of it touches recall_chunks vectors.
+    again.run("INSERT INTO settings(key,value) VALUES('unrelated_commit','1')");
+    again.run("UPDATE recall_chunks SET boost=boost WHERE id=?", byRef(ids.a).id);
+    expect(cache.search(s, q()).map((h) => h.ref_id)).toEqual([ids.a, ids.b]);
+    expect(cache.search(s, q()).map((h) => h.ref_id)).toEqual([ids.a, ids.b]);
+    expect(cache.builds).toBe(1);
+    // A vector leaving or joining the scope from another connection does rebuild.
+    again.run("UPDATE recall_chunks SET embedding=NULL,embedding_model=NULL,embedding_dim=NULL WHERE id=?", byRef(ids.c).id);
+    expect(cache.search(s, q()).map((h) => h.ref_id)).toEqual([ids.a, ids.b]);
+    expect(cache.builds).toBe(2);
+    again.run("UPDATE recall_chunks SET embedding=?,embedding_model=?,embedding_dim=? WHERE id=?", encodeVector(vec(1, 0, 0, 0)), KEY, 4, byRef(ids.c).id);
+    expect(cache.search(s, q()).map((h) => h.ref_id)).toEqual([ids.a, ids.c, ids.b]);
+    expect(cache.builds).toBe(3);
+    // Another scope's entry is dropped once this process's own write outdates it, and kept (without a rebuild) across an unrelated commit.
+    expect(cache.search(s, q({ visibilities: ["project", "private"] })).length).toBe(4);
+    expect(cache.scopes).toBe(2);
+    const before = cache.builds;
+    again.run("UPDATE settings SET value='2' WHERE key='unrelated_commit'");
+    expect(cache.search(s, q()).length).toBe(3);
+    expect(cache.scopes).toBe(2);
+    expect(cache.builds).toBe(before);
+    s.transaction(() => purgeRef(s, "original", ids.e));
+    expect(cache.search(s, q()).length).toBe(3);
+    expect(cache.scopes).toBe(1);
   });
   it("scans 20,000 rows of 64 dims in under 150 ms once cached", () => {
     const { s } = setup();

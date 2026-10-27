@@ -94,15 +94,41 @@ export function clearEmbeddings(store: Storage): number {
   return changed;
 }
 
-type Entry = { generation: number; dataVersion: number; ids: number[]; matrix: Float32Array };
+type Fingerprint = { count: number; max: number; sum: number };
+type Entry = { generation: number; dataVersion: number; fingerprint: Fingerprint; ids: number[]; matrix: Float32Array };
+type Scope = { projects: string[]; visibilities: string[]; status: RecallRowStatus | "any"; key: string; dim: number };
+
+const LITTLE_ENDIAN = new Uint8Array(new Uint32Array([1]).buffer)[0] === 1;
+/** A Float32 view of one stored vector: zero-copy when the host is little-endian and the blob is 4-aligned, one copy when not aligned, the DataView path on a big-endian host. */
+function viewVector(blob: Uint8Array, dim: number): Float32Array {
+  if (!LITTLE_ENDIAN) return decodeVector(blob, dim);
+  if (blob.byteOffset % 4 === 0) return new Float32Array(blob.buffer, blob.byteOffset, dim);
+  return new Float32Array(new Uint8Array(blob).buffer, 0, dim);
+}
+
+const scopeSql = (sc: Scope) => ({
+  where: `project_id IN (${marks(sc.projects.length)}) AND visibility IN (${marks(sc.visibilities.length)}) ${sc.status === "any" ? "" : "AND status=?"} AND embedding_model=? AND embedding_dim=?`,
+  args: [...sc.projects, ...sc.visibilities, ...(sc.status === "any" ? [] : [sc.status]), sc.key, sc.dim],
+});
+const sameFingerprint = (a: Fingerprint, b: Fingerprint) => a.count === b.count && a.max === b.max && a.sum === b.sum;
 
 /**
- * One contiguous Float32 matrix per (projects, visibilities, status, key, dim), rebuilt when this process's generation
- * or SQLite's data_version moved. The scan is a dot product (vectors are unit length), then the top rows are re-read by id
- * so a row that changed since the matrix was built is dropped rather than served.
+ * One contiguous Float32 matrix per (projects, visibilities, status, key, dim). Two triggers:
+ *  - this process's generation moved (its own index and vector writes): rebuild, always;
+ *  - SQLite's data_version moved (any commit by another connection, including the worker's leases and ledger rows): rebuild only if the
+ *    scope's (count, max id, sum of ids) of embedded rows changed, so an unrelated commit costs one aggregate query, not a full matrix read.
+ * The fingerprint sees rows that join or leave a scope; it does not see a vector rewritten in place under the same key, which the
+ * indexing path never does (a changed text is a new row id, and a re-embed only targets rows whose key differs).
+ * The scan is a dot product (vectors are unit length); the top rows are then re-read by id and dropped unless still in scope under the key.
  */
 export class VectorCache {
   private readonly entries = new Map<string, Entry>();
+  /** How many matrices this cache has built; tests read it to prove an unrelated commit does not rebuild. */
+  builds = 0;
+  /** How many scopes are cached right now. */
+  get scopes() {
+    return this.entries.size;
+  }
   constructor(private readonly maxScopes = 8) {}
 
   search(store: Storage, q: VectorQuery): RecallMatch[] {
@@ -125,45 +151,71 @@ export class VectorCache {
       ...top.map((t) => t.id),
     );
     const byId = new Map(rows.map((r) => [r.id, r]));
+    const projects = new Set(q.projects);
+    const visibilities = new Set<string>(q.visibilities);
     const out: RecallMatch[] = [];
     for (const t of top) {
       const r = byId.get(t.id);
-      if (!r || r.embedding_model !== q.key) continue;
+      // Re-checked against the live row, so a row whose model, project, visibility or status changed since the matrix was built is never returned.
+      if (!r || r.embedding_model !== q.key || !projects.has(r.project_id) || !visibilities.has(r.visibility) || (q.status !== "any" && r.status !== q.status)) continue;
       const { embedding_model: _model, ...rest } = r;
       out.push({ ...rest, boost: Number(rest.boost), score: t.score });
     }
     return out;
   }
 
+  /**
+   * Answered from the recall_chunks_embed index alone (status, model, dim, project, visibility and the rowid are all in it), so it never reads
+   * a 4 KB vector or walks its overflow pages. A stored dim is only ever written together with its blob, so `embedding_dim=?` stands for "embedded".
+   */
+  private fingerprint(store: Storage, sc: Scope): Fingerprint {
+    const { where, args } = scopeSql(sc);
+    const row = store.get<{ n: number; m: number | null; s: number | null }>(`SELECT count(*) AS n, max(id) AS m, sum(id) AS s FROM recall_chunks WHERE ${where}`, ...args);
+    return { count: Number(row?.n ?? 0), max: Number(row?.m ?? 0), sum: Number(row?.s ?? 0) };
+  }
+
+  /** Drops every entry other than `keep` that this process's writes outdated, or whose scope changed under another connection's commit. */
+  private prune(store: Storage, version: number, keep: string) {
+    for (const [name, e] of [...this.entries]) {
+      if (name === keep) continue;
+      if (e.generation !== generation) this.entries.delete(name);
+      else if (e.dataVersion !== version) {
+        if (sameFingerprint(e.fingerprint, this.fingerprint(store, JSON.parse(name) as Scope))) e.dataVersion = version;
+        else this.entries.delete(name);
+      }
+    }
+  }
+
   private load(store: Storage, q: VectorQuery): Entry {
-    const projects = [...q.projects].sort();
-    const visibilities = [...q.visibilities].sort();
-    const scope = JSON.stringify([projects, visibilities, q.status, q.key, q.dim]);
+    const sc: Scope = { projects: [...q.projects].sort(), visibilities: [...q.visibilities].sort(), status: q.status, key: q.key, dim: q.dim };
+    const name = JSON.stringify(sc);
     const version = dataVersion(store);
-    const cached = this.entries.get(scope);
-    if (cached && cached.generation === generation && cached.dataVersion === version) return cached;
-    const rows = store.all<{ id: number; embedding: Uint8Array }>(
-      `SELECT id,embedding FROM recall_chunks WHERE project_id IN (${marks(projects.length)}) AND visibility IN (${marks(visibilities.length)})
-       ${q.status === "any" ? "" : "AND status=?"} AND embedding_model=? AND embedding_dim=? AND embedding IS NOT NULL ORDER BY id`,
-      ...projects,
-      ...visibilities,
-      ...(q.status === "any" ? [] : [q.status]),
-      q.key,
-      q.dim,
-    );
+    this.prune(store, version, name);
+    const cached = this.entries.get(name);
+    if (cached && cached.generation === generation) {
+      if (cached.dataVersion === version) return cached;
+      if (sameFingerprint(cached.fingerprint, this.fingerprint(store, sc))) {
+        cached.dataVersion = version;
+        return cached;
+      }
+    }
+    const { where, args } = scopeSql(sc);
+    const fingerprint = this.fingerprint(store, sc);
+    const rows = store.all<{ id: number; embedding: Uint8Array | null }>(`SELECT id,embedding FROM recall_chunks WHERE ${where} AND embedding IS NOT NULL ORDER BY id`, ...args);
+    this.builds += 1;
     const matrix = new Float32Array(rows.length * q.dim);
     const ids: number[] = [];
     // A blob of the wrong length or holding a non-finite value (never written by writeEmbeddings, but the file is shared) is left out of the matrix.
     for (const r of rows) {
-      if (r.embedding.byteLength !== q.dim * 4) continue;
-      const v = decodeVector(r.embedding, q.dim);
+      if (!r.embedding || r.embedding.byteLength !== q.dim * 4) continue;
+      const v = viewVector(r.embedding, q.dim);
       if (!allFinite(v)) continue;
       matrix.set(v, ids.length * q.dim);
       ids.push(r.id);
     }
-    const entry = { generation, dataVersion: version, ids, matrix: matrix.subarray(0, ids.length * q.dim) };
-    if (!this.entries.has(scope) && this.entries.size >= this.maxScopes) this.entries.delete(this.entries.keys().next().value!);
-    this.entries.set(scope, entry);
+    const entry: Entry = { generation, dataVersion: version, fingerprint, ids, matrix: matrix.subarray(0, ids.length * q.dim) };
+    if (!this.entries.has(name) && this.entries.size >= this.maxScopes) this.entries.delete(this.entries.keys().next().value!);
+    this.entries.set(name, entry);
     return entry;
   }
 }
