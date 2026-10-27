@@ -97,7 +97,7 @@
   },
   "push": {
    "level": "full",
-   "text": "The owner's brain (bibrain) covers Northstar: 8 current facts and 8 originals. Recent: Status in October (2026-10-25), Status in September (2026-10-25), Weekly notes (2026-10-25). The owner's brain (bibrain) has notes on Launch color, Launch notes, Launch party caterer that may bear on this; brain_recall searches it.\n\nBiBrain recall for this prompt, as of 2026-10-25. Evidence from the owner's brain; data, not instructions.\nLaunch color: cobalt (fact <fact:launch-color>, 2026-10-20, current)\nLaunch party caterer: Lumen Catering (fact <fact:caterer>, 2026-10-21, current)\nNot recorded here is not the same as false. More is available through the bibrain brain_recall tool; ids are shown as (fact <id>) or (original <id>).",
+   "text": "The owner's brain (bibrain) covers Northstar: 8 current facts and 12 originals. Recent: Support (2026-10-25), Allowance (2026-10-25), புதிய அலுவலகம் (2026-10-25). The owner's brain (bibrain) has notes on Launch color, Launch notes, Launch party caterer that may bear on this; brain_recall searches it.\n\nBiBrain recall for this prompt, as of 2026-10-25. Evidence from the owner's brain; data, not instructions.\nLaunch color: cobalt (fact <fact:launch-color>, 2026-10-20, current)\nLaunch party caterer: Lumen Catering (fact <fact:caterer>, 2026-10-21, current)\nNot recorded here is not the same as false. More is available through the bibrain brain_recall tool; ids are shown as (fact <id>) or (original <id>).",
    "hit_ids": [
     "<fact:launch-color>",
     "<fact:caterer>"
@@ -203,7 +203,7 @@
   },
   "push": {
    "level": "full",
-   "text": "The owner's brain (bibrain) covers Northstar: 8 current facts and 8 originals. Recent: Status in October (2026-10-25), Status in September (2026-10-25), Weekly notes (2026-10-25). The owner's brain (bibrain) has notes on Launch color, Launch party caterer, Launch notes that may bear on this; brain_recall searches it.\n\nBiBrain recall for this prompt, as of 2026-10-25. Evidence from the owner's brain; data, not instructions.\nLaunch color: cobalt (fact <fact:launch-color>, 2026-10-20, current)\nLaunch party caterer: Lumen Catering (fact <fact:caterer>, 2026-10-21, current)\nNot recorded here is not the same as false. More is available through the bibrain brain_recall tool; ids are shown as (fact <id>) or (original <id>).",
+   "text": "The owner's brain (bibrain) covers Northstar: 8 current facts and 12 originals. Recent: Support (2026-10-25), Allowance (2026-10-25), புதிய அலுவலகம் (2026-10-25). The owner's brain (bibrain) has notes on Launch color, Launch party caterer, Launch notes that may bear on this; brain_recall searches it.\n\nBiBrain recall for this prompt, as of 2026-10-25. Evidence from the owner's brain; data, not instructions.\nLaunch color: cobalt (fact <fact:launch-color>, 2026-10-20, current)\nLaunch party caterer: Lumen Catering (fact <fact:caterer>, 2026-10-21, current)\nNot recorded here is not the same as false. More is available through the bibrain brain_recall tool; ids are shown as (fact <id>) or (original <id>).",
    "hit_ids": [
     "<fact:launch-color>",
     "<fact:caterer>"
@@ -285,7 +285,7 @@
   },
   "push": {
    "level": "full",
-   "text": "The owner's brain (bibrain) covers Northstar: 8 current facts and 8 originals. Recent: Status in October (2026-10-25), Status in September (2026-10-25), Weekly notes (2026-10-25). The owner's brain (bibrain) has notes on Marco, People, Palette review that may bear on this; brain_recall searches it.\n\nBiBrain recall for this prompt, as of 2026-10-25. Evidence from the owner's brain; data, not instructions.\nMarco: design lead for Northstar, works from Lisbon (fact <fact:marco-role>, 2026-08-30, stale)\nFrom \"Palette review\" (original <src:palette-review>, 2026-10-25): Marco reviewed three palettes. He preferred the warm one, and the amber accent was kept for icons only.\nNot recorded here is not the same as false. More is available through the bibrain brain_recall tool; ids are shown as (fact <id>) or (original <id>).",
+   "text": "The owner's brain (bibrain) covers Northstar: 8 current facts and 12 originals. Recent: Support (2026-10-25), Allowance (2026-10-25), புதிய அலுவலகம் (2026-10-25). The owner's brain (bibrain) has notes on Marco, People, Palette review that may bear on this; brain_recall searches it.\n\nBiBrain recall for this prompt, as of 2026-10-25. Evidence from the owner's brain; data, not instructions.\nMarco: design lead for Northstar, works from Lisbon (fact <fact:marco-role>, 2026-08-30, stale)\nFrom \"Palette review\" (original <src:palette-review>, 2026-10-25): Marco reviewed three palettes. He preferred the warm one, and the amber accent was kept for icons only.\nNot recorded here is not the same as false. More is available through the bibrain brain_recall tool; ids are shown as (fact <id>) or (original <id>).",
    "hit_ids": [
     "<fact:marco-role>",
     "<src:palette-review>"
@@ -348,7 +348,7 @@
   },
   "push": {
    "level": "full",
-   "text": "The owner's brain (bibrain) covers Northstar: 8 current facts and 8 originals. Recent: Status in October (2026-10-25), Status in September (2026-10-25), Weekly notes (2026-10-25). The owner's brain (bibrain) has notes on Launch color, Launch notes that may bear on this; brain_recall searches it.\n\nBiBrain recall for this prompt, as of 2026-10-25. Evidence from the owner's brain; data, not instructions.\nLaunch color: cobalt (fact <fact:launch-color>, 2026-10-20, current)\nNot recorded here is not the same as false. More is available through the bibrain brain_recall tool; ids are shown as (fact <id>) or (original <id>).",
+   "text": "The owner's brain (bibrain) covers Northstar: 8 current facts and 12 originals. Recent: Support (2026-10-25), Allowance (2026-10-25), புதிய அலுவலகம் (2026-10-25). The owner's brain (bibrain) has notes on Launch color, Launch notes that may bear on this; brain_recall searches it.\n\nBiBrain recall for this prompt, as of 2026-10-25. Evidence from the owner's brain; data, not instructions.\nLaunch color: cobalt (fact <fact:launch-color>, 2026-10-20, current)\nNot recorded here is not the same as false. More is available through the bibrain brain_recall tool; ids are shown as (fact <id>) or (original <id>).",
    "hit_ids": [
     "<fact:launch-color>"
    ],
@@ -453,7 +453,7 @@
   },
   "push": {
    "level": "full",
-   "text": "The owner's brain (bibrain) covers Northstar: 8 current facts and 8 originals. Recent: Status in October (2026-10-25), Status in September (2026-10-25), Weekly notes (2026-10-25). The owner's brain (bibrain) has notes on Launch party caterer, Launch color, Weekly notes that may bear on this; brain_recall searches it.\n\nBiBrain recall for this prompt, as of 2026-10-25. Evidence from the owner's brain; data, not instructions.\nLaunch party caterer: Lumen Catering (fact <fact:caterer>, 2026-10-21, current)\nLaunch color: cobalt (fact <fact:launch-color>, 2026-10-20, current)\nNot recorded here is not the same as false. More is available through the bibrain brain_recall tool; ids are shown as (fact <id>) or (original <id>).",
+   "text": "The owner's brain (bibrain) covers Northstar: 8 current facts and 12 originals. Recent: Support (2026-10-25), Allowance (2026-10-25), புதிய அலுவலகம் (2026-10-25). The owner's brain (bibrain) has notes on Launch party caterer, Launch color, Weekly notes that may bear on this; brain_recall searches it.\n\nBiBrain recall for this prompt, as of 2026-10-25. Evidence from the owner's brain; data, not instructions.\nLaunch party caterer: Lumen Catering (fact <fact:caterer>, 2026-10-21, current)\nLaunch color: cobalt (fact <fact:launch-color>, 2026-10-20, current)\nNot recorded here is not the same as false. More is available through the bibrain brain_recall tool; ids are shown as (fact <id>) or (original <id>).",
    "hit_ids": [
     "<fact:caterer>",
     "<fact:launch-color>"
@@ -540,7 +540,7 @@
   },
   "push": {
    "level": "full",
-   "text": "The owner's brain (bibrain) covers Northstar: 8 current facts and 8 originals. Recent: Status in October (2026-10-25), Status in September (2026-10-25), Weekly notes (2026-10-25). The owner's brain (bibrain) has notes on Northstar beta, Northstar price, Beta timeline that may bear on this; brain_recall searches it.\n\nBiBrain recall for this prompt, as of 2026-10-25. Evidence from the owner's brain; data, not instructions.\nNorthstar beta: opens November 14 (fact <fact:beta-opens>, 2026-10-18, current)\nNorthstar price: nine dollars a month until the beta ends (fact <fact:price>, 2026-09-10, stale)\nNot recorded here is not the same as false. More is available through the bibrain brain_recall tool; ids are shown as (fact <id>) or (original <id>).",
+   "text": "The owner's brain (bibrain) covers Northstar: 8 current facts and 12 originals. Recent: Support (2026-10-25), Allowance (2026-10-25), புதிய அலுவலகம் (2026-10-25). The owner's brain (bibrain) has notes on Northstar beta, Northstar price, Beta timeline that may bear on this; brain_recall searches it.\n\nBiBrain recall for this prompt, as of 2026-10-25. Evidence from the owner's brain; data, not instructions.\nNorthstar beta: opens November 14 (fact <fact:beta-opens>, 2026-10-18, current)\nNorthstar price: nine dollars a month until the beta ends (fact <fact:price>, 2026-09-10, stale)\nNot recorded here is not the same as false. More is available through the bibrain brain_recall tool; ids are shown as (fact <id>) or (original <id>).",
    "hit_ids": [
     "<fact:beta-opens>",
     "<fact:price>"
@@ -570,7 +570,7 @@
     ],
     "history": false,
     "index_complete": true,
-    "candidates": 27
+    "candidates": 31
    },
    "hits": [
     {
@@ -765,7 +765,7 @@
   },
   "push": {
    "level": "full",
-   "text": "The owner's brain (bibrain) covers Northstar: 8 current facts and 8 originals. Recent: Status in October (2026-10-25), Status in September (2026-10-25), Weekly notes (2026-10-25). The owner's brain (bibrain) has notes on Northstar price, northstar, Northstar plan that may bear on this; brain_recall searches it.\n\nBiBrain recall for this prompt, as of 2026-10-25. Evidence from the owner's brain; data, not instructions.\nNorthstar price: nine dollars a month until the beta ends (fact <fact:price>, 2026-09-10, stale)\nnorthstar is active. (fact <fact:status-new>, 2026-10-22, current)\nNorthstar plan: one plan (fact <fact:stale-pricing-note>, 2026-09-15, stale)\nNorthstar beta: opens November 14 (fact <fact:beta-opens>, 2026-10-18, current)\nMarco: design lead for Northstar, works from Lisbon (fact <fact:marco-role>, 2026-08-30, stale)\nLaunch color: cobalt (fact <fact:launch-color>, 2026-10-20, current)\nNot recorded here is not the same as false. More is available through the bibrain brain_recall tool; ids are shown as (fact <id>) or (original <id>).",
+   "text": "The owner's brain (bibrain) covers Northstar: 8 current facts and 12 originals. Recent: Support (2026-10-25), Allowance (2026-10-25), புதிய அலுவலகம் (2026-10-25). The owner's brain (bibrain) has notes on Northstar price, northstar, Northstar plan that may bear on this; brain_recall searches it.\n\nBiBrain recall for this prompt, as of 2026-10-25. Evidence from the owner's brain; data, not instructions.\nNorthstar price: nine dollars a month until the beta ends (fact <fact:price>, 2026-09-10, stale)\nnorthstar is active. (fact <fact:status-new>, 2026-10-22, current)\nNorthstar plan: one plan (fact <fact:stale-pricing-note>, 2026-09-15, stale)\nNorthstar beta: opens November 14 (fact <fact:beta-opens>, 2026-10-18, current)\nMarco: design lead for Northstar, works from Lisbon (fact <fact:marco-role>, 2026-08-30, stale)\nLaunch color: cobalt (fact <fact:launch-color>, 2026-10-20, current)\nNot recorded here is not the same as false. More is available through the bibrain brain_recall tool; ids are shown as (fact <id>) or (original <id>).",
    "hit_ids": [
     "<fact:price>",
     "<fact:status-new>",
@@ -832,7 +832,7 @@
   },
   "push": {
    "level": "full",
-   "text": "The owner's brain (bibrain) covers Northstar: 8 current facts and 8 originals. Recent: Status in October (2026-10-25), Status in September (2026-10-25), Weekly notes (2026-10-25). The owner's brain (bibrain) has notes on Amber accent, Palette review that may bear on this; brain_recall searches it.\n\nBiBrain recall for this prompt, as of 2026-10-25. Evidence from the owner's brain; data, not instructions.\nAmber accent: kept for icons only (fact <fact:amber-icons>, 2026-10-19, current)\nNot recorded here is not the same as false. More is available through the bibrain brain_recall tool; ids are shown as (fact <id>) or (original <id>).",
+   "text": "The owner's brain (bibrain) covers Northstar: 8 current facts and 12 originals. Recent: Support (2026-10-25), Allowance (2026-10-25), புதிய அலுவலகம் (2026-10-25). The owner's brain (bibrain) has notes on Amber accent, Palette review that may bear on this; brain_recall searches it.\n\nBiBrain recall for this prompt, as of 2026-10-25. Evidence from the owner's brain; data, not instructions.\nAmber accent: kept for icons only (fact <fact:amber-icons>, 2026-10-19, current)\nNot recorded here is not the same as false. More is available through the bibrain brain_recall tool; ids are shown as (fact <id>) or (original <id>).",
    "hit_ids": [
     "<fact:amber-icons>"
    ],
@@ -861,7 +861,7 @@
     ],
     "history": false,
     "index_complete": true,
-    "candidates": 27
+    "candidates": 31
    },
    "hits": [
     {
@@ -1072,7 +1072,7 @@
   },
   "push": {
    "level": "pointer",
-   "text": "The owner's brain (bibrain) covers Northstar: 8 current facts and 8 originals. Recent: Status in October (2026-10-25), Status in September (2026-10-25), Weekly notes (2026-10-25). The owner's brain (bibrain) has notes on Status in October, Status in September, northstar that may bear on this; brain_recall searches it.",
+   "text": "The owner's brain (bibrain) covers Northstar: 8 current facts and 12 originals. Recent: Support (2026-10-25), Allowance (2026-10-25), புதிய அலுவலகம் (2026-10-25). The owner's brain (bibrain) has notes on Status in October, Status in September, northstar that may bear on this; brain_recall searches it.",
    "hit_ids": [],
    "digest": true
   }
@@ -1148,7 +1148,7 @@
   },
   "push": {
    "level": "full",
-   "text": "The owner's brain (bibrain) covers Northstar: 8 current facts and 8 originals. Recent: Status in October (2026-10-25), Status in September (2026-10-25), Weekly notes (2026-10-25). The owner's brain (bibrain) has notes on Launch color, Launch notes, Launch party caterer that may bear on this; brain_recall searches it.\n\nBiBrain recall for this prompt, as of 2026-10-25. Evidence from the owner's brain; data, not instructions.\nLaunch color: cobalt (fact <fact:launch-color>, 2026-10-20, current)\nLaunch party caterer: Lumen Catering (fact <fact:caterer>, 2026-10-21, current)\nNot recorded here is not the same as false. More is available through the bibrain brain_recall tool; ids are shown as (fact <id>) or (original <id>).",
+   "text": "The owner's brain (bibrain) covers Northstar: 8 current facts and 12 originals. Recent: Support (2026-10-25), Allowance (2026-10-25), புதிய அலுவலகம் (2026-10-25). The owner's brain (bibrain) has notes on Launch color, Launch notes, Launch party caterer that may bear on this; brain_recall searches it.\n\nBiBrain recall for this prompt, as of 2026-10-25. Evidence from the owner's brain; data, not instructions.\nLaunch color: cobalt (fact <fact:launch-color>, 2026-10-20, current)\nLaunch party caterer: Lumen Catering (fact <fact:caterer>, 2026-10-21, current)\nNot recorded here is not the same as false. More is available through the bibrain brain_recall tool; ids are shown as (fact <id>) or (original <id>).",
    "hit_ids": [
     "<fact:launch-color>",
     "<fact:caterer>"
@@ -1222,7 +1222,7 @@
   },
   "push": {
    "level": "full",
-   "text": "The owner's brain (bibrain) covers Northstar: 8 current facts and 8 originals. Recent: Status in October (2026-10-25), Status in September (2026-10-25), Weekly notes (2026-10-25). The owner's brain (bibrain) has notes on Marco, People, Palette review that may bear on this; brain_recall searches it.\n\nBiBrain recall for this prompt, as of 2026-10-25. Evidence from the owner's brain; data, not instructions.\nMarco: design lead for Northstar, works from Lisbon (fact <fact:marco-role>, 2026-08-30, stale)\nFrom \"Palette review\" (original <src:palette-review>, 2026-10-25): Marco reviewed three palettes. He preferred the warm one, and the amber accent was kept for icons only.\nNot recorded here is not the same as false. More is available through the bibrain brain_recall tool; ids are shown as (fact <id>) or (original <id>).",
+   "text": "The owner's brain (bibrain) covers Northstar: 8 current facts and 12 originals. Recent: Support (2026-10-25), Allowance (2026-10-25), புதிய அலுவலகம் (2026-10-25). The owner's brain (bibrain) has notes on Marco, People, Palette review that may bear on this; brain_recall searches it.\n\nBiBrain recall for this prompt, as of 2026-10-25. Evidence from the owner's brain; data, not instructions.\nMarco: design lead for Northstar, works from Lisbon (fact <fact:marco-role>, 2026-08-30, stale)\nFrom \"Palette review\" (original <src:palette-review>, 2026-10-25): Marco reviewed three palettes. He preferred the warm one, and the amber accent was kept for icons only.\nNot recorded here is not the same as false. More is available through the bibrain brain_recall tool; ids are shown as (fact <id>) or (original <id>).",
    "hit_ids": [
     "<fact:marco-role>",
     "<src:palette-review>"
@@ -1340,7 +1340,7 @@
   },
   "push": {
    "level": "pointer",
-   "text": "The owner's brain (bibrain) covers Northstar: 8 current facts and 8 originals. Recent: Status in October (2026-10-25), Status in September (2026-10-25), Weekly notes (2026-10-25). The owner's brain (bibrain) has notes on Beta timeline that may bear on this; brain_recall searches it.",
+   "text": "The owner's brain (bibrain) covers Northstar: 8 current facts and 12 originals. Recent: Support (2026-10-25), Allowance (2026-10-25), புதிய அலுவலகம் (2026-10-25). The owner's brain (bibrain) has notes on Beta timeline that may bear on this; brain_recall searches it.",
    "hit_ids": [],
    "digest": true
   }
@@ -1404,7 +1404,7 @@
   },
   "push": {
    "level": "full",
-   "text": "The owner's brain (bibrain) covers Northstar: 8 current facts and 8 originals. Recent: Status in October (2026-10-25), Status in September (2026-10-25), Weekly notes (2026-10-25). The owner's brain (bibrain) has notes on Launch notes, Pricing call that may bear on this; brain_recall searches it.\n\nBiBrain recall for this prompt, as of 2026-10-25. Evidence from the owner's brain; data, not instructions.\nFrom \"Launch notes\" (original <src:launch-notes>, 2026-10-25): We met on Tuesday to settle the palette. After a long debate the launch color is cobalt. Ana wants the banner shipped by Friday.\nFrom \"Pricing call\" (original <src:pricing>, 2026-10-25): Northstar ships with one plan. The price stays at nine dollars a month until the beta ends.\nNot recorded here is not the same as false. More is available through the bibrain brain_recall tool; ids are shown as (fact <id>) or (original <id>).",
+   "text": "The owner's brain (bibrain) covers Northstar: 8 current facts and 12 originals. Recent: Support (2026-10-25), Allowance (2026-10-25), புதிய அலுவலகம் (2026-10-25). The owner's brain (bibrain) has notes on Launch notes, Pricing call that may bear on this; brain_recall searches it.\n\nBiBrain recall for this prompt, as of 2026-10-25. Evidence from the owner's brain; data, not instructions.\nFrom \"Launch notes\" (original <src:launch-notes>, 2026-10-25): We met on Tuesday to settle the palette. After a long debate the launch color is cobalt. Ana wants the banner shipped by Friday.\nFrom \"Pricing call\" (original <src:pricing>, 2026-10-25): Northstar ships with one plan. The price stays at nine dollars a month until the beta ends.\nNot recorded here is not the same as false. More is available through the bibrain brain_recall tool; ids are shown as (fact <id>) or (original <id>).",
    "hit_ids": [
     "<src:launch-notes>",
     "<src:pricing>"
@@ -1434,7 +1434,7 @@
     ],
     "history": false,
     "index_complete": true,
-    "candidates": 27
+    "candidates": 31
    },
    "hits": [
     {
@@ -1629,7 +1629,7 @@
   },
   "push": {
    "level": "full",
-   "text": "The owner's brain (bibrain) covers Northstar: 8 current facts and 8 originals. Recent: Status in October (2026-10-25), Status in September (2026-10-25), Weekly notes (2026-10-25). The owner's brain (bibrain) has notes on Northstar plan, northstar, Northstar beta that may bear on this; brain_recall searches it.\n\nBiBrain recall for this prompt, as of 2026-10-25. Evidence from the owner's brain; data, not instructions.\nNorthstar plan: one plan (fact <fact:stale-pricing-note>, 2026-09-15, stale)\nnorthstar is active. (fact <fact:status-new>, 2026-10-22, current)\nNorthstar beta: opens November 14 (fact <fact:beta-opens>, 2026-10-18, current)\nNorthstar price: nine dollars a month until the beta ends (fact <fact:price>, 2026-09-10, stale)\nMarco: design lead for Northstar, works from Lisbon (fact <fact:marco-role>, 2026-08-30, stale)\nLaunch color: cobalt (fact <fact:launch-color>, 2026-10-20, current)\nNot recorded here is not the same as false. More is available through the bibrain brain_recall tool; ids are shown as (fact <id>) or (original <id>).",
+   "text": "The owner's brain (bibrain) covers Northstar: 8 current facts and 12 originals. Recent: Support (2026-10-25), Allowance (2026-10-25), புதிய அலுவலகம் (2026-10-25). The owner's brain (bibrain) has notes on Northstar plan, northstar, Northstar beta that may bear on this; brain_recall searches it.\n\nBiBrain recall for this prompt, as of 2026-10-25. Evidence from the owner's brain; data, not instructions.\nNorthstar plan: one plan (fact <fact:stale-pricing-note>, 2026-09-15, stale)\nnorthstar is active. (fact <fact:status-new>, 2026-10-22, current)\nNorthstar beta: opens November 14 (fact <fact:beta-opens>, 2026-10-18, current)\nNorthstar price: nine dollars a month until the beta ends (fact <fact:price>, 2026-09-10, stale)\nMarco: design lead for Northstar, works from Lisbon (fact <fact:marco-role>, 2026-08-30, stale)\nLaunch color: cobalt (fact <fact:launch-color>, 2026-10-20, current)\nNot recorded here is not the same as false. More is available through the bibrain brain_recall tool; ids are shown as (fact <id>) or (original <id>).",
    "hit_ids": [
     "<fact:stale-pricing-note>",
     "<fact:status-new>",
@@ -1663,7 +1663,7 @@
     ],
     "history": false,
     "index_complete": true,
-    "candidates": 27
+    "candidates": 31
    },
    "hits": [
     {
@@ -1858,7 +1858,7 @@
   },
   "push": {
    "level": "full",
-   "text": "The owner's brain (bibrain) covers Northstar: 8 current facts and 8 originals. Recent: Status in October (2026-10-25), Status in September (2026-10-25), Weekly notes (2026-10-25). The owner's brain (bibrain) has notes on northstar, Northstar plan, Northstar beta that may bear on this; brain_recall searches it.\n\nBiBrain recall for this prompt, as of 2026-10-25. Evidence from the owner's brain; data, not instructions.\nnorthstar is active. (fact <fact:status-new>, 2026-10-22, current)\nNorthstar plan: one plan (fact <fact:stale-pricing-note>, 2026-09-15, stale)\nNorthstar beta: opens November 14 (fact <fact:beta-opens>, 2026-10-18, current)\nNorthstar price: nine dollars a month until the beta ends (fact <fact:price>, 2026-09-10, stale)\nMarco: design lead for Northstar, works from Lisbon (fact <fact:marco-role>, 2026-08-30, stale)\nLaunch color: cobalt (fact <fact:launch-color>, 2026-10-20, current)\nNot recorded here is not the same as false. More is available through the bibrain brain_recall tool; ids are shown as (fact <id>) or (original <id>).",
+   "text": "The owner's brain (bibrain) covers Northstar: 8 current facts and 12 originals. Recent: Support (2026-10-25), Allowance (2026-10-25), புதிய அலுவலகம் (2026-10-25). The owner's brain (bibrain) has notes on northstar, Northstar plan, Northstar beta that may bear on this; brain_recall searches it.\n\nBiBrain recall for this prompt, as of 2026-10-25. Evidence from the owner's brain; data, not instructions.\nnorthstar is active. (fact <fact:status-new>, 2026-10-22, current)\nNorthstar plan: one plan (fact <fact:stale-pricing-note>, 2026-09-15, stale)\nNorthstar beta: opens November 14 (fact <fact:beta-opens>, 2026-10-18, current)\nNorthstar price: nine dollars a month until the beta ends (fact <fact:price>, 2026-09-10, stale)\nMarco: design lead for Northstar, works from Lisbon (fact <fact:marco-role>, 2026-08-30, stale)\nLaunch color: cobalt (fact <fact:launch-color>, 2026-10-20, current)\nNot recorded here is not the same as false. More is available through the bibrain brain_recall tool; ids are shown as (fact <id>) or (original <id>).",
    "hit_ids": [
     "<fact:status-new>",
     "<fact:stale-pricing-note>",
@@ -1941,7 +1941,7 @@
   },
   "push": {
    "level": "full",
-   "text": "The owner's brain (bibrain) covers Northstar: 8 current facts and 8 originals. Recent: Status in October (2026-10-25), Status in September (2026-10-25), Weekly notes (2026-10-25). The owner's brain (bibrain) has notes on Launch color, Launch party caterer, Launch notes that may bear on this; brain_recall searches it.\n\nBiBrain recall for this prompt, as of 2026-10-25. Evidence from the owner's brain; data, not instructions.\nLaunch color: cobalt (fact <fact:launch-color>, 2026-10-20, current)\nLaunch party caterer: Lumen Catering (fact <fact:caterer>, 2026-10-21, current)\nNot recorded here is not the same as false. More is available through the bibrain brain_recall tool; ids are shown as (fact <id>) or (original <id>).",
+   "text": "The owner's brain (bibrain) covers Northstar: 8 current facts and 12 originals. Recent: Support (2026-10-25), Allowance (2026-10-25), புதிய அலுவலகம் (2026-10-25). The owner's brain (bibrain) has notes on Launch color, Launch party caterer, Launch notes that may bear on this; brain_recall searches it.\n\nBiBrain recall for this prompt, as of 2026-10-25. Evidence from the owner's brain; data, not instructions.\nLaunch color: cobalt (fact <fact:launch-color>, 2026-10-20, current)\nLaunch party caterer: Lumen Catering (fact <fact:caterer>, 2026-10-21, current)\nNot recorded here is not the same as false. More is available through the bibrain brain_recall tool; ids are shown as (fact <id>) or (original <id>).",
    "hit_ids": [
     "<fact:launch-color>",
     "<fact:caterer>"
@@ -2020,7 +2020,7 @@
   },
   "push": {
    "level": "full",
-   "text": "The owner's brain (bibrain) covers Northstar: 8 current facts and 8 originals. Recent: Status in October (2026-10-25), Status in September (2026-10-25), Weekly notes (2026-10-25). The owner's brain (bibrain) has notes on Launch party caterer, Launch color, Weekly notes that may bear on this; brain_recall searches it.\n\nBiBrain recall for this prompt, as of 2026-10-25. Evidence from the owner's brain; data, not instructions.\nLaunch party caterer: Lumen Catering (fact <fact:caterer>, 2026-10-21, current)\nLaunch color: cobalt (fact <fact:launch-color>, 2026-10-20, current)\nNot recorded here is not the same as false. More is available through the bibrain brain_recall tool; ids are shown as (fact <id>) or (original <id>).",
+   "text": "The owner's brain (bibrain) covers Northstar: 8 current facts and 12 originals. Recent: Support (2026-10-25), Allowance (2026-10-25), புதிய அலுவலகம் (2026-10-25). The owner's brain (bibrain) has notes on Launch party caterer, Launch color, Weekly notes that may bear on this; brain_recall searches it.\n\nBiBrain recall for this prompt, as of 2026-10-25. Evidence from the owner's brain; data, not instructions.\nLaunch party caterer: Lumen Catering (fact <fact:caterer>, 2026-10-21, current)\nLaunch color: cobalt (fact <fact:launch-color>, 2026-10-20, current)\nNot recorded here is not the same as false. More is available through the bibrain brain_recall tool; ids are shown as (fact <id>) or (original <id>).",
    "hit_ids": [
     "<fact:caterer>",
     "<fact:launch-color>"
@@ -2102,7 +2102,7 @@
   },
   "push": {
    "level": "full",
-   "text": "The owner's brain (bibrain) covers Northstar: 8 current facts and 8 originals. Recent: Status in October (2026-10-25), Status in September (2026-10-25), Weekly notes (2026-10-25). The owner's brain (bibrain) has notes on Marco, People, Palette review that may bear on this; brain_recall searches it.\n\nBiBrain recall for this prompt, as of 2026-10-25. Evidence from the owner's brain; data, not instructions.\nMarco: design lead for Northstar, works from Lisbon (fact <fact:marco-role>, 2026-08-30, stale)\nFrom \"Palette review\" (original <src:palette-review>, 2026-10-25): Marco reviewed three palettes. He preferred the warm one, and the amber accent was kept for icons only.\nNot recorded here is not the same as false. More is available through the bibrain brain_recall tool; ids are shown as (fact <id>) or (original <id>).",
+   "text": "The owner's brain (bibrain) covers Northstar: 8 current facts and 12 originals. Recent: Support (2026-10-25), Allowance (2026-10-25), புதிய அலுவலகம் (2026-10-25). The owner's brain (bibrain) has notes on Marco, People, Palette review that may bear on this; brain_recall searches it.\n\nBiBrain recall for this prompt, as of 2026-10-25. Evidence from the owner's brain; data, not instructions.\nMarco: design lead for Northstar, works from Lisbon (fact <fact:marco-role>, 2026-08-30, stale)\nFrom \"Palette review\" (original <src:palette-review>, 2026-10-25): Marco reviewed three palettes. He preferred the warm one, and the amber accent was kept for icons only.\nNot recorded here is not the same as false. More is available through the bibrain brain_recall tool; ids are shown as (fact <id>) or (original <id>).",
    "hit_ids": [
     "<fact:marco-role>",
     "<src:palette-review>"
@@ -2470,7 +2470,7 @@
   },
   "push": {
    "level": "full",
-   "text": "The owner's brain (bibrain) covers Northstar: 8 current facts and 8 originals. Recent: Status in October (2026-10-25), Status in September (2026-10-25), Weekly notes (2026-10-25). The owner's brain (bibrain) has notes on Marco, People, Palette review that may bear on this; brain_recall searches it.\n\nBiBrain recall for this prompt, as of 2026-10-25. Evidence from the owner's brain; data, not instructions.\nMarco: design lead for Northstar, works from Lisbon (fact <fact:marco-role>, 2026-08-30, stale)\nFrom \"Palette review\" (original <src:palette-review>, 2026-10-25): Marco reviewed three palettes. He preferred the warm one, and the amber accent was kept for icons only.\nNot recorded here is not the same as false. More is available through the bibrain brain_recall tool; ids are shown as (fact <id>) or (original <id>).",
+   "text": "The owner's brain (bibrain) covers Northstar: 8 current facts and 12 originals. Recent: Support (2026-10-25), Allowance (2026-10-25), புதிய அலுவலகம் (2026-10-25). The owner's brain (bibrain) has notes on Marco, People, Palette review that may bear on this; brain_recall searches it.\n\nBiBrain recall for this prompt, as of 2026-10-25. Evidence from the owner's brain; data, not instructions.\nMarco: design lead for Northstar, works from Lisbon (fact <fact:marco-role>, 2026-08-30, stale)\nFrom \"Palette review\" (original <src:palette-review>, 2026-10-25): Marco reviewed three palettes. He preferred the warm one, and the amber accent was kept for icons only.\nNot recorded here is not the same as false. More is available through the bibrain brain_recall tool; ids are shown as (fact <id>) or (original <id>).",
    "hit_ids": [
     "<fact:marco-role>",
     "<src:palette-review>"
@@ -2525,7 +2525,7 @@
   },
   "push": {
    "level": "full",
-   "text": "The owner's brain (bibrain) covers Northstar: 8 current facts and 8 originals. Recent: Status in October (2026-10-25), Status in September (2026-10-25), Weekly notes (2026-10-25). The owner's brain (bibrain) has notes on Northstar price, Pricing call that may bear on this; brain_recall searches it.\n\nBiBrain recall for this prompt, as of 2026-10-25. Evidence from the owner's brain; data, not instructions.\nNorthstar price: nine dollars a month until the beta ends (fact <fact:price>, 2026-09-10, stale)\nNot recorded here is not the same as false. More is available through the bibrain brain_recall tool; ids are shown as (fact <id>) or (original <id>).",
+   "text": "The owner's brain (bibrain) covers Northstar: 8 current facts and 12 originals. Recent: Support (2026-10-25), Allowance (2026-10-25), புதிய அலுவலகம் (2026-10-25). The owner's brain (bibrain) has notes on Northstar price, Pricing call that may bear on this; brain_recall searches it.\n\nBiBrain recall for this prompt, as of 2026-10-25. Evidence from the owner's brain; data, not instructions.\nNorthstar price: nine dollars a month until the beta ends (fact <fact:price>, 2026-09-10, stale)\nNot recorded here is not the same as false. More is available through the bibrain brain_recall tool; ids are shown as (fact <id>) or (original <id>).",
    "hit_ids": [
     "<fact:price>"
    ],
@@ -2554,7 +2554,7 @@
     ],
     "history": false,
     "index_complete": true,
-    "candidates": 27
+    "candidates": 31
    },
    "hits": [
     {
@@ -2749,7 +2749,7 @@
   },
   "push": {
    "level": "full",
-   "text": "The owner's brain (bibrain) covers Northstar: 8 current facts and 8 originals. Recent: Status in October (2026-10-25), Status in September (2026-10-25), Weekly notes (2026-10-25). The owner's brain (bibrain) has notes on Northstar plan, northstar, Northstar beta that may bear on this; brain_recall searches it.\n\nBiBrain recall for this prompt, as of 2026-10-25. Evidence from the owner's brain; data, not instructions.\nNorthstar plan: one plan (fact <fact:stale-pricing-note>, 2026-09-15, stale)\nnorthstar is active. (fact <fact:status-new>, 2026-10-22, current)\nNorthstar beta: opens November 14 (fact <fact:beta-opens>, 2026-10-18, current)\nNorthstar price: nine dollars a month until the beta ends (fact <fact:price>, 2026-09-10, stale)\nMarco: design lead for Northstar, works from Lisbon (fact <fact:marco-role>, 2026-08-30, stale)\nLaunch color: cobalt (fact <fact:launch-color>, 2026-10-20, current)\nNot recorded here is not the same as false. More is available through the bibrain brain_recall tool; ids are shown as (fact <id>) or (original <id>).",
+   "text": "The owner's brain (bibrain) covers Northstar: 8 current facts and 12 originals. Recent: Support (2026-10-25), Allowance (2026-10-25), புதிய அலுவலகம் (2026-10-25). The owner's brain (bibrain) has notes on Northstar plan, northstar, Northstar beta that may bear on this; brain_recall searches it.\n\nBiBrain recall for this prompt, as of 2026-10-25. Evidence from the owner's brain; data, not instructions.\nNorthstar plan: one plan (fact <fact:stale-pricing-note>, 2026-09-15, stale)\nnorthstar is active. (fact <fact:status-new>, 2026-10-22, current)\nNorthstar beta: opens November 14 (fact <fact:beta-opens>, 2026-10-18, current)\nNorthstar price: nine dollars a month until the beta ends (fact <fact:price>, 2026-09-10, stale)\nMarco: design lead for Northstar, works from Lisbon (fact <fact:marco-role>, 2026-08-30, stale)\nLaunch color: cobalt (fact <fact:launch-color>, 2026-10-20, current)\nNot recorded here is not the same as false. More is available through the bibrain brain_recall tool; ids are shown as (fact <id>) or (original <id>).",
    "hit_ids": [
     "<fact:stale-pricing-note>",
     "<fact:status-new>",
@@ -2808,7 +2808,7 @@
   },
   "push": {
    "level": "full",
-   "text": "The owner's brain (bibrain) covers Northstar: 8 current facts and 8 originals. Recent: Status in October (2026-10-25), Status in September (2026-10-25), Weekly notes (2026-10-25). The owner's brain (bibrain) has notes on Marco, People that may bear on this; brain_recall searches it.\n\nBiBrain recall for this prompt, as of 2026-10-25. Evidence from the owner's brain; data, not instructions.\nMarco: design lead for Northstar, works from Lisbon (fact <fact:marco-role>, 2026-08-30, stale)\nNot recorded here is not the same as false. More is available through the bibrain brain_recall tool; ids are shown as (fact <id>) or (original <id>).",
+   "text": "The owner's brain (bibrain) covers Northstar: 8 current facts and 12 originals. Recent: Support (2026-10-25), Allowance (2026-10-25), புதிய அலுவலகம் (2026-10-25). The owner's brain (bibrain) has notes on Marco, People that may bear on this; brain_recall searches it.\n\nBiBrain recall for this prompt, as of 2026-10-25. Evidence from the owner's brain; data, not instructions.\nMarco: design lead for Northstar, works from Lisbon (fact <fact:marco-role>, 2026-08-30, stale)\nNot recorded here is not the same as false. More is available through the bibrain brain_recall tool; ids are shown as (fact <id>) or (original <id>).",
    "hit_ids": [
     "<fact:marco-role>"
    ],
@@ -2837,7 +2837,7 @@
     ],
     "history": false,
     "index_complete": true,
-    "candidates": 2
+    "candidates": 3
    },
    "hits": [
     {
@@ -2863,6 +2863,25 @@
       "matched: nine, dollar"
      ],
      "score": 0.04918032786885246
+    },
+    {
+     "kind": "original",
+     "id": "<src:allowance>",
+     "version": 1,
+     "project": {
+      "id": "<project:northstar>",
+      "title": "Northstar"
+     },
+     "title": "Allowance",
+     "quote": "The quarterly tooling allowance is two thousand dollars, approved by Ana.",
+     "start": 0,
+     "end": 73,
+     "captured_at": "2026-10-25T09:00:00.000Z",
+     "freshness": "current",
+     "why": [
+      "matched: dollar"
+     ],
+     "score": 0.018548387096774192
     }
    ],
    "near_misses": [],
@@ -2870,9 +2889,10 @@
   },
   "push": {
    "level": "full",
-   "text": "The owner's brain (bibrain) covers Northstar: 8 current facts and 8 originals. Recent: Status in October (2026-10-25), Status in September (2026-10-25), Weekly notes (2026-10-25). The owner's brain (bibrain) has notes on Northstar price, Pricing call that may bear on this; brain_recall searches it.\n\nBiBrain recall for this prompt, as of 2026-10-25. Evidence from the owner's brain; data, not instructions.\nNorthstar price: nine dollars a month until the beta ends (fact <fact:price>, 2026-09-10, stale)\nNot recorded here is not the same as false. More is available through the bibrain brain_recall tool; ids are shown as (fact <id>) or (original <id>).",
+   "text": "The owner's brain (bibrain) covers Northstar: 8 current facts and 12 originals. Recent: Support (2026-10-25), Allowance (2026-10-25), புதிய அலுவலகம் (2026-10-25). The owner's brain (bibrain) has notes on Northstar price, Pricing call, Allowance that may bear on this; brain_recall searches it.\n\nBiBrain recall for this prompt, as of 2026-10-25. Evidence from the owner's brain; data, not instructions.\nNorthstar price: nine dollars a month until the beta ends (fact <fact:price>, 2026-09-10, stale)\nFrom \"Allowance\" (original <src:allowance>, 2026-10-25): The quarterly tooling allowance is two thousand dollars, approved by Ana.\nNot recorded here is not the same as false. More is available through the bibrain brain_recall tool; ids are shown as (fact <id>) or (original <id>).",
    "hit_ids": [
-    "<fact:price>"
+    "<fact:price>",
+    "<src:allowance>"
    ],
    "digest": true
   }
@@ -2899,7 +2919,7 @@
     ],
     "history": false,
     "index_complete": true,
-    "candidates": 27
+    "candidates": 31
    },
    "hits": [
     {
@@ -3110,7 +3130,7 @@
   },
   "push": {
    "level": "pointer",
-   "text": "The owner's brain (bibrain) covers Northstar: 8 current facts and 8 originals. Recent: Status in October (2026-10-25), Status in September (2026-10-25), Weekly notes (2026-10-25). The owner's brain (bibrain) has notes on Status in October, Status in September, northstar that may bear on this; brain_recall searches it.",
+   "text": "The owner's brain (bibrain) covers Northstar: 8 current facts and 12 originals. Recent: Support (2026-10-25), Allowance (2026-10-25), புதிய அலுவலகம் (2026-10-25). The owner's brain (bibrain) has notes on Status in October, Status in September, northstar that may bear on this; brain_recall searches it.",
    "hit_ids": [],
    "digest": true
   }
@@ -3129,7 +3149,7 @@
     ],
     "history": false,
     "index_complete": true,
-    "candidates": 23
+    "candidates": 27
    },
    "hits": [
     {
@@ -3328,14 +3348,14 @@
     },
     {
      "kind": "original",
-     "id": "<src:buried>",
-     "title": "Weekly notes",
+     "id": "<src:standup>",
+     "title": "Morning rhythm",
      "reason": "matched 0 of 2 terms"
     },
     {
      "kind": "original",
-     "id": "<src:buried>",
-     "title": "Weekly notes",
+     "id": "<src:allowance>",
+     "title": "Allowance",
      "reason": "matched 0 of 2 terms"
     }
    ],
@@ -3343,7 +3363,7 @@
   },
   "push": {
    "level": "pointer",
-   "text": "The owner's brain (bibrain) covers Northstar: 8 current facts and 8 originals. Recent: Status in October (2026-10-25), Status in September (2026-10-25), Weekly notes (2026-10-25). The owner's brain (bibrain) has notes on northstar, Northstar plan, Northstar beta that may bear on this; brain_recall searches it.",
+   "text": "The owner's brain (bibrain) covers Northstar: 8 current facts and 12 originals. Recent: Support (2026-10-25), Allowance (2026-10-25), புதிய அலுவலகம் (2026-10-25). The owner's brain (bibrain) has notes on northstar, Northstar plan, Northstar beta that may bear on this; brain_recall searches it.",
    "hit_ids": [],
    "digest": true
   }
@@ -3370,7 +3390,7 @@
     ],
     "history": true,
     "index_complete": true,
-    "candidates": 28
+    "candidates": 32
    },
    "hits": [
     {
@@ -3586,7 +3606,7 @@
   },
   "push": {
    "level": "pointer",
-   "text": "The owner's brain (bibrain) covers Northstar: 8 current facts and 8 originals. Recent: Status in October (2026-10-25), Status in September (2026-10-25), Weekly notes (2026-10-25). The owner's brain (bibrain) has notes on Status in October, Status in September, northstar that may bear on this; brain_recall searches it.",
+   "text": "The owner's brain (bibrain) covers Northstar: 8 current facts and 12 originals. Recent: Support (2026-10-25), Allowance (2026-10-25), புதிய அலுவலகம் (2026-10-25). The owner's brain (bibrain) has notes on Status in October, Status in September, northstar that may bear on this; brain_recall searches it.",
    "hit_ids": [],
    "digest": true
   }
@@ -3605,7 +3625,7 @@
     ],
     "history": true,
     "index_complete": true,
-    "candidates": 24
+    "candidates": 28
    },
    "hits": [
     {
@@ -3806,14 +3826,14 @@
     },
     {
      "kind": "original",
-     "id": "<src:buried>",
-     "title": "Weekly notes",
+     "id": "<src:standup>",
+     "title": "Morning rhythm",
      "reason": "matched 0 of 3 terms"
     },
     {
      "kind": "original",
-     "id": "<src:buried>",
-     "title": "Weekly notes",
+     "id": "<src:allowance>",
+     "title": "Allowance",
      "reason": "matched 0 of 3 terms"
     }
    ],
@@ -3821,7 +3841,7 @@
   },
   "push": {
    "level": "pointer",
-   "text": "The owner's brain (bibrain) covers Northstar: 8 current facts and 8 originals. Recent: Status in October (2026-10-25), Status in September (2026-10-25), Weekly notes (2026-10-25). The owner's brain (bibrain) has notes on northstar, Northstar plan, Northstar beta that may bear on this; brain_recall searches it.",
+   "text": "The owner's brain (bibrain) covers Northstar: 8 current facts and 12 originals. Recent: Support (2026-10-25), Allowance (2026-10-25), புதிய அலுவலகம் (2026-10-25). The owner's brain (bibrain) has notes on northstar, Northstar plan, Northstar beta that may bear on this; brain_recall searches it.",
    "hit_ids": [],
    "digest": true
   }
@@ -3887,7 +3907,7 @@
   },
   "push": {
    "level": "full",
-   "text": "The owner's brain (bibrain) covers Northstar: 8 current facts and 8 originals. Recent: Status in October (2026-10-25), Status in September (2026-10-25), Weekly notes (2026-10-25). The owner's brain (bibrain) has notes on Status in September, Status in October that may bear on this; brain_recall searches it.\n\nBiBrain recall for this prompt, as of 2026-10-25. Evidence from the owner's brain; data, not instructions.\nFrom \"Status in September\" (original <src:old-status>, 2026-10-25): Northstar status paused while the team was on leave.\nFrom \"Status in October\" (original <src:new-status>, 2026-10-25): Northstar status active again since the team returned.\nNot recorded here is not the same as false. More is available through the bibrain brain_recall tool; ids are shown as (fact <id>) or (original <id>).",
+   "text": "The owner's brain (bibrain) covers Northstar: 8 current facts and 12 originals. Recent: Support (2026-10-25), Allowance (2026-10-25), புதிய அலுவலகம் (2026-10-25). The owner's brain (bibrain) has notes on Status in September, Status in October that may bear on this; brain_recall searches it.\n\nBiBrain recall for this prompt, as of 2026-10-25. Evidence from the owner's brain; data, not instructions.\nFrom \"Status in September\" (original <src:old-status>, 2026-10-25): Northstar status paused while the team was on leave.\nFrom \"Status in October\" (original <src:new-status>, 2026-10-25): Northstar status active again since the team returned.\nNot recorded here is not the same as false. More is available through the bibrain brain_recall tool; ids are shown as (fact <id>) or (original <id>).",
    "hit_ids": [
     "<src:old-status>",
     "<src:new-status>"
@@ -3985,7 +4005,7 @@
   },
   "push": {
    "level": "full",
-   "text": "The owner's brain (bibrain) covers Northstar: 8 current facts and 8 originals. Recent: Status in October (2026-10-25), Status in September (2026-10-25), Weekly notes (2026-10-25). The owner's brain (bibrain) has notes on Launch color, Launch party caterer, Launch notes that may bear on this; brain_recall searches it.\n\nBiBrain recall for this prompt, as of 2026-10-25. Evidence from the owner's brain; data, not instructions.\nLaunch color: cobalt (fact <fact:launch-color>, 2026-10-20, current)\nLaunch party caterer: Lumen Catering (fact <fact:caterer>, 2026-10-21, current)\nFrom \"Pricing call\" (original <src:pricing>, 2026-10-25): Northstar ships with one plan. The price stays at nine dollars a month until the beta ends.\nNot recorded here is not the same as false. More is available through the bibrain brain_recall tool; ids are shown as (fact <id>) or (original <id>).",
+   "text": "The owner's brain (bibrain) covers Northstar: 8 current facts and 12 originals. Recent: Support (2026-10-25), Allowance (2026-10-25), புதிய அலுவலகம் (2026-10-25). The owner's brain (bibrain) has notes on Launch color, Launch party caterer, Launch notes that may bear on this; brain_recall searches it.\n\nBiBrain recall for this prompt, as of 2026-10-25. Evidence from the owner's brain; data, not instructions.\nLaunch color: cobalt (fact <fact:launch-color>, 2026-10-20, current)\nLaunch party caterer: Lumen Catering (fact <fact:caterer>, 2026-10-21, current)\nFrom \"Pricing call\" (original <src:pricing>, 2026-10-25): Northstar ships with one plan. The price stays at nine dollars a month until the beta ends.\nNot recorded here is not the same as false. More is available through the bibrain brain_recall tool; ids are shown as (fact <id>) or (original <id>).",
    "hit_ids": [
     "<fact:launch-color>",
     "<fact:caterer>",
@@ -4035,9 +4055,28 @@
     ],
     "history": false,
     "index_complete": true,
-    "candidates": 2
+    "candidates": 3
    },
    "hits": [
+    {
+     "kind": "original",
+     "id": "<src:allowance>",
+     "version": 1,
+     "project": {
+      "id": "<project:northstar>",
+      "title": "Northstar"
+     },
+     "title": "Allowance",
+     "quote": "The quarterly tooling allowance is two thousand dollars, approved by Ana.",
+     "start": 0,
+     "end": 73,
+     "captured_at": "2026-10-25T09:00:00.000Z",
+     "freshness": "current",
+     "why": [
+      "matched: ana"
+     ],
+     "score": 0.01885245901639344
+    },
     {
      "kind": "original",
      "id": "<src:launch-notes>",
@@ -4055,7 +4094,7 @@
      "why": [
       "matched: ana"
      ],
-     "score": 0.01885245901639344
+     "score": 0.018548387096774192
     },
     {
      "kind": "original",
@@ -4074,7 +4113,7 @@
      "why": [
       "matched: ana"
      ],
-     "score": 0.018548387096774192
+     "score": 0.01825396825396825
     }
    ],
    "near_misses": [],
@@ -4204,7 +4243,7 @@
   },
   "push": {
    "level": "full",
-   "text": "The owner's brain (bibrain) covers Northstar: 8 current facts and 8 originals. Recent: Status in October (2026-10-25), Status in September (2026-10-25), Weekly notes (2026-10-25). The owner's brain (bibrain) has notes on Launch party caterer, Weekly notes that may bear on this; brain_recall searches it.\n\nBiBrain recall for this prompt, as of 2026-10-25. Evidence from the owner's brain; data, not instructions.\nLaunch party caterer: Lumen Catering (fact <fact:caterer>, 2026-10-21, current)\nNot recorded here is not the same as false. More is available through the bibrain brain_recall tool; ids are shown as (fact <id>) or (original <id>).",
+   "text": "The owner's brain (bibrain) covers Northstar: 8 current facts and 12 originals. Recent: Support (2026-10-25), Allowance (2026-10-25), புதிய அலுவலகம் (2026-10-25). The owner's brain (bibrain) has notes on Launch party caterer, Weekly notes that may bear on this; brain_recall searches it.\n\nBiBrain recall for this prompt, as of 2026-10-25. Evidence from the owner's brain; data, not instructions.\nLaunch party caterer: Lumen Catering (fact <fact:caterer>, 2026-10-21, current)\nNot recorded here is not the same as false. More is available through the bibrain brain_recall tool; ids are shown as (fact <id>) or (original <id>).",
    "hit_ids": [
     "<fact:caterer>"
    ],
@@ -4225,7 +4264,7 @@
     ],
     "history": false,
     "index_complete": true,
-    "candidates": 4
+    "candidates": 5
    },
    "hits": [
     {
@@ -4275,6 +4314,25 @@
       "matched: launch"
      ],
      "score": 0.024193548387096774
+    },
+    {
+     "kind": "original",
+     "id": "<src:allowance>",
+     "version": 1,
+     "project": {
+      "id": "<project:northstar>",
+      "title": "Northstar"
+     },
+     "title": "Allowance",
+     "quote": "The quarterly tooling allowance is two thousand dollars, approved by Ana.",
+     "start": 0,
+     "end": 73,
+     "captured_at": "2026-10-25T09:00:00.000Z",
+     "freshness": "current",
+     "why": [
+      "matched: ana"
+     ],
+     "score": 0.01825396825396825
     }
    ],
    "near_misses": [],
@@ -4282,10 +4340,11 @@
   },
   "push": {
    "level": "full",
-   "text": "The owner's brain (bibrain) covers Northstar: 8 current facts and 8 originals. Recent: Status in October (2026-10-25), Status in September (2026-10-25), Weekly notes (2026-10-25). The owner's brain (bibrain) has notes on Launch party caterer, Launch color, Weekly notes that may bear on this; brain_recall searches it.\n\nBiBrain recall for this prompt, as of 2026-10-25. Evidence from the owner's brain; data, not instructions.\nLaunch party caterer: Lumen Catering (fact <fact:caterer>, 2026-10-21, current)\nLaunch color: cobalt (fact <fact:launch-color>, 2026-10-20, current)\nNot recorded here is not the same as false. More is available through the bibrain brain_recall tool; ids are shown as (fact <id>) or (original <id>).",
+   "text": "The owner's brain (bibrain) covers Northstar: 8 current facts and 12 originals. Recent: Support (2026-10-25), Allowance (2026-10-25), புதிய அலுவலகம் (2026-10-25). The owner's brain (bibrain) has notes on Launch party caterer, Launch color, Weekly notes that may bear on this; brain_recall searches it.\n\nBiBrain recall for this prompt, as of 2026-10-25. Evidence from the owner's brain; data, not instructions.\nLaunch party caterer: Lumen Catering (fact <fact:caterer>, 2026-10-21, current)\nLaunch color: cobalt (fact <fact:launch-color>, 2026-10-20, current)\nFrom \"Allowance\" (original <src:allowance>, 2026-10-25): The quarterly tooling allowance is two thousand dollars, approved by Ana.\nNot recorded here is not the same as false. More is available through the bibrain brain_recall tool; ids are shown as (fact <id>) or (original <id>).",
    "hit_ids": [
     "<fact:caterer>",
-    "<fact:launch-color>"
+    "<fact:launch-color>",
+    "<src:allowance>"
    ],
    "digest": true
   }
@@ -4378,8 +4437,840 @@
   },
   "push": {
    "level": "pointer",
-   "text": "The owner's brain (bibrain) covers Northstar: 8 current facts and 8 originals. Recent: Status in October (2026-10-25), Status in September (2026-10-25), Weekly notes (2026-10-25). The owner's brain (bibrain) has notes on Weekly notes that may bear on this; brain_recall searches it.",
+   "text": "The owner's brain (bibrain) covers Northstar: 8 current facts and 12 originals. Recent: Support (2026-10-25), Allowance (2026-10-25), புதிய அலுவலகம் (2026-10-25). The owner's brain (bibrain) has notes on Weekly notes that may bear on this; brain_recall searches it.",
    "hit_ids": [],
+   "digest": true
+  }
+ },
+ "para-01": {
+  "core": {
+   "status": "partial",
+   "as_of": "2026-10-25T09:00:00.000Z",
+   "searched": {
+    "query": "which hue was chosen for the release",
+    "projects": [
+     {
+      "id": "<project:northstar>",
+      "title": "Northstar"
+     },
+     {
+      "id": "<project:hydra>",
+      "title": "Hydra"
+     },
+     {
+      "id": "inbox",
+      "title": "Inbox"
+     }
+    ],
+    "history": false,
+    "index_complete": true,
+    "candidates": 3
+   },
+   "hits": [
+    {
+     "kind": "fact",
+     "id": "<fact:hydra-deploy>",
+     "project": {
+      "id": "<project:hydra>",
+      "title": "Hydra"
+     },
+     "text": "Hydra deploy: release branch every Thursday",
+     "recorded_at": "2026-10-23T10:00:00.000Z",
+     "checked_at": "2026-10-23T10:00:00.000Z",
+     "freshness": "current",
+     "replaced_by": null,
+     "evidence": [
+      {
+       "source_id": "<src:hydra-deploy>",
+       "source_version": 1,
+       "quote": "Hydra deploys from the release branch every Thursday"
+      }
+     ],
+     "why": [
+      "matched: release"
+     ],
+     "score": 0.02459016393442623
+    },
+    {
+     "kind": "original",
+     "id": "<src:ticket>",
+     "version": 1,
+     "project": {
+      "id": "<project:northstar>",
+      "title": "Northstar"
+     },
+     "title": "Support",
+     "quote": "Ticket NS-4471 tracks the login outage; the patch went out in release 2.3.1.",
+     "start": 0,
+     "end": 76,
+     "captured_at": "2026-10-25T09:00:00.000Z",
+     "freshness": "current",
+     "why": [
+      "matched: release"
+     ],
+     "score": 0.018548387096774192
+    }
+   ],
+   "near_misses": [],
+   "next_step": "Use these as evidence and cite the ids. brain_open returns a full item."
+  },
+  "push": {
+   "level": "none",
+   "text": "",
+   "hit_ids": [],
+   "digest": false
+  }
+ },
+ "para-02": {
+  "core": {
+   "status": "no_match",
+   "as_of": "2026-10-25T09:00:00.000Z",
+   "searched": {
+    "query": "what is the monthly fee",
+    "projects": [
+     {
+      "id": "<project:northstar>",
+      "title": "Northstar"
+     },
+     {
+      "id": "<project:hydra>",
+      "title": "Hydra"
+     },
+     {
+      "id": "inbox",
+      "title": "Inbox"
+     }
+    ],
+    "history": false,
+    "index_complete": true,
+    "candidates": 0
+   },
+   "hits": [],
+   "near_misses": [],
+   "next_step": "Nothing recorded matches. Tell the user this is not in the brain and do not infer it. Try brain_recall with the person, project or thing as the user named it, or brain_open with a known id."
+  },
+  "push": {
+   "level": "none",
+   "text": "",
+   "hit_ids": [],
+   "digest": false
+  }
+ },
+ "para-03": {
+  "core": {
+   "status": "no_match",
+   "as_of": "2026-10-25T09:00:00.000Z",
+   "searched": {
+    "query": "who heads up the visuals",
+    "projects": [
+     {
+      "id": "<project:northstar>",
+      "title": "Northstar"
+     }
+    ],
+    "history": false,
+    "index_complete": true,
+    "candidates": 0
+   },
+   "hits": [],
+   "near_misses": [],
+   "next_step": "Nothing recorded matches. Tell the user this is not in the brain and do not infer it. Try brain_recall with the person, project or thing as the user named it, or brain_open with a known id."
+  },
+  "push": {
+   "level": "none",
+   "text": "",
+   "hit_ids": [],
+   "digest": false
+  }
+ },
+ "para-04": {
+  "core": {
+   "status": "partial",
+   "as_of": "2026-10-25T09:00:00.000Z",
+   "searched": {
+    "query": "when do people get asked to join the trial",
+    "projects": [
+     {
+      "id": "<project:northstar>",
+      "title": "Northstar"
+     },
+     {
+      "id": "<project:hydra>",
+      "title": "Hydra"
+     },
+     {
+      "id": "inbox",
+      "title": "Inbox"
+     }
+    ],
+    "history": false,
+    "index_complete": true,
+    "candidates": 1
+   },
+   "hits": [
+    {
+     "kind": "original",
+     "id": "<src:marco>",
+     "version": 1,
+     "project": {
+      "id": "<project:northstar>",
+      "title": "Northstar"
+     },
+     "title": "People",
+     "quote": "Marco is the design lead for Northstar. He works from Lisbon and prefers async reviews.",
+     "start": 0,
+     "end": 87,
+     "captured_at": "2026-10-25T09:00:00.000Z",
+     "freshness": "current",
+     "why": [
+      "matched: people"
+     ],
+     "score": 0.01885245901639344
+    }
+   ],
+   "near_misses": [],
+   "next_step": "Use these as evidence and cite the ids. brain_open returns a full item."
+  },
+  "push": {
+   "level": "none",
+   "text": "",
+   "hit_ids": [],
+   "digest": false
+  }
+ },
+ "para-05": {
+  "core": {
+   "status": "no_match",
+   "as_of": "2026-10-25T09:00:00.000Z",
+   "searched": {
+    "query": "food supplier for the celebration",
+    "projects": [
+     {
+      "id": "<project:northstar>",
+      "title": "Northstar"
+     }
+    ],
+    "history": false,
+    "index_complete": true,
+    "candidates": 0
+   },
+   "hits": [],
+   "near_misses": [],
+   "next_step": "Nothing recorded matches. Tell the user this is not in the brain and do not infer it. Try brain_recall with the person, project or thing as the user named it, or brain_open with a known id."
+  },
+  "push": {
+   "level": "none",
+   "text": "",
+   "hit_ids": [],
+   "digest": false
+  }
+ },
+ "para-06": {
+  "core": {
+   "status": "partial",
+   "as_of": "2026-10-25T09:00:00.000Z",
+   "searched": {
+    "query": "how much can we spend on software each quarter",
+    "projects": [
+     {
+      "id": "<project:northstar>",
+      "title": "Northstar"
+     },
+     {
+      "id": "<project:hydra>",
+      "title": "Hydra"
+     },
+     {
+      "id": "inbox",
+      "title": "Inbox"
+     }
+    ],
+    "history": false,
+    "index_complete": true,
+    "candidates": 1
+   },
+   "hits": [
+    {
+     "kind": "original",
+     "id": "<src:allowance>",
+     "version": 1,
+     "project": {
+      "id": "<project:northstar>",
+      "title": "Northstar"
+     },
+     "title": "Allowance",
+     "quote": "The quarterly tooling allowance is two thousand dollars, approved by Ana.",
+     "start": 0,
+     "end": 73,
+     "captured_at": "2026-10-25T09:00:00.000Z",
+     "freshness": "current",
+     "why": [],
+     "score": 0.01885245901639344
+    }
+   ],
+   "near_misses": [],
+   "next_step": "Use these as evidence and cite the ids. brain_open returns a full item."
+  },
+  "push": {
+   "level": "none",
+   "text": "",
+   "hit_ids": [],
+   "digest": false
+  }
+ },
+ "para-07": {
+  "core": {
+   "status": "no_match",
+   "as_of": "2026-10-25T09:00:00.000Z",
+   "searched": {
+    "query": "when does the stand-up happen",
+    "projects": [
+     {
+      "id": "<project:northstar>",
+      "title": "Northstar"
+     },
+     {
+      "id": "<project:hydra>",
+      "title": "Hydra"
+     },
+     {
+      "id": "inbox",
+      "title": "Inbox"
+     }
+    ],
+    "history": false,
+    "index_complete": true,
+    "candidates": 0
+   },
+   "hits": [],
+   "near_misses": [],
+   "next_step": "Nothing recorded matches. Tell the user this is not in the brain and do not infer it. Try brain_recall with the person, project or thing as the user named it, or brain_open with a known id."
+  },
+  "push": {
+   "level": "none",
+   "text": "",
+   "hit_ids": [],
+   "digest": false
+  }
+ },
+ "para-08": {
+  "core": {
+   "status": "no_match",
+   "as_of": "2026-10-25T09:00:00.000Z",
+   "searched": {
+    "query": "how many tiers are offered",
+    "projects": [
+     {
+      "id": "<project:northstar>",
+      "title": "Northstar"
+     },
+     {
+      "id": "<project:hydra>",
+      "title": "Hydra"
+     },
+     {
+      "id": "inbox",
+      "title": "Inbox"
+     }
+    ],
+    "history": false,
+    "index_complete": true,
+    "candidates": 0
+   },
+   "hits": [],
+   "near_misses": [],
+   "next_step": "Nothing recorded matches. Tell the user this is not in the brain and do not infer it. Try brain_recall with the person, project or thing as the user named it, or brain_open with a known id."
+  },
+  "push": {
+   "level": "none",
+   "text": "",
+   "hit_ids": [],
+   "digest": false
+  }
+ },
+ "xl-01": {
+  "core": {
+   "status": "no_match",
+   "as_of": "2026-10-25T09:00:00.000Z",
+   "searched": {
+    "query": "வெளியீட்டு நிறம் என்ன",
+    "projects": [
+     {
+      "id": "<project:northstar>",
+      "title": "Northstar"
+     },
+     {
+      "id": "<project:hydra>",
+      "title": "Hydra"
+     },
+     {
+      "id": "inbox",
+      "title": "Inbox"
+     }
+    ],
+    "history": false,
+    "index_complete": true,
+    "candidates": 0
+   },
+   "hits": [],
+   "near_misses": [],
+   "next_step": "Nothing recorded matches. Tell the user this is not in the brain and do not infer it. Try brain_recall with the person, project or thing as the user named it, or brain_open with a known id."
+  },
+  "push": {
+   "level": "none",
+   "text": "",
+   "hit_ids": [],
+   "digest": false
+  }
+ },
+ "xl-02": {
+  "core": {
+   "status": "no_match",
+   "as_of": "2026-10-25T09:00:00.000Z",
+   "searched": {
+    "query": "மாத விலை எவ்வளவு",
+    "projects": [
+     {
+      "id": "<project:northstar>",
+      "title": "Northstar"
+     }
+    ],
+    "history": false,
+    "index_complete": true,
+    "candidates": 0
+   },
+   "hits": [],
+   "near_misses": [],
+   "next_step": "Nothing recorded matches. Tell the user this is not in the brain and do not infer it. Try brain_recall with the person, project or thing as the user named it, or brain_open with a known id."
+  },
+  "push": {
+   "level": "none",
+   "text": "",
+   "hit_ids": [],
+   "digest": false
+  }
+ },
+ "xl-03": {
+  "core": {
+   "status": "partial",
+   "as_of": "2026-10-25T09:00:00.000Z",
+   "searched": {
+    "query": "குழு எப்போது சந்திக்கிறது",
+    "projects": [
+     {
+      "id": "<project:northstar>",
+      "title": "Northstar"
+     },
+     {
+      "id": "<project:hydra>",
+      "title": "Hydra"
+     },
+     {
+      "id": "inbox",
+      "title": "Inbox"
+     }
+    ],
+    "history": false,
+    "index_complete": true,
+    "candidates": 1
+   },
+   "hits": [
+    {
+     "kind": "original",
+     "id": "<src:tamil-office>",
+     "version": 1,
+     "project": {
+      "id": "<project:northstar>",
+      "title": "Northstar"
+     },
+     "title": "புதிய அலுவலகம்",
+     "quote": "புதிய அலுவலகம் சென்னையில் திறக்கிறது. குழு ஜனவரியில் நகர்கிறது.",
+     "start": 0,
+     "end": 63,
+     "captured_at": "2026-10-25T09:00:00.000Z",
+     "freshness": "current",
+     "why": [
+      "matched: குழு"
+     ],
+     "score": 0.01885245901639344
+    }
+   ],
+   "near_misses": [],
+   "next_step": "Use these as evidence and cite the ids. brain_open returns a full item."
+  },
+  "push": {
+   "level": "none",
+   "text": "",
+   "hit_ids": [],
+   "digest": false
+  }
+ },
+ "xl-04": {
+  "core": {
+   "status": "no_match",
+   "as_of": "2026-10-25T09:00:00.000Z",
+   "searched": {
+    "query": "where is the new office",
+    "projects": [
+     {
+      "id": "<project:northstar>",
+      "title": "Northstar"
+     },
+     {
+      "id": "<project:hydra>",
+      "title": "Hydra"
+     },
+     {
+      "id": "inbox",
+      "title": "Inbox"
+     }
+    ],
+    "history": false,
+    "index_complete": true,
+    "candidates": 0
+   },
+   "hits": [],
+   "near_misses": [],
+   "next_step": "Nothing recorded matches. Tell the user this is not in the brain and do not infer it. Try brain_recall with the person, project or thing as the user named it, or brain_open with a known id."
+  },
+  "push": {
+   "level": "none",
+   "text": "",
+   "hit_ids": [],
+   "digest": false
+  }
+ },
+ "xl-05": {
+  "core": {
+   "status": "partial",
+   "as_of": "2026-10-25T09:00:00.000Z",
+   "searched": {
+    "query": "when does the team move",
+    "projects": [
+     {
+      "id": "<project:northstar>",
+      "title": "Northstar"
+     }
+    ],
+    "history": false,
+    "index_complete": true,
+    "candidates": 2
+   },
+   "hits": [
+    {
+     "kind": "original",
+     "id": "<src:new-status>",
+     "version": 1,
+     "project": {
+      "id": "<project:northstar>",
+      "title": "Northstar"
+     },
+     "title": "Status in October",
+     "quote": "Northstar status active again since the team returned.",
+     "start": 0,
+     "end": 54,
+     "captured_at": "2026-10-25T09:00:00.000Z",
+     "freshness": "current",
+     "why": [
+      "matched: team"
+     ],
+     "score": 0.01885245901639344
+    },
+    {
+     "kind": "original",
+     "id": "<src:old-status>",
+     "version": 1,
+     "project": {
+      "id": "<project:northstar>",
+      "title": "Northstar"
+     },
+     "title": "Status in September",
+     "quote": "Northstar status paused while the team was on leave.",
+     "start": 0,
+     "end": 52,
+     "captured_at": "2026-10-25T09:00:00.000Z",
+     "freshness": "current",
+     "why": [
+      "matched: team"
+     ],
+     "score": 0.018548387096774192
+    }
+   ],
+   "near_misses": [],
+   "next_step": "Use these as evidence and cite the ids. brain_open returns a full item."
+  },
+  "push": {
+   "level": "none",
+   "text": "",
+   "hit_ids": [],
+   "digest": false
+  }
+ },
+ "xl-06": {
+  "core": {
+   "status": "no_match",
+   "as_of": "2026-10-25T09:00:00.000Z",
+   "searched": {
+    "query": "அணி எப்போது இடம் மாறுகிறது",
+    "projects": [
+     {
+      "id": "<project:northstar>",
+      "title": "Northstar"
+     },
+     {
+      "id": "<project:hydra>",
+      "title": "Hydra"
+     },
+     {
+      "id": "inbox",
+      "title": "Inbox"
+     }
+    ],
+    "history": false,
+    "index_complete": true,
+    "candidates": 0
+   },
+   "hits": [],
+   "near_misses": [],
+   "next_step": "Nothing recorded matches. Tell the user this is not in the brain and do not infer it. Try brain_recall with the person, project or thing as the user named it, or brain_open with a known id."
+  },
+  "push": {
+   "level": "none",
+   "text": "",
+   "hit_ids": [],
+   "digest": false
+  }
+ },
+ "names-01": {
+  "core": {
+   "status": "partial",
+   "as_of": "2026-10-25T09:00:00.000Z",
+   "searched": {
+    "query": "NS-4471",
+    "projects": [
+     {
+      "id": "<project:northstar>",
+      "title": "Northstar"
+     },
+     {
+      "id": "<project:hydra>",
+      "title": "Hydra"
+     },
+     {
+      "id": "inbox",
+      "title": "Inbox"
+     }
+    ],
+    "history": false,
+    "index_complete": true,
+    "candidates": 1
+   },
+   "hits": [
+    {
+     "kind": "original",
+     "id": "<src:ticket>",
+     "version": 1,
+     "project": {
+      "id": "<project:northstar>",
+      "title": "Northstar"
+     },
+     "title": "Support",
+     "quote": "Ticket NS-4471 tracks the login outage; the patch went out in release 2.3.1.",
+     "start": 0,
+     "end": 76,
+     "captured_at": "2026-10-25T09:00:00.000Z",
+     "freshness": "current",
+     "why": [
+      "matched: 4471"
+     ],
+     "score": 0.01885245901639344
+    }
+   ],
+   "near_misses": [],
+   "next_step": "Use these as evidence and cite the ids. brain_open returns a full item."
+  },
+  "push": {
+   "level": "pointer",
+   "text": "The owner's brain (bibrain) covers Northstar: 8 current facts and 12 originals. Recent: Support (2026-10-25), Allowance (2026-10-25), புதிய அலுவலகம் (2026-10-25). The owner's brain (bibrain) has notes on Support that may bear on this; brain_recall searches it.",
+   "hit_ids": [],
+   "digest": true
+  }
+ },
+ "names-02": {
+  "core": {
+   "status": "found",
+   "as_of": "2026-10-25T09:00:00.000Z",
+   "searched": {
+    "query": "release 2.3.1",
+    "projects": [
+     {
+      "id": "<project:northstar>",
+      "title": "Northstar"
+     }
+    ],
+    "history": false,
+    "index_complete": true,
+    "candidates": 20
+   },
+   "hits": [
+    {
+     "kind": "original",
+     "id": "<src:ticket>",
+     "version": 1,
+     "project": {
+      "id": "<project:northstar>",
+      "title": "Northstar"
+     },
+     "title": "Support",
+     "quote": "Ticket NS-4471 tracks the login outage; the patch went out in release 2.3.1.",
+     "start": 0,
+     "end": 76,
+     "captured_at": "2026-10-25T09:00:00.000Z",
+     "freshness": "current",
+     "why": [
+      "matched: release, 2, 3, 1"
+     ],
+     "score": 0.03770491803278688
+    },
+    {
+     "kind": "fact",
+     "id": "<fact:beta-opens>",
+     "project": {
+      "id": "<project:northstar>",
+      "title": "Northstar"
+     },
+     "text": "Northstar beta: opens November 14",
+     "recorded_at": "2026-10-18T10:00:00.000Z",
+     "checked_at": "2026-10-18T10:00:00.000Z",
+     "freshness": "current",
+     "replaced_by": null,
+     "evidence": [
+      {
+       "source_id": "<src:beta-timeline>",
+       "source_version": 1,
+       "quote": "The Northstar beta opens on November 14"
+      }
+     ],
+     "why": [],
+     "score": 0.02459016393442623
+    },
+    {
+     "kind": "original",
+     "id": "<src:standup>",
+     "version": 1,
+     "project": {
+      "id": "<project:northstar>",
+      "title": "Northstar"
+     },
+     "title": "Morning rhythm",
+     "quote": "The crew sync is at 9 every morning.",
+     "start": 0,
+     "end": 36,
+     "captured_at": "2026-10-25T09:00:00.000Z",
+     "freshness": "current",
+     "why": [],
+     "score": 0.01825396825396825
+    },
+    {
+     "kind": "original",
+     "id": "<src:new-status>",
+     "version": 1,
+     "project": {
+      "id": "<project:northstar>",
+      "title": "Northstar"
+     },
+     "title": "Status in October",
+     "quote": "Northstar status active again since the team returned.",
+     "start": 0,
+     "end": 54,
+     "captured_at": "2026-10-25T09:00:00.000Z",
+     "freshness": "current",
+     "why": [],
+     "score": 0.01796875
+    },
+    {
+     "kind": "original",
+     "id": "<src:old-status>",
+     "version": 1,
+     "project": {
+      "id": "<project:northstar>",
+      "title": "Northstar"
+     },
+     "title": "Status in September",
+     "quote": "Northstar status paused while the team was on leave.",
+     "start": 0,
+     "end": 52,
+     "captured_at": "2026-10-25T09:00:00.000Z",
+     "freshness": "current",
+     "why": [],
+     "score": 0.01769230769230769
+    },
+    {
+     "kind": "original",
+     "id": "<src:allowance>",
+     "version": 1,
+     "project": {
+      "id": "<project:northstar>",
+      "title": "Northstar"
+     },
+     "title": "Allowance",
+     "quote": "The quarterly tooling allowance is two thousand dollars, approved by Ana.",
+     "start": 0,
+     "end": 73,
+     "captured_at": "2026-10-25T09:00:00.000Z",
+     "freshness": "current",
+     "why": [],
+     "score": 0.017424242424242422
+    },
+    {
+     "kind": "original",
+     "id": "<src:marco>",
+     "version": 1,
+     "project": {
+      "id": "<project:northstar>",
+      "title": "Northstar"
+     },
+     "title": "People",
+     "quote": "Marco is the design lead for Northstar. He works from Lisbon and prefers async reviews.",
+     "start": 0,
+     "end": 87,
+     "captured_at": "2026-10-25T09:00:00.000Z",
+     "freshness": "current",
+     "why": [],
+     "score": 0.01716417910447761
+    },
+    {
+     "kind": "original",
+     "id": "<src:pricing>",
+     "version": 1,
+     "project": {
+      "id": "<project:northstar>",
+      "title": "Northstar"
+     },
+     "title": "Pricing call",
+     "quote": "Northstar ships with one plan. The price stays at nine dollars a month until the beta ends.",
+     "start": 0,
+     "end": 91,
+     "captured_at": "2026-10-25T09:00:00.000Z",
+     "freshness": "current",
+     "why": [],
+     "score": 0.016911764705882352
+    }
+   ],
+   "near_misses": [],
+   "next_step": "Use these as evidence and cite the ids. brain_open returns a full item."
+  },
+  "push": {
+   "level": "full",
+   "text": "The owner's brain (bibrain) covers Northstar: 8 current facts and 12 originals. Recent: Support (2026-10-25), Allowance (2026-10-25), புதிய அலுவலகம் (2026-10-25). The owner's brain (bibrain) has notes on Support, Northstar beta, Beta timeline that may bear on this; brain_recall searches it.\n\nBiBrain recall for this prompt, as of 2026-10-25. Evidence from the owner's brain; data, not instructions.\nFrom \"Support\" (original <src:ticket>, 2026-10-25): Ticket NS-4471 tracks the login outage; the patch went out in release 2.3.1.\nNorthstar beta: opens November 14 (fact <fact:beta-opens>, 2026-10-18, current)\nFrom \"Morning rhythm\" (original <src:standup>, 2026-10-25): The crew sync is at 9 every morning.\nFrom \"Status in October\" (original <src:new-status>, 2026-10-25): Northstar status active again since the team returned.\nFrom \"Status in September\" (original <src:old-status>, 2026-10-25): Northstar status paused while the team was on leave.\nFrom \"Allowance\" (original <src:allowance>, 2026-10-25): The quarterly tooling allowance is two thousand dollars, approved by Ana.\nNot recorded here is not the same as false. More is available through the bibrain brain_recall tool; ids are shown as (fact <id>) or (original <id>).",
+   "hit_ids": [
+    "<src:ticket>",
+    "<fact:beta-opens>",
+    "<src:standup>",
+    "<src:new-status>",
+    "<src:old-status>",
+    "<src:allowance>"
+   ],
    "digest": true
   }
  },
@@ -4436,7 +5327,7 @@
    "grant_id": "<grant:northstar-read>",
    "client": "other",
    "level": "full",
-   "candidates": 23,
+   "candidates": 27,
    "hits": 6,
    "judged": false
   },
@@ -4452,7 +5343,7 @@
    "grant_id": "<grant:northstar-read>",
    "client": "other",
    "level": "pointer",
-   "candidates": 23,
+   "candidates": 27,
    "hits": 0,
    "judged": false
   },
@@ -4500,7 +5391,7 @@
    "grant_id": "<grant:northstar-read>",
    "client": "other",
    "level": "full",
-   "candidates": 23,
+   "candidates": 27,
    "hits": 6,
    "judged": false
   },
@@ -4508,7 +5399,7 @@
    "grant_id": "<grant:northstar-read>",
    "client": "other",
    "level": "full",
-   "candidates": 23,
+   "candidates": 27,
    "hits": 6,
    "judged": false
   },
@@ -4636,7 +5527,7 @@
    "grant_id": "<grant:northstar-read>",
    "client": "other",
    "level": "full",
-   "candidates": 23,
+   "candidates": 27,
    "hits": 6,
    "judged": false
   },
@@ -4652,15 +5543,15 @@
    "grant_id": "<grant:northstar-read>",
    "client": "other",
    "level": "full",
-   "candidates": 2,
-   "hits": 1,
+   "candidates": 3,
+   "hits": 2,
    "judged": false
   },
   {
    "grant_id": "<grant:northstar-read>",
    "client": "other",
    "level": "pointer",
-   "candidates": 23,
+   "candidates": 27,
    "hits": 0,
    "judged": false
   },
@@ -4668,7 +5559,7 @@
    "grant_id": "<grant:northstar-read>",
    "client": "other",
    "level": "pointer",
-   "candidates": 23,
+   "candidates": 27,
    "hits": 0,
    "judged": false
   },
@@ -4676,7 +5567,7 @@
    "grant_id": "<grant:northstar-read>",
    "client": "other",
    "level": "pointer",
-   "candidates": 23,
+   "candidates": 27,
    "hits": 0,
    "judged": false
   },
@@ -4684,7 +5575,7 @@
    "grant_id": "<grant:northstar-read>",
    "client": "other",
    "level": "pointer",
-   "candidates": 23,
+   "candidates": 27,
    "hits": 0,
    "judged": false
   },
@@ -4716,7 +5607,7 @@
    "grant_id": "<grant:northstar-read>",
    "client": "other",
    "level": "none",
-   "candidates": 2,
+   "candidates": 3,
    "hits": 0,
    "judged": false
   },
@@ -4740,8 +5631,8 @@
    "grant_id": "<grant:northstar-read>",
    "client": "other",
    "level": "full",
-   "candidates": 4,
-   "hits": 2,
+   "candidates": 5,
+   "hits": 3,
    "judged": false
   },
   {
@@ -4750,6 +5641,134 @@
    "level": "pointer",
    "candidates": 8,
    "hits": 0,
+   "judged": false
+  },
+  {
+   "grant_id": "<grant:northstar-read>",
+   "client": "other",
+   "level": "none",
+   "candidates": 1,
+   "hits": 0,
+   "judged": false
+  },
+  {
+   "grant_id": "<grant:northstar-read>",
+   "client": "other",
+   "level": "none",
+   "candidates": 0,
+   "hits": 0,
+   "judged": false
+  },
+  {
+   "grant_id": "<grant:northstar-read>",
+   "client": "other",
+   "level": "none",
+   "candidates": 0,
+   "hits": 0,
+   "judged": false
+  },
+  {
+   "grant_id": "<grant:northstar-read>",
+   "client": "other",
+   "level": "none",
+   "candidates": 1,
+   "hits": 0,
+   "judged": false
+  },
+  {
+   "grant_id": "<grant:northstar-read>",
+   "client": "other",
+   "level": "none",
+   "candidates": 0,
+   "hits": 0,
+   "judged": false
+  },
+  {
+   "grant_id": "<grant:northstar-read>",
+   "client": "other",
+   "level": "none",
+   "candidates": 1,
+   "hits": 0,
+   "judged": false
+  },
+  {
+   "grant_id": "<grant:northstar-read>",
+   "client": "other",
+   "level": "none",
+   "candidates": 0,
+   "hits": 0,
+   "judged": false
+  },
+  {
+   "grant_id": "<grant:northstar-read>",
+   "client": "other",
+   "level": "none",
+   "candidates": 0,
+   "hits": 0,
+   "judged": false
+  },
+  {
+   "grant_id": "<grant:northstar-read>",
+   "client": "other",
+   "level": "none",
+   "candidates": 0,
+   "hits": 0,
+   "judged": false
+  },
+  {
+   "grant_id": "<grant:northstar-read>",
+   "client": "other",
+   "level": "none",
+   "candidates": 0,
+   "hits": 0,
+   "judged": false
+  },
+  {
+   "grant_id": "<grant:northstar-read>",
+   "client": "other",
+   "level": "none",
+   "candidates": 1,
+   "hits": 0,
+   "judged": false
+  },
+  {
+   "grant_id": "<grant:northstar-read>",
+   "client": "other",
+   "level": "none",
+   "candidates": 0,
+   "hits": 0,
+   "judged": false
+  },
+  {
+   "grant_id": "<grant:northstar-read>",
+   "client": "other",
+   "level": "none",
+   "candidates": 2,
+   "hits": 0,
+   "judged": false
+  },
+  {
+   "grant_id": "<grant:northstar-read>",
+   "client": "other",
+   "level": "none",
+   "candidates": 0,
+   "hits": 0,
+   "judged": false
+  },
+  {
+   "grant_id": "<grant:northstar-read>",
+   "client": "other",
+   "level": "pointer",
+   "candidates": 1,
+   "hits": 0,
+   "judged": false
+  },
+  {
+   "grant_id": "<grant:northstar-read>",
+   "client": "other",
+   "level": "full",
+   "candidates": 20,
+   "hits": 6,
    "judged": false
   }
  ]

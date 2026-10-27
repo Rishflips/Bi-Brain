@@ -229,7 +229,7 @@ describe("dense recall", () => {
   it("the judge never raises a push found by meaning alone: with no word candidate it is not even asked", async () => {
     const t = dense();
     const j = withJudge(t);
-    const q = "which hue was chosen for the release";
+    const q = "which hue was chosen";
     const internal = j.brain.recallInternal(j.agent, { query: q, history: false, limit: 8 }, t.dense(q));
     expect(internal.ranked.length).toBeGreaterThan(0);
     expect(internal.ranked.some(fromBm25)).toBe(false);
