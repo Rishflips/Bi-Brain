@@ -220,6 +220,53 @@ describe("embed_batch", () => {
     await t.drain();
     expect(t.counts()).toMatchObject({ embedded: total, withheld: 0, pending: 0 });
   });
+  it("a service that refuses every passage alone (the request shape, not the text) withholds nothing and backs off like any failure", async () => {
+    const t = batched({ provider: "cloudflare" });
+    t.fake.reject = () => true;
+    t.brain.setBetterSearch(owner, { mode: "cloudflare" });
+    const total = t.counts().total;
+    await t.drain();
+    const first = t.calls.texts[0].length;
+    expect(first).toBeGreaterThan(1);
+    // One refused batch, then each of its rows alone, all refused: nothing more until the back-off has passed.
+    expect(t.calls.n).toBe(1 + first);
+    expect(t.calls.texts.slice(1).every((x) => x.length === 1)).toBe(true);
+    expect(t.counts()).toMatchObject({ embedded: 0, withheld: 0, pending: total });
+    expect(Number(t.store.get<any>("SELECT count(*) AS n FROM recall_chunks WHERE embedding_dim=-1")!.n)).toBe(0);
+    expect(t.jobs().at(-1)!.status).toBe("failed");
+    const status = t.brain.betterSearch(owner);
+    expect(status).toMatchObject({ failures: 1, effective: true });
+    expect(status.retry_at).toBe(new Date(t.time.now.getTime() + 60_000).toISOString());
+    expect(status.status!.last_error).toBe("The search service refused every passage. Better search will try again later.");
+    expect(maybeQueueEmbedBatch(t.brain)).toBe(false);
+    // The service is fixed: after the back-off every passage is embedded, none was lost.
+    t.fake.reject = undefined;
+    t.advance(61_000);
+    expect(maybeQueueEmbedBatch(t.brain)).toBe(true);
+    await t.drain();
+    expect(t.counts()).toMatchObject({ embedded: total, withheld: 0, pending: 0 });
+  });
+  it("a lone pending passage the service refuses is a failure, not withheld; batched with a good one it is withheld alone", async () => {
+    const t = batched({ provider: "cloudflare" });
+    t.brain.setBetterSearch(owner, { mode: "cloudflare" });
+    await t.drain();
+    expect(t.counts().pending).toBe(0);
+    t.fake.reject = (texts) => texts.some((x) => x.includes("POISON_ROW"));
+    t.brain.capture(owner, { project_id: t.fx.ids["project:northstar"], title: "Poison", body: "POISON_ROW refused text.", visibility: "project", separate: true });
+    const n = t.calls.n;
+    await t.drain();
+    expect(t.calls.n).toBe(n + 1);
+    expect(t.counts()).toMatchObject({ pending: 1, withheld: 0 });
+    expect(t.brain.betterSearch(owner).failures).toBe(1);
+    // A good note joins it: the batch is refused, each row goes alone, and only the poison row is withheld.
+    note(t.brain, t.fx.ids["project:northstar"], 7);
+    t.advance(61_000);
+    expect(maybeQueueEmbedBatch(t.brain)).toBe(true);
+    await t.drain();
+    expect(t.counts()).toMatchObject({ pending: 0, withheld: 1 });
+    expect(t.brain.betterSearch(owner)).toMatchObject({ failures: 0, effective: true });
+    expect(t.brain.betterSearch(owner).status!.last_error).toMatch(/^1 passage was refused/);
+  });
   it("a vector never lands on a row that changed while the provider call was out, and a lost fence writes nothing", async () => {
     const t = batched({
       before: () => {

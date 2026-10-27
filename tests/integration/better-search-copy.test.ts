@@ -46,6 +46,7 @@ describe("Better search card copy", () => {
       ["packages/storage/spend.ts", "This job has reached its spending cap.", "Better search with Cloudflare is paused: This job has reached its spending cap.", "A preparation went over its spending limit."],
       ["packages/storage/spend.ts", "Today's spending cap is reached. Your original is saved.", "Better search with Cloudflare is paused: Today's spending cap is reached. Your original is saved.", "Today's spending limit was reached."],
       ["packages/domain/service.ts", NEEDS_LIMITS, NEEDS_LIMITS, LIMITS_NOT_SET],
+      ["apps/worker/embed.ts", "The search service refused every passage. Better search will try again later.", "The search service refused every passage. Better search will try again later.", "The search service refused every passage. Better search will try again later."],
       ["apps/worker/embed.ts", "Better search is waiting before it tries again.", "Better search is waiting before it tries again.", "Better search is waiting a little before it tries again."],
       ["apps/worker/embed.ts", "refused by the search service and will be skipped until it changes.", "1 passage was refused by the search service and will be skipped until it changes.", "The search service refused a passage."],
       ["apps/worker/embed.ts", "refused by the search service and will be skipped until it changes.", "3 passages were refused by the search service and will be skipped until it changes.", "The search service refused some passages."],

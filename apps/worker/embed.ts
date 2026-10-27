@@ -52,6 +52,8 @@ export function noteEmbedStatus(brain: Brain, patch: Partial<Pick<BetterSearchSt
   }
 }
 
+/** The status line when the service refused every passage it was sent alone: the request, not a text, is the likely cause. */
+export const EMBED_ALL_REFUSED = "The search service refused every passage. Better search will try again later.";
 /** How often the engine's self-heal check looks for rows without a current vector. */
 export const EMBED_CHECK_MS = 5_000;
 /** How long a spending refusal other than a spent daily limit (a per-preparation limit, a frozen time zone, a reconciliation block) waits before the next try. */
@@ -194,6 +196,9 @@ async function callProvider(deps: EmbedDeps, job: EmbedJob, client: EmbedClient,
   }
 }
 
+/** A refusal the service itself answered (a 400, 413 or 422), as opposed to a text the local checks refused before anything was sent. */
+const refusedByService = (outcome: CallOutcome) => !outcome.ok && outcome.error instanceof EmbedError && outcome.error.upstream_status !== undefined;
+
 /** A failed or unknown batch: exponential back-off (60 s doubling to 15 min); the third in a row opens the breaker for 15 min. */
 function recordFailure(brain: Brain, message: string) {
   const current = brain.store.setting<BetterSearchStatus | null>(BETTER_SEARCH_STATUS, null);
@@ -210,7 +215,9 @@ function recordFailure(brain: Brain, message: string) {
 
 /**
  * One batch end to end: up to 32 pending rows the provider may see, secret-shaped rows withheld before anything is prepared,
- * one call (a batch whose input the service refuses is retried row by row, and a row refused alone is withheld as rejected),
+ * one call (a batch whose input the service refuses is retried row by row, and a row refused alone is withheld as rejected,
+ * unless the service refused every row it was sent alone: then the request shape is the likely cause, so nothing is withheld and the
+ * attempt is a failure that backs off),
  * then a fenced, guarded write. A provider vector the store would refuse is withheld for its row, never discarding the rest.
  * A failed or unknown call records a failure (back-off, breaker); vectors already paid for in this attempt are still written.
  * The job itself is never retried, because a Cloudflare job cannot be re-sent under the same dispatch key.
@@ -294,6 +301,15 @@ export async function runEmbedBatch(deps: EmbedDeps, job: EmbedJob, signal: Abor
     recordFailure(brain, message);
     return done("failed", 0, false, message);
   };
+  /**
+   * Every row sent alone was refused by the service: a refused request shape (an unsupported field, say) would refuse any text, so
+   * withholding them would empty the index for good. They stay pending, and the attempt counts toward the back-off and the breaker.
+   */
+  const refusedAll = (refused: number[]) => {
+    for (const i of refused) reasons[i] = undefined;
+    rejectedCount -= refused.length;
+    return fail(EMBED_ALL_REFUSED);
+  };
   try {
     const send = rows.map((_, i) => i).filter((i) => reasons[i] === undefined && eligible(i));
     if (send.length) {
@@ -301,16 +317,30 @@ export async function runEmbedBatch(deps: EmbedDeps, job: EmbedJob, signal: Abor
       if (batch.ok) send.forEach((i, k) => take(i, batch.result.vectors[k], batch.result.dim));
       else if (batch.refused) return stop(batch.error.message, batch.retryAt);
       else if (batch.rejected && send.length > 1) {
-        // The service refused the batch: one text may be the cause. Each row goes alone under its own dispatch key; a row refused alone is withheld.
+        // The service refused the batch: one text may be the cause. Each row goes alone under its own dispatch key; a row refused alone is withheld,
+        // unless the service refused every row it was sent.
+        let attempted = 0;
+        const refused: number[] = [];
         for (const i of send) {
           if (!eligible(i)) continue;
+          attempted += 1;
           const one = await callProvider(deps, job, client, [texts[i]], `embed_batch:${rows[i].id}`, signal);
           if (one.ok) take(i, one.result.vectors[0], one.result.dim);
           else if (one.refused) return stop(one.error.message, one.retryAt);
-          else if (one.rejected) reject(i);
-          else return fail(one.error.message);
+          else if (one.rejected) {
+            reject(i);
+            if (refusedByService(one)) refused.push(i);
+          } else return fail(one.error.message);
         }
-      } else if (batch.rejected) reject(send[0]);
+        if (refused.length && refused.length === attempted) return refusedAll(refused);
+      } else if (batch.rejected) {
+        // A lone row the service refused cannot be told apart from a refused request, so it stays pending; batched with others later, it is isolated.
+        if (refusedByService(batch)) {
+          reject(send[0]);
+          return refusedAll([send[0]]);
+        }
+        reject(send[0]);
+      }
       else return fail(batch.error.message);
     }
     const written = write();
