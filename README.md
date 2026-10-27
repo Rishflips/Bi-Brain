@@ -46,7 +46,7 @@ You save a note once, or your coding agents write one when they finish work. BiB
   - it can wake a review you already planned.
 
   It only suggests, and it stays within the daily limits you set.
-- **Better search (optional).** Finds notes by meaning, including across English and Tamil, with Ollama on your computer or Cloudflare. Off by default.
+- **Better search (optional).** Designed to find notes by meaning, including across languages such as English and Tamil, with Ollama on your computer or Cloudflare. Live quality is not yet measured (the owner-run `npm run proof:search` measures it). Off by default.
 - **Watch.** Turn a project off and it goes quiet on Today, while everything stays in Your brain.
 
 ![Asking the bar a question; the answer quotes the saved original (synthetic sample)](docs/screenshots/today-v2-ask.png)
