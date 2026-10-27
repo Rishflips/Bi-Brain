@@ -134,7 +134,8 @@ describe("dense recall", () => {
     // Regenerate only deliberately, from plan 5 code: UPDATE_DENSE_OFF_SNAPSHOT=1 npx vitest run tests/integration/recall-dense.test.ts -t "plan 5 snapshot".
     if (process.env.UPDATE_DENSE_OFF_SNAPSHOT === "1") writeFileSync(SNAPSHOT, JSON.stringify(outputs, null, 1) + "\n");
     expect(existsSync(SNAPSHOT)).toBe(true);
-    expect(JSON.stringify(outputs, null, 1) + "\n").toBe(readFileSync(SNAPSHOT, "utf8"));
+    // Line endings are normalised: a checkout with core.autocrlf may write the file with CRLF.
+    expect(JSON.stringify(outputs, null, 1) + "\n").toBe(readFileSync(SNAPSHOT, "utf8").replace(/\r\n/gu, "\n"));
   });
   it("a paraphrased question finds the note with Better search on and not without it, for the owner and an agent", () => {
     const t = dense();
