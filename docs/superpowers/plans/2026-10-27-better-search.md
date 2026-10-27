@@ -21,7 +21,8 @@
 - Indexing: `embed_batch` embeds at most 32 rows per call (`EMBED_BATCH_SIZE`), current original chunks and fact rows only, text = chunk prefix + newline + chunk text capped at 2,000 code points (`EMBED_TEXT_MAX`), provider call outside any transaction, writes fenced and guarded by (kind, ref_id, ref_version, ordinal). Cloudflare never receives a `private` source row, an `owner`-visibility fact row or a quarantined note (quarantine sets visibility `private`); those rows stay BM25-only under Cloudflare. Ollama on loopback embeds everything.
 - Money: Cloudflare spend goes through `DispatchLedger` (`reserve` → `markDispatched` → `execute` → `settle`), shares the daily cap (`prefs.daily_cap_micro_usd`, `per_job_cap_micro_usd`, both must be above 0 for Cloudflare), dispatch keys `embed_batch` and `recall_embed`. Price: $0.012 per million tokens = `12_000` micro-USD per million tokens, version `cf-bge-m3-2026-10-27`; tokens are estimated as `ceil(utf8 bytes / 2)` per text (conservative for Tamil) and settled at the reported usage when Cloudflare reports one, else at the estimate. All money is integer micro-USD. Ollama costs 0 and writes no ledger row.
 - Query lane: `recall_embed` job, dedicated worker loop polling every 25 ms, server wait 400 ms (`QUERY_EMBED_DEADLINE_MS`) polling every 10 ms, worker cache by `sha256(model key + "\n" + query)` for 10 minutes (`QUERY_CACHE_MS = 600_000`), deterministic fallback to BM25 only. With the judge on, the candidate list (BM25 plus dense) is built before the judge is enqueued; total hook budget stays 1,500 ms (400 + 900 plus local work).
-- Storage: Float32 little-endian BLOBs, normalised at write time; one in-process matrix per (scope, model key, dim, generation); the generation is the settings key `recall_vectors_generation`, bumped by every index write (`replaceRows`, `purgeRef`, `clearRecallIndex`, `writeEmbeddings`, `clearEmbeddings`) so the server's cache sees the worker's writes.
+- Storage: Float32 little-endian BLOBs, normalised at write time; one in-process matrix per (scope, model key, dim). Invalidation writes nothing: an in-process generation counter is bumped by every index write made through this process (`replaceRows`, `purgeRef`, `clearRecallIndex`, `writeEmbeddings`, `clearEmbeddings`) and `PRAGMA data_version` (which changes whenever another connection commits) catches the worker's writes from the server, so a database with Better search off is byte-identical to plan 5 (the managed migration tests that assert an untouched settings table stay green).
+- Outage safety: an HTTP error response with no usage settles its hold at 0 (nothing was billed); a timeout after send keeps its hold. A failed or unknown batch backs off exponentially (60 s doubling to 15 min); three consecutive failures open a circuit breaker that pauses embedding for 15 minutes with the status line "Better search paused: the service is not answering."; the self-heal check never enqueues while the breaker is open or the back-off runs. A batch refused with a 4xx is retried once as single rows; a row refused alone is withheld (`embedding_model` set, `embedding` NULL, `embedding_dim = -1` meaning "rejected") and skipped until its text changes.
 - Turning the setting on backfills in batches; turning it off, or changing provider or model, clears all vectors and cancels queued batches; `rebuild()` and any refill leave rows without vectors, which the worker's self-heal check re-queues within 5 s when enabled. Purging a source removes its vectors with its rows (already true); the forget proof counts embedded rows (already true).
 - Off limits: `packages/**/billing*`, `dodo*`, `paddle*`, `managed*`, `apps/server/billing-routes.ts`, `apps/worker/managed*.ts`, `apps/worker/decision-advisory.ts`, `packages/domain/decision-advisory.ts`; `/api/v1/context` and `/api/v1/changes` unchanged; `managedPreferencesPatchSchema`, `preferencesSchema` and the `prefs()` object unchanged; the MCP `outputSchema` of `brain_recall` unchanged (`RecallResult` gains no field; dense shows only in `why` as `"similar meaning"` and in the content-free recall log as `dense: true`).
 - No new runtime or dev dependency; `package-lock.json` is not edited; `package.json` gains only the `proof:search` script line (task 8).
@@ -58,15 +59,15 @@
 - Consumes: `detectSecrets` (`packages/storage/secrets.ts`), `SystemOneError`-style error shape (new `EmbedError`), `workerRunning` (`packages/domain/system-one.ts`), `Brain.store.set/setting`, `Brain.now()`.
 - Produces (`packages/domain/better-search.ts`):
   - `export type EmbedProvider = "ollama" | "cloudflare"; export type BetterSearchMode = "off" | EmbedProvider;`
-  - `export const BETTER_SEARCH = "better_search"; export const BETTER_SEARCH_STATUS = "better_search_status"; export const VECTOR_GENERATION = "recall_vectors_generation";`
+  - `export const BETTER_SEARCH = "better_search"; export const BETTER_SEARCH_STATUS = "better_search_status"; export const BETTER_SEARCH_PAUSED = "Better search paused: the service is not answering.";`
   - `export const DENSE_WEIGHT = 0.7; export const DENSE_FLOOR_DEFAULT = 0.45; export const DENSE_FLOORS: Record<string, number> = { "bge-m3": 0.45 };`
   - `export const EMBED_BATCH_SIZE = 32; export const EMBED_TEXT_MAX = 2000; export const EMBED_DIM_MIN = 8; export const EMBED_DIM_MAX = 4096;`
-  - `export const QUERY_EMBED_DEADLINE_MS = 400; export const QUERY_EMBED_POLL_MS = 10; export const EMBED_LOOP_MS = 25; export const QUERY_CACHE_MS = 600_000; export const EMBED_SWEEP_AFTER_MS = 3_600_000; export const EMBED_RETRY_AFTER_MS = 60_000; export const EMBED_CALL_MS = 15_000;`
+  - `export const QUERY_EMBED_DEADLINE_MS = 400; export const QUERY_EMBED_POLL_MS = 10; export const EMBED_LOOP_MS = 25; export const QUERY_CACHE_MS = 600_000; export const EMBED_SWEEP_AFTER_MS = 3_600_000; export const EMBED_RETRY_AFTER_MS = 60_000; export const EMBED_BACKOFF_MAX_MS = 900_000; export const EMBED_BREAKER_FAILURES = 3; export const EMBED_PAUSE_MS = 900_000; export const EMBED_CALL_MS = 15_000;`
   - `export const EMBED_STATE_KEY = (id: string) => \`recall_embed:${id}\`; export const EMBED_RESULT_KEY = (id: string) => \`recall_embed_result:${id}\`;`
   - `export const CLOUDFLARE_EMBED_MODEL = "@cf/baai/bge-m3"; export const OLLAMA_EMBED_MODEL = "bge-m3"; export const OLLAMA_EMBED_ENDPOINT = "http://127.0.0.1:11434/api/embed"; export const CLOUDFLARE_EMBED_PRICE = { version: "cf-bge-m3-2026-10-27", input_micro_usd_per_million: 12_000 } as const;`
   - `export const PROVIDER_LABELS: Record<EmbedProvider, string> = { ollama: "Ollama on this computer", cloudflare: "Cloudflare" };`
   - `export type BetterSearchSetting = { mode: BetterSearchMode; key: string | null; consented_at: string | null }; export const BETTER_SEARCH_OFF: BetterSearchSetting = { mode: "off", key: null, consented_at: null };`
-  - `export type BetterSearchStatus = { configured: boolean; provider?: EmbedProvider; model?: string; key?: string; label?: string; reason?: string; updated_at: string; last_ok_at?: string; last_error?: string };`
+  - `export type BetterSearchStatus = { configured: boolean; provider?: EmbedProvider; model?: string; key?: string; label?: string; reason?: string; updated_at: string; last_ok_at?: string; last_error?: string; failures?: number; retry_at?: string; paused_until?: string };` (the last three are the worker's back-off and circuit-breaker state)
   - `export type QueryVector = { vector: Float32Array; key: string; dim: number };`
   - `export function modelKey(provider: EmbedProvider, model: string): string`
   - `export function denseFloor(key: string): number`
@@ -80,14 +81,14 @@
 - Produces (`packages/providers/embed.ts`):
   - `export type EmbedConfig = { provider: EmbedProvider; endpoint: string; model: string; key?: string; timeout_ms?: number; max_response_bytes?: number; price: { version: string; input_micro_usd_per_million: number } };`
   - `export type ResolvedEmbedConfig = Required<Omit<EmbedConfig, "key">> & { key?: string; loopback: boolean; url: URL };`
-  - `export class EmbedError extends Error { constructor(readonly code: "INVALID_INPUT" | "PROVIDER_UNAVAILABLE" | "PROVIDER_INVALID" | "PROVIDER_TIMEOUT" | "PROVIDER_ABORTED", message: string, readonly status: number, readonly dispatched: boolean, readonly actual_cost_micro_usd?: number) }`
+  - `export class EmbedError extends Error { constructor(readonly code: "INVALID_INPUT" | "PROVIDER_UNAVAILABLE" | "PROVIDER_INVALID" | "PROVIDER_TIMEOUT" | "PROVIDER_ABORTED", message: string, readonly status: number, readonly dispatched: boolean, readonly actual_cost_micro_usd?: number, readonly upstream_status?: number) }` (an HTTP error response or a Cloudflare error envelope carries `actual_cost_micro_usd: 0`, nothing was billed; a 4xx carries `upstream_status` so a batch can be retried row by row)
   - `export type EmbedResult = { vectors: Float32Array[]; dim: number; key: string; estimated_tokens: number; reported_tokens: number | null; cost_micro_usd: number; model: string };`
   - `export type PreparedEmbed = { json: string; bytes: number; request_hash: string; config_hash: string; estimated_tokens: number; reserved_micro_usd: number; key: string; model: string; provider: EmbedProvider; price_version: string; execute(signal: AbortSignal): Promise<EmbedResult> };`
   - `export function resolveEmbedConfig(config: EmbedConfig): ResolvedEmbedConfig`
   - `export function prepareEmbed(config: EmbedConfig, texts: string[], fetcher?: typeof fetch): PreparedEmbed`
 - Produces (`packages/providers/embed-env.ts`): `export function embedFromEnv(env: Record<string, string | undefined>): { config: EmbedConfig; label: string; key: string } | { config: null; reason: string }` (`key` here is the model key, never the credential).
-- Produces (`apps/worker/embed.ts`): `export type EmbedClient = { config: EmbedConfig; fetcher?: typeof fetch }; export function publishBetterSearchStatus(brain: Brain, from: { configured: true; provider: EmbedProvider; model: string; key: string; label: string } | { configured: false; reason: string }): void; export function noteEmbedStatus(brain: Brain, patch: Partial<Pick<BetterSearchStatus, "last_ok_at" | "last_error">>): void`
-- Produces (`tests/helpers/fake-embed.mjs`): `export const FAKE_EMBED_DIM = 256; export const FAKE_EMBED_MODEL = "fake-concept-v1"; export const LEXICON: string[][]; export function fakeTokens(text): string[]; export function fakeEmbed(text: string): number[]; export function cosine(a: number[], b: number[]): number; export function ollamaBody(texts: string[]): { model: string; embeddings: number[][]; prompt_eval_count: number }; export function cloudflareBody(texts: string[]): { success: true; errors: []; messages: []; result: { shape: [number, number]; data: number[][] } }; export function fakeEmbedFetcher(options?: { shape?: "ollama" | "cloudflare"; delayMs?: number; status?: number; before?: (texts: string[]) => void }): { fetcher: typeof fetch; calls: { n: number; bodies: unknown[]; texts: string[][]; headers: Record<string, string>[] } }`.
+- Produces (`apps/worker/embed.ts`): `export type EmbedClient = { config: EmbedConfig; fetcher?: typeof fetch }; export function publishBetterSearchStatus(brain: Brain, from: { configured: true; provider: EmbedProvider; model: string; key: string; label: string } | { configured: false; reason: string }): void; export function noteEmbedStatus(brain: Brain, patch: Partial<Pick<BetterSearchStatus, "last_ok_at" | "last_error" | "failures" | "retry_at" | "paused_until">>): void`
+- Produces (`tests/helpers/fake-embed.mjs`): `export const FAKE_EMBED_DIM = 256; export const FAKE_EMBED_MODEL = "fake-concept-v1"; export const LEXICON: string[][]; export function fakeTokens(text): string[]; export function fakeEmbed(text: string): number[]; export function cosine(a: number[], b: number[]): number; export function ollamaBody(texts: string[]): { model: string; embeddings: number[][]; prompt_eval_count: number }; export function cloudflareBody(texts: string[]): { success: true; errors: []; messages: []; result: { shape: [number, number]; data: number[][] } }; export function fakeEmbedFetcher(options?: { shape?: "ollama" | "cloudflare"; delayMs?: number; status?: number; reject?: (texts: string[]) => boolean; before?: (texts: string[]) => void }): { fetcher: typeof fetch; calls: { n: number; bodies: unknown[]; texts: string[][]; headers: Record<string, string>[] } }` (options are read at call time, so a test can flip `status`, `delayMs` or `reject` between calls).
 
 **Steps:**
 
@@ -224,13 +225,19 @@ describe("prepareEmbed", () => {
     const ragged = (async () => new Response(JSON.stringify({ embeddings: [Array(16).fill(0.1), Array(8).fill(0.1)] }), { status: 200 })) as unknown as typeof fetch;
     await expect(prepareEmbed(ollama, ["a", "b"], ragged).execute(signal())).rejects.toMatchObject({ code: "PROVIDER_INVALID" });
     const down = fakeEmbedFetcher({ status: 503 });
-    await expect(prepareEmbed(ollama, ["a"], down.fetcher).execute(signal())).rejects.toMatchObject({ code: "PROVIDER_UNAVAILABLE", dispatched: true });
+    await expect(prepareEmbed(ollama, ["a"], down.fetcher).execute(signal())).rejects.toMatchObject({ code: "PROVIDER_UNAVAILABLE", dispatched: true, actual_cost_micro_usd: 0, upstream_status: 503 });
+    const refused = fakeEmbedFetcher({ reject: () => true });
+    await expect(prepareEmbed(ollama, ["a"], refused.fetcher).execute(signal())).rejects.toMatchObject({ code: "PROVIDER_UNAVAILABLE", actual_cost_micro_usd: 0, upstream_status: 400 });
     const slow = fakeEmbedFetcher({ delayMs: 400 });
     await expect(prepareEmbed({ ...ollama, timeout_ms: 50 }, ["a"], slow.fetcher).execute(signal())).rejects.toMatchObject({ code: "PROVIDER_TIMEOUT", dispatched: true });
     const huge = (async () => new Response(JSON.stringify({ embeddings: [Array(4096).fill(0.001)] }), { status: 200 })) as unknown as typeof fetch;
     await expect(prepareEmbed({ ...ollama, max_response_bytes: 1024 }, ["a"], huge).execute(signal())).rejects.toMatchObject({ code: "PROVIDER_INVALID" });
     const failed = (async () => new Response(JSON.stringify({ success: false, errors: [{ message: "nope" }] }), { status: 200 })) as unknown as typeof fetch;
-    await expect(prepareEmbed(cloud, ["a"], failed).execute(signal())).rejects.toMatchObject({ code: "PROVIDER_UNAVAILABLE" });
+    await expect(prepareEmbed(cloud, ["a"], failed).execute(signal())).rejects.toMatchObject({ code: "PROVIDER_UNAVAILABLE", actual_cost_micro_usd: 0 });
+    const slowSend = fakeEmbedFetcher({ delayMs: 400 });
+    const timeout = await prepareEmbed({ ...cloud, timeout_ms: 50 }, ["a"], slowSend.fetcher).execute(signal()).catch((e: EmbedError) => e);
+    expect(timeout).toMatchObject({ code: "PROVIDER_TIMEOUT", dispatched: true });
+    expect((timeout as EmbedError).actual_cost_micro_usd).toBeUndefined();
   });
   it("validates the endpoint rules: loopback-only Ollama, Cloudflare with a key or a loopback test server", () => {
     expect(() => resolveEmbedConfig({ ...ollama, endpoint: "https://ollama.com/api/embed" })).toThrow(/this computer/);
@@ -277,7 +284,8 @@ export type BetterSearchMode = "off" | EmbedProvider;
 
 export const BETTER_SEARCH = "better_search";
 export const BETTER_SEARCH_STATUS = "better_search_status";
-export const VECTOR_GENERATION = "recall_vectors_generation";
+/** The status line while the worker's circuit breaker is open. Read by Settings and by every path that decides whether a model may be called. */
+export const BETTER_SEARCH_PAUSED = "Better search paused: the service is not answering.";
 
 export const DENSE_WEIGHT = 0.7;
 export const DENSE_FLOOR_DEFAULT = 0.45;
@@ -292,7 +300,12 @@ export const QUERY_EMBED_POLL_MS = 10;
 export const EMBED_LOOP_MS = 25;
 export const QUERY_CACHE_MS = 600_000;
 export const EMBED_SWEEP_AFTER_MS = 3_600_000;
+/** The first back-off after a failed batch; it doubles per consecutive failure up to EMBED_BACKOFF_MAX_MS. */
 export const EMBED_RETRY_AFTER_MS = 60_000;
+export const EMBED_BACKOFF_MAX_MS = 900_000;
+/** Consecutive failed batches that open the circuit breaker, and how long it stays open. */
+export const EMBED_BREAKER_FAILURES = 3;
+export const EMBED_PAUSE_MS = 900_000;
 /** Abort bound for one provider call in the worker (batch or query). */
 export const EMBED_CALL_MS = 15_000;
 export const EMBED_STATE_KEY = (id: string) => `recall_embed:${id}`;
@@ -319,6 +332,12 @@ export type BetterSearchStatus = {
   updated_at: string;
   last_ok_at?: string;
   last_error?: string;
+  /** Consecutive failed or unknown batches; reset by a success. */
+  failures?: number;
+  /** No batch is queued before this time (60 s doubling to 15 min). */
+  retry_at?: string;
+  /** Set after three consecutive failures: nothing is embedded until it passes. */
+  paused_until?: string;
 };
 export type QueryVector = { vector: Float32Array; key: string; dim: number };
 
@@ -439,6 +458,8 @@ export class EmbedError extends Error {
     readonly status: number,
     readonly dispatched: boolean,
     readonly actual_cost_micro_usd?: number,
+    /** The provider's HTTP status when the request was answered with an error; 4xx means the input was refused. */
+    readonly upstream_status?: number,
   ) {
     super(message);
   }
@@ -554,7 +575,8 @@ async function perform(resolved: ResolvedEmbedConfig, json: string, count: numbe
   const res = await fetcher(resolved.endpoint, { method: "POST", headers, body: json, signal, redirect: "error" });
   if (!res.ok) {
     res.body?.cancel().catch(() => undefined);
-    fail("PROVIDER_UNAVAILABLE", `The search model answered ${res.status}.`, 503);
+    // An error response is not billed: the known cost is 0, and the status lets a 4xx be retried row by row.
+    throw new EmbedError("PROVIDER_UNAVAILABLE", `The search model answered ${res.status}.`, 503, true, 0, res.status);
   }
   const reader = res.body?.getReader();
   const cancelReader = () => {
@@ -585,10 +607,11 @@ async function perform(resolved: ResolvedEmbedConfig, json: string, count: numbe
   } catch {
     fail("PROVIDER_INVALID", "The search model returned unreadable data.", 502);
   }
-  let rows: unknown;
+  // `any`, not `unknown`: `fail` is a const arrow, so a never-returning call does not narrow for the compiler (TS18046 otherwise).
+  let rows: any;
   let reported: number | null = null;
   if (resolved.provider === "cloudflare") {
-    if (payload?.success !== true) fail("PROVIDER_UNAVAILABLE", "The search model reported an error.", 503);
+    if (payload?.success !== true) throw new EmbedError("PROVIDER_UNAVAILABLE", "The search model reported an error.", 503, true, 0);
     rows = payload?.result?.data;
     const usage = payload?.result?.usage?.total_tokens ?? payload?.result?.usage?.prompt_tokens;
     if (Number.isSafeInteger(usage) && usage >= 0) reported = usage;
@@ -685,8 +708,8 @@ export function publishBetterSearchStatus(
   brain.store.set(BETTER_SEARCH_STATUS, { ...from, updated_at: brain.now() } satisfies BetterSearchStatus);
 }
 
-/** Records the latest outcome on the published status; does nothing before startup published one. */
-export function noteEmbedStatus(brain: Brain, patch: Partial<Pick<BetterSearchStatus, "last_ok_at" | "last_error">>) {
+/** Records the latest outcome (and the back-off state) on the published status; does nothing before startup published one. */
+export function noteEmbedStatus(brain: Brain, patch: Partial<Pick<BetterSearchStatus, "last_ok_at" | "last_error" | "failures" | "retry_at" | "paused_until">>) {
   try {
     const current = brain.store.setting<BetterSearchStatus | null>(BETTER_SEARCH_STATUS, null);
     if (current) brain.store.set(BETTER_SEARCH_STATUS, { ...current, ...patch });
@@ -739,7 +762,8 @@ export const LEXICON = [
   ["new", "புதிய"],
   ["move", "relocate", "நகர்கிறது", "மாறுகிறது"],
   ["january", "ஜனவரி", "ஜனவரியில்"],
-  ["status", "state", "standing", "நிலை"],
+  // "statu" is "status" after fakeTokens strips the trailing s; both forms are listed so the raw and the stemmed word hit.
+  ["status", "statu", "state", "standing", "நிலை"],
   ["active", "running", "live"],
   ["paused", "hold", "stopped"],
   ["deploy", "deployment"],
@@ -805,6 +829,8 @@ export function fakeEmbedFetcher(options = {}) {
     if (options.before) await options.before(texts);
     if (options.delayMs) await new Promise((r) => setTimeout(r, options.delayMs));
     if (options.status && options.status !== 200) return new Response("", { status: options.status });
+    // A provider that refuses an input: 400 for the whole request, so a batch holding one bad text fails as a batch.
+    if (options.reject && options.reject(texts)) return new Response(JSON.stringify({ error: "input refused" }), { status: 400 });
     const payload = options.shape === "cloudflare" ? cloudflareBody(texts) : ollamaBody(texts);
     return new Response(JSON.stringify(payload), { status: 200, headers: { "Content-Type": "application/json" } });
   };
@@ -854,7 +880,7 @@ export function fakeEmbed(text: string): number[];
 export function cosine(a: ArrayLike<number>, b: ArrayLike<number>): number;
 export function ollamaBody(texts: string[]): { model: string; embeddings: number[][]; prompt_eval_count: number };
 export function cloudflareBody(texts: string[]): { success: true; errors: never[]; messages: never[]; result: { shape: [number, number]; data: number[][] } };
-export function fakeEmbedFetcher(options?: { shape?: "ollama" | "cloudflare"; delayMs?: number; status?: number; before?: (texts: string[]) => void | Promise<void> }): {
+export function fakeEmbedFetcher(options?: { shape?: "ollama" | "cloudflare"; delayMs?: number; status?: number; reject?: (texts: string[]) => boolean; before?: (texts: string[]) => void | Promise<void> }): {
   fetcher: typeof fetch;
   calls: { n: number; bodies: unknown[]; texts: string[][]; headers: Record<string, string>[] };
 };
@@ -884,23 +910,23 @@ Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>
 
 **Files:**
 - Create: `packages/storage/recall-vectors.ts`
-- Modify: `packages/storage/recall-index.ts` (`RECALL_DDL` lines 37–55: add the `recall_chunks_embed` index; `purgeRef` line 237, `replaceRows` line 242, `clearRecallIndex` line 319: bump the generation)
+- Modify: `packages/storage/recall-index.ts` (`RECALL_DDL` lines 37–55: add the `recall_chunks_embed` index; `purgeRef` line 237, `replaceRows` line 242, `clearRecallIndex` line 319: bump the in-process generation; `searchRecallChunks` line 376: select explicit columns instead of `c.*` so BM25 rows never carry their 4 KB vector)
 - Test: `tests/integration/recall-vectors.test.ts`
-- Existing tests touched by the new index/bumps: none change shape (`recall-index.test.ts` compares rows through `recallRowsInDb`, which selects explicit columns). Run it in this task's run list.
+- Existing tests to run: `recall-index.test.ts` (compares rows through `recallRowsInDb`, explicit columns), `tests/eval/recall.test.ts`, and the two managed migration tests that assert an untouched settings table, `tests/integration/managed-decision-advisory-migration.test.ts` and `tests/integration/managed-decision-advisory-migration-review.test.ts` (they must stay green without being edited: the generation never writes a settings row).
 
 **Interfaces:**
-- Consumes: `Storage.run/get/all/transaction/setting/set` (`packages/storage/index.ts`), `RecallMatch`, `RecallKind`, `RecallVisibility`, `RecallRowStatus` (`recall-index.ts`), `VECTOR_GENERATION`, `encodeVector`, `decodeVector`, `normalize` (`packages/domain/better-search.ts`).
+- Consumes: `Storage.run/get/all/transaction` (`packages/storage/index.ts`), `RecallMatch`, `RecallKind`, `RecallVisibility`, `RecallRowStatus` (`recall-index.ts`), `encodeVector`, `decodeVector`, `normalize` (`packages/domain/better-search.ts`), SQLite's `PRAGMA data_version`.
 - Produces (`packages/storage/recall-vectors.ts`):
   - `export type PendingRow = { id: number; kind: RecallKind; ref_id: string; ref_version: number; ordinal: number; text: string; prefix: string }`
   - `export function pendingEmbedRows(store: Storage, key: string, visibilities: RecallVisibility[], limit: number): PendingRow[]` (current rows whose `embedding_model` is NULL or differs from `key`, in the given visibilities, ordered by id)
   - `export function countEmbedRows(store: Storage, key: string, visibilities: RecallVisibility[]): { total: number; embedded: number; pending: number; withheld: number }` (`withheld` = model is `key` but embedding NULL)
-  - `export type VectorWrite = { id: number; kind: RecallKind; ref_id: string; ref_version: number; ordinal: number; vector: Float32Array | null }`
-  - `export function writeEmbeddings(store: Storage, key: string, dim: number, rows: VectorWrite[]): number` (caller holds the transaction; a `null` vector marks the row withheld; the UPDATE is guarded by `id, kind, ref_id, ref_version, ordinal` and `status='current'`; bumps the generation when anything changed; returns rows changed)
+  - `export type VectorWrite = { id: number; kind: RecallKind; ref_id: string; ref_version: number; ordinal: number; vector: Float32Array | null; reason?: "secret" | "rejected" }`
+  - `export function writeEmbeddings(store: Storage, key: string, dim: number, rows: VectorWrite[]): number` (caller holds the transaction; a `null` vector marks the row withheld with `embedding_dim` NULL for `"secret"` and `-1` for `"rejected"`; the UPDATE is guarded by `id, kind, ref_id, ref_version, ordinal` and `status='current'`; bumps the generation when anything changed; returns rows changed)
   - `export function clearEmbeddings(store: Storage): number` (NULLs all three columns; bumps the generation)
-  - `export function bumpVectorGeneration(store: Storage): void` / `export function vectorGeneration(store: Storage): number`
+  - `export function bumpVectorGeneration(): void` / `export function vectorGeneration(): number` (an in-process counter; no database write)
   - `export type VectorQuery = { vector: Float32Array; key: string; dim: number; projects: string[]; visibilities: RecallVisibility[]; status: RecallRowStatus | "any"; floor: number; limit: number }`
-  - `export class VectorCache { constructor(maxScopes = 8); search(store: Storage, q: VectorQuery): RecallMatch[] }` (`score` is the cosine, higher is better; rows are re-read by id after the scan and dropped unless their `embedding_model` still equals `key`)
-- Produces (`recall-index.ts`): `RECALL_DDL` gains `CREATE INDEX IF NOT EXISTS recall_chunks_embed ON recall_chunks(status, embedding_model);` (runs at every open under `IF NOT EXISTS`; no migration bump). `purgeRef`, `replaceRows` and `clearRecallIndex` call `bumpVectorGeneration(store)`.
+  - `export class VectorCache { constructor(maxScopes = 8); search(store: Storage, q: VectorQuery): RecallMatch[] }` (`score` is the cosine, higher is better; a scope's matrix is rebuilt when the in-process generation or SQLite's `data_version` moved; rows are re-read by id after the scan and dropped unless their `embedding_model` still equals `key`)
+- Produces (`recall-index.ts`): `RECALL_DDL` gains `CREATE INDEX IF NOT EXISTS recall_chunks_embed ON recall_chunks(status, embedding_model);` (runs at every open under `IF NOT EXISTS`; no migration bump). `purgeRef` and `clearRecallIndex` call `bumpVectorGeneration()` (`replaceRows` bumps through `purgeRef`). `searchRecallChunks` selects `c.id,c.kind,c.ref_id,c.ref_version,c.project_id,c.visibility,c.status,c.ordinal,c.start,c.end,c.text,c.prefix,c.recorded_at,c.boost` instead of `c.*`.
 
 **Steps:**
 
@@ -934,11 +960,12 @@ function setup() {
   return { s, b: new Brain(s, () => new Date("2026-10-27T09:00:00Z")) };
 }
 let n = 0;
+/** A reviewed status claim. Its capture is a third, project-visible source ("<entity> status N"), which the index also holds. */
 function acceptStatus(b: Brain, project: string, entity: string, value: string) {
   n++;
   const saved = b.capture(owner, { project_id: project, title: `${entity} status ${n}`, body: `${entity} status ${value}`, visibility: "project", separate: true }) as any;
   const gate = b.entities(owner, "gate").find((g) => g.data.raw_id === saved.source_id)!;
-  return b.reviewGate(owner, gate.id, { action: "accept", expected_version: gate.version }).claim_ids[0] as string;
+  return { claim_id: b.reviewGate(owner, gate.id, { action: "accept", expected_version: gate.version }).claim_ids[0] as string, source_id: saved.source_id as string };
 }
 const vec = (...xs: number[]) => normalize(Float32Array.from(xs));
 
@@ -947,33 +974,39 @@ describe("pending rows and guarded writes", () => {
     const { s, b } = setup();
     const pub = b.capture(owner, { title: "Public", body: "The launch colour is cobalt.", visibility: "project" }) as any;
     const priv = b.capture(owner, { title: "Journal", body: "PRIVATE_CANARY_TEXT not sure.", visibility: "private" }) as any;
-    const claimId = acceptStatus(b, "inbox", "Northstar", "active");
+    const { claim_id: claimId, source_id: statusSrc } = acceptStatus(b, "inbox", "Northstar", "active");
     const nameRow = s.run("INSERT INTO recall_chunks(kind,ref_id,ref_version,project_id,visibility,status,ordinal,start,end,text,prefix,recorded_at,boost) VALUES('fact','name-claim',1,'inbox','owner','current',0,0,5,'Owner: Ana','Inbox · Owner','2026-10-27T00:00:00.000Z',1)");
     const cloud = pendingEmbedRows(s, KEY, ["project"], 32);
-    expect(cloud.map((r) => r.ref_id).sort()).toEqual([pub.source_id, claimId].sort());
+    expect(cloud.map((r) => r.ref_id).sort()).toEqual([pub.source_id, statusSrc, claimId].sort());
     expect(cloud.every((r) => r.text && r.prefix)).toBe(true);
     const local = pendingEmbedRows(s, KEY, ["project", "private", "owner"], 32);
-    expect(local.map((r) => r.ref_id).sort()).toEqual([pub.source_id, priv.source_id, claimId, "name-claim"].sort());
+    expect(local.map((r) => r.ref_id).sort()).toEqual([pub.source_id, priv.source_id, statusSrc, claimId, "name-claim"].sort());
     expect(pendingEmbedRows(s, KEY, ["project"], 1)).toHaveLength(1);
-    const before = vectorGeneration(s);
+    const before = vectorGeneration();
     const row = cloud.find((r) => r.ref_id === pub.source_id)!;
     const changed = s.transaction(() => writeEmbeddings(s, KEY, 2, [
       { ...row, vector: vec(1, 0) },
       { ...row, ref_version: 99, vector: vec(0, 1) },
-      { ...cloud.find((r) => r.ref_id === claimId)!, vector: null },
+      { ...cloud.find((r) => r.ref_id === claimId)!, vector: null, reason: "secret" },
     ]));
     expect(changed).toBe(2);
-    expect(vectorGeneration(s)).toBeGreaterThan(before);
+    expect(vectorGeneration()).toBeGreaterThan(before);
     const stored = s.get<any>("SELECT embedding, embedding_model, embedding_dim FROM recall_chunks WHERE id=?", row.id)!;
     expect(Buffer.from(stored.embedding).equals(encodeVector(vec(1, 0)))).toBe(true);
     expect(stored).toMatchObject({ embedding_model: KEY, embedding_dim: 2 });
     const withheld = s.get<any>("SELECT embedding, embedding_model, embedding_dim FROM recall_chunks WHERE kind='fact' AND ref_id=?", claimId)!;
     expect(withheld).toEqual({ embedding: null, embedding_model: KEY, embedding_dim: null });
-    expect(pendingEmbedRows(s, KEY, ["project"], 32)).toEqual([]);
-    expect(countEmbedRows(s, KEY, ["project"])).toEqual({ total: 2, embedded: 1, pending: 0, withheld: 1 });
-    expect(pendingEmbedRows(s, OTHER, ["project"], 32)).toHaveLength(2);
+    // The status source's row is still pending; the withheld fact and the written note are not.
+    expect(pendingEmbedRows(s, KEY, ["project"], 32).map((r) => r.ref_id)).toEqual([statusSrc]);
+    expect(countEmbedRows(s, KEY, ["project"])).toEqual({ total: 3, embedded: 1, pending: 1, withheld: 1 });
+    expect(pendingEmbedRows(s, OTHER, ["project"], 32)).toHaveLength(3);
     expect(recallCountsForSource(s, pub.source_id, []).embedded).toBe(1);
     expect(Number(nameRow.lastInsertRowid)).toBeGreaterThan(0);
+    // A rejected row is withheld with dim -1 and counted the same way; the settings table never gains a row for any of this.
+    s.transaction(() => writeEmbeddings(s, KEY, 2, [{ ...cloud.find((r) => r.ref_id === statusSrc)!, vector: null, reason: "rejected" }]));
+    expect(s.get<any>("SELECT embedding_dim FROM recall_chunks WHERE kind='original' AND ref_id=?", statusSrc)).toEqual({ embedding_dim: -1 });
+    expect(countEmbedRows(s, KEY, ["project"])).toEqual({ total: 3, embedded: 1, pending: 0, withheld: 2 });
+    expect(s.all("SELECT key FROM settings WHERE key LIKE '%vector%' OR key LIKE '%generation%'")).toEqual([]);
   });
   it("an edit replaces the rows, so a write for the old row lands nowhere, and clearing empties every vector", () => {
     const { s, b } = setup();
@@ -985,9 +1018,9 @@ describe("pending rows and guarded writes", () => {
     const [fresh] = pendingEmbedRows(s, KEY, ["project"], 32);
     expect(fresh.ref_version).toBe(2);
     s.transaction(() => writeEmbeddings(s, KEY, 2, [{ ...fresh, vector: vec(1, 0) }]));
-    const g = vectorGeneration(s);
+    const g = vectorGeneration();
     expect(clearEmbeddings(s)).toBe(1);
-    expect(vectorGeneration(s)).toBeGreaterThan(g);
+    expect(vectorGeneration()).toBeGreaterThan(g);
     expect(s.get<any>("SELECT embedding, embedding_model, embedding_dim FROM recall_chunks WHERE id=?", fresh.id)).toEqual({ embedding: null, embedding_model: null, embedding_dim: null });
   });
 });
@@ -1016,18 +1049,19 @@ describe("VectorCache.search", () => {
     const hits = cache.search(s, q());
     expect(hits.map((h) => [h.ref_id, Number(h.score.toFixed(2))])).toEqual([[ids.a, 1], [ids.b, 0.6]]);
     expect(hits[0]).toMatchObject({ kind: "original", project_id: "inbox", visibility: "project", status: "current", ordinal: 0 });
-    expect(cache.search(s, q({ visibilities: ["project", "private"] })).map((h) => h.ref_id)).toEqual([ids.e, ids.a, ids.b]);
+    // Cosines: a = 1.00, e = 0.99, b = 0.60.
+    expect(cache.search(s, q({ visibilities: ["project", "private"] })).map((h) => h.ref_id)).toEqual([ids.a, ids.e, ids.b]);
     expect(cache.search(s, q({ projects: ["inbox", s.get<any>("SELECT project_id FROM sources WHERE id=?", ids.d)!.project_id] })).map((h) => h.ref_id)).toEqual([ids.a, ids.d, ids.b]);
     expect(cache.search(s, q({ floor: 0.0, limit: 2 })).map((h) => h.ref_id)).toEqual([ids.a, ids.b]);
     expect(cache.search(s, q({ key: OTHER }))).toEqual([]);
     expect(cache.search(s, q({ dim: 3, vector: vec(1, 0, 0) }))).toEqual([]);
     expect(cache.search(s, q({ projects: [] }))).toEqual([]);
   });
-  it("sees a write made after the matrix was cached, because every index write bumps the generation", () => {
+  it("sees a write made after the matrix was cached: own writes through the in-process generation, another connection's through data_version, with no settings row", () => {
     const { s, ids, byRef } = seeded();
     const cache = new VectorCache();
     expect(cache.search(s, q()).map((h) => h.ref_id)).toEqual([ids.a, ids.b]);
-    // Another process's write: a second Storage handle on the same file, with its own cache state.
+    // Another process's write: a second Storage handle (its own SQLite connection) on the same file, so this process's counter never moves.
     const again = new Storage(s.path);
     cleanup.push(() => again.close());
     again.transaction(() => writeEmbeddings(again, KEY, 4, [{ ...byRef(ids.c), vector: vec(1, 0, 0, 0) }]));
@@ -1036,6 +1070,7 @@ describe("VectorCache.search", () => {
     expect(cache.search(s, q()).map((h) => h.ref_id)).toEqual([ids.c, ids.b]);
     again.transaction(() => clearEmbeddings(again));
     expect(cache.search(s, q())).toEqual([]);
+    expect(s.all("SELECT key FROM settings WHERE key LIKE '%vector%' OR key LIKE '%generation%'")).toEqual([]);
   });
   it("scans 20,000 rows of 64 dims in under 150 ms once cached", () => {
     const { s } = setup();
@@ -1066,23 +1101,29 @@ describe("VectorCache.search", () => {
 ```ts
 import type { Storage } from "./index.ts";
 import type { RecallKind, RecallMatch, RecallRowStatus, RecallVisibility } from "./recall-index.ts";
-import { VECTOR_GENERATION, decodeVector, encodeVector, normalize } from "../domain/better-search.ts";
+import { decodeVector, encodeVector, normalize } from "../domain/better-search.ts";
 
 export type PendingRow = { id: number; kind: RecallKind; ref_id: string; ref_version: number; ordinal: number; text: string; prefix: string };
-export type VectorWrite = { id: number; kind: RecallKind; ref_id: string; ref_version: number; ordinal: number; vector: Float32Array | null };
+/** A `null` vector withholds the row: `"secret"` (never sent) keeps `embedding_dim` NULL, `"rejected"` (the provider refused it alone) stores -1. */
+export type VectorWrite = { id: number; kind: RecallKind; ref_id: string; ref_version: number; ordinal: number; vector: Float32Array | null; reason?: "secret" | "rejected" };
 export type VectorQuery = { vector: Float32Array; key: string; dim: number; projects: string[]; visibilities: RecallVisibility[]; status: RecallRowStatus | "any"; floor: number; limit: number };
 
 const marks = (n: number) => Array.from({ length: n }, () => "?").join(",");
 const ROW_COLUMNS = "id,kind,ref_id,ref_version,project_id,visibility,status,ordinal,start,end,text,prefix,recorded_at,boost,embedding_model";
 
-export function vectorGeneration(store: Storage): number {
-  return Number(store.setting<number>(VECTOR_GENERATION, 0));
+/**
+ * Cache invalidation writes nothing. Writes made through this process bump an in-process counter; writes made by another
+ * connection (the worker's vectors, seen from the server) move SQLite's `data_version`, which the cache reads before every scan.
+ * A database with Better search off therefore stays byte-identical to plan 5.
+ */
+let generation = 0;
+export function vectorGeneration(): number {
+  return generation;
 }
-
-/** Every index write bumps this, so a cache in another process sees the change on its next read. */
-export function bumpVectorGeneration(store: Storage) {
-  store.set(VECTOR_GENERATION, vectorGeneration(store) + 1);
+export function bumpVectorGeneration() {
+  generation += 1;
 }
+const dataVersion = (store: Storage) => Number(store.get<{ data_version: number }>("PRAGMA data_version")?.data_version ?? 0);
 
 /** Current rows the provider may see whose key is missing or differs. Withheld rows (model set, embedding NULL) are not pending. */
 export function pendingEmbedRows(store: Storage, key: string, visibilities: RecallVisibility[], limit: number): PendingRow[] {
@@ -1122,7 +1163,7 @@ export function writeEmbeddings(store: Storage, key: string, dim: number, rows: 
       "UPDATE recall_chunks SET embedding=?,embedding_model=?,embedding_dim=? WHERE id=? AND kind=? AND ref_id=? AND ref_version=? AND ordinal=? AND status='current'",
       r.vector ? encodeVector(normalize(r.vector)) : null,
       key,
-      r.vector ? dim : null,
+      r.vector ? dim : r.reason === "rejected" ? -1 : null,
       r.id,
       r.kind,
       r.ref_id,
@@ -1131,22 +1172,22 @@ export function writeEmbeddings(store: Storage, key: string, dim: number, rows: 
     );
     changed += Number(result.changes);
   }
-  if (changed) bumpVectorGeneration(store);
+  if (changed) bumpVectorGeneration();
   return changed;
 }
 
 export function clearEmbeddings(store: Storage): number {
   const changed = Number(store.run("UPDATE recall_chunks SET embedding=NULL,embedding_model=NULL,embedding_dim=NULL WHERE embedding IS NOT NULL OR embedding_model IS NOT NULL").changes);
-  bumpVectorGeneration(store);
+  bumpVectorGeneration();
   return changed;
 }
 
-type Entry = { generation: number; ids: number[]; matrix: Float32Array };
+type Entry = { generation: number; dataVersion: number; ids: number[]; matrix: Float32Array };
 
 /**
- * One contiguous Float32 matrix per (projects, visibilities, status, key, dim), rebuilt when the stored generation moves.
- * The scan is a dot product (vectors are unit length), then the top rows are re-read by id so a row that changed
- * since the matrix was built is dropped rather than served.
+ * One contiguous Float32 matrix per (projects, visibilities, status, key, dim), rebuilt when this process's generation
+ * or SQLite's data_version moved. The scan is a dot product (vectors are unit length), then the top rows are re-read by id
+ * so a row that changed since the matrix was built is dropped rather than served.
  */
 export class VectorCache {
   private readonly entries = new Map<string, Entry>();
@@ -1186,9 +1227,9 @@ export class VectorCache {
     const projects = [...q.projects].sort();
     const visibilities = [...q.visibilities].sort();
     const scope = JSON.stringify([projects, visibilities, q.status, q.key, q.dim]);
-    const generation = vectorGeneration(store);
+    const version = dataVersion(store);
     const cached = this.entries.get(scope);
-    if (cached && cached.generation === generation) return cached;
+    if (cached && cached.generation === generation && cached.dataVersion === version) return cached;
     const rows = store.all<{ id: number; embedding: Uint8Array }>(
       `SELECT id,embedding FROM recall_chunks WHERE project_id IN (${marks(projects.length)}) AND visibility IN (${marks(visibilities.length)})
        ${q.status === "any" ? "" : "AND status=?"} AND embedding_model=? AND embedding_dim=? AND embedding IS NOT NULL ORDER BY id`,
@@ -1204,7 +1245,7 @@ export class VectorCache {
       ids.push(r.id);
       matrix.set(decodeVector(r.embedding, q.dim), i * q.dim);
     });
-    const entry = { generation, ids, matrix };
+    const entry = { generation, dataVersion: version, ids, matrix };
     if (!this.entries.has(scope) && this.entries.size >= this.maxScopes) this.entries.delete(this.entries.keys().next().value!);
     this.entries.set(scope, entry);
     return entry;
@@ -1215,11 +1256,12 @@ export class VectorCache {
 - [ ] Modify `packages/storage/recall-index.ts`:
   - Add `import { bumpVectorGeneration } from "./recall-vectors.ts";` after line 3. (`recall-vectors.ts` imports only types from `recall-index.ts`, so there is no runtime cycle.)
   - In `RECALL_DDL` (line 37–55), after the `recall_chunks_scope` index line, add: `CREATE INDEX IF NOT EXISTS recall_chunks_embed ON recall_chunks(status, embedding_model);`
-  - `purgeRef` (line 237): after the two DELETEs add `bumpVectorGeneration(store);`.
+  - `purgeRef` (line 237): after the two DELETEs add `bumpVectorGeneration();`.
   - `replaceRows` (line 242): leave as is (it calls `purgeRef`, which bumps).
-  - `clearRecallIndex` (line 319): after the two DELETEs add `bumpVectorGeneration(store);`.
+  - `clearRecallIndex` (line 319): after the two DELETEs add `bumpVectorGeneration();`.
+  - `searchRecallChunks` (line 376): replace `SELECT c.*, bm25(...)` with `SELECT c.id,c.kind,c.ref_id,c.ref_version,c.project_id,c.visibility,c.status,c.ordinal,c.start,c.end,c.text,c.prefix,c.recorded_at,c.boost, bm25(recall_fts, 1.0, 0.5) AS score` so a BM25 candidate never carries its vector.
 
-- [ ] Run: `npx vitest run tests/integration/recall-vectors.test.ts tests/integration/recall-index.test.ts tests/eval/recall.test.ts` — expected: all pass (the index does not change any row shape; the eval latency gate stays under 300 ms).
+- [ ] Run: `npx vitest run tests/integration/recall-vectors.test.ts tests/integration/recall-index.test.ts tests/eval/recall.test.ts tests/integration/managed-decision-advisory-migration.test.ts tests/integration/managed-decision-advisory-migration-review.test.ts` — expected: all pass (no settings row is written by any index write; the eval latency gate stays under 300 ms).
 - [ ] Run: `npm run typecheck && npm run lint` — expected exit 0.
 - [ ] Commit: `git add packages/storage/recall-vectors.ts packages/storage/recall-index.ts tests/integration/recall-vectors.test.ts` with message:
 
@@ -1243,7 +1285,7 @@ Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>
 - Modify: `apps/worker/embed.ts` (append `EmbedDeps`, `EmbedJob`, `EmbedOutcome`, `EMBED_CHECK_MS`, `runEmbedBatch`, `maybeQueueEmbedBatch`)
 - Modify: `apps/worker/engine.ts` (constructor: sixth parameter `embed`; `schedule()` line 157: self-heal check after the heartbeat; `tick()`: an `embed_batch` branch right after the `system_one_route` branch that ends at line 279)
 - Modify: `apps/worker/main.ts` (local branch, after `publishSystemOneStatus` line 500: `embedFromEnv` + `publishBetterSearchStatus`; the `new Worker(` call at line 501 gains the sixth argument)
-- Modify: `packages/domain/service.ts` (imports at lines 14 and 52; a `queueEmbedIfOn()` call after `syncClaim` in `createEntity` line 482 and `revise` line 507, after `syncSource` in `capture` line 643 and after `syncClaimsCiting` in `editSourceTx` line 1123; new methods `betterSearchSetting`, `betterSearchAllowed`, `betterSearch`, `setBetterSearch`, `enqueueEmbedBatch`, `queueEmbedIfOn` after `setRecallHelp` line 1899; the two Settings job lists at lines 5052 and 5110 and `job()` line 5117 hide `embed_batch` and `recall_embed`)
+- Modify: `packages/domain/service.ts` (imports at lines 14 and 52; a `queueEmbedIfOn()` call after `syncClaim` in `createEntity` line 482 and `revise` line 507, after `syncSource` in `capture` line 643, after `syncClaimsCiting` in `editSourceTx` line 1123 and after the `syncSource` in `recordSystemOneResult` line 4567; new methods `betterSearchSetting`, `betterSearchAllowed`, `betterSearch`, `setBetterSearch`, `enqueueEmbedBatch`, `embedQueueOpen`, `queueEmbedIfOn` after `setRecallHelp` line 1899; the local Settings job list at line 5110 and `job()` line 5115–5117 hide `embed_batch` and `recall_embed`; the managed job list at line 5052 is not touched)
 - Test: `tests/integration/embed-batch.test.ts`
 - Existing tests to run (they read `status(owner).jobs` or construct `Worker`): `tests/integration/recall-judge.test.ts`, `tests/integration/system-one-worker.test.ts`, `tests/integration/brain.test.ts`, `tests/integration/operations.test.ts`.
 
@@ -1251,16 +1293,17 @@ Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>
 - Consumes: `pendingEmbedRows`, `writeEmbeddings`, `countEmbedRows`, `clearEmbeddings` (task 2); `prepareEmbed`, `EmbedError`, `PreparedEmbed`, `EmbedResult` (task 1); `DispatchAccounting` (`apps/worker/accounting.ts`); `DispatchSpec`, `JobLease`, `SpendLimits`, `DispatchRecord` (`packages/domain/spend.ts`); `detectSecrets`; `workerRunning`; `Brain.prefs/enqueue/ownerPrincipal/now/clock`.
 - Produces (`packages/domain/service.ts`):
   - `betterSearchSetting(): BetterSearchSetting` (shape-guarded read of `better_search`, default `BETTER_SEARCH_OFF`)
-  - `betterSearchAllowed(): { on: boolean; reason: string; setting: BetterSearchSetting; status: BetterSearchStatus | null }` (local brain only; `betterSearchEffective` plus, for Cloudflare, both caps above 0; the one rule the server's query lane and the worker's loops both read)
-  - `betterSearch(p: Principal): { mode; key; consented_at; status: { configured; provider; label; reason; key; last_error; last_ok_at } | null; effective: boolean; reason: string; worker_running: boolean; caps_ok: boolean; counts: { total; embedded; pending; withheld } }`
+  - `betterSearchAllowed(): { on: boolean; reason: string; setting: BetterSearchSetting; status: BetterSearchStatus | null }` (local brain only; `betterSearchEffective`, then the worker's circuit breaker (`status.paused_until` in the future gives `BETTER_SEARCH_PAUSED`), then for Cloudflare both caps above 0; the one rule the server's query lane and the worker's loops both read)
+  - `betterSearch(p: Principal): { mode; key; consented_at; status: { configured; provider; label; reason; key; last_error; last_ok_at } | null; effective: boolean; reason: string; worker_running: boolean; caps_ok: boolean; counts: { total; embedded; pending; withheld }; failures: number; retry_at: string | null; paused_until: string | null }`
   - `setBetterSearch(p: Principal, input: unknown): BetterSearchSetting` (`{ mode }`; off always accepted and clears vectors and queued batches; a provider needs the published setup for exactly that provider, a running worker and, for Cloudflare, both caps; any change of mode or key clears vectors; queues the first batch)
   - `enqueueEmbedBatch(): string | null` (one batch at a time; `null` when one is queued, waiting or running)
+  - `embedQueueOpen(): boolean` (`betterSearchAllowed().on` and the worker's `retry_at` has passed; the capture hooks, the self-heal check and `runEmbedBatch` all read it)
   - `private queueEmbedIfOn(): void`
 - Produces (`apps/worker/embed.ts`):
   - `export const EMBED_CHECK_MS = 5_000;`
-  - `export type EmbedDeps = { brain: Brain; ledger: DispatchAccounting; client: EmbedClient | null; owner: Principal; leaseOwner: string }; export type EmbedJob = { id: string; fence: number; attempts: number; max_attempts: number }; export type EmbedOutcome = { outcome: "embedded" | "nothing" | "cancelled" | "failed"; rows: number; more: boolean; error?: string }`
-  - `export async function runEmbedBatch(deps: EmbedDeps, job: EmbedJob, signal: AbortSignal): Promise<EmbedOutcome>`
-  - `export function maybeQueueEmbedBatch(brain: Brain): boolean`
+  - `export type EmbedDeps = { brain: Brain; ledger: DispatchAccounting; client: EmbedClient | null; owner: Principal; leaseOwner: string }; export type EmbedJob = { id: string; fence: number }; export type EmbedOutcome = { outcome: "embedded" | "nothing" | "cancelled" | "failed"; rows: number; more: boolean; error?: string }`
+  - `export async function runEmbedBatch(deps: EmbedDeps, job: EmbedJob, signal: AbortSignal): Promise<EmbedOutcome>` (a failed or unknown call records a failure on the status: `failures + 1`, `retry_at = now + min(60 s × 2^(failures−1), 15 min)`, and `paused_until = now + 15 min` from the third failure; a success resets all three; a batch refused with a 4xx is retried row by row under dispatch keys `embed_batch:<row id>` and a row refused alone is withheld as `"rejected"`)
+  - `export function maybeQueueEmbedBatch(brain: Brain): boolean` (false while `betterSearchAllowed()` is off, which includes the breaker, or `status.retry_at` is in the future)
 - Produces (`apps/worker/engine.ts`): `constructor(..., systemOne: SystemOneClient | null = null, private readonly embed: EmbedClient | null = null)`.
 
 **Steps:**
@@ -1276,8 +1319,9 @@ import { Storage } from "../../packages/storage/index.ts";
 import { Brain } from "../../packages/domain/service.ts";
 import { Worker } from "../../apps/worker/engine.ts";
 import { LocalDispatchAccounting } from "../../apps/worker/accounting.ts";
-import { maybeQueueEmbedBatch, publishBetterSearchStatus } from "../../apps/worker/embed.ts";
+import { maybeQueueEmbedBatch, publishBetterSearchStatus, type EmbedClient } from "../../apps/worker/embed.ts";
 import { embedFromEnv } from "../../packages/providers/embed-env.ts";
+import { DispatchLedger } from "../../packages/storage/spend.ts";
 import { EMBED_VISIBILITIES, modelKey, type EmbedProvider } from "../../packages/domain/better-search.ts";
 import { countEmbedRows, vectorGeneration } from "../../packages/storage/recall-vectors.ts";
 import { FAKE_EMBED_MODEL, fakeEmbedFetcher } from "../helpers/fake-embed.mjs";
@@ -1291,7 +1335,8 @@ afterEach(() => {
 });
 const KEY = ["sk", "test", "never", "a", "real", "key", "0123456789abcdef"].join("-");
 type Opts = { provider?: EmbedProvider; caps?: boolean; before?: (texts: string[]) => void | Promise<void> };
-/** A fixture brain on a movable clock, the published setup for `provider`, a recording fake fetcher and a worker that owns the batch job. */
+type Fake = { shape: EmbedProvider; status: number; delayMs?: number; reject?: (texts: string[]) => boolean; before?: Opts["before"] };
+/** A fixture brain on a movable clock, the published setup for `provider`, a recording fake fetcher (its options are read at call time) and a worker that owns the batch job. */
 function batched(opts: Opts = {}) {
   const provider = opts.provider ?? "ollama";
   const dir = mkdtempSync(join(tmpdir(), "embed-batch-"));
@@ -1307,16 +1352,22 @@ function batched(opts: Opts = {}) {
   publishBetterSearchStatus(brain, { configured: true, provider, model, key, label: env.label });
   brain.store.set("worker_heartbeat", brain.now());
   if (opts.caps !== false) brain.prefs(owner, { ...brain.prefs(owner), daily_cap_micro_usd: 50_000, per_job_cap_micro_usd: 5_000 });
-  const fake = { shape: provider, status: 200 as number, before: opts.before };
+  const fake: Fake = { shape: provider, status: 200, before: opts.before };
   const { fetcher, calls } = fakeEmbedFetcher(fake);
-  const worker = new Worker(brain, undefined, new LocalDispatchAccounting(fx.store, () => time.now), undefined, null, { config: env.config, fetcher });
+  const client: EmbedClient = { config: env.config, fetcher };
+  const worker = new Worker(brain, undefined, new LocalDispatchAccounting(fx.store, () => time.now), undefined, null, client);
   const drain = async () => {
     for (let i = 0; i < 200; i++) if (!(await worker.tick())) return;
     throw new Error("the worker never drained");
   };
+  /** Moves the brain's clock and keeps the worker "running" (its heartbeat is fresh for 30 s only). */
+  const advance = (ms: number) => {
+    time.now = new Date(time.now.getTime() + ms);
+    fx.store.set("worker_heartbeat", brain.now());
+  };
   const counts = () => countEmbedRows(fx.store, key, EMBED_VISIBILITIES[provider]);
   const jobs = (status?: string) => fx.store.all<{ id: string; status: string }>(`SELECT id,status FROM jobs WHERE kind='embed_batch'${status ? " AND status=?" : ""} ORDER BY created_at`, ...(status ? [status] : []));
-  return { fx, brain, store: fx.store, key, calls, fake, worker, drain, counts, jobs, time, provider };
+  return { fx, brain, store: fx.store, key, calls, fake, client, worker, drain, advance, counts, jobs, time, provider };
 }
 const note = (b: Brain, project: string, i: number) => b.capture(owner, { project_id: project, title: `Filler ${i}`, body: `Filler note number ${i} about routine matters.`, visibility: "project", separate: true });
 
@@ -1344,13 +1395,14 @@ describe("embed_batch", () => {
     expect(t.calls.n).toBe(n);
     expect(t.brain.betterSearch(owner)).toMatchObject({ mode: "ollama", effective: true, reason: "ready", counts: { pending: 0 } });
     // A new note queues one more batch and is embedded without touching the rest.
-    const g = vectorGeneration(t.store);
+    const g = vectorGeneration();
     note(t.brain, t.fx.ids["project:northstar"], 99);
     expect(t.jobs("queued")).toHaveLength(1);
     await t.drain();
     expect(t.calls.texts.at(-1)!.length).toBe(1);
     expect(t.counts().pending).toBe(0);
-    expect(vectorGeneration(t.store)).toBeGreaterThan(g);
+    expect(vectorGeneration()).toBeGreaterThan(g);
+    expect(t.store.all("SELECT key FROM settings WHERE key LIKE '%vector%' OR key LIKE '%generation%'")).toEqual([]);
   });
   it("Cloudflare never receives private, owner-only or quarantined text, pays through the ledger, and stops when the daily limit is gone", async () => {
     const t = batched({ provider: "cloudflare" });
@@ -1370,13 +1422,74 @@ describe("embed_batch", () => {
     // Quarantine sets visibility private, so the same filter covers it; the words stay searchable for the owner (task 5).
     t.brain.prefs(owner, { ...t.brain.prefs(owner), daily_cap_micro_usd: 0 });
     expect(() => t.brain.setBetterSearch(owner, { mode: "cloudflare" })).toThrow(/limit/);
-    expect(t.brain.betterSearch(owner)).toMatchObject({ effective: false, caps_ok: false });
+    expect(t.brain.betterSearch(owner)).toMatchObject({ mode: "cloudflare", effective: false, caps_ok: false });
+    // Nothing is queued while the limits are gone, neither by a capture nor by the self-heal check; the stored choice stays.
     note(t.brain, t.fx.ids["project:northstar"], 1);
+    expect(t.jobs("queued")).toEqual([]);
+    expect(maybeQueueEmbedBatch(t.brain)).toBe(false);
     const n = t.calls.n;
     await t.drain();
     expect(t.calls.n).toBe(n);
-    expect(t.jobs().at(-1)!.status).toBe("cancelled");
     expect(t.brain.betterSearch(owner).reason).toMatch(/limit/);
+  });
+  it("Cloudflare: an error response settles its hold at 0, a timeout after send keeps it, and an outage never eats the daily limit", async () => {
+    const t = batched({ provider: "cloudflare" });
+    t.brain.setBetterSearch(owner, { mode: "cloudflare" });
+    t.fake.status = 503;
+    await t.drain();
+    expect(t.calls.n).toBe(1);
+    expect(t.store.all<any>("SELECT state,actual_micro_usd FROM provider_dispatches")).toEqual([{ state: "settled", actual_micro_usd: 0 }]);
+    expect(t.jobs().at(-1)!.status).toBe("failed");
+    expect(t.brain.betterSearch(owner)).toMatchObject({ failures: 1, effective: true });
+    // Nothing more is sent while the back-off runs, however often the check runs or notes are captured.
+    for (let i = 0; i < 5; i++) {
+      note(t.brain, t.fx.ids["project:northstar"], i);
+      expect(maybeQueueEmbedBatch(t.brain)).toBe(false);
+      await t.drain();
+    }
+    expect(t.calls.n).toBe(1);
+    // A timeout after the request went out: the cost is unknown, the hold stays, and it counts toward the breaker.
+    t.advance(61_000);
+    t.fake.status = 200;
+    t.fake.delayMs = 300;
+    t.client.config.timeout_ms = 50;
+    expect(maybeQueueEmbedBatch(t.brain)).toBe(true);
+    await t.drain();
+    expect(t.calls.n).toBe(2);
+    expect(t.store.all<any>("SELECT state FROM provider_dispatches ORDER BY created_at").map((r) => r.state)).toEqual(["settled", "dispatched"]);
+    expect(t.brain.betterSearch(owner)).toMatchObject({ failures: 2 });
+    expect(t.brain.betterSearch(owner).status!.last_error).toMatch(/did not answer in time/);
+    const prefs = t.brain.prefs(owner);
+    const summary = new DispatchLedger(t.store, () => t.time.now).summary({ per_job_micro_usd: prefs.per_job_cap_micro_usd, daily_micro_usd: prefs.daily_cap_micro_usd, time_zone: prefs.time_zone });
+    expect(summary.unresolved_micro_usd).toBeGreaterThan(0);
+    expect(summary.unresolved_micro_usd).toBeLessThan(prefs.per_job_cap_micro_usd);
+  });
+  it("a passage the service refuses is retried alone, withheld as rejected, and never blocks the rest", async () => {
+    const t = batched({ provider: "cloudflare" });
+    const id = t.fx.ids["src:palette-review"];
+    t.store.run("UPDATE recall_chunks SET text=? WHERE kind='original' AND ref_id=? AND ordinal=0", "POISON_ROW the palettes were reviewed", id);
+    t.fake.reject = (texts) => texts.some((x) => x.includes("POISON_ROW"));
+    t.brain.setBetterSearch(owner, { mode: "cloudflare" });
+    await t.drain();
+    const first = t.calls.texts[0].length;
+    expect(first).toBeGreaterThan(1);
+    // One refused batch, then that batch's rows one by one, then the remaining batches.
+    expect(t.calls.n).toBeGreaterThanOrEqual(1 + first);
+    expect(t.calls.texts.slice(1, 1 + first).every((x) => x.length === 1)).toBe(true);
+    expect(t.store.get<any>("SELECT embedding, embedding_model, embedding_dim FROM recall_chunks WHERE kind='original' AND ref_id=? AND ordinal=0", id)).toEqual({ embedding: null, embedding_model: t.key, embedding_dim: -1 });
+    expect(t.counts()).toMatchObject({ pending: 0, withheld: 1 });
+    expect(t.jobs().every((j) => j.status === "succeeded")).toBe(true);
+    expect(t.brain.betterSearch(owner)).toMatchObject({ failures: 0, effective: true });
+    expect(t.brain.betterSearch(owner).status!.last_error).toMatch(/refused/);
+    const rows = t.store.all<any>("SELECT dispatch_key,state,actual_micro_usd FROM provider_dispatches");
+    expect(rows.filter((r) => r.dispatch_key === "embed_batch" && r.actual_micro_usd === 0).length).toBeGreaterThanOrEqual(1);
+    expect(rows.filter((r) => r.dispatch_key.startsWith("embed_batch:")).length).toBe(first);
+    expect(rows.every((r) => r.state === "settled")).toBe(true);
+    // Its text changes with the next edit, so it is embedded then.
+    t.brain.editSource(owner, id, { title: "Palette review", body: "Marco reviewed three palettes again.", expected_version: 1 });
+    t.fake.reject = undefined;
+    await t.drain();
+    expect(t.counts()).toMatchObject({ pending: 0, withheld: 0 });
   });
   it("a vector never lands on a row that changed while the provider call was out, and a lost fence writes nothing", async () => {
     const t = batched({
@@ -1387,7 +1500,8 @@ describe("embed_batch", () => {
       },
     });
     t.brain.setBetterSearch(owner, { mode: "ollama" });
-    expect(await t.worker.tick()).toBe(true);
+    // The fixture leaves derive_brief jobs ahead of the batch in the queue: tick until the provider has been called once.
+    while (t.calls.n < 1) expect(await t.worker.tick()).toBe(true);
     const id = t.fx.ids["src:launch-notes"];
     expect(Number(t.store.get("SELECT count(*) AS n FROM recall_chunks WHERE ref_id=? AND embedding IS NOT NULL", id)!.n)).toBe(0);
     expect(t.store.all<any>("SELECT ref_version FROM recall_chunks WHERE ref_id=?", id).every((r) => r.ref_version === 2)).toBe(true);
@@ -1398,7 +1512,8 @@ describe("embed_batch", () => {
     // Fence: the attempt is superseded during the call; its vectors are discarded, nothing is written.
     const u = batched({ before: () => { u.store.run("UPDATE jobs SET fence=fence+1 WHERE kind='embed_batch' AND status='running'"); } });
     u.brain.setBetterSearch(owner, { mode: "ollama" });
-    await u.worker.tick();
+    while (u.calls.n < 1) expect(await u.worker.tick()).toBe(true);
+    expect(u.calls.n).toBe(1);
     expect(u.counts().embedded).toBe(0);
   });
   it("turning it off clears every vector and queued batch; choosing again queues a fresh backfill; a changed model is a fresh choice", async () => {
@@ -1408,11 +1523,11 @@ describe("embed_batch", () => {
     expect(t.counts().embedded).toBeGreaterThan(0);
     note(t.brain, t.fx.ids["project:northstar"], 1);
     expect(t.jobs("queued")).toHaveLength(1);
-    const g = vectorGeneration(t.store);
+    const g = vectorGeneration();
     expect(t.brain.setBetterSearch(owner, { mode: "off" })).toEqual({ mode: "off", key: null, consented_at: null });
     expect(t.counts().embedded).toBe(0);
     expect(t.jobs("queued")).toEqual([]);
-    expect(vectorGeneration(t.store)).toBeGreaterThan(g);
+    expect(vectorGeneration()).toBeGreaterThan(g);
     expect(t.brain.betterSearch(owner)).toMatchObject({ mode: "off", effective: false, reason: "Better search is off." });
     const n = t.calls.n;
     await t.drain();
@@ -1421,10 +1536,11 @@ describe("embed_batch", () => {
     expect(t.jobs("queued")).toHaveLength(1);
     expect(t.brain.betterSearch(owner).counts.pending).toBeGreaterThan(0);
     await t.drain();
-    // The worker now publishes another model: the stored choice no longer applies, and nothing runs until the owner chooses again.
+    // The worker now publishes another model: the stored choice no longer applies, and nothing is queued or run until the owner chooses again.
     publishBetterSearchStatus(t.brain, { configured: true, provider: "ollama", model: "other", key: modelKey("ollama", "other"), label: "Ollama on this computer" });
     expect(t.brain.betterSearch(owner)).toMatchObject({ effective: false, reason: "The search model changed. Choose Better search again." });
     note(t.brain, t.fx.ids["project:northstar"], 2);
+    expect(t.jobs("queued")).toEqual([]);
     const m = t.calls.n;
     await t.drain();
     expect(t.calls.n).toBe(m);
@@ -1441,7 +1557,7 @@ describe("embed_batch", () => {
     expect(t.counts()).toMatchObject({ pending: 0, withheld: 1 });
     expect(t.counts().embedded).toBeGreaterThan(0);
   });
-  it("the self-heal check queues a batch after a rebuild and backs off for a minute after a failure", async () => {
+  it("the self-heal check queues a batch after a rebuild; failures back off 60 s then 120 s, the third pauses everything for 15 minutes, a success resets", async () => {
     const t = batched();
     t.brain.setBetterSearch(owner, { mode: "ollama" });
     await t.drain();
@@ -1452,21 +1568,41 @@ describe("embed_batch", () => {
     expect(maybeQueueEmbedBatch(t.brain)).toBe(false);
     await t.drain();
     expect(t.counts().pending).toBe(0);
+    // An outage: each failed batch ends at once (no attempt loop), the next waits for the back-off, the third opens the breaker.
     t.fake.status = 503;
     t.store.rebuildRecallIndex();
     expect(maybeQueueEmbedBatch(t.brain)).toBe(true);
-    for (let i = 0; i < 4; i++) {
-      await t.drain();
-      t.time.now = new Date(t.time.now.getTime() + 10_000);
-    }
+    await t.drain();
     expect(t.jobs().at(-1)!.status).toBe("failed");
+    expect(t.calls.n).toBeGreaterThan(0);
+    const afterFirst = t.calls.n;
+    expect(t.brain.betterSearch(owner)).toMatchObject({ failures: 1, effective: true, paused_until: null });
     expect(t.brain.betterSearch(owner).status!.last_error).toMatch(/503/);
     expect(maybeQueueEmbedBatch(t.brain)).toBe(false);
-    t.time.now = new Date(t.time.now.getTime() + 61_000);
+    t.advance(59_000);
+    expect(maybeQueueEmbedBatch(t.brain)).toBe(false);
+    t.advance(2_000);
+    expect(maybeQueueEmbedBatch(t.brain)).toBe(true);
+    await t.drain();
+    expect(t.calls.n).toBe(afterFirst + 1);
+    expect(t.brain.betterSearch(owner).failures).toBe(2);
+    t.advance(61_000);
+    expect(maybeQueueEmbedBatch(t.brain)).toBe(false);
+    t.advance(60_000);
+    expect(maybeQueueEmbedBatch(t.brain)).toBe(true);
+    await t.drain();
+    const paused = t.brain.betterSearch(owner);
+    expect(paused).toMatchObject({ failures: 3, effective: false, reason: "Better search paused: the service is not answering." });
+    expect(paused.paused_until).not.toBeNull();
+    expect(await t.brain.queryVector(owner, "launch colour")).toBeNull();
+    t.advance(5 * 60_000);
+    expect(maybeQueueEmbedBatch(t.brain)).toBe(false);
+    t.advance(11 * 60_000);
     t.fake.status = 200;
     expect(maybeQueueEmbedBatch(t.brain)).toBe(true);
     await t.drain();
     expect(t.counts().pending).toBe(0);
+    expect(t.brain.betterSearch(owner)).toMatchObject({ failures: 0, effective: true, retry_at: null, paused_until: null });
   });
   it("the choice is owner-only, outside the preferences, refused without the worker's matching setup, and its jobs stay out of the Settings job list", () => {
     const dir = mkdtempSync(join(tmpdir(), "better-search-consent-"));
@@ -1505,17 +1641,20 @@ describe("embed_batch", () => {
 ```ts
 import { detectSecrets } from "../../packages/storage/secrets.ts";
 import { BrainError } from "../../packages/domain/logic.ts";
+import { AccountingPersistenceError } from "../../packages/storage/managed-spending.ts";
 import type { Principal } from "../../packages/contracts/index.ts";
 import type { DispatchRecord, DispatchSpec, JobLease, SpendLimits } from "../../packages/domain/spend.ts";
-import { EMBED_BATCH_SIZE, EMBED_CALL_MS, EMBED_RETRY_AFTER_MS, EMBED_VISIBILITIES, embedText, modelKey } from "../../packages/domain/better-search.ts";
-import { pendingEmbedRows, writeEmbeddings } from "../../packages/storage/recall-vectors.ts";
+import { BETTER_SEARCH_STATUS, EMBED_BACKOFF_MAX_MS, EMBED_BATCH_SIZE, EMBED_BREAKER_FAILURES, EMBED_CALL_MS, EMBED_PAUSE_MS, EMBED_RETRY_AFTER_MS, EMBED_VISIBILITIES, embedText, modelKey, type BetterSearchStatus } from "../../packages/domain/better-search.ts";
+import { pendingEmbedRows, writeEmbeddings, type VectorWrite } from "../../packages/storage/recall-vectors.ts";
 import { EmbedError, prepareEmbed, type EmbedResult, type PreparedEmbed } from "../../packages/providers/embed.ts";
 import type { DispatchAccounting } from "./accounting.ts";
 
 export const EMBED_CHECK_MS = 5_000;
 export type EmbedDeps = { brain: Brain; ledger: DispatchAccounting; client: EmbedClient | null; owner: Principal; leaseOwner: string };
-export type EmbedJob = { id: string; fence: number; attempts: number; max_attempts: number };
+export type EmbedJob = { id: string; fence: number };
 export type EmbedOutcome = { outcome: "embedded" | "nothing" | "cancelled" | "failed"; rows: number; more: boolean; error?: string };
+/** One provider call and its money. `refused` is a ledger refusal (no call, nothing to back off from); `rejected` is a 4xx (the input was refused). */
+type CallOutcome = { ok: true; result: EmbedResult } | { ok: false; error: Error; rejected: boolean; refused: boolean };
 
 /** The persisted lease, never the in-memory row; null once this attempt is no longer current. */
 function currentLease(brain: Brain, job: { id: string; fence: number }, owner: string): JobLease | null {
@@ -1525,55 +1664,29 @@ function currentLease(brain: Brain, job: { id: string; fence: number }, owner: s
 }
 
 /**
- * One batch end to end: up to 32 pending rows the provider may see, secret-shaped rows withheld, ONE provider call
- * outside any transaction (Cloudflare: reserve, mark, call, settle), then a fenced, guarded write. Every refusal is a
- * plain sentence on the published status; the engine decides retry or failure from the outcome.
+ * ONE provider call outside any transaction. Ollama is free; Cloudflare goes reserve, mark, call, settle under `dispatchKey`.
+ * An error response with no usage settles at 0 (nothing was billed); a timeout after send keeps its hold, so a request that may
+ * have gone out is never refunded.
  */
-export async function runEmbedBatch(deps: EmbedDeps, job: EmbedJob, signal: AbortSignal): Promise<EmbedOutcome> {
-  const { brain, ledger, client, owner } = deps;
-  const done = (outcome: EmbedOutcome["outcome"], rows = 0, more = false, error?: string): EmbedOutcome => ({ outcome, rows, more, ...(error ? { error } : {}) });
-  if (!client) return done("cancelled", 0, false, "Better search is not set up on this computer.");
-  const allowed = brain.betterSearchAllowed();
-  if (!allowed.on) {
-    noteEmbedStatus(brain, { last_error: allowed.reason });
-    return done("cancelled", 0, false, allowed.reason);
-  }
+async function callProvider(deps: EmbedDeps, job: EmbedJob, client: EmbedClient, texts: string[], dispatchKey: string, signal: AbortSignal): Promise<CallOutcome> {
+  const { brain, ledger, owner } = deps;
   const { config } = client;
-  const key = modelKey(config.provider, config.model);
-  if (key !== allowed.setting.key) return done("cancelled", 0, false, "The search model changed. Choose Better search again.");
-  const visibilities = EMBED_VISIBILITIES[config.provider];
-  const rows = pendingEmbedRows(brain.store, key, visibilities, EMBED_BATCH_SIZE);
-  if (!rows.length) return done("nothing");
-  const texts = rows.map((r) => embedText(r.prefix, r.text));
-  const send = rows.map((_, i) => i).filter((i) => detectSecrets(texts[i]).length === 0);
-  const more = () => pendingEmbedRows(brain.store, key, visibilities, 1).length > 0;
-  // Written only while this attempt still holds its lease and the owner still wants it; otherwise the vectors are dropped and recomputed later.
-  const write = (vectors: (Float32Array | null)[], dim: number) =>
-    brain.store.transaction(() => {
-      if (!currentLease(brain, job, deps.leaseOwner) || !brain.betterSearchAllowed().on) return 0;
-      return writeEmbeddings(brain.store, key, dim, rows.map((r, i) => ({ ...r, vector: vectors[i] })));
-    });
-  if (!send.length) {
-    const n = write(rows.map(() => null), 0);
-    return done(n ? "embedded" : "cancelled", n, more());
-  }
+  const failed = (error: Error, rejected = false, refused = false): CallOutcome => ({ ok: false, error, rejected, refused });
   let prepared: PreparedEmbed;
   try {
-    prepared = prepareEmbed(config, send.map((i) => texts[i]), client.fetcher);
+    prepared = prepareEmbed(config, texts, client.fetcher);
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Better search could not prepare a batch.";
-    noteEmbedStatus(brain, { last_error: message });
-    return done("failed", 0, false, message);
+    return failed(error instanceof Error ? error : new Error("Better search could not prepare a batch."));
   }
   let record: DispatchRecord | undefined;
   if (config.provider === "cloudflare") {
     const prefs = brain.prefs(owner);
     const limits: SpendLimits = { per_job_micro_usd: prefs.per_job_cap_micro_usd, daily_micro_usd: prefs.daily_cap_micro_usd, time_zone: prefs.time_zone };
     const lease = currentLease(brain, job, deps.leaseOwner);
-    if (!lease) return done("cancelled");
+    if (!lease) return failed(new Error("This attempt is no longer current."), false, true);
     const spec: DispatchSpec = {
       job_id: job.id,
-      dispatch_key: "embed_batch",
+      dispatch_key: dispatchKey,
       stage: "decision",
       reserved_micro_usd: prepared.reserved_micro_usd,
       provider: "cloudflare",
@@ -1586,15 +1699,13 @@ export async function runEmbedBatch(deps: EmbedDeps, job: EmbedJob, signal: Abor
     try {
       reserved = ledger.reserve(spec, lease, limits);
     } catch (error) {
-      const message = error instanceof BrainError ? `Better search with Cloudflare is paused: ${error.message}` : "Better search could not reserve its spending.";
-      noteEmbedStatus(brain, { last_error: message });
-      return done("cancelled", 0, false, message);
+      return failed(new Error(error instanceof BrainError ? `Better search with Cloudflare is paused: ${error.message}` : "Better search could not reserve its spending."), false, true);
     }
-    if (reserved.state !== "reserved") return done("cancelled", 0, false, "A batch for this job was already sent.");
+    if (reserved.state !== "reserved") return failed(new Error("This batch was already sent."), false, true);
     // Consent or caps may have changed while the reserve waited on the lock: refuse before the mark, so the hold is released.
     if (signal.aborted || !brain.betterSearchAllowed().on) {
       ledger.releaseUndispatched(reserved.call_id);
-      return done("cancelled");
+      return failed(new Error("Better search was changed while this batch was being prepared."), false, true);
     }
     try {
       ledger.markDispatched(reserved.call_id, lease);
@@ -1613,41 +1724,133 @@ export async function runEmbedBatch(deps: EmbedDeps, job: EmbedJob, signal: Abor
   const onAbort = () => controller.abort();
   signal.addEventListener("abort", onAbort, { once: true });
   const timer = setTimeout(() => controller.abort(), EMBED_CALL_MS);
-  let result: EmbedResult;
   try {
-    // The one provider call, outside any transaction.
-    result = await prepared.execute(controller.signal);
+    const result = await prepared.execute(controller.signal);
+    if (record) ledger.settle(record.call_id, result.cost_micro_usd);
+    return { ok: true, result };
   } catch (error) {
-    // A known cost is settled; an unknown one keeps its hold, so a request that may have gone out is never refunded.
+    // A known cost (0 for an error response) is settled; an unknown one keeps its hold.
     if (record && error instanceof EmbedError && error.actual_cost_micro_usd !== undefined) ledger.settle(record.call_id, error.actual_cost_micro_usd);
-    const message = error instanceof Error ? error.message : "The search model request failed.";
-    noteEmbedStatus(brain, { last_error: message });
-    return done("failed", 0, false, message);
+    const rejected = error instanceof EmbedError && error.upstream_status !== undefined && error.upstream_status >= 400 && error.upstream_status < 500;
+    return failed(error instanceof Error ? error : new Error("The search model request failed."), rejected);
   } finally {
     clearTimeout(timer);
     signal.removeEventListener("abort", onAbort);
   }
-  if (record) ledger.settle(record.call_id, result.cost_micro_usd);
-  const vectors: (Float32Array | null)[] = rows.map(() => null);
-  send.forEach((rowIndex, k) => {
-    vectors[rowIndex] = result.vectors[k];
-  });
-  const written = write(vectors, result.dim);
-  if (!written) return done("cancelled", 0, more());
-  noteEmbedStatus(brain, { last_ok_at: brain.now(), last_error: undefined });
-  return done("embedded", written, more());
 }
 
-/** The engine's 5-second self-heal: rows without a current vector (after a rebuild, an import or a crash) get a batch, unless one is active or the last one failed less than a minute ago. */
-export function maybeQueueEmbedBatch(brain: Brain): boolean {
+/** A failed or unknown batch: exponential back-off (60 s doubling to 15 min); the third in a row opens the breaker for 15 min. */
+function recordFailure(brain: Brain, message: string) {
+  const current = brain.store.setting<BetterSearchStatus | null>(BETTER_SEARCH_STATUS, null);
+  const failures = (current?.failures ?? 0) + 1;
+  const now = brain.clock().getTime();
+  const wait = Math.min(EMBED_RETRY_AFTER_MS * 2 ** (failures - 1), EMBED_BACKOFF_MAX_MS);
+  noteEmbedStatus(brain, {
+    last_error: message,
+    failures,
+    retry_at: new Date(now + wait).toISOString(),
+    paused_until: failures >= EMBED_BREAKER_FAILURES ? new Date(now + EMBED_PAUSE_MS).toISOString() : undefined,
+  });
+}
+
+/**
+ * One batch end to end: up to 32 pending rows the provider may see, secret-shaped rows withheld, one call (a batch the
+ * service refuses with a 4xx is retried row by row, and a row refused alone is withheld as rejected), then a fenced,
+ * guarded write. A failed or unknown call records a failure (back-off, breaker); the job itself is never retried, because a
+ * Cloudflare job cannot be re-sent under the same dispatch key. Every refusal is a plain sentence on the published status.
+ */
+export async function runEmbedBatch(deps: EmbedDeps, job: EmbedJob, signal: AbortSignal): Promise<EmbedOutcome> {
+  const { brain, client } = deps;
+  const done = (outcome: EmbedOutcome["outcome"], rows = 0, more = false, error?: string): EmbedOutcome => ({ outcome, rows, more, ...(error ? { error } : {}) });
+  const fail = (message: string): EmbedOutcome => {
+    recordFailure(brain, message);
+    return done("failed", 0, false, message);
+  };
+  if (!client) return done("cancelled", 0, false, "Better search is not set up on this computer.");
   const allowed = brain.betterSearchAllowed();
-  if (!allowed.on || !allowed.setting.key || allowed.setting.mode === "off") return false;
-  const lastFailed = brain.store.get<{ created_at: string }>("SELECT created_at FROM jobs WHERE kind='embed_batch' AND status='failed' ORDER BY created_at DESC, rowid DESC LIMIT 1");
-  if (lastFailed && brain.clock().getTime() - Date.parse(lastFailed.created_at) < EMBED_RETRY_AFTER_MS) return false;
-  if (!pendingEmbedRows(brain.store, allowed.setting.key, EMBED_VISIBILITIES[allowed.setting.mode], 1).length) return false;
+  if (!allowed.on) {
+    noteEmbedStatus(brain, { last_error: allowed.reason });
+    return done("cancelled", 0, false, allowed.reason);
+  }
+  // A batch queued before a failure still waits for the back-off: no call until retry_at has passed.
+  if (!brain.embedQueueOpen()) return done("cancelled", 0, false, "Better search is waiting before it tries again.");
+  const { config } = client;
+  const key = modelKey(config.provider, config.model);
+  if (key !== allowed.setting.key) return done("cancelled", 0, false, "The search model changed. Choose Better search again.");
+  const visibilities = EMBED_VISIBILITIES[config.provider];
+  const rows = pendingEmbedRows(brain.store, key, visibilities, EMBED_BATCH_SIZE);
+  if (!rows.length) return done("nothing");
+  const texts = rows.map((r) => embedText(r.prefix, r.text));
+  const send = rows.map((_, i) => i).filter((i) => detectSecrets(texts[i]).length === 0);
+  const more = () => pendingEmbedRows(brain.store, key, visibilities, 1).length > 0;
+  const vectors: (Float32Array | null)[] = rows.map(() => null);
+  const reasons: VectorWrite["reason"][] = rows.map((_, i) => (send.includes(i) ? undefined : "secret"));
+  // Written only while this attempt still holds its lease and the owner still wants it; otherwise the vectors are dropped and recomputed later.
+  const write = (dim: number) =>
+    brain.store.transaction(() => {
+      if (!currentLease(brain, job, deps.leaseOwner) || !brain.betterSearchAllowed().on) return 0;
+      return writeEmbeddings(brain.store, key, dim, rows.map((r, i) => ({ ...r, vector: vectors[i], reason: reasons[i] })));
+    });
+  let dim = 0;
+  let rejectedCount = 0;
+  try {
+    if (send.length) {
+      const batch = await callProvider(deps, job, client, send.map((i) => texts[i]), "embed_batch", signal);
+      if (batch.ok) {
+        dim = batch.result.dim;
+        send.forEach((rowIndex, k) => {
+          vectors[rowIndex] = batch.result.vectors[k];
+        });
+      } else if (batch.refused) {
+        noteEmbedStatus(brain, { last_error: batch.error.message });
+        return done("cancelled", 0, false, batch.error.message);
+      } else if (batch.rejected && send.length > 1) {
+        // The service refused the batch: one text may be the cause. Each row goes alone under its own dispatch key; a row refused alone is withheld.
+        for (const i of send) {
+          const one = await callProvider(deps, job, client, [texts[i]], `embed_batch:${rows[i].id}`, signal);
+          if (one.ok) {
+            dim = one.result.dim;
+            vectors[i] = one.result.vectors[0];
+          } else if (one.rejected) {
+            reasons[i] = "rejected";
+            rejectedCount += 1;
+          } else if (one.refused) {
+            noteEmbedStatus(brain, { last_error: one.error.message });
+            return done("cancelled", 0, false, one.error.message);
+          } else return fail(one.error.message);
+        }
+      } else if (batch.rejected) {
+        reasons[send[0]] = "rejected";
+        rejectedCount += 1;
+      } else return fail(batch.error.message);
+    }
+    const written = write(dim);
+    if (!written) return done("cancelled", 0, more());
+    noteEmbedStatus(brain, {
+      last_ok_at: brain.now(),
+      last_error: rejectedCount ? `${rejectedCount} ${rejectedCount === 1 ? "passage was" : "passages were"} refused by the search service and will be skipped until it changes.` : undefined,
+      failures: 0,
+      retry_at: undefined,
+      paused_until: undefined,
+    });
+    return done("embedded", written, more());
+  } catch (error) {
+    // A ledger or storage fault is a failure like any other; a persistence fault of the money journal is fatal and surfaces to the engine.
+    if (error instanceof AccountingPersistenceError) throw error;
+    return fail(error instanceof Error ? error.message : "Better search failed.");
+  }
+}
+
+/** The engine's 5-second self-heal: rows without a current vector (after a rebuild, an import or a crash) get a batch, unless one is active, the back-off is running or the breaker is open. */
+export function maybeQueueEmbedBatch(brain: Brain): boolean {
+  if (!brain.embedQueueOpen()) return false;
+  const { setting } = brain.betterSearchAllowed();
+  if (!setting.key || setting.mode === "off") return false;
+  if (!pendingEmbedRows(brain.store, setting.key, EMBED_VISIBILITIES[setting.mode], 1).length) return false;
   return brain.enqueueEmbedBatch() !== null;
 }
 ```
+  Imports for this block (replace the import list given above the code): `detectSecrets`, `BrainError`, `AccountingPersistenceError` (`../../packages/storage/managed-spending.ts`, an import only, no managed source is edited), `Principal`, `DispatchRecord, DispatchSpec, JobLease, SpendLimits`, `BETTER_SEARCH_STATUS, EMBED_BACKOFF_MAX_MS, EMBED_BATCH_SIZE, EMBED_BREAKER_FAILURES, EMBED_CALL_MS, EMBED_PAUSE_MS, EMBED_RETRY_AFTER_MS, EMBED_VISIBILITIES, embedText, modelKey, type BetterSearchStatus` (from `better-search.ts`; `EMBED_BACKOFF_MAX_MS = 900_000`, `EMBED_BREAKER_FAILURES = 3` and `EMBED_PAUSE_MS = 900_000` are added to task 1's constants in the same task), `pendingEmbedRows, writeEmbeddings, type VectorWrite`, `EmbedError, prepareEmbed, type EmbedResult, type PreparedEmbed`, `DispatchAccounting`.
 
 - [ ] Modify `apps/worker/engine.ts`:
   - Imports: `import { EMBED_CHECK_MS, maybeQueueEmbedBatch, runEmbedBatch, type EmbedClient } from "./embed.ts";`
@@ -1666,15 +1869,14 @@ export function maybeQueueEmbedBatch(brain: Brain): boolean {
     ```
   - `tick()` right after the `system_one_route` branch (`return true;` at line 278, closing brace at 279) and before `const prefs = b.prefs(this.owner);` add:
     ```ts
-    // Better search indexing: its own outcome handling, no receipt, no retry beyond max_attempts.
+    // Better search indexing: its own outcome handling, no receipt. The job is never retried here: retries are the
+    // worker's back-off plus the self-heal check, and a Cloudflare job cannot be re-sent under the same dispatch key.
     if (j.kind === "embed_batch") {
-      const r = await runEmbedBatch({ brain: b, ledger: this.accounting, client: this.embed, owner: this.owner, leaseOwner: this.id }, j as { id: string; fence: number; attempts: number; max_attempts: number }, controller.signal);
-      const retry = r.outcome === "failed" && j.attempts < j.max_attempts;
+      const r = await runEmbedBatch({ brain: b, ledger: this.accounting, client: this.embed, owner: this.owner, leaseOwner: this.id }, j as { id: string; fence: number }, controller.signal);
       b.store.run(
-        "UPDATE jobs SET status=?,error=?,next_at=?,lease_until=NULL WHERE id=? AND fence=?",
-        r.outcome === "failed" ? (retry ? "retry_wait" : "failed") : r.outcome === "cancelled" ? "cancelled" : "succeeded",
+        "UPDATE jobs SET status=?,error=?,lease_until=NULL WHERE id=? AND fence=?",
+        r.outcome === "failed" ? "failed" : r.outcome === "cancelled" ? "cancelled" : "succeeded",
         r.error ?? null,
-        new Date(b.clock().getTime() + 1000 * 2 ** j.attempts).toISOString(),
         j.id,
         j.fence,
       );
@@ -1682,7 +1884,7 @@ export function maybeQueueEmbedBatch(brain: Brain): boolean {
       return true;
     }
     ```
-    `tick()` reports work even when the batch was cancelled; the loop sleeps only on a false. `jobs.max_attempts` is in the leased row (`SELECT *`).
+    `runEmbedBatch` catches its own faults (only `AccountingPersistenceError` escapes, which the engine's existing catch re-throws), so an indexing job never writes a failed receipt into Today. `tick()` reports work even when the batch was cancelled; the loop sleeps only on a false.
 
 - [ ] Modify `apps/worker/main.ts` (local branch): add imports `import { embedFromEnv } from "../../packages/providers/embed-env.ts";` and `import { publishBetterSearchStatus } from "./embed.ts";`. After the `publishSystemOneStatus(...)` call (lines 495–500) add:
   ```ts
@@ -1696,7 +1898,7 @@ export function maybeQueueEmbedBatch(brain: Brain): boolean {
   and pass the sixth argument: `new Worker(brain, undefined, undefined, undefined, sorting.config ? { config: sorting.config } : null, embed.config ? { config: embed.config } : null)`.
 
 - [ ] Modify `packages/domain/service.ts`:
-  - After line 14 add `import { clearEmbeddings, countEmbedRows } from "../storage/recall-vectors.ts";` and after line 52 add `import { BETTER_SEARCH, BETTER_SEARCH_OFF, BETTER_SEARCH_STATUS, EMBED_VISIBILITIES, betterSearchEffective, type BetterSearchSetting, type BetterSearchStatus } from "./better-search.ts";`.
+  - After line 14 add `import { clearEmbeddings, countEmbedRows } from "../storage/recall-vectors.ts";` and after line 52 add `import { BETTER_SEARCH, BETTER_SEARCH_OFF, BETTER_SEARCH_PAUSED, BETTER_SEARCH_STATUS, EMBED_VISIBILITIES, betterSearchEffective, type BetterSearchSetting, type BetterSearchStatus } from "./better-search.ts";`.
   - `createEntity` (line 482): `if (kind === "claim") { syncClaim(this.store, id); this.queueEmbedIfOn(); }`. `revise` (line 507): the same shape with `e.id`.
   - `capture` (line 643): after `syncSource(this.store, id);` add `this.queueEmbedIfOn();`. `editSourceTx` (line 1123): after the `syncClaimsCiting` line add `this.queueEmbedIfOn();`.
   - After `setRecallHelp` (closing brace at line 1899) add:
@@ -1715,6 +1917,8 @@ export function maybeQueueEmbedBatch(brain: Brain): boolean {
     if (this.tenantId !== undefined) return { on: false, reason: "Better search runs on the local app only.", setting, status };
     const effective = betterSearchEffective(setting, status, workerRunning(this.store.setting<string | null>("worker_heartbeat", null), this.clock()));
     if (!effective.on) return { ...effective, setting, status };
+    // The worker's circuit breaker: after three failed batches nothing is embedded or queried for 15 minutes.
+    if (status?.paused_until && Date.parse(status.paused_until) > this.clock().getTime()) return { on: false, reason: BETTER_SEARCH_PAUSED, setting, status };
     if (setting.mode === "cloudflare") {
       const prefs = this.prefs(this.ownerPrincipal());
       if (!(prefs.daily_cap_micro_usd > 0) || !(prefs.per_job_cap_micro_usd > 0))
@@ -1742,6 +1946,9 @@ export function maybeQueueEmbedBatch(brain: Brain): boolean {
       worker_running: workerRunning(this.store.setting<string | null>("worker_heartbeat", null), this.clock()),
       caps_ok,
       counts,
+      failures: status?.failures ?? 0,
+      retry_at: status?.retry_at ?? null,
+      paused_until: status?.paused_until && Date.parse(status.paused_until) > this.clock().getTime() ? status.paused_until : null,
     };
   }
   /** Off is always accepted and clears every vector. A provider needs the worker's published setup for exactly that provider and a running worker; Cloudflare also needs both limits. Any change of provider or model is a fresh choice. */
@@ -1778,14 +1985,22 @@ export function maybeQueueEmbedBatch(brain: Brain): boolean {
     if (this.store.get("SELECT 1 FROM jobs WHERE kind='embed_batch' AND status IN ('queued','retry_wait','running') LIMIT 1")) return null;
     return this.enqueue("inbox", "embed_batch", { principal: this.ownerPrincipal() }).id;
   }
-  /** Every index write path calls this: a batch is queued only while the owner has chosen better search (the worker decides whether it can run). */
+  /** Whether a batch may be queued or run now: better search can run (chosen, published, worker up, not paused, limits for Cloudflare) and the worker's back-off has passed. Read by the capture hooks, the self-heal check and the batch itself. */
+  embedQueueOpen(): boolean {
+    const allowed = this.betterSearchAllowed();
+    if (!allowed.on) return false;
+    const retryAt = allowed.status?.retry_at;
+    return !(retryAt && Date.parse(retryAt) > this.clock().getTime());
+  }
+  /** Every index write path calls this: a batch is queued only while one may run; otherwise the self-heal check picks the rows up later. */
   private queueEmbedIfOn() {
-    if (this.betterSearchSetting().mode !== "off") this.enqueueEmbedBatch();
+    if (this.betterSearchSetting().mode !== "off" && this.embedQueueOpen()) this.enqueueEmbedBatch();
   }
 ```
-  - Settings job lists (lines 5052 and 5110): `WHERE kind NOT IN ('recall_judge','embed_batch','recall_embed')`. `job()` (line 5117): `if (!j || j.kind === "recall_judge" || j.kind === "embed_batch" || j.kind === "recall_embed") throw ...` and reword its comment to "Judge and better-search rows belong to the worker alone".
+  - Also call `this.queueEmbedIfOn();` after the `syncSource(this.store, sourceId);` in `recordSystemOneResult` (line 4567): sorting help re-syncs the note's rows, which drops their vectors.
+  - The local Settings job list only (line 5110, in the non-managed branch): `WHERE kind NOT IN ('recall_judge','embed_batch','recall_embed')`; the managed branch at line 5052 is left untouched (a tenant brain never holds these rows). `job()` (line 5115–5117): `if (!j || j.kind === "recall_judge" || j.kind === "embed_batch" || j.kind === "recall_embed") throw ...` and reword its comment to "Judge and better-search rows belong to the worker alone".
 
-- [ ] Run: `npx vitest run tests/integration/embed-batch.test.ts tests/integration/recall-judge.test.ts tests/integration/system-one-worker.test.ts tests/integration/brain.test.ts tests/integration/operations.test.ts` — expected: all pass. In the fence case the engine's `WHERE fence=?` update matches nothing and the row stays `running` until lease recovery; the assertion is only `embedded === 0`.
+- [ ] Run: `npx vitest run tests/integration/embed-batch.test.ts tests/integration/recall-judge.test.ts tests/integration/system-one-worker.test.ts tests/integration/brain.test.ts tests/integration/operations.test.ts` — expected: all pass. In the fence case the engine's `WHERE fence=?` update matches nothing and the row stays `running` until lease recovery; the assertion is `embedded === 0` after exactly one call. The outage test relies on `betterSearch().failures`, `retry_at` and `paused_until`, on `maybeQueueEmbedBatch` honouring both, and on the Cloudflare 503 hold being settled at 0.
 - [ ] Run: `npm run typecheck && npm run lint` — expected exit 0.
 - [ ] Commit: `git add apps/worker/embed.ts apps/worker/engine.ts apps/worker/main.ts packages/domain/service.ts tests/integration/embed-batch.test.ts` with message:
 
@@ -1929,8 +2144,9 @@ describe("the query embedding fast lane", () => {
     const slow = lane({ delayMs: 600 });
     const first = await slow.withWorker(() => slow.brain.queryVector(owner, "food supplier for the celebration"));
     expect(first).toBeNull();
-    // The worker's call was still out when the server gave up; its answer feeds the cache and nothing else.
-    expect(slow.keys()).toEqual([]);
+    // The worker's call was still out when the server gave up; its answer feeds the cache. (On the test's fixed clock the worker still
+    // sees the deadline ahead and publishes a result nobody reads; the real clock has passed it, and the sweeper deletes it either way.)
+    expect(slow.store.all("SELECT key FROM settings WHERE key LIKE 'recall_embed:%'")).toEqual([]);
     expect(slow.cache.size).toBe(1);
     slow.fake.delayMs = 0;
     const second = await slow.withWorker(() => slow.brain.queryVector(owner, "food supplier for the celebration"));
@@ -2397,6 +2613,9 @@ describe("dense as a fourth list", () => {
     expect(deterministicSignals(["launch", "colour"], [top, denseNext], []).strong).toBe(true);
     expect(deterministicSignals(["launch", "colour"], [top, denseNext, bm25Next], []).strong).toBe(false);
     expect(deterministicSignals(["launch", "colour"], [{ ...denseNext, row: row({ ref_id: "b", text: "launch colour cobalt", score: 0.9 }) }], []).strong).toBe(false);
+    const denseFact = { key: "fact:f", row: row({ kind: "fact", ref_id: "f", text: "Launch colour: cobalt", prefix: "Inbox · Launch colour", score: 0.9 }), fused: 0.04, lists: ["dense"] };
+    expect(deterministicSignals(["launch", "colour"], [denseFact], []).strong).toBe(false);
+    expect(deterministicSignals(["launch", "colour"], [{ ...denseFact, lists: ["facts"] }], []).strong).toBe(true);
   });
   it("pinExact moves exact-name current facts to the front and keeps every other order", () => {
     const fact = (id: string, prefix: string, status: "current" | "history" = "current") => ({ key: `fact:${id}`, row: row({ kind: "fact", ref_id: id, prefix, status }), fused: 0.01, lists: ["facts"] });
@@ -2533,10 +2752,15 @@ describe("dense recall", () => {
     const { withWorker, calls } = pump(t.fx);
     const asked = await withWorker(() => t.fx.brain.ask(owner, { q: "which hue was chosen for the release" }));
     expect(asked.answered).toBe(true);
-    expect(asked.hits[0]).toMatchObject({ type: "fact", id: t.fx.ids["fact:launch-color"] });
+    // Membership, not rank: the BM25 hit on "release" (the Hydra deploy note's "release branch") can outrank the fact in RRF.
+    expect(asked.hits.map((h) => h.id)).toContain(t.fx.ids["fact:launch-color"]);
+    // "is" has two letters: without a vector this query goes to the literal list; with Better search on, meaning finds the fact.
     const searched = await withWorker(() => t.fx.brain.searchBrain(owner, { q: "what is the monthly fee" }));
     expect(searched.facts.map((f) => f.id)).toContain(t.fx.ids["fact:price"]);
     expect(calls.n).toBe(2);
+    // A query with no searchable words at all still falls back to the literal list (which finds nothing for this one).
+    const literal = await withWorker(() => t.fx.brain.searchBrain(owner, { q: "zq xk" }));
+    expect(literal).toEqual({ facts: [], originals: [] });
     expect(t.fx.store.all("SELECT 1 FROM jobs WHERE kind='recall_judge'")).toEqual([]);
     t.fx.store.set(BETTER_SEARCH, BETTER_SEARCH_OFF);
     const plain = await t.fx.brain.ask(owner, { q: "which hue was chosen for the release" });
@@ -2624,9 +2848,10 @@ export function pinExact(ranked: Candidate[], entityOf: (c: Candidate) => string
   return [...pinned, ...ranked.filter((c) => !set.has(c))];
 }
 ```
-  - In `deterministicSignals` (lines 175–177) change the original branch to:
+  - In `deterministicSignals` (lines 174–177) require a words match on both branches (with no dense list `fromBm25` is always true, so plan 5 output is unchanged):
 
 ```ts
+    if (top.row.kind === "fact" && top.row.status === "current" && n >= needed && fromBm25(top)) strong = true;
     else if (top.row.kind === "original" && n >= 2 && fromBm25(top)) {
       const next = ranked.find((c) => c.row.kind === "original" && c !== top && fromBm25(c));
       strong = !next || Math.abs(top.row.score) >= 1.3 * Math.abs(next.row.score);
@@ -2634,7 +2859,7 @@ export function pinExact(ranked: Candidate[], entityOf: (c: Candidate) => string
 ```
 
 - [ ] Modify `packages/domain/service.ts`:
-  - Import `VectorCache` in the `../storage/recall-vectors.ts` line (task 3 added it); add `denseFloor` and `type QueryVector` to the `./better-search.ts` import (QueryVector was added in task 4); add `denseWhy, pinExact, type RecallLists` to the `./recall.ts` import (lines 58–77).
+  - Add `VectorCache` to the `../storage/recall-vectors.ts` import (task 3 created the line); add `denseFloor` to the `./better-search.ts` import (`QueryVector` is already there from task 4); add `denseWhy, pinExact, type RecallLists` to the `./recall.ts` import (lines 58–77).
   - Next to `questionWordsOf` (line 127) add:
 
 ```ts
@@ -2671,7 +2896,16 @@ const entityFromPrefix = (prefix: string, projectTitle: string) => {
     for (const candidate of fused) {
 ```
     In the two `authorized.push` lines (3727 and 3735) change `why: whyFor(...)` to `why: [...whyFor(...), ...denseWhy(candidate)]`. The final return (line 3753) gains `dense: dense !== null`.
-  - `searchBrain` (line 4888): `async searchBrain(p: Principal, input: unknown) {`; after the short-word `return literal();` add `const dense = await this.queryVector(p, v.q);` and pass it: `this.recallInternal(p, { query: v.q, history: false, limit: RECALL_LIMIT_MAX }, dense)`.
+  - `searchBrain` (line 4888): `async searchBrain(p: Principal, input: unknown) {`. The vector is requested first, and the short-word guard applies only without one, so Your brain search uses meaning whenever Better search is on (B9) while the dense-off path stays byte-identical to plan 5. Replace lines 4896–4898 with:
+
+```ts
+    // With a vector, meaning can find a note whatever the query's short words; without one, words under three characters never
+    // become FTS terms and the literal search is the only one that can see them (unchanged from plan 5).
+    const dense = await this.queryVector(p, v.q);
+    if (!dense && v.q.split(/\s+/u).some((w) => Array.from(w).length < 3)) return literal();
+    const internal = this.recallInternal(p, { query: v.q, history: false, limit: RECALL_LIMIT_MAX }, dense);
+```
+    The existing `if (facts.length === 0 && originals.length === 0) return literal();` stays: with a vector and no searchable words, `recallInternal` returns nothing and the literal list is the fallback.
   - `ask` (line 4915): `async ask(p: Principal, input: unknown) {`; after the `questionWords` guard add `const dense = await this.queryVector(p, v.q);` and `this.recallCore(p, { query: v.q, history: false, limit: 6 }, dense)`.
 
 - [ ] Update the four call-site test files listed under Files (add `await`, `async` callbacks and `.rejects.toThrow`).
@@ -2699,7 +2933,7 @@ Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>
 **Files:**
 - Modify: `apps/server/app.ts` (after the recall-help routes at lines 840–841)
 - Modify: `apps/web/src.tsx` (type and status line near `SortingStatus` line 81; state near line 331; `refresh` lines 438–463; a new card before the Sorting help card at line 1426; the `<BrainView` call at line 1056 gains `searchNote`)
-- Modify: `apps/web/brain/BrainView.tsx` (prop `searchNote?: string | null` passed to `<BrainSearch` at line 116) and `apps/web/brain/BrainSearch.tsx` (prop `note?: string | null` rendered under the field)
+- Modify: `apps/web/brain/types.ts` (`BrainProps` gains `searchNote?: string | null`), `apps/web/brain/BrainView.tsx` (`note={props.searchNote ?? null}` on `<BrainSearch` at line 116) and `apps/web/brain/BrainSearch.tsx` (prop `note?: string | null` rendered under the field)
 - Modify: `playwright.config.ts` (`embedPort = port + 16`; a `node tests/helpers/fake-embed.mjs` web server; the sorting server env gains `BRAIN_EMBED_PROVIDER`, `BRAIN_EMBED_MODEL`, `BRAIN_EMBED_ENDPOINT`; project `system1` `testMatch: /(system-one|better-search)\.spec\.ts/`; project `main` ignores `better-search` too)
 - Create: `tests/e2e/better-search.spec.ts`
 - Test: `tests/integration/better-search-http.test.ts`
@@ -2712,16 +2946,16 @@ Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>
 
 **Copy (binding, B1):**
 - Card title: `Better search`. Lead: `Find notes by what they mean, not only by the words you used, in any language you write in.`
-- Status line (`role="status"`): off → `Off. Search matches the words you used.`; on and working → `On · <label> · <embedded> of <total> passages ready` with `; preparing the rest in the background` while `pending > 0`; on but not working → `Words only right now: <reason>`.
+- Status line (`role="status"`): off → `Off. Search matches the words you used.`; paused by the worker's breaker (`paused_until` in the future) → `Better search paused: the service is not answering.`; on and working → `On · <label> · <embedded> of <total> passages ready` with `; preparing the rest in the background` while `pending > 0`; on but not working → `Words only right now: <reason>`.
 - Radio `Off`: `Off. Search matches the words you used.`
 - Radio Ollama: `On this computer (Ollama). Nothing leaves this computer.` plus ` Not set up on this computer.` (muted) and disabled when the worker published another provider or nothing.
-- Radio Cloudflare: `Cloudflare. The text of your notes and your searches is sent to Cloudflare Workers AI to be turned into numbers that stay on this computer. Private notes are never sent. About 1 cent for every 800,000 words, counted against your daily limit.` plus the same muted suffix when unavailable, and ` Needs a daily limit and a per-preparation limit above $0 below.` when `caps_ok` is false.
+- Radio Cloudflare: `Cloudflare. The text of your notes, your searches and the questions your connected agents ask is sent to Cloudflare Workers AI to be turned into numbers that stay on this computer. Private notes are never sent. About 1 cent for every 500,000 words, counted against your daily limit.` plus the same muted suffix when unavailable, and ` Needs a daily limit and a per-preparation limit above $0 below.` when `caps_ok` is false. (Agent prompts are embedded for dense recall under the hook push, so the consent names them; the cost line uses the ledger's own estimate, half the UTF-8 bytes per token.)
 - Button: `Save better search` (disabled while the choice equals the saved mode). Notice: `Better search is off.` or `Better search saved. Your notes are being prepared in the background.` Footnote: `Changing this choice later clears what was prepared and starts again.`
 - Your brain, under the search field, only while `mode !== "off" && !effective`: `Search is using words only right now.`
 
 **Steps:**
 
-- [ ] Write the failing test `tests/integration/better-search-http.test.ts`:
+- [ ] Write the failing test `tests/integration/better-search-http.test.ts` (the pairing flow is the one `brain-search.test.ts` lines 108–117 use):
 
 ```ts
 import { afterEach, describe, expect, it } from "vitest";
@@ -2731,31 +2965,48 @@ import { join } from "node:path";
 import { Storage } from "../../packages/storage/index.ts";
 import { Brain } from "../../packages/domain/service.ts";
 import { createApp } from "../../apps/server/app.ts";
+import type { Principal } from "../../packages/contracts/index.ts";
 
-let cleanup: (() => void)[] = [];
+const owner: Principal = { kind: "owner" };
+let cleanup: (() => void | Promise<void>)[] = [];
 afterEach(async () => {
   for (const fn of cleanup.reverse()) await fn();
   cleanup = [];
 });
 describe("better-search routes", () => {
-  it("exist for the owner only: no session is refused and never reveals the setup", async () => {
+  it("serve the paired owner, refuse everyone else, and carry the domain's refusals as plain 409s", async () => {
     const dir = mkdtempSync(join(tmpdir(), "better-search-http-"));
     cleanup.push(() => rmSync(dir, { recursive: true, force: true }));
     const store = new Storage(join(dir, "brain.sqlite"));
     cleanup.push(() => store.close());
-    const app = await createApp(new Brain(store), { pairSecret: "synthetic-better-search", static: false });
+    const brain = new Brain(store);
+    const app = await createApp(brain, { pairSecret: "synthetic-better-search", static: false });
     cleanup.push(() => app.close());
-    const get = await app.inject({ method: "GET", url: "/api/v1/preferences/better-search" });
-    expect(get.statusCode).toBe(401);
-    expect(get.body).not.toContain("ollama");
-    const patch = await app.inject({ method: "PATCH", url: "/api/v1/preferences/better-search", payload: { mode: "ollama" }, headers: { "content-type": "application/json" } });
-    expect([401, 403]).toContain(patch.statusCode);
+    const req = (method: "GET" | "POST" | "PATCH", url: string, payload?: unknown, headers: Record<string, string> = {}) =>
+      app.inject({ method, url, headers: { host: "127.0.0.1:4317", ...headers }, payload });
+    expect((await req("GET", "/api/v1/preferences/better-search")).statusCode).toBe(401);
+    const pairing = await req("POST", "/api/v1/session/pair", { secret: "synthetic-better-search" });
+    const cookie = pairing.cookies[0];
+    const headers = { cookie: `${cookie.name}=${cookie.value}`, "x-brain-csrf": pairing.json().csrf };
+    const got = await req("GET", "/api/v1/preferences/better-search", undefined, headers);
+    expect(got.statusCode).toBe(200);
+    expect(got.json()).toMatchObject({ mode: "off", effective: false, status: null, paused_until: null, counts: { total: 0 } });
+    const refused = await req("PATCH", "/api/v1/preferences/better-search", { mode: "ollama" }, headers);
+    expect(refused.statusCode).toBe(409);
+    expect(refused.json().error.message).toMatch(/background worker starts/);
     expect(store.setting("better_search", null)).toBeNull();
+    const off = await req("PATCH", "/api/v1/preferences/better-search", { mode: "off" }, headers);
+    expect(off.statusCode).toBe(200);
+    expect(off.json()).toEqual({ mode: "off", key: null, consented_at: null });
+    expect((await req("PATCH", "/api/v1/preferences/better-search", { mode: "sideways" }, headers)).statusCode).toBe(400);
+    const token = brain.createGrant(owner, { projects: ["inbox"], operations: ["read"], expires_at: "2027-01-01T00:00:00.000Z" }).token;
+    const agent = await req("GET", "/api/v1/preferences/better-search", undefined, { authorization: `Bearer ${token}` });
+    expect([401, 403]).toContain(agent.statusCode);
   });
 });
 ```
 
-- [ ] Run: `npx vitest run tests/integration/better-search-http.test.ts` — expected failure: `GET` answers 404 (route missing). (If the app answers 401 for unknown routes under the auth hook, the PATCH assertion on `better_search` still fails until the route exists; keep both assertions.)
+- [ ] Run: `npx vitest run tests/integration/better-search-http.test.ts` — expected failure: the paired `GET` answers 404 (route missing).
 
 - [ ] Modify `apps/server/app.ts` after line 841:
 
@@ -2777,11 +3028,15 @@ type BetterSearch = {
   worker_running: boolean;
   caps_ok: boolean;
   counts: { total: number; embedded: number; pending: number; withheld: number };
+  failures: number;
+  retry_at: string | null;
+  paused_until: string | null;
 };
 const BETTER_LABELS = { ollama: "Ollama on this computer", cloudflare: "Cloudflare" } as const;
 /** The one plain line Settings shows about better search. */
 function betterSearchLine(b: BetterSearch): string {
   if (b.mode === "off") return "Off. Search matches the words you used.";
+  if (b.paused_until) return "Better search paused: the service is not answering.";
   if (!b.effective) return `Words only right now: ${b.reason}`;
   const label = b.status?.label ?? BETTER_LABELS[b.mode];
   const ready = `${b.counts.embedded} of ${b.counts.total} passages ready`;
@@ -2830,8 +3085,8 @@ function betterSearchLine(b: BetterSearch): string {
                               ? "Off. Search matches the words you used."
                               : mode === "ollama"
                                 ? "On this computer (Ollama). Nothing leaves this computer."
-                                : "Cloudflare. The text of your notes and your searches is sent to Cloudflare Workers AI to be turned into numbers that stay on this computer. Private notes are never sent. About 1 cent for every 800,000 words, counted against your daily limit."}
-                            {!available && mode !== "off" ? <span className="muted"> Not set up on this computer.</span> : null}
+                                : "Cloudflare. The text of your notes, your searches and the questions your connected agents ask is sent to Cloudflare Workers AI to be turned into numbers that stay on this computer. Private notes are never sent. About 1 cent for every 500,000 words, counted against your daily limit."}
+                            {!available ? <span className="muted"> Not set up on this computer.</span> : null}
                             {mode === "cloudflare" && available && !better.caps_ok ? <span className="muted"> Needs a daily limit and a per-preparation limit above $0 below.</span> : null}
                           </label>
                         );
@@ -2846,7 +3101,7 @@ function betterSearchLine(b: BetterSearch): string {
               ) : null}
 ```
   - `<BrainView` (line 1056): add `searchNote={better && better.mode !== "off" && !better.effective ? "Search is using words only right now." : null}`.
-- [ ] Modify `apps/web/brain/BrainView.tsx`: add `searchNote?: string | null` to its props type and `note={props.searchNote ?? null}` on `<BrainSearch` (line 116). Modify `apps/web/brain/BrainSearch.tsx`: add `note?: string | null` to `Props`, destructure it, and render `{note ? <p className="muted" role="status">{note}</p> : null}` directly after the search `<input>`.
+- [ ] Modify `apps/web/brain/types.ts`: add `searchNote?: string | null` to `BrainProps` (line 73 region). Modify `apps/web/brain/BrainView.tsx`: `note={props.searchNote ?? null}` on `<BrainSearch` (line 116). Modify `apps/web/brain/BrainSearch.tsx`: add `note?: string | null` to `Props`, destructure it, and render `{note ? <p className="muted" role="status">{note}</p> : null}` directly after the search `<input>`.
 
 - [ ] Modify `playwright.config.ts`: after `clefPort` add `const embedPort = Number(process.env.BRAIN_E2E_EMBED_PORT ?? port + 16);`; `main` project `testIgnore: /(today-v2(-empty|-bar)?|connections-v2|system-one|better-search)\.spec\.ts/`; `system1` project `testMatch: /(system-one|better-search)\.spec\.ts/`; add a web server `{ command: "node tests/helpers/fake-embed.mjs", port: embedPort, reuseExistingServer: false, env: { BRAIN_FAKE_EMBED_PORT: String(embedPort) }, timeout: 30000 }` before the sorting server; the sorting server env gains `BRAIN_EMBED_PROVIDER: "ollama", BRAIN_EMBED_MODEL: "fake-concept-v1", BRAIN_EMBED_ENDPOINT: \`http://127.0.0.1:${embedPort}/api/embed\``.
 
@@ -2930,7 +3185,7 @@ test("Better search fits a 320px dark screen", async ({ page }) => {
 
 - [ ] Run: `npx vitest run tests/integration/better-search-http.test.ts tests/integration/agent-recall-http.test.ts` — expected: pass. Run `npm run build` — expected exit 0. Run `npx playwright test --workers=1 --project=system1` then `git restore docs/screenshots` — expected: the two new tests and the four sorting tests pass.
 - [ ] Run: `npm run typecheck && npm run lint` — expected exit 0.
-- [ ] Commit: `git add apps/server/app.ts apps/web/src.tsx apps/web/brain/BrainView.tsx apps/web/brain/BrainSearch.tsx playwright.config.ts tests/e2e/better-search.spec.ts tests/integration/better-search-http.test.ts` with message:
+- [ ] Commit: `git add apps/server/app.ts apps/web/src.tsx apps/web/brain/types.ts apps/web/brain/BrainView.tsx apps/web/brain/BrainSearch.tsx playwright.config.ts tests/e2e/better-search.spec.ts tests/integration/better-search-http.test.ts` with message:
 
 ```
 feat(search): Better search card with named consent, routes and browser journey
@@ -2971,13 +3226,13 @@ Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>
   note("src:ticket", northstar.id, "Support", "Ticket NS-4471 tracks the login outage; the patch went out in release 2.3.1.");
 ```
 
-- [ ] Edit `tests/eval/recall-golden-v1.json`: `"version": 2`; add `"names"` to the tags of `pos-03`, `pos-09`, `chunk-01` and `stale-04`; append these cases (every dense case expects `["found", "partial"]`, `must_exclude: []`, `freshness: {}`):
+- [ ] Edit `tests/eval/recall-golden-v1.json`: `"version": 2`; add `"names"` to the tags of `pos-03`, `pos-09`, `chunk-01` and `stale-04`; remove the `"paraphrase"` tag from `pos-02` (it shares "launch" and "color" with its note, so it is a lexical case; the bucket must hold exactly the eight dense cases); append these cases (every dense case expects `["found", "partial"]`, `must_exclude: []`, `freshness: {}`):
 
 ```json
     { "id": "para-01", "tags": ["dense", "paraphrase"], "principal": "owner", "query": "which hue was chosen for the release", "expect": { "status": ["found", "partial"], "must_include": ["fact:launch-color"], "must_exclude": [], "freshness": {} } },
     { "id": "para-02", "tags": ["dense", "paraphrase"], "principal": "owner", "query": "what is the monthly fee", "expect": { "status": ["found", "partial"], "must_include": ["fact:price"], "must_exclude": [], "freshness": {} } },
     { "id": "para-03", "tags": ["dense", "paraphrase"], "principal": "agent", "query": "who heads up the visuals", "expect": { "status": ["found", "partial"], "must_include": ["fact:marco-role"], "must_exclude": [], "freshness": {} } },
-    { "id": "para-04", "tags": ["dense", "paraphrase"], "principal": "owner", "query": "when do people get asked to join the trial", "expect": { "status": ["found", "partial"], "must_include": ["src:beta-timeline"], "must_exclude": [], "freshness": {} } },
+    { "id": "para-04", "tags": ["dense", "paraphrase"], "principal": "owner", "query": "when do people get asked to join the trial", "expect": { "status": ["found", "partial"], "must_include": ["fact:beta-opens"], "must_exclude": [], "freshness": {} } },
     { "id": "para-05", "tags": ["dense", "paraphrase"], "principal": "agent", "query": "food supplier for the celebration", "expect": { "status": ["found", "partial"], "must_include": ["fact:caterer"], "must_exclude": [], "freshness": {} } },
     { "id": "para-06", "tags": ["dense", "paraphrase"], "principal": "owner", "query": "how much can we spend on software each quarter", "expect": { "status": ["found", "partial"], "must_include": ["src:allowance"], "must_exclude": [], "freshness": {} } },
     { "id": "para-07", "tags": ["dense", "paraphrase"], "principal": "owner", "query": "when does the stand-up happen", "expect": { "status": ["found", "partial"], "must_include": ["src:standup"], "must_exclude": [], "freshness": {} } },
@@ -2991,7 +3246,7 @@ Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>
     { "id": "names-01", "tags": ["dense", "names"], "principal": "owner", "query": "NS-4471", "expect": { "status": ["found", "partial"], "must_include": ["src:ticket"], "must_exclude": [], "freshness": {} } },
     { "id": "names-02", "tags": ["dense", "names"], "principal": "agent", "query": "release 2.3.1", "expect": { "status": ["found", "partial"], "must_include": ["src:ticket"], "must_exclude": [], "freshness": {} } }
 ```
-  The names bucket is the six cases tagged `names` (four existing lexical ones plus the two above); it is measured in both modes.
+  The names bucket is the six cases tagged `names` (four existing lexical ones plus the two above); it is measured in both modes. `para-04` expects the fact, not the note: the beta chunk is a dense hit too, but `dedupe` folds it into the current fact "Northstar beta opens November 14" that covers it, exactly as plan 5 does for a words hit.
 
 - [ ] Modify `tests/eval/recall.test.ts`:
   - Imports: `import { embedFixture } from "./dense-fixture.ts";` and `import type { QueryVector } from "../../packages/domain/better-search.ts";`.
@@ -3143,7 +3398,8 @@ describe("the better-search live proof", () => {
 ```ts
 /**
  * OWNER-RUN live proof of better search against the real embedding provider. With Cloudflare it SPENDS QUOTA
- * (about 15 small requests over the synthetic golden texts, a few thousand tokens); with Ollama it runs the local model.
+ * (about 50 small requests over the synthetic golden texts, roughly 3,000 tokens, well inside the free daily allowance);
+ * with Ollama it runs the local model.
  * Agents and CI never run it; they use the fake embedder.
  *
  * Put BRAIN_SEARCH_LIVE=1 on its own line in .env and run `npm run proof:search`, or in PowerShell:
@@ -3302,13 +3558,13 @@ Better search adds meaning to recall: each current passage and fact is turned in
 - **Ollama.** `POST /api/embed` on this computer; nothing leaves the machine, so private notes are embedded too. Pull the model first (`ollama pull bge-m3`, 1.2 GB).
 - **Cloudflare.** Workers AI `@cf/baai/bge-m3` (1024 dimensions, 100+ languages). Private notes, owner-only facts (names, preferences, facts with private evidence) and quarantined notes are never sent and stay words-only. About $0.012 per million tokens, estimated as half the UTF-8 bytes of each text and counted in whole micro-USD against the daily and per-preparation limits through the same spend ledger as sorting help; both limits must be above $0.
 - **Model key.** Each vector is stored with `<provider>:<model>:<prefix-scheme>`. A changed provider or model is a new choice in Settings; old vectors are cleared and the preparation starts again. Rows with another key are ignored at search time.
-- **Indexing.** A background job embeds up to 32 passages per call outside any transaction; writes are fenced and guarded so an edited note never keeps a stale vector. Capture and edit queue a batch; a rebuild, import or crash is caught by a 5-second check. A failed provider call is retried three times and then waits a minute.
+- **Indexing.** A background job embeds up to 32 passages per call outside any transaction; writes are fenced and guarded so an edited note never keeps a stale vector. Capture and edit queue a batch; a rebuild, import or crash is caught by a 5-second check. A failed call waits 60 seconds before the next, doubling to 15 minutes; after three failures in a row better search pauses for 15 minutes and Settings says so. An error response from the service costs nothing; a request that timed out after it was sent keeps its hold. A batch the service refuses is retried one passage at a time, and a passage refused on its own is skipped (words-only) until it changes.
 - **Searching.** The query is embedded by the worker (a dedicated lane, at most 400 ms, cached ten minutes); the server scans the vectors the caller may see, keeps cosines of 0.45 or more, and fuses at most 60 of them as a fourth reciprocal-rank list with weight 0.7. Every dense candidate passes the same authorization as every other candidate. An exact name match stays first; the hook push level stays term-based.
 - **Status.** The worker publishes whether better search is set up (never the key) and the last outcome; Settings reads it and says "Words only right now: …" when the choice cannot work.
 
-**Live proof is the owner's.** No live embedding call has been made on this branch; tests use a deterministic fake embedder. After setting the variables above, put `BRAIN_SEARCH_LIVE=1` on its own line in `.env` and run `npm run proof:search` (or `$env:BRAIN_SEARCH_LIVE=1; npm run proof:search` in PowerShell, then `Remove-Item Env:BRAIN_SEARCH_LIVE`). It embeds the synthetic golden texts, prints recall at 5 per bucket and the cosine room around the floor, never the key or account id, refuses a loopback Cloudflare endpoint, and exits 0 only when paraphrase and cross-language reach 0.8 with no regression on lexical and names. With Cloudflare it spends a few thousand tokens.
+**Live proof is the owner's.** No live embedding call has been made on this branch; tests use a deterministic fake embedder. After setting the variables above, put `BRAIN_SEARCH_LIVE=1` on its own line in `.env` and run `npm run proof:search` (or `$env:BRAIN_SEARCH_LIVE=1; npm run proof:search` in PowerShell, then `Remove-Item Env:BRAIN_SEARCH_LIVE`). It embeds the synthetic golden texts, prints recall at 5 per bucket and the cosine room around the floor, never the key or account id, refuses a loopback Cloudflare endpoint, and exits 0 only when paraphrase and cross-language reach 0.8 with no regression on lexical and names. With Cloudflare it makes about 50 small requests, roughly 3,000 tokens, inside the free daily allowance.
 ```
-  - `docs/UX.md` after line 120: `- **Better search (Settings).** Its own card with three choices: Off (the default; search matches the words you used), "On this computer (Ollama)" (nothing leaves this computer), and "Cloudflare" (the text of notes and searches is sent to Cloudflare Workers AI to be turned into numbers that stay on this computer; private notes are never sent; about 1 cent per 800,000 words against the daily limit). A choice the computer is not set up for is disabled and says so. The status line reads "Off…", "On · <service> · N of M passages ready" (with "; preparing the rest in the background" while it works) or "Words only right now: <reason>". Changing the choice clears what was prepared and starts again. Hidden in managed mode.` Under "Your brain": `- While Better search is chosen but cannot work, a muted line under the search field reads "Search is using words only right now."`
+  - `docs/UX.md` after line 120: `- **Better search (Settings).** Its own card with three choices: Off (the default; search matches the words you used), "On this computer (Ollama)" (nothing leaves this computer), and "Cloudflare" (the text of notes, searches and the questions connected agents ask is sent to Cloudflare Workers AI to be turned into numbers that stay on this computer; private notes are never sent; about 1 cent per 500,000 words against the daily limit). A choice the computer is not set up for is disabled and says so. The status line reads "Off…", "On · <service> · N of M passages ready" (with "; preparing the rest in the background" while it works), "Words only right now: <reason>", or "Better search paused: the service is not answering." after three failed attempts in a row (it retries by itself after 15 minutes). Changing the choice clears what was prepared and starts again. Hidden in managed mode.` Under "Your brain": `- While Better search is chosen but cannot work, a muted line under the search field reads "Search is using words only right now."`
   - `docs/AGENT_INTEGRATION.md` (Recall push): after the budget sentence add: `When the owner has chosen Better search, the server first asks the worker for the prompt's vector (at most 400 ms, inside the same 1,500 ms budget) and fuses dense candidates before any judge call; a hit found by meaning carries "similar meaning" in its why. The push level stays term-based, so a hit found by meaning alone appears in brain_recall results but does not raise the level.`
   - `docs/API.md`: add `GET`/`PATCH /api/v1/preferences/better-search` (`{ mode: "off" | "ollama" | "cloudflare" }`; owner only; 409 with a plain reason when the worker has not published that provider, the worker is not running, or Cloudflare has no limits).
   - `README.md`: in "What you get" add `- **Better search (optional).** Finds notes by meaning, including across English and Tamil, with Ollama on your computer or Cloudflare. Off by default.`; after the sorting-help subsection add "### Optional better search" with the three env lines and "then choose it in Settings → Better search"; Status table row: `| Better search with embeddings | Built and gated against a fake embedder; a live run is owner-run (\`npm run proof:search\`) |`; update the roadmap line.
@@ -3341,8 +3597,9 @@ Run from the worktree root, in this order, and record the real counts in BUILD_S
 8. `npx playwright test --workers=1` then `git restore docs/screenshots`
 9. Key isolation greps (all must print nothing):
    - `grep -rn "BRAIN_DECISION_API_KEY\|OLLAMA_API_KEY\|BRAIN_CLOUDFLARE_ACCOUNT_ID\|BRAIN_EMBED_" apps/server packages/domain apps/web apps/mcp apps/cli`
-   - `grep -rn "process.env" packages/domain packages/storage/recall-vectors.ts packages/providers/embed.ts`
+   - `grep -rn "process.env" packages/storage/recall-vectors.ts packages/providers/embed.ts packages/domain/better-search.ts packages/domain/recall.ts` (the two pre-existing `OPENAI_API_KEY` reads in `service.ts` are not this plan's)
    - `grep -rn "Authorization" apps/web`
+   - `grep -rn "recall_vectors_generation\|VECTOR_GENERATION" packages apps tests` (the cache writes no settings row)
 10. Behaviour greps: `grep -n "kind NOT IN ('recall_judge','recall_embed')" apps/worker/engine.ts` prints three lines; `grep -c "better_search" apps/web/src.tsx` is 0 (the browser only ever sees `/preferences/better-search`); `grep -rn "proof:search" package.json README.md docs/PROVIDERS.md` prints a line each.
 11. `node --import tsx scripts/better-search-proof.ts` without `BRAIN_SEARCH_LIVE` prints the refusal and exits 0 (the only part of the proof an agent runs).
 12. `git status --short` shows nothing outside the task commits; `git diff main --stat` touches no `billing*`, `dodo*`, `paddle*`, `managed*` or `decision-advisory*` source file and no `package-lock.json`.
@@ -3358,3 +3615,40 @@ Traced each test against the code it exercises, checked every name and anchor ag
 - **Spec rulings honoured.** B1 own setting, three choices, copy per choice, change requires choosing again (`setBetterSearch` clears on any mode/key change; the card says so). B2 two providers, plain fetch, loopback-only Ollama, Cloudflare reuses the two existing variables, worker-only key, key-free status. B3 key format, stale rows ignored and re-embedded, mixed reads refused (one key and dim per scan). B4 current rows only, Cloudflare visibility filter, 2,000 code points. B5 32 rows, call outside transactions, fenced + guarded writes, capture/edit enqueue, on backfills, off/change clears, ledger with the shared cap at $0.012/M tokens in micro-USD. B6 worker-only query embedding, `recall_embed` fast lane, 400 ms, 10-minute cache, candidates before the judge, 1,500 ms budget. B7 weight 0.7, floor 0.45 per model, 60 candidates, pin, same authorization, plan 5 invariants (`fuse` with no dense list is byte-identical; dense-only candidates never make `strong`). B8 Float32 LE normalised, dot-product scan, generation-keyed cache. B9 owner screens use dense, judge stays off them. B10 purge/forget proof already true, rebuild re-queued by the 5-second check. B11 three buckets with the stated sizes, fake embedder, the stated gates, owner-run proof. B12 no off-limits file touched, `/context` and `/changes` untouched, no dependency.
 - **Rulings made (spec gaps).** (R1) Where the spec names the Cloudflare cap but not which limits: Cloudflare better search needs `daily_cap_micro_usd` and `per_job_cap_micro_usd` above 0 (the ledger's own limits) but not background help or sorting consent; Ollama needs nothing. (R2) The push level stays term-based: a dense-only hit reaches `brain_recall` and the owner's screens but does not raise the hook level (spec B7 "every plan 5 invariant unchanged"; revisit from the recall log). (R3) `BRAIN_EMBED_PROVIDER` selects exactly one provider, like `BRAIN_SYSTEM1_PROVIDER`; the Settings card shows all three choices and disables the one the computer is not set up for with "Not set up on this computer." (R4) Cloudflare query embedding also goes through the ledger (`recall_embed`) so every paid call is bounded; an Ollama query lane job near its deadline still runs because its answer is free and feeds the cache. (R5) Ollama and Cloudflare are called with `truncate`/`truncate_inputs: true` so an overlong passage never blocks a batch (the embedded text is already capped at 2,000 code points). (R6) A secret-shaped passage is "withheld": `embedding_model` set, `embedding` NULL, never sent, never searched, never retried until the key changes. (R7) Cloudflare settles at the reported token count when the response carries one, else at the estimate; a reported cost above the reserve settles the known cost and fails the batch. (R8) `recall_embed` rows older than an hour with no ledger reference are deleted by the sweeper (judge rows keep their plan 5 behaviour). (R9) The model/env change case is handled by consent, not by clearing: the stored key no longer matches the published key, the card says "The search model changed. Choose Better search again.", nothing runs, and choosing again clears and re-embeds. (R10) `RecallResult` gains no field (the MCP `outputSchema` is unchanged); dense shows as `why: "similar meaning"` and `dense: true` in the content-free recall log. (R11) `ask` and `searchBrain` become `async` so the owner's screens can wait for the vector; four test files are updated in the same task. (R12) The matrix reloads after every index write (spec B8 literally); the incremental update is a recorded follow-up.
 - **AGENTS.md.** Authorization before retrieval (scope filter) and again per hit; model output validated (vector shape, count, finiteness, key, dim); no model call inside a transaction; short transactions; durable queue with lease recovery and idempotent, guarded writes; integer micro-USD; deterministic clocks in tests; no secrets in web, URLs, logs or fixtures (the test key is assembled at runtime); quiet is a product state (floor, negatives bucket); every visible control has real behaviour or a labelled unavailable state; failed and offline states surface in plain language (status line, "Words only right now", "Last problem"); no `package.json` change beyond one script; owner-run proofs are never run by agents.
+
+## Pre-flight resolutions
+
+The independent scan (`.superpowers/sdd/2026-10-27-better-search/preflight.md`) applied all eight tasks in a scratch copy; the controller's rulings are in `progress.md`. Every id below was fixed in place in the task texts above; where the self-check above says otherwise (the settings-key generation under R12 and "Cross-task contracts"), this section supersedes it.
+
+- **B-01** `let rows: any` in `perform` (`fail` is a const arrow, so `unknown` is never narrowed). Task 1 code.
+- **B-02** `acceptStatus` returns `{ claim_id, source_id }`; the T2 test expects the third project-visible source (cloud list 3, local list 5, counts `{ total: 3, embedded: 1, pending: 1, withheld: 1 }`, OTHER length 3) and gains the rejected-row and no-settings-row assertions.
+- **B-03** Expected order `[a, e, b]` (cosines 1.00, 0.99, 0.60).
+- **B-04** Both sub-cases tick until the provider has been called once (`while (t.calls.n < 1) …`), so the edit hook and the fence really run; the fence case also asserts exactly one call.
+- **B-05** A `t.advance(ms)` helper moves the clock and refreshes the heartbeat (the worker is "running" for 30 s only); every clock move in the T3 tests goes through it.
+- **B-06** The late-answer case asserts only that no query text remains (`recall_embed:%`) and that the cache holds the vector; the stale result row is the sweeper's (comment explains the fixed-clock artefact).
+- **B-07** `"statu"` added to the status concept group. Re-checked in scratch with the plan's own `fake-embed.mjs`: "Northstar status" vs the status notes = 0.56 (dense list non-empty, `pinExact` runs; the status fact rows themselves score 0.08, so the pin is what keeps `fact:status-new` first).
+- **B-08** Ask-bar assertion is membership (`hits.map(id)` contains the fact); the plan's own self-check already said so.
+- **B-09 / I-04** `searchBrain` asks for the vector first; the short-word guard applies only without one, the literal list stays the fallback when the query has no searchable words or recall returns nothing (test: "what is the monthly fee" finds `fact:price` with dense on; "zq xk" still falls back to the literal list). The dense-off path is byte-identical to plan 5.
+- **B-10** `{!available ? … : null}` (TS narrows `mode` through the alias).
+- **B-11** `pos-02` loses its `paraphrase` tag (it is lexical); the paraphrase bucket is exactly the eight dense cases, in the test and in the proof script.
+- **B-12** `para-04` expects `fact:beta-opens` (dedupe folds the beta chunk into the fact that covers it; scratch cosine of the fact row 0.46, the chunk 0.62 per the scan).
+- **B-13** No settings write on any index write. `vectorGeneration()`/`bumpVectorGeneration()` are an in-process counter; `VectorCache.load` also reads `PRAGMA data_version` (checked in scratch on `node:sqlite`: own commits leave it unchanged, another connection's commit moves it), so the worker's vectors invalidate the server's cache with zero writes; `VECTOR_GENERATION` is gone; both managed migration tests are in T2's run list untouched; the T2 and T3 tests assert that no `%vector%`/`%generation%` settings key ever exists.
+- **I-01** Outage safety as ruled: an HTTP error response or a Cloudflare error envelope throws `EmbedError` with `actual_cost_micro_usd: 0` and is settled at 0; a timeout after send keeps its hold; `recordFailure` backs off 60 s doubling to 15 min (`retry_at`) and opens the breaker after three consecutive failures (`paused_until`, 15 min, status line "Better search paused: the service is not answering." through `betterSearchAllowed`, which also stops the query lane); `embedQueueOpen()` gates the capture hooks, the self-heal check and the batch itself, so nothing is queued or sent while the back-off runs; the job is never retried (`failed` at once; a Cloudflare job cannot be re-sent under one dispatch key). Tests: T3 "the self-heal check queues a batch after a rebuild; failures back off 60 s then 120 s, the third pauses…" (Ollama) and "Cloudflare: an error response settles its hold at 0, a timeout after send keeps it…" (ledger states `["settled", "dispatched"]`, unresolved hold under the per-job cap, no second call during the back-off however many notes are captured).
+- **I-02** A batch refused with a 4xx (`EmbedError.upstream_status`) is retried row by row under dispatch keys `embed_batch:<row id>`; a row refused alone is withheld with `embedding_dim = -1` ("rejected") and skipped until its text changes (new row); other rows embed; the status says how many passages were refused. Test: T3 "a passage the service refuses is retried alone, withheld as rejected, and never blocks the rest" (fake `reject` option; dispatch rows per single call; the edit re-embeds).
+- **I-03 / C1** Cloudflare consent copy names "the questions your connected agents ask" (card, UX doc). Spec B1's copy is superseded by this plan's copy; the spec file itself is not edited by this plan.
+- **I-04 / C4** see B-09.
+- **I-05** The HTTP test pairs the owner (`/api/v1/session/pair`, cookie + CSRF as in `brain-search.test.ts`), asserts the paired `GET` shape, the domain's 409 on a provider the worker has not published, a 200 for off, 400 for a bad mode, and the agent-token refusal; its red step is a real 404.
+- **I-06** `runEmbedBatch` catches its own faults (only `AccountingPersistenceError` escapes), so an indexing job never writes a failed receipt into Today; the engine branch has no retry arithmetic.
+- **I-08** `queueEmbedIfOn()` is also called after the `syncSource` in `recordSystemOneResult` (line 4567). The double embedding of a note that sorting help re-syncs is accepted and recorded in the follow-ups (one extra batch row per sorted note under Cloudflare).
+- **I-13** Proof header and PROVIDERS say about 50 requests, roughly 3,000 tokens.
+- **I-15** Left: the cache is bounded by scope count, not bytes, and any commit from another connection reloads the matrix; recorded in the follow-ups (bound by bytes; incremental update).
+- **I-18** `searchRecallChunks` selects explicit columns (T2), so BM25 rows never carry their vector.
+- **I-19** `fromBm25(top)` on the fact branch too; with no dense list it is always true, so plan 5 output is unchanged (domain test covers both).
+- **A6** T5 adds only `denseFloor` to the better-search import (`QueryVector` came with T4).
+- **A11** `apps/web/brain/types.ts` is in T6's Files and commit; `BrainProps.searchNote`.
+- **C3** Cost copy "about 1 cent for every 500,000 words" (card, UX doc).
+- **C5** `queueEmbedIfOn` enqueues only when `embedQueueOpen()` (published setup matches the stored key, worker up, not paused, back-off passed); the T3 "changed model" case asserts no job is queued.
+- **C6** Only the local job list (line 5110) and `job()` change; the managed branch SQL at 5052 is untouched.
+- **C7** Verification grep 9 is restricted to this plan's files for `process.env` and gains a grep proving no `recall_vectors_generation`/`VECTOR_GENERATION` survives.
+- **Scratch runs for this pass:** `PRAGMA data_version` semantics on `node:sqlite` with two connections; the plan's `fake-embed.mjs` extracted and run over the pinned pairs (above-floor: 0.77, 0.53, 0.77, 0.54, 0.64, 0.46, 0.56; below-floor: 0.00, 0.00, 0.00, 0.37, and "team on leave" vs the Tamil note 0.39). Everything else in this section was re-traced by hand against the code it names.
+- **New rulings made here:** (R13) `embedQueueOpen()` is one Brain method the hooks, the self-heal check and the batch share, so a batch queued before a failure also waits for the back-off (otherwise a capture during an outage would send a call). (R14) A ledger refusal (limits gone, lease lost) is `cancelled` and does not count toward the breaker; only provider failures and unknown outcomes do. (R15) The breaker also stops the query lane (`betterSearchAllowed` is off while paused), so owners do not wait 400 ms per search against a dead service. (R16) The withheld reason is persisted as `embedding_dim = -1` for "rejected" (NULL for "secret") rather than a new column: no migration, and the search never reads withheld rows.
