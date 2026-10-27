@@ -24,6 +24,7 @@ import type { OpenSourceOptions } from "./today/types.ts";
 import "./brain/brain.css";
 import { ConnectionsView } from "./connections/ConnectionsView.tsx";
 import "./connections/connections.css";
+import { betterSearchCanSave, plainSearchProblem, plainSearchReason } from "./better-search-copy.ts";
 import {
   AgentClientPicker,
   AgentSetupGuide,
@@ -101,7 +102,8 @@ function sortingLine(status: SortingStatus, prefs: Preferences): string {
 }
 type BetterSearch = {
   mode: "off" | "ollama" | "cloudflare";
-  status: { configured: boolean; provider: "ollama" | "cloudflare" | null; label: string | null; reason: string | null; last_error: string | null } | null;
+  key: string | null;
+  status: { key: string | null; configured: boolean; provider: "ollama" | "cloudflare" | null; label: string | null; reason: string | null; last_error: string | null } | null;
   effective: boolean;
   reason: string;
   worker_running: boolean;
@@ -116,7 +118,7 @@ const BETTER_LABELS = { ollama: "Ollama on this computer", cloudflare: "Cloudfla
 function betterSearchLine(b: BetterSearch): string {
   if (b.mode === "off") return "Off. Search matches the words you used.";
   if (b.paused_until) return "Better search paused: the service is not answering.";
-  if (!b.effective) return `Words only right now: ${b.reason}`;
+  if (!b.effective) return `Words only right now: ${plainSearchReason(b.reason)}`;
   const label = b.status?.label ?? BETTER_LABELS[b.mode];
   const ready = `${b.counts.embedded} of ${b.counts.total} passages ready`;
   return b.counts.pending > 0 ? `On · ${label} · ${ready}; preparing the rest in the background` : `On · ${label} · ${ready}`;
@@ -1462,7 +1464,7 @@ function App() {
                   <h2>Better search</h2>
                   <p>Find notes by what they mean, not only by the words you used, in any language you write in.</p>
                   <p className="status" role="status">{betterSearchLine(better)}</p>
-                  {better.status?.last_error ? <p className="muted">Last problem: {better.status.last_error}</p> : null}
+                  {better.status?.last_error ? <p className="muted">Last problem: {plainSearchProblem(better.status.last_error)}</p> : null}
                   <form
                     onSubmit={(e) => {
                       e.preventDefault();
@@ -1494,7 +1496,7 @@ function App() {
                               ? "Off. Search matches the words you used."
                               : mode === "ollama"
                                 ? "On this computer (Ollama). Nothing leaves this computer."
-                                : "Cloudflare. The text of your notes, your searches and the questions your connected agents ask is sent to Cloudflare Workers AI to be turned into numbers that stay on this computer. Private notes are never sent. About 1 cent for every 500,000 words, counted against your daily limit."}
+                                : "Cloudflare. The text of your notes, your searches and the questions your connected agents ask is sent to Cloudflare Workers AI to be turned into numbers that stay on this computer. Private notes are never sent. About 1 cent for every 250,000 words, counted against your daily limit."}
                             {!available ? <span className="muted"> Not set up on this computer.</span> : null}
                             {mode === "cloudflare" && available && !better.caps_ok ? <span className="muted"> Needs a daily limit and a per-preparation limit above $0 below.</span> : null}
                           </label>
@@ -1502,7 +1504,7 @@ function App() {
                       })}
                     </fieldset>
                     <div className="actions">
-                      <button type="submit" disabled={busy || betterChoice === better.mode}>Save better search</button>
+                      <button type="submit" disabled={busy || !betterSearchCanSave(better, betterChoice)}>Save better search</button>
                     </div>
                     <small className="muted">Changing this choice later clears what was prepared and starts again.</small>
                   </form>
