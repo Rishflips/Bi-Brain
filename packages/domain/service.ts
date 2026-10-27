@@ -12,6 +12,7 @@ import {
 } from "./claims.ts";
 import { Storage } from "../storage/index.ts";
 import { invalidateRecallIndex, purgeRef, recallCountsForSource, recallIndexComplete, searchRecallChunks, syncClaim, syncClaimsCiting, syncSource, type RecallVisibility } from "../storage/recall-index.ts";
+import { clearEmbeddings, countEmbedRows } from "../storage/recall-vectors.ts";
 import {
   captureSchema,
   outputSchema,
@@ -49,6 +50,7 @@ import {
 import { extractReviewableMemory } from "./memory-understanding.ts";
 import { adviseFrom, S1_TOPIC_MAX, workerRunning, type S1Advice, type S1Context } from "./system-one.ts";
 import type { AskAnswer, AskQuestion, AskResult } from "../providers/system-one-ask.ts";
+import { BETTER_SEARCH, BETTER_SEARCH_OFF, BETTER_SEARCH_PAUSED, BETTER_SEARCH_STATUS, EMBED_VISIBILITIES, betterSearchEffective, type BetterSearchSetting, type BetterSearchStatus } from "./better-search.ts";
 import { JUDGE_CANDIDATES_MAX, JUDGE_DAILY_COUNT_CAP, JUDGE_DEADLINE_MS, JUDGE_MIN_REMAINING_MICRO_USD, JUDGE_POLL_MS, JUDGE_RESULT_KEY, JUDGE_STATE_KEY, applyJudge, buildJudgeQuestions, buildJudgeState, judgeSignals, judgedStatus } from "./recall-judge.ts";
 import { buildBrief, gateFitsBrief, type BriefInput, type BriefJob } from "./brief.ts";
 import { buildProjectView } from "./project-view.ts";
@@ -125,6 +127,7 @@ function managedBlockedMessage(
   return null;
 }
 const questionWordsOf = (h: RecallHit) => new Set(questionWords(h.kind === "fact" ? h.text : `${h.title} ${h.quote}`));
+const BETTER_SEARCH_NEEDS_LIMITS = "Better search with Cloudflare needs a daily limit and a per-preparation limit above $0 in Background help & spending.";
 export class Brain {
   constructor(
     readonly store: Storage,
@@ -479,7 +482,10 @@ export class Brain {
       JSON.stringify(data),
       e.created_at,
     );
-    if (kind === "claim") syncClaim(this.store, id);
+    if (kind === "claim") {
+      syncClaim(this.store, id);
+      this.queueEmbedIfOn();
+    }
     return e;
   }
   revise(e: Entity, data: Record<string, any>) {
@@ -504,7 +510,10 @@ export class Brain {
       JSON.stringify(data),
       this.now(),
     );
-    if (e.kind === "claim") syncClaim(this.store, e.id);
+    if (e.kind === "claim") {
+      syncClaim(this.store, e.id);
+      this.queueEmbedIfOn();
+    }
     // Any goal revision (including the reasoning worker's signature/notification
     // bookkeeping) invalidates advisories bound to the PREVIOUS goal entity
     // version. Withdraw them so a stale judgment is never actively readable or
@@ -641,6 +650,7 @@ export class Brain {
           v.body,
         );
         syncSource(this.store, id);
+        this.queueEmbedIfOn();
         this.invalidate(v.project_id);
         const job = this.enqueue(v.project_id, "derive_brief", {
           principal: p,
@@ -1121,6 +1131,7 @@ export class Brain {
       syncSource(this.store, id);
       // A visibility change can make claims that cite this source owner-only (or not) in the index.
       if ((v.visibility ?? s.visibility) !== s.visibility) syncClaimsCiting(this.store, id);
+      this.queueEmbedIfOn();
       this.invalidate(s.project_id);
       if (project !== s.project_id) this.invalidate(project);
       this.enqueue(project, "derive_brief", { principal: p });
@@ -1896,6 +1907,100 @@ export class Brain {
     }
     this.store.set("recall_help_enabled", v.enabled);
     return { enabled: v.enabled };
+  }
+  /** The stored better-search choice. Its own setting, never a preference field: managed code round-trips `prefs()` into a strict schema. */
+  betterSearchSetting(): BetterSearchSetting {
+    const raw = this.store.setting<Partial<BetterSearchSetting> | null>(BETTER_SEARCH, null);
+    if (!raw || typeof raw !== "object" || (raw.mode !== "ollama" && raw.mode !== "cloudflare") || typeof raw.key !== "string") return { ...BETTER_SEARCH_OFF };
+    return { mode: raw.mode, key: raw.key, consented_at: typeof raw.consented_at === "string" ? raw.consented_at : null };
+  }
+  /** The one effectiveness read the server's query lane and the worker's loops share: consent, the worker's published setup, its heartbeat, the circuit breaker and, for Cloudflare, both limits. */
+  betterSearchAllowed(): { on: boolean; reason: string; setting: BetterSearchSetting; status: BetterSearchStatus | null } {
+    const setting = this.betterSearchSetting();
+    const status = this.store.setting<BetterSearchStatus | null>(BETTER_SEARCH_STATUS, null);
+    if (this.tenantId !== undefined) return { on: false, reason: "Better search runs on the local app only.", setting, status };
+    const effective = betterSearchEffective(setting, status, workerRunning(this.store.setting<string | null>("worker_heartbeat", null), this.clock()));
+    if (!effective.on) return { ...effective, setting, status };
+    // The worker's circuit breaker: after three failed batches nothing is embedded or queried for 15 minutes.
+    if (status?.paused_until && Date.parse(status.paused_until) > this.clock().getTime()) return { on: false, reason: BETTER_SEARCH_PAUSED, setting, status };
+    if (setting.mode === "cloudflare") {
+      const prefs = this.prefs(this.ownerPrincipal());
+      if (!(prefs.daily_cap_micro_usd > 0) || !(prefs.per_job_cap_micro_usd > 0)) return { on: false, reason: BETTER_SEARCH_NEEDS_LIMITS, setting, status };
+    }
+    return { on: true, reason: "ready", setting, status };
+  }
+  /** What the Settings card reads: the choice, what the worker published (never a credential), whether it works right now, and how far the preparation is. */
+  betterSearch(p: Principal) {
+    this.owner(p);
+    const allowed = this.betterSearchAllowed();
+    const { setting, status } = allowed;
+    const prefs = this.prefs(p);
+    const caps_ok = prefs.daily_cap_micro_usd > 0 && prefs.per_job_cap_micro_usd > 0;
+    const counts = setting.mode !== "off" && setting.key ? countEmbedRows(this.store, setting.key, EMBED_VISIBILITIES[setting.mode]) : { total: 0, embedded: 0, pending: 0, withheld: 0 };
+    const now = this.clock().getTime();
+    const future = (at: string | undefined) => (at && Date.parse(at) > now ? at : null);
+    return {
+      mode: setting.mode,
+      key: setting.key,
+      consented_at: setting.consented_at,
+      status: status
+        ? { configured: status.configured, provider: status.provider ?? null, label: status.label ?? null, reason: status.reason ?? null, key: status.key ?? null, last_error: status.last_error ?? null, last_ok_at: status.last_ok_at ?? null }
+        : null,
+      effective: allowed.on,
+      reason: allowed.reason,
+      worker_running: workerRunning(this.store.setting<string | null>("worker_heartbeat", null), this.clock()),
+      caps_ok,
+      counts,
+      failures: status?.failures ?? 0,
+      retry_at: future(status?.retry_at),
+      paused_until: future(status?.paused_until),
+    };
+  }
+  /** Off is always accepted and clears every vector. A provider needs the worker's published setup for exactly that provider and a running worker; Cloudflare also needs both limits. Any change of provider or model is a fresh choice. */
+  setBetterSearch(p: Principal, input: unknown): BetterSearchSetting {
+    this.owner(p);
+    const v = z.object({ mode: z.enum(["off", "ollama", "cloudflare"]) }).strict().parse(input);
+    if (v.mode === "off")
+      return this.store.transaction(() => {
+        this.store.set(BETTER_SEARCH, BETTER_SEARCH_OFF);
+        clearEmbeddings(this.store);
+        this.store.run("UPDATE jobs SET status='cancelled',fence=fence+1,lease_until=NULL WHERE kind IN ('embed_batch','recall_embed') AND status IN ('queued','retry_wait')");
+        return { ...BETTER_SEARCH_OFF };
+      });
+    if (this.tenantId !== undefined) throw new BrainError("BUDGET_BLOCKED", "Better search runs on the local app only.", 409);
+    const status = this.store.setting<BetterSearchStatus | null>(BETTER_SEARCH_STATUS, null);
+    const probe = betterSearchEffective({ mode: v.mode, key: status?.key ?? null, consented_at: null }, status, workerRunning(this.store.setting<string | null>("worker_heartbeat", null), this.clock()));
+    if (!probe.on || !status?.key) throw new BrainError("BUDGET_BLOCKED", probe.reason, 409);
+    if (v.mode === "cloudflare") {
+      const prefs = this.prefs(p);
+      if (!(prefs.daily_cap_micro_usd > 0) || !(prefs.per_job_cap_micro_usd > 0)) throw new BrainError("BUDGET_BLOCKED", BETTER_SEARCH_NEEDS_LIMITS, 409);
+    }
+    const key = status.key;
+    return this.store.transaction(() => {
+      // The previous choice is read under the write lock, so a concurrent choice can never leave one key's vectors under the other's consent.
+      const previous = this.betterSearchSetting();
+      const next: BetterSearchSetting = { mode: v.mode, key, consented_at: this.now() };
+      if (previous.mode !== next.mode || previous.key !== next.key) clearEmbeddings(this.store);
+      this.store.set(BETTER_SEARCH, next);
+      this.enqueueEmbedBatch();
+      return next;
+    });
+  }
+  /** One batch at a time: a queued, waiting or running batch is enough, and a batch re-queues itself while rows remain. */
+  enqueueEmbedBatch(): string | null {
+    if (this.store.get("SELECT 1 FROM jobs WHERE kind='embed_batch' AND status IN ('queued','retry_wait','running') LIMIT 1")) return null;
+    return this.enqueue("inbox", "embed_batch", { principal: this.ownerPrincipal() }).id;
+  }
+  /** Whether a batch may be queued or run now: better search can run (chosen, published, worker up, not paused, limits for Cloudflare) and the worker's back-off has passed. Read by the capture hooks, the self-heal check and the batch itself. */
+  embedQueueOpen(): boolean {
+    const allowed = this.betterSearchAllowed();
+    if (!allowed.on) return false;
+    const retryAt = allowed.status?.retry_at;
+    return !(retryAt && Date.parse(retryAt) > this.clock().getTime());
+  }
+  /** Every index write path calls this: a batch is queued only while one may run; otherwise the self-heal check picks the rows up later. With Better search off it costs one settings read and writes nothing. */
+  private queueEmbedIfOn() {
+    if (this.betterSearchSetting().mode !== "off" && this.embedQueueOpen()) this.enqueueEmbedBatch();
   }
   /**
    * RAW stored DECISION-stage consent for this owner (never the effective getter,
@@ -4565,6 +4670,8 @@ export class Brain {
       });
       // The topic and durable hints of this answer are part of the source's recall rows.
       syncSource(this.store, sourceId);
+      // Sorting help re-syncs the note's rows, which drops their vectors: queue a batch to embed them again.
+      this.queueEmbedIfOn();
       this.applySystemOneAdvice(ctx.project_id, sourceId, version, answer.id, advice);
       return { recorded: true, advice };
     });
@@ -5107,14 +5214,14 @@ export class Brain {
         allowance: null,
       },
       jobs: this.store.all(
-        "SELECT id,kind,status,error,project_id FROM jobs WHERE kind<>'recall_judge' ORDER BY created_at DESC LIMIT 20",
+        "SELECT id,kind,status,error,project_id FROM jobs WHERE kind NOT IN ('recall_judge','embed_batch','recall_embed') ORDER BY created_at DESC LIMIT 20",
       ),
     };
   }
   job(p: Principal, id: string) {
     const j = this.store.get("SELECT * FROM jobs WHERE id=?", id);
-    // Judge rows belong to the recall fast lane alone: they are never shown, cancelled or retried by hand.
-    if (!j || j.kind === "recall_judge") throw new BrainError("NOT_FOUND", "Item unavailable.", 404);
+    // Judge and better-search rows belong to the worker alone: they are never shown, cancelled or retried by hand.
+    if (!j || j.kind === "recall_judge" || j.kind === "embed_batch" || j.kind === "recall_embed") throw new BrainError("NOT_FOUND", "Item unavailable.", 404);
     this.access(p, j.project_id);
     if (p.kind === "agent") {
       const payload = JSON.parse(j.payload);

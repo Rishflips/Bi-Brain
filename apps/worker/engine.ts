@@ -23,6 +23,7 @@ import type { PreparedDecisionProvider } from "../../packages/providers/prepared
 import type { DispatchRecord } from "../../packages/domain/spend.ts";
 import { dispatchPrepared, type PreparedAttempt } from "./dispatch.ts";
 import { runSystemOneJob, type SystemOneClient } from "./system-one.ts";
+import { EMBED_CHECK_MS, maybeQueueEmbedBatch, queueEmbedBatch, runEmbedBatch, type EmbedClient } from "./embed.ts";
 import { runDecisionAdvisory } from "./decision-advisory.ts";
 import { AccountingPersistenceError } from "../../packages/storage/managed-spending.ts";
 import {
@@ -55,6 +56,8 @@ export class Worker {
     PreparedDecisionProvider,
     "prepareDecision"
   >;
+  /** Real time of the last better-search self-heal check (throttle only; the brain's clock decides eligibility). */
+  private lastEmbedCheck = 0;
   constructor(
     readonly brain: Brain,
     readonly provider: PreparedProvider = new PreparedReasoningProvider(),
@@ -65,6 +68,8 @@ export class Worker {
     },
     /** Local sorting help. Null (the default) means it is not configured. */
     private readonly systemOne: SystemOneClient | null = null,
+    /** Better search. Null (the default) means it is not configured on this computer. */
+    private readonly embed: EmbedClient | null = null,
   ) {
     if (brain.tenantId !== undefined) {
       // A tenant-bound brain must never fall back to local money. Without an
@@ -155,6 +160,15 @@ export class Worker {
     const b = this.brain,
       prefs = b.prefs(this.owner);
     b.store.set("worker_heartbeat", b.now());
+    // Better search self-heal: rows without a current vector get a batch; throttled so a quiet worker costs one small query every 5 s.
+    if (this.embed && Date.now() - this.lastEmbedCheck > EMBED_CHECK_MS) {
+      this.lastEmbedCheck = Date.now();
+      try {
+        maybeQueueEmbedBatch(b);
+      } catch {
+        /* The next check retries; a failed check must not stop scheduling. */
+      }
+    }
     b.store.run(
       "UPDATE jobs SET status='failed',fence=fence+1,error='Preparation deadline exceeded. Your original is saved.' WHERE status IN ('running','retry_wait') AND deadline_at<=? AND kind<>'recall_judge'",
       b.now(),
@@ -275,6 +289,24 @@ export class Worker {
           j.id,
           j.fence,
         );
+        return true;
+      }
+      // Better search indexing: its own outcome handling, no receipt. The job is never retried here: retries are the
+      // worker's back-off plus the self-heal check, and a Cloudflare job cannot be re-sent under the same dispatch key.
+      if (j.kind === "embed_batch") {
+        const r = await runEmbedBatch(
+          { brain: b, ledger: this.accounting, client: this.embed, owner: this.owner, leaseOwner: this.id },
+          j as { id: string; fence: number },
+          controller.signal,
+        );
+        b.store.run(
+          "UPDATE jobs SET status=?,error=?,lease_until=NULL WHERE id=? AND fence=?",
+          r.outcome === "failed" ? "failed" : r.outcome === "cancelled" ? "cancelled" : "succeeded",
+          r.error ?? null,
+          j.id,
+          j.fence,
+        );
+        if (r.more) queueEmbedBatch(b);
         return true;
       }
       const prefs = b.prefs(this.owner);
