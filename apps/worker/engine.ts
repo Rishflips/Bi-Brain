@@ -118,7 +118,7 @@ export class Worker {
     const b = this.brain;
     return b.store.transaction(() => {
       const j = b.store.get(
-        `SELECT * FROM jobs WHERE ((status IN ('queued','retry_wait') AND next_at<=?) OR (status='running' AND lease_until<=?)) AND attempts<max_attempts AND kind<>'recall_judge' ORDER BY created_at LIMIT 1`,
+        `SELECT * FROM jobs WHERE ((status IN ('queued','retry_wait') AND next_at<=?) OR (status='running' AND lease_until<=?)) AND attempts<max_attempts AND kind NOT IN ('recall_judge','recall_embed') ORDER BY created_at LIMIT 1`,
         b.now(),
         b.now(),
       );
@@ -170,11 +170,11 @@ export class Worker {
       }
     }
     b.store.run(
-      "UPDATE jobs SET status='failed',fence=fence+1,error='Preparation deadline exceeded. Your original is saved.' WHERE status IN ('running','retry_wait') AND deadline_at<=? AND kind<>'recall_judge'",
+      "UPDATE jobs SET status='failed',fence=fence+1,error='Preparation deadline exceeded. Your original is saved.' WHERE status IN ('running','retry_wait') AND deadline_at<=? AND kind NOT IN ('recall_judge','recall_embed')",
       b.now(),
     );
     b.store.run(
-      "UPDATE jobs SET status='failed',error='Worker attempts exhausted after interruption.' WHERE status='running' AND lease_until<=? AND attempts>=max_attempts AND kind<>'recall_judge'",
+      "UPDATE jobs SET status='failed',error='Worker attempts exhausted after interruption.' WHERE status='running' AND lease_until<=? AND attempts>=max_attempts AND kind NOT IN ('recall_judge','recall_embed')",
       b.now(),
     );
     for (const proposal of b.entities(this.owner, "proposal"))

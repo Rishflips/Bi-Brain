@@ -281,8 +281,14 @@ describe("embed_batch", () => {
     const paused = t.brain.betterSearch(owner);
     expect(paused).toMatchObject({ failures: 3, effective: false, reason: "Better search paused: the service is not answering." });
     expect(paused.paused_until).not.toBeNull();
-    // The query lane reads the same rule (task 4 asserts `queryVector` is null here): nothing is embedded or asked while paused.
+    // The query lane reads the same rule: while paused a question gets words only, at once, with nothing queued and nothing sent.
     expect(t.brain.betterSearchAllowed()).toMatchObject({ on: false, reason: "Better search paused: the service is not answering." });
+    const sentBefore = t.calls.n;
+    const startedAt = Date.now();
+    expect(await t.brain.queryVector(owner, "launch colour")).toBeNull();
+    expect(Date.now() - startedAt).toBeLessThan(100);
+    expect(t.store.all("SELECT 1 FROM jobs WHERE kind='recall_embed'")).toEqual([]);
+    expect(t.calls.n).toBe(sentBefore);
     t.advance(5 * 60_000);
     expect(maybeQueueEmbedBatch(t.brain)).toBe(false);
     t.advance(11 * 60_000);

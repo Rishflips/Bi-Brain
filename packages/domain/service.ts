@@ -50,7 +50,24 @@ import {
 import { extractReviewableMemory } from "./memory-understanding.ts";
 import { adviseFrom, S1_TOPIC_MAX, workerRunning, type S1Advice, type S1Context } from "./system-one.ts";
 import type { AskAnswer, AskQuestion, AskResult } from "../providers/system-one-ask.ts";
-import { BETTER_SEARCH, BETTER_SEARCH_OFF, BETTER_SEARCH_PAUSED, BETTER_SEARCH_STATUS, EMBED_VISIBILITIES, betterSearchEffective, type BetterSearchSetting, type BetterSearchStatus } from "./better-search.ts";
+import {
+  BETTER_SEARCH,
+  BETTER_SEARCH_OFF,
+  BETTER_SEARCH_PAUSED,
+  BETTER_SEARCH_STATUS,
+  EMBED_DIM_MAX,
+  EMBED_DIM_MIN,
+  EMBED_RESULT_KEY,
+  EMBED_STATE_KEY,
+  EMBED_VISIBILITIES,
+  QUERY_EMBED_DEADLINE_MS,
+  QUERY_EMBED_POLL_MS,
+  betterSearchEffective,
+  vectorFromBase64,
+  type BetterSearchSetting,
+  type BetterSearchStatus,
+  type QueryVector,
+} from "./better-search.ts";
 import { JUDGE_CANDIDATES_MAX, JUDGE_DAILY_COUNT_CAP, JUDGE_DEADLINE_MS, JUDGE_MIN_REMAINING_MICRO_USD, JUDGE_POLL_MS, JUDGE_RESULT_KEY, JUDGE_STATE_KEY, applyJudge, buildJudgeQuestions, buildJudgeState, judgeSignals, judgedStatus } from "./recall-judge.ts";
 import { buildBrief, gateFitsBrief, type BriefInput, type BriefJob } from "./brief.ts";
 import { buildProjectView } from "./project-view.ts";
@@ -3723,6 +3740,69 @@ export class Brain {
       const cancelled = this.store.run("UPDATE jobs SET status='cancelled',fence=fence+1 WHERE id=? AND kind='recall_judge' AND status='queued'", requestId).changes;
       if (cancelled) this.store.run("DELETE FROM settings WHERE key=?", JUDGE_STATE_KEY(requestId));
       this.store.run("DELETE FROM settings WHERE key=?", JUDGE_RESULT_KEY(requestId));
+    });
+    return null;
+  }
+  /**
+   * The query vector for dense recall, from the worker's fast lane within 400 ms, or null (words only).
+   * This process never calls a model: the key and the endpoint live in the worker. The query text is stored only
+   * under the job's state key and is deleted by whichever side finishes first.
+   */
+  async queryVector(p: Principal, query: string): Promise<QueryVector | null> {
+    this.boundTo(p);
+    // Off, not effective, the worker stale, the breaker open (paused) or a tenant brain: words only, at once, with nothing queued.
+    const allowed = this.betterSearchAllowed();
+    if (!allowed.on || !allowed.setting.key) return null;
+    const q = typeof query === "string" ? query.trim() : "";
+    if (!q || detectSecrets(q).length) return null;
+    const key = allowed.setting.key;
+    const id = randomUUID();
+    const now = this.now();
+    const deadline = new Date(this.clock().getTime() + QUERY_EMBED_DEADLINE_MS).toISOString();
+    const requestHash = hash(`${key}
+${q}`);
+    try {
+      this.store.transaction(() => {
+        this.store.run(
+          "INSERT INTO jobs(id,project_id,kind,payload,status,max_attempts,next_at,created_at,deadline_at) VALUES(?,?,?,?,?,?,?,?,?)",
+          id, "inbox", "recall_embed", JSON.stringify({ request_id: id, request_hash: requestHash }), "queued", 1, now, now, deadline,
+        );
+        this.store.set(EMBED_STATE_KEY(id), { query: q, request_hash: requestHash, created_at: now });
+      });
+      return await this.awaitQueryVector(id, QUERY_EMBED_DEADLINE_MS, key);
+    } catch {
+      // Dense recall is optional help: a storage fault means words only, never an error to the caller.
+      return null;
+    }
+  }
+  /** Polls for the worker's vector every 10 ms until the deadline; a job that ended without one ends the wait at once. Validates key and shape before use. */
+  private async awaitQueryVector(requestId: string, deadlineMs: number, key: string): Promise<QueryVector | null> {
+    const until = Date.now() + Math.floor(deadlineMs);
+    const read = (): QueryVector | null | undefined => {
+      const result = this.store.setting<{ key?: unknown; dim?: unknown; vector?: unknown } | null>(EMBED_RESULT_KEY(requestId), null);
+      if (!result) return undefined;
+      this.store.run("DELETE FROM settings WHERE key=?", EMBED_RESULT_KEY(requestId));
+      // Untrusted until checked: exactly the consented model key, an integer dim in bounds, and base64 of that many finite floats.
+      const dim = result.dim;
+      if (result.key !== key || typeof dim !== "number" || !Number.isInteger(dim) || dim < EMBED_DIM_MIN || dim > EMBED_DIM_MAX || typeof result.vector !== "string") return null;
+      const vector = vectorFromBase64(result.vector, dim);
+      return vector ? { vector, key, dim } : null;
+    };
+    while (Date.now() < until) {
+      const found = read();
+      if (found !== undefined) return found;
+      const job = this.store.get<{ status: string }>("SELECT status FROM jobs WHERE id=? AND kind='recall_embed'", requestId);
+      if (!job || job.status === "failed" || job.status === "cancelled") return null;
+      await new Promise((r) => setTimeout(r, QUERY_EMBED_POLL_MS));
+    }
+    // A vector published during the last poll interval was published before the deadline: use it rather than throw it away.
+    const last = read();
+    if (last !== undefined) return last;
+    // Given up: a job nobody took is fenced and its query text deleted now; a running job finishes in the worker and only feeds its cache.
+    this.store.transaction(() => {
+      const cancelled = this.store.run("UPDATE jobs SET status='cancelled',fence=fence+1 WHERE id=? AND kind='recall_embed' AND status='queued'", requestId).changes;
+      if (cancelled) this.store.run("DELETE FROM settings WHERE key=?", EMBED_STATE_KEY(requestId));
+      this.store.run("DELETE FROM settings WHERE key=?", EMBED_RESULT_KEY(requestId));
     });
     return null;
   }

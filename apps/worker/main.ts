@@ -39,6 +39,7 @@ import { publishSystemOneStatus } from "./system-one.ts";
 import { embedFromEnv } from "../../packages/providers/embed-env.ts";
 import { publishBetterSearchStatus } from "./embed.ts";
 import { startJudgeLoop } from "./recall-judge.ts";
+import { startEmbedLoop } from "./recall-embed.ts";
 import { LocalDispatchAccounting } from "./accounting.ts";
 import { systemOneFromEnv } from "../../packages/providers/system-one-env.ts";
 import { ManagedWorker } from "./managed.ts";
@@ -526,6 +527,10 @@ if (config.mode === "managed") {
         workerId: worker.id,
       })
     : null;
+  // The query fast lane runs only here, beside the batch job, so the key and the endpoint never leave this process.
+  const embedLane = embed.config
+    ? startEmbedLoop({ brain, ledger: new LocalDispatchAccounting(storage, brain.clock), client: { config: embed.config }, owner: brain.ownerPrincipal(), workerId: worker.id })
+    : null;
   let running = true;
   const stop = () => {
     running = false;
@@ -542,5 +547,6 @@ if (config.mode === "managed") {
     }
   }
   await judge?.stop();
+  await embedLane?.stop();
   storage.close();
 }
