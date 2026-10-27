@@ -106,29 +106,29 @@ describe("brief routes", () => {
 });
 
 describe("Brain.ask", () => {
-  it("answers only from saved material and validates input", () => {
+  it("answers only from saved material and validates input", async () => {
     const { b } = setup();
     b.capture(owner, { title: "Beta timeline", body: "The private beta opens on November 14 for 50 invited builders." });
-    const out = b.ask(owner, { q: "When does the beta open?" });
+    const out = await b.ask(owner, { q: "When does the beta open?" });
     expect(out.answered).toBe(true);
     expect(out.hits[0]).toMatchObject({ type: "original", title: "Beta timeline" });
-    expect(b.ask(owner, { q: "quantum gravity?" })).toMatchObject({ answered: false, hits: [] });
-    expect(() => b.ask(owner, { q: "?!" })).toThrow(/words/i);
-    expect(() => b.ask(owner, { q: "x".repeat(501) })).toThrow();
+    expect(await b.ask(owner, { q: "quantum gravity?" })).toMatchObject({ answered: false, hits: [] });
+    await expect(b.ask(owner, { q: "?!" })).rejects.toThrow(/words/i);
+    await expect(b.ask(owner, { q: "x".repeat(501) })).rejects.toThrow();
   });
 
-  it("never returns withdrawn sources or retired facts", () => {
+  it("never returns withdrawn sources or retired facts", async () => {
     const { b } = setup();
     const saved = b.capture(owner, { title: "Decision", body: "We decided that Northstar beta is invite only." }) as any;
     const gate = b.brief(owner).items[0];
     const reviewed = b.reviewGate(owner, gate.target.id, { action: "accept", expected_version: gate.target.version }) as any;
-    expect(b.ask(owner, { q: "Is the beta invite only?" }).hits[0]).toMatchObject({ type: "fact" });
+    expect((await b.ask(owner, { q: "Is the beta invite only?" })).hits[0]).toMatchObject({ type: "fact" });
     const claim = b.entity(owner, reviewed.claim_ids[0]);
     b.retireClaim(owner, claim.id, claim.version);
-    const afterRetire = b.ask(owner, { q: "Is the beta invite only?" });
+    const afterRetire = await b.ask(owner, { q: "Is the beta invite only?" });
     expect(afterRetire.hits.some((h) => h.type === "fact")).toBe(false);
     b.removeSource(owner, saved.source_id, 1, false);
-    expect(b.ask(owner, { q: "Is the beta invite only?" })).toMatchObject({ answered: false, hits: [] });
+    expect(await b.ask(owner, { q: "Is the beta invite only?" })).toMatchObject({ answered: false, hits: [] });
   });
 
   it("is owner-only over HTTP and returns hits for the paired owner", async () => {

@@ -91,18 +91,18 @@ describe("Brain.searchBrain", () => {
     return new Brain(s, () => new Date("2026-10-23T09:00:00Z"));
   }
 
-  it("searches every project, validates the query and is owner-only", () => {
+  it("searches every project, validates the query and is owner-only", async () => {
     const b = setup();
     const hydra = b.createProject(owner, "Hydra");
     b.capture(owner, { title: "Hydra", body: "The ZEBRA_SENTINEL lives here.", project_id: hydra.id });
     const gone = b.capture(owner, { title: "Gone", body: "ZEBRA_SENTINEL withdrawn." }) as any;
     b.removeSource(owner, gone.source_id, 1, false);
-    const out = b.searchBrain(owner, { q: "zebra_sentinel" });
+    const out = await b.searchBrain(owner, { q: "zebra_sentinel" });
     expect(out.originals.map((o) => o.project_id)).toEqual([hydra.id]);
-    expect(() => b.searchBrain(owner, { q: "z" })).toThrow();
-    expect(() => b.searchBrain(owner, { q: "z".repeat(201) })).toThrow();
-    expect(() => b.searchBrain(owner, { q: "zebra", extra: 1 })).toThrow();
-    expect(() => b.searchBrain({ kind: "agent", grant_id: "nope" } as Principal, { q: "zebra" })).toThrow();
+    await expect(b.searchBrain(owner, { q: "z" })).rejects.toThrow();
+    await expect(b.searchBrain(owner, { q: "z".repeat(201) })).rejects.toThrow();
+    await expect(b.searchBrain(owner, { q: "zebra", extra: 1 })).rejects.toThrow();
+    await expect(b.searchBrain({ kind: "agent", grant_id: "nope" } as Principal, { q: "zebra" })).rejects.toThrow();
   });
 
   it("is served over HTTP to the paired owner only", async () => {

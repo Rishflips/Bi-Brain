@@ -182,8 +182,8 @@ describe("the judge fast lane", () => {
     expect(out.level).toBe("pointer");
     expect(t.brain.recallLog(owner).rows.at(-1)).toMatchObject({ judged: true, level: "pointer" });
     const before = t.calls.n;
-    t.brain.ask(owner, { q: "what is the Northstar status today" });
-    t.brain.searchBrain(owner, { q: "Northstar status" });
+    await t.brain.ask(owner, { q: "what is the Northstar status today" });
+    await t.brain.searchBrain(owner, { q: "Northstar status" });
     t.brain.recallCore(owner, { query: "Northstar status" });
     expect(t.calls.n).toBe(before);
     expect(t.store.all("SELECT id FROM jobs WHERE kind='recall_judge'")).toHaveLength(1);

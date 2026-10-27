@@ -12,7 +12,7 @@ import {
 } from "./claims.ts";
 import { Storage } from "../storage/index.ts";
 import { invalidateRecallIndex, purgeRef, recallCountsForSource, recallIndexComplete, searchRecallChunks, syncClaim, syncClaimsCiting, syncSource, type RecallVisibility } from "../storage/recall-index.ts";
-import { clearEmbeddings, countEmbedRows } from "../storage/recall-vectors.ts";
+import { VectorCache, clearEmbeddings, countEmbedRows } from "../storage/recall-vectors.ts";
 import {
   captureSchema,
   outputSchema,
@@ -63,6 +63,7 @@ import {
   QUERY_EMBED_DEADLINE_MS,
   QUERY_EMBED_POLL_MS,
   betterSearchEffective,
+  denseFloor,
   vectorFromBase64,
   type BetterSearchSetting,
   type BetterSearchStatus,
@@ -82,13 +83,16 @@ import {
   RECALL_LIMIT_MAX,
   buildFtsQuery,
   dedupe,
+  denseWhy,
   deterministicSignals,
   deterministicStatus,
   factFreshness,
   fuse,
+  pinExact,
   recallInputSchema,
   whyFor,
   type Candidate,
+  type RecallLists,
   type FactHit as RecallFactHit,
   type OriginalHit as RecallOriginalHit,
   type RecallHit,
@@ -144,6 +148,11 @@ function managedBlockedMessage(
   return null;
 }
 const questionWordsOf = (h: RecallHit) => new Set(questionWords(h.kind === "fact" ? h.text : `${h.title} ${h.quote}`));
+/** The entity name a fact row's prefix carries after its project title. */
+const entityFromPrefix = (prefix: string, projectTitle: string) => {
+  const lead = `${projectTitle} · `;
+  return prefix.startsWith(lead) ? prefix.slice(lead.length) : "";
+};
 const BETTER_SEARCH_NEEDS_LIMITS = "Better search with Cloudflare needs a daily limit and a per-preparation limit above $0 in Background help & spending.";
 export class Brain {
   constructor(
@@ -169,6 +178,8 @@ export class Brain {
     // decision consent.
     private readonly decisionCapability?: () => { ready: boolean; reason: string },
   ) {}
+  /** The dense-scan matrix cache for this process; the stored generation keeps it honest across server and worker. */
+  private readonly vectors = new VectorCache();
   /**
    * The owner principal for this brain. An unbound local brain yields an
    * unbound owner; a managed brain yields an owner bound to its own tenant.
@@ -3575,8 +3586,8 @@ export class Brain {
     };
   }
   /** Deterministic recall: authorization before the SQL and again per hit. The only path the owner's screens use. */
-  recallCore(p: Principal, input: unknown): RecallResult {
-    return this.recallInternal(p, recallInputSchema.parse(input)).result;
+  recallCore(p: Principal, input: unknown, dense: QueryVector | null = null): RecallResult {
+    return this.recallInternal(p, recallInputSchema.parse(input), dense).result;
   }
   /**
    * The agent read verb: the deterministic core, sharpened by the optional judge when the owner allowed it.
@@ -3585,7 +3596,9 @@ export class Brain {
    */
   async recall(p: Principal, input: unknown): Promise<RecallResult> {
     const v = recallInputSchema.parse(input);
-    const internal = this.recallInternal(p, v);
+    // The candidate list, words plus meaning, is complete before the judge sees it: at most 400 ms for the vector, then at most 900 ms for the judge.
+    const dense = await this.denseFor(p, v.query);
+    const internal = this.recallInternal(p, v, dense);
     const judged = await this.judgeRanked(p, internal, v.query);
     if (!judged.signals) return internal.result;
     const hits = this.judgedHits(internal, judged, internal.result.hits);
@@ -3609,16 +3622,18 @@ export class Brain {
     const v = recallPushSchema.parse(input);
     const started = Date.now();
     const quiet = { level: "none" as PushLevel, text: "", hit_ids: [] as string[], digest: false };
-    const finish = (out: typeof quiet, extra: { candidates: number; judged: boolean }) => {
+    const finish = (out: typeof quiet, extra: { candidates: number; judged: boolean; dense: boolean }) => {
       // A push that reached the brain proves the connection works, exactly like /agent/verify.
       this.store.run("UPDATE grants SET last_verified_at=? WHERE id=?", this.now(), p.grant_id);
       const log = this.store.setting<unknown[]>("recall_log", []);
-      log.push({ at: this.now(), grant_id: p.grant_id, client: v.client, level: out.level, candidates: extra.candidates, hits: out.hit_ids.length, latency_ms: Date.now() - started, judged: extra.judged });
+      log.push({ at: this.now(), grant_id: p.grant_id, client: v.client, level: out.level, candidates: extra.candidates, hits: out.hit_ids.length, latency_ms: Date.now() - started, judged: extra.judged, dense: extra.dense });
       this.store.set("recall_log", log.slice(-RECALL_LOG_MAX));
       return out;
     };
-    if (detectSecrets(v.prompt).length) return finish(quiet, { candidates: 0, judged: false });
-    const internal = this.recallInternal(p, { query: v.prompt, history: false, limit: PUSH_HITS_MAX });
+    if (detectSecrets(v.prompt).length) return finish(quiet, { candidates: 0, judged: false, dense: false });
+    // The vector first (at most 400 ms), then the judge (at most 900 ms): the 1,500 ms hook budget holds.
+    const dense = await this.denseFor(p, v.prompt);
+    const internal = this.recallInternal(p, { query: v.prompt, history: false, limit: PUSH_HITS_MAX }, dense);
     const candidates = internal.result.searched.candidates;
     const judge = await this.judgeForPush(p, internal);
     let level = pushLevel(internal.signals, judge.signals);
@@ -3649,8 +3664,8 @@ export class Brain {
         text = level === "pointer" && d.includes(text) ? d : `${d}\n\n${text}`;
       }
     }
-    if (text && detectSecrets(text).length) return finish(quiet, { candidates, judged: judge.judged });
-    return finish({ level, text, hit_ids: used.map((h) => h.id), digest }, { candidates, judged: judge.judged });
+    if (text && detectSecrets(text).length) return finish(quiet, { candidates, judged: judge.judged, dense: internal.dense });
+    return finish({ level, text, hit_ids: used.map((h) => h.id), digest }, { candidates, judged: judge.judged, dense: internal.dense });
   }
   /** The judge for a hook push: the same advisory application as `recall`; without a judge the deterministic hits stand. */
   protected async judgeForPush(p: Principal, internal: ReturnType<Brain["recallInternal"]>): Promise<{ signals: JudgeSignals | null; hits: RecallHit[]; judged: boolean }> {
@@ -3685,7 +3700,7 @@ export class Brain {
   /** What was pushed to agents and when: levels, counts and latency. Never a prompt, an id or a passage. */
   recallLog(p: Principal) {
     this.owner(p);
-    return { rows: this.store.setting<{ at: string; grant_id: string; client: string; level: PushLevel; candidates: number; hits: number; latency_ms: number; judged: boolean }[]>("recall_log", []) };
+    return { rows: this.store.setting<{ at: string; grant_id: string; client: string; level: PushLevel; candidates: number; hits: number; latency_ms: number; judged: boolean; dense?: boolean }[]>("recall_log", []) };
   }
   /** Whether a judge call may be queued right now. Every reason is a plain sentence; none is an error to the agent. */
   recallJudgeAllowed(): { ok: boolean; reason: string } {
@@ -3774,6 +3789,10 @@ ${q}`);
       // Dense recall is optional help: a storage fault means words only, never an error to the caller.
       return null;
     }
+  }
+  /** The vector for a recall query, only when the query has searchable words: without them recall returns before any search, so a vector would be wasted (and paid for). */
+  private async denseFor(p: Principal, query: string): Promise<QueryVector | null> {
+    return buildFtsQuery(query).match ? this.queryVector(p, query) : null;
   }
   /** Polls for the worker's vector every 10 ms until the deadline; a job that ended without one ends the wait at once. Validates key and shape before use. */
   private async awaitQueryVector(requestId: string, deadlineMs: number, key: string): Promise<QueryVector | null> {
@@ -3865,7 +3884,7 @@ ${q}`);
     }
     return [...names];
   }
-  recallInternal(p: Principal, v: { query: string; project_id?: string; history: boolean; limit: number }) {
+  recallInternal(p: Principal, v: { query: string; project_id?: string; history: boolean; limit: number }, dense: QueryVector | null = null) {
     const now = this.clock();
     const scope = (v.project_id
       ? [this.store.get<{ id: string; title: string }>("SELECT id,title FROM projects WHERE id=?", v.project_id)].filter((x): x is { id: string; title: string } => !!x)
@@ -3886,21 +3905,27 @@ ${q}`);
     // confirms an item the principal cannot see. Only claims whose name could match are loaded.
     const termSet = new Set(fts.terms);
     const entityNames = ids.length ? this.visibleEntityNames(p, scope, termSet, visibilities) : [];
-    if (!fts.match) return { result: empty("no_match", 0), ranked: [] as Candidate[], authorized: [] as RecallHit[], signals: deterministicSignals([], [], entityNames), entityNames, scope };
+    if (!fts.match) return { result: empty("no_match", 0), ranked: [] as Candidate[], authorized: [] as RecallHit[], signals: deterministicSignals([], [], entityNames), entityNames, scope, dense: false };
     const status = v.history ? "any" : "current";
     const search = (match: string, kind: "fact" | "original") => searchRecallChunks(this.store, { match, kind, projects: ids, visibilities, status, limit: CANDIDATES_PER_LIST });
-    const lists = {
+    const lists: RecallLists = {
       facts: search(fts.match, "fact"),
       originals: search(fts.match, "original"),
       // One RRF list: the two kinds are interleaved by BM25 score (more negative is better), not concatenated.
       phrase: fts.phrase ? [...search(fts.phrase, "fact"), ...search(fts.phrase, "original")].sort((a, b) => a.score - b.score) : [],
+      // The fourth list: dense candidates for the same scope and status, under the per-model floor. Empty unless the owner chose
+      // better search and the worker answered in time; the per-hit checks below treat them exactly like every other candidate.
+      dense: dense ? this.vectors.search(this.store, { vector: dense.vector, key: dense.key, dim: dense.dim, projects: ids, visibilities, status, floor: denseFloor(dense.key), limit: CANDIDATES_PER_LIST }) : [],
     };
     const confirmations = this.store.setting<Record<string, string>>("claim_confirmations", {});
     const titles = new Map(scope.map((pr) => [pr.id, pr.title]));
     const authorized: { candidate: Candidate; hit: RecallHit }[] = [];
     // Built once, and only if a fact candidate survives verification.
     let supersessions: Map<string, string[]> | undefined;
-    for (const candidate of fuse(lists, now)) {
+    // With dense candidates present, a fact whose entity the query names exactly stays first; plan 5 ordering is untouched otherwise.
+    let fused = fuse(lists, now);
+    if (lists.dense!.length) fused = pinExact(fused, (c) => entityFromPrefix(c.row.prefix, titles.get(c.row.project_id) ?? ""), entityNames);
+    for (const candidate of fused) {
       const r = candidate.row;
       const project = { id: r.project_id, title: titles.get(r.project_id) ?? "Project" };
       try {
@@ -3909,7 +3934,7 @@ ${q}`);
           if (s.version !== r.ref_version || s.state !== "active") continue;
           const quote = Array.from(s.body).slice(r.start, r.end).join("");
           if (quote !== r.text) continue;
-          authorized.push({ candidate, hit: { kind: "original", id: s.id, version: s.version, project, title: s.title, quote, start: r.start, end: r.end, captured_at: s.captured_at, freshness: "current", why: whyFor(fts.terms, `${s.title} ${quote}`), score: candidate.fused } });
+          authorized.push({ candidate, hit: { kind: "original", id: s.id, version: s.version, project, title: s.title, quote, start: r.start, end: r.end, captured_at: s.captured_at, freshness: "current", why: [...whyFor(fts.terms, `${s.title} ${quote}`), ...denseWhy(candidate)], score: candidate.fused } });
         } else {
           // Only this candidate is loaded and verified. A claim without evidence is a hypothesis and is never presented as a fact to anyone.
           const c = this.visibleClaim(p, r.project_id, r.ref_id, v.history);
@@ -3917,7 +3942,7 @@ ${q}`);
           supersessions ??= this.supersessions(ids);
           const replacedBy = this.supersededBy(p, r.project_id, c.id, v.history, supersessions);
           const fresh = factFreshness(c, confirmations, replacedBy, now);
-          authorized.push({ candidate, hit: { kind: "fact", id: c.id, project, text: r.text, recorded_at: String(c.data.recorded_at ?? c.created_at), checked_at: fresh.checked_at, freshness: fresh.freshness, replaced_by: replacedBy, evidence: (c.data.evidence as Evidence[]).map((e) => ({ source_id: e.source_id, source_version: e.source_version, quote: e.quote })), why: whyFor(fts.terms, r.text), score: candidate.fused } });
+          authorized.push({ candidate, hit: { kind: "fact", id: c.id, project, text: r.text, recorded_at: String(c.data.recorded_at ?? c.created_at), checked_at: fresh.checked_at, freshness: fresh.freshness, replaced_by: replacedBy, evidence: (c.data.evidence as Evidence[]).map((e) => ({ source_id: e.source_id, source_version: e.source_version, quote: e.quote })), why: [...whyFor(fts.terms, r.text), ...denseWhy(candidate)], score: candidate.fused } });
         }
       } catch (e) {
         // An index row that outlived its item or its grant is dropped from every field. Anything else is a real fault and must surface.
@@ -3935,7 +3960,7 @@ ${q}`);
       reason: `matched ${fts.terms.filter((t) => questionWordsOf(h).has(t)).length} of ${fts.terms.length} terms`,
     }));
     const result: RecallResult = { status: statusOut, as_of: now.toISOString(), searched: { ...base, candidates: ranked.length }, hits, near_misses, next_step: statusOut === "no_match" ? NO_MATCH_NEXT_STEP : FOUND_NEXT_STEP };
-    return { result, ranked, authorized: authorized.map((a) => a.hit), signals, entityNames, scope };
+    return { result, ranked, authorized: authorized.map((a) => a.hit), signals, entityNames, scope, dense: dense !== null };
   }
   /** One item by id for an agent: the full original (any version it may see) or the full fact with its history. */
   agentOpen(p: Principal, input: unknown) {
@@ -5072,7 +5097,7 @@ ${q}`);
         };
       });
   }
-  searchBrain(p: Principal, input: unknown) {
+  async searchBrain(p: Principal, input: unknown) {
     this.owner(p);
     const v = z.object({ q: z.string().trim().min(2).max(200) }).strict().parse(input);
     const literal = () => {
@@ -5080,9 +5105,11 @@ ${q}`);
       const claims = projects.flatMap((project) => this.currentClaims(p, project.id));
       return findInBrain(v.q, claims, this.sources(p), SEARCH_LIMIT);
     };
-    // Words under three characters never become FTS terms; the literal search is the only one that can see them.
-    if (v.q.split(/\s+/u).some((w) => Array.from(w).length < 3)) return literal();
-    const internal = this.recallInternal(p, { query: v.q, history: false, limit: RECALL_LIMIT_MAX });
+    // With a vector, meaning can find a note whatever the query's short words; without one, words under three characters never
+    // become FTS terms and the literal search is the only one that can see them (unchanged from plan 5).
+    const dense = await this.denseFor(p, v.q);
+    if (!dense && v.q.split(/\s+/u).some((w) => Array.from(w).length < 3)) return literal();
+    const internal = this.recallInternal(p, { query: v.q, history: false, limit: RECALL_LIMIT_MAX }, dense);
     const facts = internal.result.hits.filter((h): h is RecallFactHit => h.kind === "fact").slice(0, SEARCH_LIMIT);
     // Originals come from the authorized set before dedupe, so a chunk folded into its fact still lists its note.
     const seen = new Set<string>();
@@ -5099,13 +5126,15 @@ ${q}`);
       originals: originals.map((o) => ({ id: o.id, project_id: o.project.id, version: o.version, title: o.title, snippet: snippetFor(o.quote, o.title, v.q) })),
     };
   }
-  ask(p: Principal, input: unknown) {
+  async ask(p: Principal, input: unknown) {
     this.owner(p);
     const v = z.object({ q: z.string().trim().min(1).max(500) }).strict().parse(input);
     if (!questionWords(v.q).length)
       throw new BrainError("INVALID_INPUT", "Ask with a few words, for example: When does the beta open?");
+    // Better search when the owner chose it (B9): the vector first, at most 400 ms; never the judge on the owner's screens.
+    const dense = await this.denseFor(p, v.q);
     // Over-fetch, then show each fact and each note once: recall may keep two passages of one note, the Ask bar lists the best one.
-    const result = this.recallCore(p, { query: v.q, history: false, limit: 6 });
+    const result = this.recallCore(p, { query: v.q, history: false, limit: 6 }, dense);
     const seen = new Set<string>();
     const hits: AskHit[] = result.hits
       .filter((h) => !seen.has(`${h.kind}:${h.id}`) && seen.add(`${h.kind}:${h.id}`))
