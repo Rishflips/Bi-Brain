@@ -16,8 +16,6 @@ import { DodoBillingService } from "../../packages/runtime/dodo-billing.ts";
 // Fail closed before any storage or adapter is constructed: an unknown mode or
 // a missing managed field throws here rather than silently serving local data.
 const config = loadConfig();
-if (config.mode === "managed" && config.paddle)
-  throw new Error("Paddle is retired. Configure BRAIN_DODO_* instead.");
 
 const host = process.env.BRAIN_CONTAINER === "1" ? "0.0.0.0" : "127.0.0.1";
 const port = Number(process.env.BRAIN_PORT ?? 4317);
