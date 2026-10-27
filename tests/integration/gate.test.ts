@@ -158,9 +158,9 @@ it("agent identity proposals stay owner-private even when mislabeled as facts", 
     expect(proposed.disposition).toBe("queue");
     expect(b.source(owner, proposed.raw_id).visibility).toBe("private");
     expect(() => b.source(agent, proposed.raw_id)).toThrow("unavailable");
-    expect(
-      JSON.stringify(b.agentSearch(agent, "inbox", "Alex", "raw")),
-    ).not.toContain("Alex");
+    expect(JSON.stringify(b.sources(agent, "inbox", "Alex"))).not.toContain(
+      "Alex",
+    );
   } finally {
     s.close();
   }

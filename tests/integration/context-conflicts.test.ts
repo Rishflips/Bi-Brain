@@ -65,13 +65,8 @@ it("saved explicit decisions propose a full-passage cited correction, then a fre
     expect(
       brain.currentClaims(agent, "inbox").map((c) => c.data.value),
     ).toEqual(["free"]);
-    expect(brain.agentAsk(agent, "inbox", "beta pricing").answer).toBe(
-      "beta pricing — statement: free",
-    );
     expect(
-      JSON.stringify(
-        brain.agentSearch(agent, "inbox", "beta pricing", "current"),
-      ),
+      JSON.stringify(brain.pages(agent, "inbox", "beta pricing")),
     ).not.toContain('"value":"paid"');
     expect(validatePack(brain, agent, pack)).toBe(true);
     accept(brain, next.gate!.id);
@@ -96,12 +91,7 @@ it("saved explicit decisions propose a full-passage cited correction, then a fre
       freshBrain.currentClaims(freshAgent, "inbox").map((c) => c.data.value),
     ).toEqual(["paid"]);
     expect(
-      freshBrain.agentAsk(freshAgent, "inbox", "beta pricing").answer,
-    ).toBe("beta pricing — statement: paid");
-    expect(
-      JSON.stringify(
-        freshBrain.agentSearch(freshAgent, "inbox", "beta pricing", "current"),
-      ),
+      JSON.stringify(freshBrain.pages(freshAgent, "inbox", "beta pricing")),
     ).not.toContain('"value":"free"');
     expect(brain.entity(owner, prior).data.status).toBe("retired");
     expect(brain.source(owner, old.saved.source_id as string, 1).body).toBe(

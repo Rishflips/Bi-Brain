@@ -324,15 +324,6 @@ export function clearRecallIndex(store: Storage) {
   bumpVectorGeneration();
 }
 
-/** Refills the whole index from the current tables in the caller's transaction. Small brains and tests only; production paths use rebuildRecallIndex. */
-export function fillRecallIndex(store: Storage) {
-  clearRecallIndex(store);
-  const hints = s1HintMap(store);
-  for (const s of store.all<{ id: string }>("SELECT id FROM sources WHERE state='active'")) syncSource(store, s.id, hints);
-  for (const c of store.all<{ id: string }>("SELECT id FROM entities WHERE kind='claim'")) syncClaim(store, c.id);
-  store.set(RECALL_INDEX_BUILT, RECALL_INDEX_VERSION);
-}
-
 /** Empties the index and marks it incomplete, so a caller can commit it with a base-table change and then rebuild in batches. */
 export function invalidateRecallIndex(store: Storage) {
   clearRecallIndex(store);

@@ -94,13 +94,10 @@ it("F3 current truth obeys half-open validity intervals including owner review",
       valid_to: "2026-01-02T00:00:00Z",
     });
     expect(brain.currentClaims(owner, "inbox")).toHaveLength(0);
-    expect(brain.agentAsk(owner, "inbox", "beta status").abstained).toBe(true);
-    expect(
-      brain.agentSearch(owner, "inbox", "beta", "current").items,
-    ).toHaveLength(0);
-    expect(
-      brain.agentSearch(owner, "inbox", "beta", "historical").items,
-    ).toMatchObject([{ history: [{ data: { value: "active" } }] }]);
+    expect(brain.pages(owner, "inbox", "beta")).toHaveLength(0);
+    expect(brain.pages(owner, "inbox", "beta", true)).toMatchObject([
+      { history: [{ data: { value: "active" } }] },
+    ]);
     expect(buildPack(brain, owner, "inbox", "beta").pages).toHaveLength(0);
 
     now = new Date("2026-09-29T23:59:00Z");
@@ -243,7 +240,7 @@ it("F5 ordinary capture and folder import reach reviewed pages, search and agent
       action: "accept",
       expected_version: gate.version,
     });
-    expect(brain.agentSearch(owner, "inbox", "beta").items).toMatchObject([
+    expect(brain.pages(owner, "inbox", "beta")).toMatchObject([
       { current: [{ data: { value: "active" } }] },
     ]);
     const grant = brain.createGrant(owner, {
@@ -275,7 +272,7 @@ it("F5 ordinary capture and folder import reach reviewed pages, search and agent
       action: "accept",
       expected_version: importedGate.version,
     });
-    expect(brain.agentSearch(owner, "inbox", "gamma").items).toMatchObject([
+    expect(brain.pages(owner, "inbox", "gamma")).toMatchObject([
       { current: [{ data: { value: "planned" } }] },
     ]);
     const prose = brain.capture(owner, {
@@ -301,7 +298,7 @@ it("F5 ordinary capture and folder import reach reviewed pages, search and agent
       action: "accept",
       expected_version: selected.version,
     });
-    expect(brain.agentSearch(owner, "inbox", "delta").items).toMatchObject([
+    expect(brain.pages(owner, "inbox", "delta")).toMatchObject([
       { current: [{ data: { value: "paused" } }] },
     ]);
   } finally {
