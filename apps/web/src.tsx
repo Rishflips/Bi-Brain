@@ -1496,7 +1496,7 @@ function App() {
                               ? "Off. Search matches the words you used."
                               : mode === "ollama"
                                 ? "On this computer (Ollama). Nothing leaves this computer."
-                                : "Cloudflare. The text of your notes, your searches and the questions your connected agents ask is sent to Cloudflare Workers AI to be turned into numbers that stay on this computer. Private notes are never sent. About 1 cent for every 250,000 words, counted against your daily limit."}
+                                : "Cloudflare. The text of your notes, your searches and the questions your connected agents ask is sent to Cloudflare Workers AI to be turned into numbers that stay on this computer. Private notes are never sent. About 1 cent for every 250,000 words of English text; other languages can cost more, counted against your daily limit."}
                             {!available ? <span className="muted"> Not set up on this computer.</span> : null}
                             {mode === "cloudflare" && available && !better.caps_ok ? <span className="muted"> Needs a daily limit and a per-preparation limit above $0 below.</span> : null}
                           </label>
