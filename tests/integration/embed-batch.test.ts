@@ -341,4 +341,127 @@ describe("embed_batch", () => {
     expect(() => b.job(owner, "e1")).toThrow(/unavailable/);
     expect(b.setBetterSearch(owner, { mode: "off" })).toEqual({ mode: "off", key: null, consented_at: null });
   });
+
+  /** Ticks until the worker has nothing left, returning how many ticks that took (a hot loop fails at 200). */
+  const ticksToDrain = async (worker: Worker) => {
+    for (let i = 1; i <= 200; i++) if (!(await worker.tick())) return i;
+    throw new Error("the worker never drained");
+  };
+  const embedRows = (t: ReturnType<typeof batched>, status: string) => t.jobs(status).length;
+
+  it("a spent daily limit refuses once, waits for the next accounting day without counting a failure, and never spins", async () => {
+    const t = batched({ provider: "cloudflare" });
+    t.brain.setBetterSearch(owner, { mode: "cloudflare" });
+    await t.drain();
+    // Today's limit is now exactly what was spent; a rebuild leaves every row pending again.
+    const spent = Number(t.store.get<any>("SELECT sum(actual_micro_usd) AS n FROM provider_dispatches WHERE state='settled'")!.n);
+    expect(spent).toBeGreaterThan(0);
+    t.brain.prefs(owner, { ...t.brain.prefs(owner), daily_cap_micro_usd: spent });
+    t.store.rebuildRecallIndex();
+    expect(maybeQueueEmbedBatch(t.brain)).toBe(true);
+    const calls = t.calls.n;
+    const ticks = await ticksToDrain(t.worker);
+    expect(ticks).toBeLessThanOrEqual(3);
+    expect(embedRows(t, "cancelled")).toBe(1);
+    expect(t.jobs("queued")).toEqual([]);
+    expect(t.calls.n).toBe(calls);
+    const view = t.brain.betterSearch(owner);
+    expect(view).toMatchObject({ failures: 0, effective: true, paused_until: null });
+    expect(view.status!.last_error).toMatch(/spending cap/);
+    // The wait ends exactly when the owner's accounting day (Asia/Calcutta, 18:30Z) rolls over.
+    expect(view.retry_at).toBe("2026-10-25T18:30:00.000Z");
+    // The self-heal check stays quiet until then, however often it runs.
+    for (let i = 0; i < 3; i++) expect(maybeQueueEmbedBatch(t.brain)).toBe(false);
+    t.advance(Date.parse("2026-10-25T18:29:00.000Z") - t.time.now.getTime());
+    expect(maybeQueueEmbedBatch(t.brain)).toBe(false);
+    t.advance(2 * 60_000);
+    expect(maybeQueueEmbedBatch(t.brain)).toBe(true);
+    await t.drain();
+    expect(t.counts().pending).toBe(0);
+    expect(t.brain.betterSearch(owner)).toMatchObject({ failures: 0, retry_at: null });
+  });
+  it("a per-preparation limit no batch fits under refuses once, sends nothing and waits 15 minutes without counting a failure", async () => {
+    const t = batched({ provider: "cloudflare" });
+    t.brain.prefs(owner, { ...t.brain.prefs(owner), per_job_cap_micro_usd: 1 });
+    t.brain.setBetterSearch(owner, { mode: "cloudflare" });
+    const ticks = await ticksToDrain(t.worker);
+    // The fixture's own queued jobs run too; the batch itself runs once.
+    expect(ticks).toBeLessThan(40);
+    expect(embedRows(t, "cancelled")).toBe(1);
+    expect(t.jobs()).toHaveLength(1);
+    expect(t.calls.n).toBe(0);
+    expect(t.store.all("SELECT 1 FROM provider_dispatches")).toEqual([]);
+    expect(t.brain.betterSearch(owner)).toMatchObject({ failures: 0, retry_at: new Date(t.time.now.getTime() + 15 * 60_000).toISOString() });
+    expect(maybeQueueEmbedBatch(t.brain)).toBe(false);
+    t.advance(14 * 60_000);
+    expect(maybeQueueEmbedBatch(t.brain)).toBe(false);
+    t.advance(2 * 60_000);
+    expect(maybeQueueEmbedBatch(t.brain)).toBe(true);
+  });
+  it("a row made private while its batch was being refused is never sent on its own", async () => {
+    const t = batched({ provider: "cloudflare" });
+    const flip = t.store.get<any>("SELECT id FROM recall_chunks WHERE status='current' AND visibility='project' ORDER BY id LIMIT 1")!.id;
+    t.store.run("UPDATE recall_chunks SET text=? WHERE id=?", "FLIP_ROW the launch colour is cobalt", flip);
+    t.fake.reject = (texts) => texts.length > 1;
+    t.fake.before = () => {
+      if (t.calls.n === 1) t.store.run("UPDATE recall_chunks SET visibility='private' WHERE id=?", flip);
+    };
+    t.brain.setBetterSearch(owner, { mode: "cloudflare" });
+    await t.drain();
+    expect(t.calls.texts[0].some((x) => x.includes("FLIP_ROW"))).toBe(true);
+    expect(t.calls.texts.slice(1).flat().some((x) => x.includes("FLIP_ROW"))).toBe(false);
+    expect(t.store.get<any>("SELECT embedding, embedding_model FROM recall_chunks WHERE id=?", flip)).toEqual({ embedding: null, embedding_model: null });
+    expect(t.counts()).toMatchObject({ pending: 0 });
+  });
+  it("a restart keeps the back-off and the pause for the same model, and a new model starts clean", async () => {
+    const t = batched();
+    t.brain.setBetterSearch(owner, { mode: "ollama" });
+    await t.drain();
+    const status = t.store.setting<any>("better_search_status", null);
+    const at = (ms: number) => new Date(t.time.now.getTime() + ms).toISOString();
+    t.store.set("better_search_status", { ...status, failures: 3, retry_at: at(240_000), paused_until: at(900_000), last_error: "The search model answered 503." });
+    // The worker starts again with the same model: the breaker stays open and the first schedule queues nothing.
+    publishBetterSearchStatus(t.brain, { configured: true, provider: "ollama", model: FAKE_EMBED_MODEL, key: t.key, label: "Ollama on this computer" });
+    expect(t.brain.betterSearch(owner)).toMatchObject({ failures: 3, effective: false, reason: "Better search paused: the service is not answering.", retry_at: at(240_000), paused_until: at(900_000) });
+    t.store.rebuildRecallIndex();
+    const restarted = new Worker(t.brain, undefined, new LocalDispatchAccounting(t.store, () => t.time.now), undefined, null, t.client);
+    const calls = t.calls.n;
+    for (let i = 0; i < 200 && (await restarted.tick()); i++);
+    expect(t.jobs("queued")).toEqual([]);
+    expect(t.calls.n).toBe(calls);
+    // A different model is a fresh start.
+    publishBetterSearchStatus(t.brain, { configured: true, provider: "ollama", model: "other", key: modelKey("ollama", "other"), label: "Ollama on this computer" });
+    expect(t.brain.betterSearch(owner)).toMatchObject({ failures: 0, retry_at: null, paused_until: null });
+  });
+  it("turning it off while a batch is out writes nothing and queues no further batch", async () => {
+    const t = batched();
+    t.fake.before = () => {
+      if (t.calls.n === 1) t.brain.setBetterSearch(owner, { mode: "off" });
+    };
+    t.brain.setBetterSearch(owner, { mode: "ollama" });
+    await t.drain();
+    expect(t.calls.n).toBe(1);
+    expect(t.jobs()).toHaveLength(1);
+    expect(t.jobs("cancelled")).toHaveLength(1);
+    expect(Number(t.store.get<any>("SELECT count(*) AS n FROM recall_chunks WHERE embedding IS NOT NULL OR embedding_model IS NOT NULL")!.n)).toBe(0);
+  });
+  it("a row whose text or prefix changed in place while the call was out never receives the vector of the old text", async () => {
+    const t = batched();
+    const row = t.store.get<any>("SELECT id FROM recall_chunks WHERE status='current' ORDER BY id LIMIT 1")!.id;
+    const other = t.store.get<any>("SELECT id FROM recall_chunks WHERE status='current' AND id>? ORDER BY id LIMIT 1", row)!.id;
+    t.fake.before = () => {
+      if (t.calls.n !== 1) return;
+      t.store.run("UPDATE recall_chunks SET prefix=prefix||' (renamed)' WHERE id=?", row);
+      t.store.run("UPDATE recall_chunks SET text=text||' (edited)' WHERE id=?", other);
+    };
+    t.brain.setBetterSearch(owner, { mode: "ollama" });
+    while (t.calls.n < 1) expect(await t.worker.tick()).toBe(true);
+    expect(t.store.all<any>("SELECT embedding FROM recall_chunks WHERE id IN (?,?)", row, other).every((r) => r.embedding === null)).toBe(true);
+    await t.drain();
+    expect(t.store.all<any>("SELECT embedding FROM recall_chunks WHERE id IN (?,?)", row, other).every((r) => r.embedding !== null)).toBe(true);
+    const later = t.calls.texts.slice(1).flat();
+    expect(later.some((x) => x.includes("(renamed)"))).toBe(true);
+    expect(later.some((x) => x.includes("(edited)"))).toBe(true);
+    expect(t.counts().pending).toBe(0);
+  });
 });

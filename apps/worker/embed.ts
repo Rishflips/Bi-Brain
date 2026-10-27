@@ -3,7 +3,7 @@ import { detectSecrets } from "../../packages/storage/secrets.ts";
 import { BrainError } from "../../packages/domain/logic.ts";
 import { AccountingPersistenceError } from "../../packages/storage/managed-spending.ts";
 import type { Principal } from "../../packages/contracts/index.ts";
-import type { DispatchRecord, DispatchSpec, JobLease, SpendLimits } from "../../packages/domain/spend.ts";
+import { accountingDay, type DispatchRecord, type DispatchSpec, type JobLease, type SpendLimits } from "../../packages/domain/spend.ts";
 import {
   BETTER_SEARCH_STATUS,
   EMBED_BACKOFF_MAX_MS,
@@ -25,12 +25,21 @@ import type { DispatchAccounting } from "./accounting.ts";
 
 export type EmbedClient = { config: EmbedConfig; fetcher?: typeof fetch };
 
-/** Writes the startup status. Carries the model key and a label, never the credential or the account id. */
+/**
+ * Writes the startup status. Carries the model key and a label, never the credential or the account id.
+ * A restart with the same model keeps the back-off and the pause, so a worker that keeps restarting cannot get past the breaker;
+ * a different model (or no setup) starts clean.
+ */
 export function publishBetterSearchStatus(
   brain: Brain,
   from: { configured: true; provider: EmbedProvider; model: string; key: string; label: string } | { configured: false; reason: string },
 ) {
-  brain.store.set(BETTER_SEARCH_STATUS, { ...from, updated_at: brain.now() } satisfies BetterSearchStatus);
+  const previous = brain.store.setting<BetterSearchStatus | null>(BETTER_SEARCH_STATUS, null);
+  const same = from.configured && previous?.configured === true && previous.key === from.key;
+  const carried: Partial<BetterSearchStatus> = same
+    ? { failures: previous.failures, retry_at: previous.retry_at, paused_until: previous.paused_until, last_error: previous.failures ? previous.last_error : undefined }
+    : {};
+  brain.store.set(BETTER_SEARCH_STATUS, { ...from, ...carried, updated_at: brain.now() } satisfies BetterSearchStatus);
 }
 
 /** Records the latest outcome (and the back-off state) on the published status; does nothing before startup published one. */
@@ -45,6 +54,8 @@ export function noteEmbedStatus(brain: Brain, patch: Partial<Pick<BetterSearchSt
 
 /** How often the engine's self-heal check looks for rows without a current vector. */
 export const EMBED_CHECK_MS = 5_000;
+/** How long a spending refusal other than a spent daily limit (a per-preparation limit, a frozen time zone, a reconciliation block) waits before the next try. */
+export const EMBED_REFUSAL_WAIT_MS = 900_000;
 export type EmbedDeps = { brain: Brain; ledger: DispatchAccounting; client: EmbedClient | null; owner: Principal; leaseOwner: string };
 export type EmbedJob = { id: string; fence: number };
 export type EmbedOutcome = { outcome: "embedded" | "nothing" | "cancelled" | "failed"; rows: number; more: boolean; error?: string };
@@ -53,13 +64,34 @@ export type EmbedOutcome = { outcome: "embedded" | "nothing" | "cancelled" | "fa
  * lease, a changed choice or a cancelled attempt). `rejected`: the input itself was refused (a 4xx, or a text the local checks
  * refuse), so the batch is retried row by row. Anything else is an outage or an unknown outcome.
  */
-type CallOutcome = { ok: true; result: EmbedResult } | { ok: false; error: Error; rejected: boolean; refused: boolean };
+type CallOutcome = { ok: true; result: EmbedResult } | { ok: false; error: Error; rejected: boolean; refused: boolean; retryAt?: string };
 
 /** The persisted lease, never the in-memory row; null once this attempt is no longer current. */
 function currentLease(brain: Brain, job: EmbedJob, owner: string): JobLease | null {
   const row = brain.store.get<{ status: string; lease_owner: string; lease_until: string | null; fence: number }>("SELECT status,lease_owner,lease_until,fence FROM jobs WHERE id=?", job.id);
   if (!row || row.status !== "running" || row.lease_owner !== owner || row.fence !== job.fence || !row.lease_until) return null;
   return { job_id: job.id, owner, fence: job.fence, expires_at: row.lease_until };
+}
+
+/** The first minute of the accounting day after the one holding `now`, in `timeZone` (DST-safe: it searches, never adds 24 h). */
+export function nextAccountingDayStart(now: Date, timeZone: string): Date {
+  const today = accountingDay(now, timeZone);
+  let t = Math.floor(now.getTime() / 60_000) * 60_000;
+  for (let i = 0; i < 48 && accountingDay(new Date(t), timeZone) === today; i++) t += 3_600_000;
+  for (let i = 0; i < 60 && accountingDay(new Date(t - 60_000), timeZone) !== today; i++) t -= 60_000;
+  return new Date(Math.max(t, now.getTime() + 60_000));
+}
+
+/**
+ * When a ledger refusal may be tried again, or undefined for a refusal that is not about money (it simply ends the attempt).
+ * A spent daily limit waits for the next accounting day; any other spending refusal waits 15 minutes. Neither counts as a failure.
+ */
+function refusalRetryAt(brain: Brain, error: unknown, timeZone: string): string | undefined {
+  if (!(error instanceof BrainError)) return undefined;
+  const now = brain.clock();
+  if (error.code === "BUDGET_EXHAUSTED" && /today/i.test(error.message)) return nextAccountingDayStart(now, timeZone).toISOString();
+  if (error.code.startsWith("BUDGET_") || error.code === "ACCOUNTING_TIMEZONE_FROZEN") return new Date(now.getTime() + EMBED_REFUSAL_WAIT_MS).toISOString();
+  return undefined;
 }
 
 const allFinite = (v: Float32Array) => {
@@ -110,7 +142,13 @@ async function callProvider(deps: EmbedDeps, job: EmbedJob, client: EmbedClient,
       reserved = ledger.reserve(spec, lease, limits);
     } catch (error) {
       if (error instanceof AccountingPersistenceError) throw error;
-      return failed(new Error(error instanceof BrainError ? `Better search with Cloudflare is paused: ${error.message}` : "Better search could not reserve its spending."), false, true);
+      return {
+        ok: false,
+        error: new Error(error instanceof BrainError ? `Better search with Cloudflare is paused: ${error.message}` : "Better search could not reserve its spending."),
+        rejected: false,
+        refused: true,
+        retryAt: refusalRetryAt(brain, error, limits.time_zone),
+      };
     }
     // An existing slot is never permission to send twice: a re-leased attempt after a crash stops here.
     if (reserved.state !== "reserved") return failed(new Error("This batch was already sent."), false, true);
@@ -199,8 +237,20 @@ export async function runEmbedBatch(deps: EmbedDeps, job: EmbedJob, signal: Abor
     if (!t.trim()) reasons[i] = "rejected";
     else if (detectSecrets(t).length > 0) reasons[i] = "secret";
   });
-  const send = rows.map((_, i) => i).filter((i) => reasons[i] === undefined);
   const more = () => pendingEmbedRows(brain.store, key, visibilities, 1).length > 0;
+  /**
+   * Re-read right before every call: a row that was replaced, made private (Cloudflare) or rewritten in place since the batch was read
+   * is not sent and stays pending, so no text is ever sent under a visibility it no longer has.
+   */
+  const eligible = (i: number) =>
+    !!brain.store.get(
+      `SELECT 1 FROM recall_chunks WHERE id=? AND ref_version=? AND status='current' AND text=? AND prefix=? AND visibility IN (${visibilities.map(() => "?").join(",")})`,
+      rows[i].id,
+      rows[i].ref_version,
+      rows[i].text,
+      rows[i].prefix,
+      ...visibilities,
+    );
   let dim = 0;
   let rejectedCount = 0;
   const reject = (i: number) => {
@@ -229,11 +279,11 @@ export async function runEmbedBatch(deps: EmbedDeps, job: EmbedJob, signal: Abor
       /* The rows stay pending and the self-heal check picks them up. */
     }
   };
-  /** Ends this attempt without counting a failure; anything already paid for is kept. */
-  const stop = (message: string) => {
+  /** Ends this attempt without counting a failure; anything already paid for is kept. A spending refusal also sets when to try again. */
+  const stop = (message: string, retryAt?: string) => {
     keep();
-    noteEmbedStatus(brain, { last_error: message });
-    return done("cancelled", 0, more(), message);
+    noteEmbedStatus(brain, { last_error: message, ...(retryAt ? { retry_at: retryAt } : {}) });
+    return done("cancelled", 0, false, message);
   };
   /** Ends this attempt as a failure (back-off, breaker); anything already paid for is kept. */
   const fail = (message: string) => {
@@ -242,16 +292,18 @@ export async function runEmbedBatch(deps: EmbedDeps, job: EmbedJob, signal: Abor
     return done("failed", 0, false, message);
   };
   try {
+    const send = rows.map((_, i) => i).filter((i) => reasons[i] === undefined && eligible(i));
     if (send.length) {
       const batch = await callProvider(deps, job, client, send.map((i) => texts[i]), "embed_batch", signal);
       if (batch.ok) send.forEach((i, k) => take(i, batch.result.vectors[k], batch.result.dim));
-      else if (batch.refused) return stop(batch.error.message);
+      else if (batch.refused) return stop(batch.error.message, batch.retryAt);
       else if (batch.rejected && send.length > 1) {
         // The service refused the batch: one text may be the cause. Each row goes alone under its own dispatch key; a row refused alone is withheld.
         for (const i of send) {
+          if (!eligible(i)) continue;
           const one = await callProvider(deps, job, client, [texts[i]], `embed_batch:${rows[i].id}`, signal);
           if (one.ok) take(i, one.result.vectors[0], one.result.dim);
-          else if (one.refused) return stop(one.error.message);
+          else if (one.refused) return stop(one.error.message, one.retryAt);
           else if (one.rejected) reject(i);
           else return fail(one.error.message);
         }
@@ -259,7 +311,7 @@ export async function runEmbedBatch(deps: EmbedDeps, job: EmbedJob, signal: Abor
       else return fail(batch.error.message);
     }
     const written = write();
-    if (!written) return done("cancelled", 0, more());
+    if (!written) return done("cancelled", 0, false);
     noteEmbedStatus(brain, {
       last_ok_at: brain.now(),
       last_error: rejectedCount ? `${rejectedCount} ${rejectedCount === 1 ? "passage was" : "passages were"} refused by the search service and will be skipped until it changes.` : undefined,

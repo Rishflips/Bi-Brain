@@ -23,7 +23,7 @@ import type { PreparedDecisionProvider } from "../../packages/providers/prepared
 import type { DispatchRecord } from "../../packages/domain/spend.ts";
 import { dispatchPrepared, type PreparedAttempt } from "./dispatch.ts";
 import { runSystemOneJob, type SystemOneClient } from "./system-one.ts";
-import { EMBED_CHECK_MS, maybeQueueEmbedBatch, queueEmbedBatch, runEmbedBatch, type EmbedClient } from "./embed.ts";
+import { EMBED_CHECK_MS, maybeQueueEmbedBatch, runEmbedBatch, type EmbedClient } from "./embed.ts";
 import { runDecisionAdvisory } from "./decision-advisory.ts";
 import { AccountingPersistenceError } from "../../packages/storage/managed-spending.ts";
 import {
@@ -306,7 +306,9 @@ export class Worker {
           j.id,
           j.fence,
         );
-        if (r.more) queueEmbedBatch(b);
+        // Only a batch that wrote something queues the next, and only through the same gate as the self-heal check
+        // (consent, breaker, back-off, rows left), so a refusal or a cancellation can never spin the loop.
+        if (r.outcome === "embedded") maybeQueueEmbedBatch(b);
         return true;
       }
       const prefs = b.prefs(this.owner);

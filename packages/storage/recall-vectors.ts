@@ -3,8 +3,11 @@ import type { RecallKind, RecallMatch, RecallRowStatus, RecallVisibility } from 
 import { decodeVector, encodeVector, normalize } from "../domain/better-search.ts";
 
 export type PendingRow = { id: number; kind: RecallKind; ref_id: string; ref_version: number; ordinal: number; text: string; prefix: string };
-/** A `null` vector withholds the row: `"secret"` (never sent) keeps `embedding_dim` NULL, `"rejected"` (the provider refused it alone) stores -1. */
-export type VectorWrite = { id: number; kind: RecallKind; ref_id: string; ref_version: number; ordinal: number; vector: Float32Array | null; reason?: "secret" | "rejected" };
+/**
+ * A `null` vector withholds the row: `"secret"` (never sent) keeps `embedding_dim` NULL, `"rejected"` (the provider refused it alone) stores -1.
+ * `text` and `prefix`, when given, are the exact strings the vector was computed from: the write also requires them to be unchanged.
+ */
+export type VectorWrite = { id: number; kind: RecallKind; ref_id: string; ref_version: number; ordinal: number; vector: Float32Array | null; reason?: "secret" | "rejected"; text?: string; prefix?: string };
 export type VectorQuery = { vector: Float32Array; key: string; dim: number; projects: string[]; visibilities: RecallVisibility[]; status: RecallRowStatus | "any"; floor: number; limit: number };
 
 const allFinite = (v: Float32Array) => {
@@ -71,8 +74,9 @@ export function writeEmbeddings(store: Storage, key: string, dim: number, rows: 
   });
   let changed = 0;
   for (const { r, blob } of prepared) {
+    const sameText = r.text !== undefined && r.prefix !== undefined;
     const result = store.run(
-      "UPDATE recall_chunks SET embedding=?,embedding_model=?,embedding_dim=? WHERE id=? AND kind=? AND ref_id=? AND ref_version=? AND ordinal=? AND status='current'",
+      `UPDATE recall_chunks SET embedding=?,embedding_model=?,embedding_dim=? WHERE id=? AND kind=? AND ref_id=? AND ref_version=? AND ordinal=? AND status='current'${sameText ? " AND text=? AND prefix=?" : ""}`,
       blob,
       key,
       blob ? dim : r.reason === "rejected" ? -1 : null,
@@ -81,6 +85,7 @@ export function writeEmbeddings(store: Storage, key: string, dim: number, rows: 
       r.ref_id,
       r.ref_version,
       r.ordinal,
+      ...(sameText ? [r.text, r.prefix] : []),
     );
     changed += Number(result.changes);
   }
