@@ -217,6 +217,25 @@ describe("the query embedding fast lane", () => {
     expect(await t.withWorker(() => t.brain.queryVector(owner, "fifth launch colour"))).not.toBeNull();
     expect(t.calls.n).toBe(6);
   });
+  it("a refused credential or a rate limit is a failed question like any outage: one call each, a plain status line, then the lane backs off", async () => {
+    const t = lane({ provider: "cloudflare" });
+    t.fake.status = 401;
+    expect(await t.withWorker(() => t.brain.queryVector(owner, "first launch colour"))).toBeNull();
+    expect(t.calls.n).toBe(1);
+    expect(t.brain.betterSearch(owner).status!.last_error).toBe("Better search could not sign in to the search service. Check its key.");
+    t.fake.status = 429;
+    expect(await t.withWorker(() => t.brain.queryVector(owner, "second launch colour"))).toBeNull();
+    t.fake.status = 403;
+    expect(await t.withWorker(() => t.brain.queryVector(owner, "third launch colour"))).toBeNull();
+    expect(t.calls.n).toBe(3);
+    expect(t.store.all<any>("SELECT state,actual_micro_usd FROM provider_dispatches")).toEqual([0, 1, 2].map(() => ({ state: "settled", actual_micro_usd: 0 })));
+    // Three failures in a row: the next question is answered with words only and nothing is sent, even once the service answers again.
+    t.fake.status = 200;
+    expect(await t.withWorker(() => t.brain.queryVector(owner, "monthly fee"))).toBeNull();
+    expect(t.calls.n).toBe(3);
+    // The batch lane's rows are untouched: a query failure never withholds a passage.
+    expect(Number(t.store.get<any>("SELECT count(*) AS n FROM recall_chunks WHERE embedding_dim=-1")!.n)).toBe(0);
+  });
   it("a slow call is abandoned after 2 s, well inside its lease, and counts as a failure", async () => {
     expect(QUERY_CALL_MS).toBe(2_000);
     const t = lane({ delayMs: 3_000 });

@@ -20,7 +20,7 @@ import {
   type EmbedProvider,
 } from "../../packages/domain/better-search.ts";
 import { pendingEmbedRows, writeEmbeddings, type VectorWrite } from "../../packages/storage/recall-vectors.ts";
-import { EmbedError, prepareEmbed, type EmbedConfig, type EmbedResult, type PreparedEmbed } from "../../packages/providers/embed.ts";
+import { EmbedError, INPUT_REFUSED_STATUSES, prepareEmbed, type EmbedConfig, type EmbedResult, type PreparedEmbed } from "../../packages/providers/embed.ts";
 import type { DispatchAccounting } from "./accounting.ts";
 
 export type EmbedClient = { config: EmbedConfig; fetcher?: typeof fetch };
@@ -61,8 +61,9 @@ export type EmbedJob = { id: string; fence: number };
 export type EmbedOutcome = { outcome: "embedded" | "nothing" | "cancelled" | "failed"; rows: number; more: boolean; error?: string };
 /**
  * One provider call and its money. `refused`: nothing was sent and nothing counts toward the breaker (a ledger refusal, a lost
- * lease, a changed choice or a cancelled attempt). `rejected`: the input itself was refused (a 4xx, or a text the local checks
- * refuse), so the batch is retried row by row. Anything else is an outage or an unknown outcome.
+ * lease, a changed choice or a cancelled attempt). `rejected`: the input itself was refused (a 400, 413 or 422, or a text the local
+ * checks refuse), so the batch is retried row by row. Anything else (a refused credential, a rate limit, an outage, an unknown outcome)
+ * is a failure.
  */
 type CallOutcome = { ok: true; result: EmbedResult } | { ok: false; error: Error; rejected: boolean; refused: boolean; retryAt?: string };
 
@@ -116,7 +117,7 @@ async function callProvider(deps: EmbedDeps, job: EmbedJob, client: EmbedClient,
   try {
     prepared = prepareEmbed(config, texts, client.fetcher);
   } catch (error) {
-    // Nothing was reserved or sent. An input the local checks refuse is the input's fault, so it is isolated row by row like a 4xx.
+    // Nothing was reserved or sent. An input the local checks refuse is the input's fault, so it is isolated row by row like a refused input status.
     if (error instanceof EmbedError && error.code === "INVALID_INPUT") return failed(error, true);
     return failed(error instanceof Error ? error : new Error("Better search could not prepare a batch."));
   }
@@ -183,7 +184,9 @@ async function callProvider(deps: EmbedDeps, job: EmbedJob, client: EmbedClient,
     if (record && error instanceof EmbedError && error.actual_cost_micro_usd !== undefined) ledger.settle(record.call_id, error.actual_cost_micro_usd);
     // The engine cancelled this attempt (its fence moved or its deadline passed): not the service's fault, so it does not count.
     if (signal.aborted) return failed(new Error("This attempt was cancelled."), false, true);
-    const rejected = error instanceof EmbedError && error.upstream_status !== undefined && error.upstream_status >= 400 && error.upstream_status < 500;
+    // Only a refused input (400, 413, 422) is isolated row by row. A refused credential (401, 403), a rate limit or timeout (429, 408)
+    // and any other status is a failure: it backs off and counts toward the breaker, and no row is ever withheld for it.
+    const rejected = error instanceof EmbedError && error.upstream_status !== undefined && INPUT_REFUSED_STATUSES.has(error.upstream_status);
     return failed(error instanceof Error ? error : new Error("The search model request failed."), rejected);
   } finally {
     clearTimeout(timer);
@@ -207,7 +210,7 @@ function recordFailure(brain: Brain, message: string) {
 
 /**
  * One batch end to end: up to 32 pending rows the provider may see, secret-shaped rows withheld before anything is prepared,
- * one call (a batch the service refuses with a 4xx is retried row by row, and a row refused alone is withheld as rejected),
+ * one call (a batch whose input the service refuses is retried row by row, and a row refused alone is withheld as rejected),
  * then a fenced, guarded write. A provider vector the store would refuse is withheld for its row, never discarding the rest.
  * A failed or unknown call records a failure (back-off, breaker); vectors already paid for in this attempt are still written.
  * The job itself is never retried, because a Cloudflare job cannot be re-sent under the same dispatch key.

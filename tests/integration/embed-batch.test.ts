@@ -178,6 +178,48 @@ describe("embed_batch", () => {
     await t.drain();
     expect(t.counts()).toMatchObject({ pending: 0, withheld: 0 });
   });
+  it.each([
+    [401, /could not sign in to the search service/],
+    [403, /could not sign in to the search service/],
+    [429, /answered 429/],
+    [408, /answered 408/],
+    [404, /answered 404/],
+  ])("a %i is a failure, never a refused passage: one call per batch, nothing withheld, back-off and then the breaker", async (status, message) => {
+    const t = batched({ provider: "cloudflare" });
+    t.fake.status = status;
+    t.brain.setBetterSearch(owner, { mode: "cloudflare" });
+    const total = t.counts().total;
+    await t.drain();
+    expect(t.calls.n).toBe(1);
+    expect(t.counts()).toMatchObject({ embedded: 0, withheld: 0, pending: total });
+    expect(Number(t.store.get<any>("SELECT count(*) AS n FROM recall_chunks WHERE embedding_model IS NOT NULL OR embedding_dim IS NOT NULL")!.n)).toBe(0);
+    expect(t.jobs().at(-1)!.status).toBe("failed");
+    const first = t.brain.betterSearch(owner);
+    expect(first).toMatchObject({ failures: 1, effective: true, paused_until: null });
+    expect(first.retry_at).toBe(new Date(t.time.now.getTime() + 60_000).toISOString());
+    expect(first.status!.last_error).toMatch(message);
+    expect(t.store.all<any>("SELECT dispatch_key,state,actual_micro_usd FROM provider_dispatches")).toEqual([{ dispatch_key: "embed_batch", state: "settled", actual_micro_usd: 0 }]);
+    // Nothing is queued again until the back-off has passed.
+    expect(maybeQueueEmbedBatch(t.brain)).toBe(false);
+    t.advance(61_000);
+    expect(maybeQueueEmbedBatch(t.brain)).toBe(true);
+    await t.drain();
+    expect(t.calls.n).toBe(2);
+    expect(t.brain.betterSearch(owner).failures).toBe(2);
+    t.advance(121_000);
+    expect(maybeQueueEmbedBatch(t.brain)).toBe(true);
+    await t.drain();
+    expect(t.calls.n).toBe(3);
+    expect(t.calls.texts.every((texts) => texts.length > 1)).toBe(true);
+    expect(t.brain.betterSearch(owner)).toMatchObject({ failures: 3, effective: false, reason: "Better search paused: the service is not answering." });
+    expect(t.counts()).toMatchObject({ embedded: 0, withheld: 0, pending: total });
+    // Fixed (a new key, the limit lifted): after the pause the same rows are embedded, none was lost.
+    t.fake.status = 200;
+    t.advance(16 * 60_000);
+    expect(maybeQueueEmbedBatch(t.brain)).toBe(true);
+    await t.drain();
+    expect(t.counts()).toMatchObject({ embedded: total, withheld: 0, pending: 0 });
+  });
   it("a vector never lands on a row that changed while the provider call was out, and a lost fence writes nothing", async () => {
     const t = batched({
       before: () => {

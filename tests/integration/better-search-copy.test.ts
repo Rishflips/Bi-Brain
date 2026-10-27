@@ -36,6 +36,8 @@ describe("Better search card copy", () => {
     // [source file, fragment that must still be in it, the stored last problem, what the card says]
     const cases: [string, string, string, string][] = [
       ["packages/providers/embed.ts", "The search model answered ", "The search model answered 503.", "The search service did not answer."],
+      ["packages/providers/embed.ts", "The search model answered ", "The search model answered 429.", "The search service did not answer."],
+      ["packages/providers/embed.ts", "Better search could not sign in to the search service. Check its key.", "Better search could not sign in to the search service. Check its key.", "Better search could not sign in to the search service. Check its key."],
       ["packages/providers/embed.ts", "The search model did not answer in time.", "The search model did not answer in time.", "The search service did not answer."],
       ["packages/providers/embed.ts", "The search model request failed.", "The search model request failed.", "The search service did not answer."],
       ["packages/providers/embed.ts", "The search model reported an error.", "The search model reported an error.", "The search service did not answer."],

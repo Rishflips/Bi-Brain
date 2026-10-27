@@ -35,12 +35,18 @@ export class EmbedError extends Error {
     readonly status: number,
     readonly dispatched: boolean,
     readonly actual_cost_micro_usd?: number,
-    /** The provider's HTTP status when the request was answered with an error; 4xx means the input was refused. */
+    /** The provider's HTTP status when the request was answered with an error; only INPUT_REFUSED_STATUSES mean the input was refused. */
     readonly upstream_status?: number,
   ) {
     super(message);
   }
 }
+
+/** Statuses that mean the input itself was refused, so a batch is retried row by row and a row refused alone is withheld. Every other error status is a failure. */
+export const INPUT_REFUSED_STATUSES: ReadonlySet<number> = new Set([400, 413, 422]);
+/** Statuses that mean the service refused the credential: a failure (back-off, breaker), never a refused passage. */
+const CREDENTIAL_STATUSES: ReadonlySet<number> = new Set([401, 403]);
+export const EMBED_CREDENTIAL_REFUSED = "Better search could not sign in to the search service. Check its key.";
 
 const LOOPBACK_HOSTS = new Set(["127.0.0.1", "localhost", "[::1]"]);
 const MODEL = /^[A-Za-z0-9@][A-Za-z0-9_.:/-]{0,79}$/u;
@@ -152,8 +158,10 @@ async function perform(resolved: ResolvedEmbedConfig, json: string, count: numbe
   const res = await fetcher(resolved.endpoint, { method: "POST", headers, body: json, signal, redirect: "error" });
   if (!res.ok) {
     res.body?.cancel().catch(() => undefined);
-    // An error response is not billed: the known cost is 0, and the status lets a 4xx be retried row by row.
-    throw new EmbedError("PROVIDER_UNAVAILABLE", `The search model answered ${res.status}.`, 503, true, 0, res.status);
+    // An error response is not billed: the known cost is 0. The status lets the caller tell a refused input (retried row by row)
+    // from a refused credential or a rate limit (both ordinary failures that back off).
+    const message = CREDENTIAL_STATUSES.has(res.status) ? EMBED_CREDENTIAL_REFUSED : `The search model answered ${res.status}.`;
+    throw new EmbedError("PROVIDER_UNAVAILABLE", message, 503, true, 0, res.status);
   }
   const reader = res.body?.getReader();
   const cancelReader = () => {

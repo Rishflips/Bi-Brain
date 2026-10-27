@@ -3,10 +3,12 @@
 // and anything else gets a generic one. No raw text (service, model, credential, setting name, status code) reaches the card.
 
 const PAUSED = "Better search paused: the service is not answering.";
+const SIGN_IN = "Better search could not sign in to the search service. Check its key.";
 
 /** The fixed sentence for a known string, or null when nothing here was written for it. */
 function known(text: string): string | null {
   if (text === PAUSED) return PAUSED;
+  if (/could not sign in to the search service/i.test(text)) return SIGN_IN;
   if (/needs a daily limit and a per-preparation limit/i.test(text)) return "Set a daily limit and a per-preparation limit above $0 below.";
   if (/Today's spending cap is reached/i.test(text)) return "Today's spending limit was reached.";
   if (/spending cap|could not reserve its spending/i.test(text)) return "A preparation went over its spending limit.";
