@@ -48,11 +48,10 @@ export const RECALL_DDL = `CREATE TABLE IF NOT EXISTS recall_chunks(
   text TEXT NOT NULL, prefix TEXT NOT NULL,
   recorded_at TEXT NOT NULL,
   boost REAL NOT NULL DEFAULT 1.0,
-  embedding BLOB, embedding_model TEXT, embedding_dim INTEGER,
+  embedding BLOB, embedding_model TEXT, embedding_dim INTEGER, embedded_seq INTEGER,
   UNIQUE(kind, ref_id, ref_version, ordinal));
 CREATE INDEX IF NOT EXISTS recall_chunks_ref ON recall_chunks(kind, ref_id);
 CREATE INDEX IF NOT EXISTS recall_chunks_scope ON recall_chunks(project_id, visibility, status);
-CREATE INDEX IF NOT EXISTS recall_chunks_embed ON recall_chunks(status, embedding_model, embedding_dim, project_id, visibility);
 CREATE INDEX IF NOT EXISTS jobs_kind_created ON jobs(kind, created_at);
 CREATE VIRTUAL TABLE IF NOT EXISTS recall_fts USING fts5(text, prefix, tokenize='porter unicode61 remove_diacritics 2');`;
 // jobs_kind_created serves task 10's per-day count of recall_judge rows, which stay in the table (the spend ledger references job ids).

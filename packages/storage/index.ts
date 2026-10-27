@@ -12,6 +12,7 @@ import { Vault, type PortableState } from "./vault.ts";
 import { detectSecrets } from "./secrets.ts";
 import { applyRestoreSafetyBarrier, withdrawAllAdvisories } from "./restore-policy.ts";
 import { RECALL_DDL, invalidateRecallIndex, recallIndexComplete, rebuildRecallIndex } from "./recall-index.ts";
+import { ensureVectorSchema } from "./recall-vectors.ts";
 export class Storage {
   readonly db: DatabaseSync;
   vault?: Vault;
@@ -163,6 +164,7 @@ export class Storage {
     // backfill runs AFTER the constructor's vault checks, in short batches.
     this.transaction(() => {
       this.db.exec(RECALL_DDL);
+      ensureVectorSchema(this);
       this.db.exec("INSERT OR IGNORE INTO migrations VALUES(7,strftime('%Y-%m-%dT%H:%M:%fZ','now'));");
     });
     const vaultRoot =

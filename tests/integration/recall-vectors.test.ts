@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -174,6 +174,62 @@ describe("VectorCache.search", () => {
     s.transaction(() => purgeRef(s, "original", ids.e));
     expect(cache.search(s, q()).length).toBe(3);
     expect(cache.scopes).toBe(1);
+  });
+  it("sees a vector another process rewrote under a reused row id (the newest rows replaced, then embedded again)", async () => {
+    const { s, b, ids } = seeded();
+    // The newest row in the scope: replacing it deletes the highest id, so SQLite hands the same id back to its re-inserted row.
+    const f = (b.capture(owner, { project_id: "inbox", title: "F", body: "F body.", visibility: "project", separate: true }) as any).source_id as string;
+    const pending = pendingEmbedRows(s, KEY, ["project"], 32).find((r) => r.ref_id === f)!;
+    s.transaction(() => writeEmbeddings(s, KEY, 4, [{ ...pending, vector: vec(0.5, 0.866, 0, 0) }]));
+    const top = s.get<{ id: number }>("SELECT max(id) AS id FROM recall_chunks")!.id;
+    expect(pending.id).toBe(top);
+    const cache = new VectorCache();
+    expect(cache.search(s, q()).map((h) => [h.ref_id, Number(h.score.toFixed(2))])).toEqual([[ids.a, 1], [ids.b, 0.6], [f, 0.5]]);
+    const builds = cache.builds;
+    // Connection B is another process: a fresh copy of the storage modules, so its writes never move this process's generation counter
+    // and only SQLite's data_version (and the scope fingerprint) can tell this cache.
+    vi.resetModules();
+    const other = {
+      ...(await import("../../packages/storage/index.ts")),
+      ...(await import("../../packages/storage/recall-index.ts")),
+      ...(await import("../../packages/storage/recall-vectors.ts")),
+    };
+    const again = new other.Storage(s.path);
+    cleanup.push(() => again.close());
+    const g = vectorGeneration();
+    const rows = again.all<any>("SELECT kind,ref_id,ref_version,project_id,visibility,status,ordinal,start,end,text,prefix,recorded_at,boost FROM recall_chunks WHERE kind='original' AND ref_id=?", f);
+    again.transaction(() => other.replaceRows(again, "original", f, rows));
+    const reused = other.pendingEmbedRows(again, KEY, ["project"], 32).find((r) => r.ref_id === f)!;
+    expect(reused.id).toBe(top);
+    again.transaction(() => other.writeEmbeddings(again, KEY, 4, [{ ...reused, vector: vec(1, 0, 0, 0) }]));
+    expect(vectorGeneration()).toBe(g);
+    // Same count, same max id, same sum of ids: only the write stamp moved, and the next search uses the new vector.
+    expect(cache.search(s, q()).map((h) => [h.ref_id, Number(h.score.toFixed(2))])).toEqual([[ids.a, 1], [f, 1], [ids.b, 0.6]]);
+    expect(cache.builds).toBe(builds + 1);
+    // Clearing a vector from that process is seen too, and an unrelated commit after it still costs no rebuild.
+    again.transaction(() => other.clearEmbeddings(again));
+    expect(cache.search(s, q())).toEqual([]);
+    const cleared = cache.builds;
+    again.run("INSERT INTO settings(key,value) VALUES('unrelated_commit','1')");
+    expect(cache.search(s, q())).toEqual([]);
+    expect(cache.builds).toBe(cleared);
+    expect(s.all("SELECT key FROM settings WHERE key LIKE '%vector%' OR key LIKE '%generation%' OR key LIKE '%embed%'")).toEqual([]);
+  });
+  it("a database made before the write stamp gets it on open, and the scope fingerprint stays index-only", () => {
+    const { s } = setup();
+    // The plan 5 shape: no stamp column, no stamp counter, and the embed index without the stamp.
+    s.db.exec("DROP INDEX recall_chunks_embed; ALTER TABLE recall_chunks DROP COLUMN embedded_seq; DROP TABLE recall_vector_stamp;");
+    s.db.exec("CREATE INDEX recall_chunks_embed ON recall_chunks(status, embedding_model, embedding_dim, project_id, visibility)");
+    const reopened = new Storage(s.path);
+    cleanup.push(() => reopened.close());
+    expect(reopened.all<any>("PRAGMA table_info(recall_chunks)").map((c) => c.name)).toContain("embedded_seq");
+    expect(reopened.all<any>("PRAGMA index_info(recall_chunks_embed)").map((c) => c.name)).toEqual(["status", "embedding_model", "embedding_dim", "project_id", "visibility", "embedded_seq"]);
+    expect(reopened.all<any>("SELECT id,n FROM recall_vector_stamp")).toEqual([{ id: 1, n: 0 }]);
+    const plan = reopened
+      .all<any>("EXPLAIN QUERY PLAN SELECT count(*), max(id), sum(id), max(embedded_seq) FROM recall_chunks WHERE project_id IN (?) AND visibility IN (?) AND status=? AND embedding_model=? AND embedding_dim=?", "inbox", "project", "current", KEY, 4)
+      .map((r) => r.detail)
+      .join("\n");
+    expect(plan).toMatch(/COVERING INDEX recall_chunks_embed/);
   });
   it("scans 20,000 rows of 64 dims in under 150 ms once cached", () => {
     const { s } = setup();

@@ -18,9 +18,9 @@ const marks = (n: number) => Array.from({ length: n }, () => "?").join(",");
 const ROW_COLUMNS = "id,kind,ref_id,ref_version,project_id,visibility,status,ordinal,start,end,text,prefix,recorded_at,boost,embedding_model";
 
 /**
- * Cache invalidation writes nothing. Writes made through this process bump an in-process counter; writes made by another
- * connection (the worker's vectors, seen from the server) move SQLite's `data_version`, which the cache reads before every scan.
- * A database with Better search off therefore stays byte-identical to plan 5.
+ * Cache invalidation has no write of its own (never a settings row). Writes made through this process bump an in-process counter; writes
+ * made by another connection (the worker's vectors, seen from the server) move SQLite's `data_version`, which the cache reads before every
+ * scan, and each vector write carries a stamp the scope fingerprint reads. With Better search off no vector is ever written, so nothing moves.
  */
 let generation = 0;
 export function vectorGeneration(): number {
@@ -28,6 +28,25 @@ export function vectorGeneration(): number {
 }
 export function bumpVectorGeneration() {
   generation += 1;
+}
+/**
+ * The vector schema, run with migration 7 on every open (idempotent). `embedded_seq` is a write stamp: every `writeEmbeddings` call takes
+ * the next value of the one-row counter `recall_vector_stamp`, which only ever grows (deleting or replacing rows never lowers it, unlike
+ * a max over the rows). A table made before the column existed gets it, and an older `recall_chunks_embed` without it is rebuilt, so the
+ * scope fingerprint stays answerable from the index alone.
+ */
+export function ensureVectorSchema(store: Storage) {
+  const columns = store.all<{ name: string }>("PRAGMA table_info(recall_chunks)").map((c) => c.name);
+  if (!columns.includes("embedded_seq")) store.db.exec("ALTER TABLE recall_chunks ADD COLUMN embedded_seq INTEGER");
+  const indexed = store.all<{ name: string }>("PRAGMA index_info(recall_chunks_embed)").map((c) => c.name);
+  if (indexed.length && !indexed.includes("embedded_seq")) store.db.exec("DROP INDEX recall_chunks_embed");
+  store.db.exec(`CREATE INDEX IF NOT EXISTS recall_chunks_embed ON recall_chunks(status, embedding_model, embedding_dim, project_id, visibility, embedded_seq);
+CREATE TABLE IF NOT EXISTS recall_vector_stamp(id INTEGER PRIMARY KEY CHECK(id=1), n INTEGER NOT NULL);
+INSERT OR IGNORE INTO recall_vector_stamp(id,n) VALUES(1,0);`);
+}
+/** The next write stamp. The caller holds the write transaction, so no other connection can take the same one. */
+function nextStamp(store: Storage): number {
+  return Number(store.get<{ n: number }>("UPDATE recall_vector_stamp SET n=n+1 WHERE id=1 RETURNING n")?.n ?? 0);
 }
 const dataVersion = (store: Storage) => Number(store.get<{ data_version: number }>("PRAGMA data_version")?.data_version ?? 0);
 
@@ -73,13 +92,16 @@ export function writeEmbeddings(store: Storage, key: string, dim: number, rows: 
     return { r, blob: encodeVector(unit) };
   });
   let changed = 0;
+  // One stamp for this write, above every stamp any connection has ever written.
+  const seq = rows.length ? nextStamp(store) : 0;
   for (const { r, blob } of prepared) {
     const sameText = r.text !== undefined && r.prefix !== undefined;
     const result = store.run(
-      `UPDATE recall_chunks SET embedding=?,embedding_model=?,embedding_dim=? WHERE id=? AND kind=? AND ref_id=? AND ref_version=? AND ordinal=? AND status='current'${sameText ? " AND text=? AND prefix=?" : ""}`,
+      `UPDATE recall_chunks SET embedding=?,embedding_model=?,embedding_dim=?,embedded_seq=? WHERE id=? AND kind=? AND ref_id=? AND ref_version=? AND ordinal=? AND status='current'${sameText ? " AND text=? AND prefix=?" : ""}`,
       blob,
       key,
       blob ? dim : r.reason === "rejected" ? -1 : null,
+      seq,
       r.id,
       r.kind,
       r.ref_id,
@@ -94,12 +116,12 @@ export function writeEmbeddings(store: Storage, key: string, dim: number, rows: 
 }
 
 export function clearEmbeddings(store: Storage): number {
-  const changed = Number(store.run("UPDATE recall_chunks SET embedding=NULL,embedding_model=NULL,embedding_dim=NULL WHERE embedding IS NOT NULL OR embedding_model IS NOT NULL").changes);
+  const changed = Number(store.run("UPDATE recall_chunks SET embedding=NULL,embedding_model=NULL,embedding_dim=NULL,embedded_seq=NULL WHERE embedding IS NOT NULL OR embedding_model IS NOT NULL").changes);
   bumpVectorGeneration();
   return changed;
 }
 
-type Fingerprint = { count: number; max: number; sum: number };
+type Fingerprint = { count: number; max: number; sum: number; seq: number };
 type Entry = { generation: number; dataVersion: number; fingerprint: Fingerprint; ids: number[]; matrix: Float32Array };
 type Scope = { projects: string[]; visibilities: string[]; status: RecallRowStatus | "any"; key: string; dim: number };
 
@@ -115,15 +137,18 @@ const scopeSql = (sc: Scope) => ({
   where: `project_id IN (${marks(sc.projects.length)}) AND visibility IN (${marks(sc.visibilities.length)}) ${sc.status === "any" ? "" : "AND status=?"} AND embedding_model=? AND embedding_dim=?`,
   args: [...sc.projects, ...sc.visibilities, ...(sc.status === "any" ? [] : [sc.status]), sc.key, sc.dim],
 });
-const sameFingerprint = (a: Fingerprint, b: Fingerprint) => a.count === b.count && a.max === b.max && a.sum === b.sum;
+const sameFingerprint = (a: Fingerprint, b: Fingerprint) => a.count === b.count && a.max === b.max && a.sum === b.sum && a.seq === b.seq;
 
 /**
  * One contiguous Float32 matrix per (projects, visibilities, status, key, dim). Two triggers:
  *  - this process's generation moved (its own index and vector writes): rebuild, always;
  *  - SQLite's data_version moved (any commit by another connection, including the worker's leases and ledger rows): rebuild only if the
- *    scope's (count, max id, sum of ids) of embedded rows changed, so an unrelated commit costs one aggregate query, not a full matrix read.
- * The fingerprint sees rows that join or leave a scope; it does not see a vector rewritten in place under the same key, which the
- * indexing path never does (a changed text is a new row id, and a re-embed only targets rows whose key differs).
+ *    scope's (count, max id, sum of ids, max write stamp) of embedded rows changed, so an unrelated commit costs one index-only aggregate
+ *    query, not a full matrix read.
+ * Row ids are reused (`recall_chunks.id` has no AUTOINCREMENT, so replacing or purging the newest rows hands their ids to the next insert),
+ * so the id terms alone cannot see a vector rewritten under a reused id. The write stamp can: every `writeEmbeddings` call stamps its rows
+ * above every stamp ever written, so a vector written into the scope by any connection raises the scope's max stamp, and a vector that
+ * leaves it changes the count. A raw SQL write that skips the stamp is seen only when rows join or leave the scope.
  * The scan is a dot product (vectors are unit length); the top rows are then re-read by id and dropped unless still in scope under the key.
  */
 export class VectorCache {
@@ -170,13 +195,16 @@ export class VectorCache {
   }
 
   /**
-   * Answered from the recall_chunks_embed index alone (status, model, dim, project, visibility and the rowid are all in it), so it never reads
-   * a 4 KB vector or walks its overflow pages. A stored dim is only ever written together with its blob, so `embedding_dim=?` stands for "embedded".
+   * Answered from the recall_chunks_embed index alone (status, model, dim, project, visibility, the write stamp and the rowid are all in it), so it
+   * never reads a 4 KB vector or walks its overflow pages. A stored dim is only ever written together with its blob, so `embedding_dim=?` stands for "embedded".
    */
   private fingerprint(store: Storage, sc: Scope): Fingerprint {
     const { where, args } = scopeSql(sc);
-    const row = store.get<{ n: number; m: number | null; s: number | null }>(`SELECT count(*) AS n, max(id) AS m, sum(id) AS s FROM recall_chunks WHERE ${where}`, ...args);
-    return { count: Number(row?.n ?? 0), max: Number(row?.m ?? 0), sum: Number(row?.s ?? 0) };
+    const row = store.get<{ n: number; m: number | null; s: number | null; q: number | null }>(
+      `SELECT count(*) AS n, max(id) AS m, sum(id) AS s, max(embedded_seq) AS q FROM recall_chunks WHERE ${where}`,
+      ...args,
+    );
+    return { count: Number(row?.n ?? 0), max: Number(row?.m ?? 0), sum: Number(row?.s ?? 0), seq: Number(row?.q ?? 0) };
   }
 
   /** Drops every entry other than `keep` that this process's writes outdated, or whose scope changed under another connection's commit. */
