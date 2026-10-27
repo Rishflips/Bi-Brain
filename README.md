@@ -154,8 +154,8 @@ BiBrain is a working **single-owner local app**. This table is the honest state 
 | Area | State |
 | --- | --- |
 | Local app: Today, Your brain, Connections, Settings | Works end to end; verified on Windows with 1,955 Vitest tests and 107 Playwright browser tests |
-| One-step agent connections with recall on every prompt | Verified locally against fake servers; real Codex and Claude Code runs are owner-run (`npm run proof:recall`) |
-| Sorting help with Clef | Built and tested against a fake server; a live run is owner-run |
+| One-step agent connections with recall on every prompt | Verified in real Claude Code and Codex runs on Windows (`npm run proof:recall`, hook on and off); Cursor not yet run natively |
+| Sorting help with Clef | One live check through Ollama Cloud validated 3 of 3 answers; thresholds not yet calibrated |
 | Better search with embeddings | Built and gated against a fake embedder; a live run is owner-run (`npm run proof:search`) |
 | Self-hosting on your own server | Supported: [Self-hosting](docs/SELF_HOSTING.md) and `deploy/compose.yaml` |
 | Hosted edition and payments | Paused; the code is kept but not deployed |

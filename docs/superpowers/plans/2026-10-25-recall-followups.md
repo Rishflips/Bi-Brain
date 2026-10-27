@@ -156,3 +156,11 @@ Each ruling reads: what was decided, why, and what it costs if wrong.
   - Fix: the workspace now lives in the system temp folder, and the run adds `-c projects.<folder>.trust_level="trusted"`. When the hook is on, it also adds `--dangerously-bypass-hook-trust`, which stands in for the one-time `/hooks` review a person does.
   - The `-c` override was confirmed with `codex mcp list` at no quota cost.
   - Same issue still open: `scripts/native-client-proof.ts` has the same Codex workspace and trust problem.
+- 2026-10-27, Codex 0.156.1, after PR #30: **passed**.
+  - Hook on: 30/30 pushes, median 2 ms, tool-call rate 0.5, six of six answered with a citation in all 3 repeats. Half the answers came from the pushed evidence without a tool call.
+  - Hook off: 6/6 with a citation, tool-call rate 1.0.
+- 2026-10-27, Claude Code 2.1.283, hook off: **passed**. 6/6 with a citation, tool-call rate 1.0.
+- 2026-10-27, live sorting (`npm run proof:sorting`, Ollama Cloud, clef-flash): **3 of 3 validated**, at an estimated 46-56 micro-USD each.
+  - Calibration: the Inbox decision scored durable 0.23, under the 0.25 demotion line, though a decision should count as lasting.
+  - Calibration: small talk was classed `fact` (0.59).
+  - Near miss: the open question's review score was 0.68, just under the 0.7 wake line.

@@ -12,10 +12,10 @@ their real counts. The full delivery log from before the reframe is preserved in
 | Area | State |
 | --- | --- |
 | Local app (Today, Your brain, Connections, Settings) | Works end to end on one computer; verified by Vitest and Playwright on Windows |
-| Agent connections (Codex, Claude Code, Cursor) | One-step Add writes the server entry and a prompt hook or rule file, verified locally against fake servers; native client runs are owner-run (`scripts/native-client-proof.ts`, `npm run proof:recall`) |
-| Recall | FTS5 index, ranked recall, hook push; golden set gated in CI; live agent runs owner-run |
+| Agent connections (Codex, Claude Code, Cursor) | One-step Add writes the server entry and a prompt hook or rule file. Native recall runs passed in Claude Code 2.1.283 and Codex 0.156.1 on Windows (2026-10-27); Cursor not yet run natively |
+| Recall | FTS5 index, ranked recall, hook push; golden set gated in CI; owner-run native proof passed for both agents, hook on and off |
 | Better search (embeddings via Ollama or Cloudflare) | Off by default; fake-embedder gates in CI; live run owner-run (`npm run proof:search`) |
-| Sorting help (System 1, Clef via Ollama or Cloudflare) | Built and tested against a fake server; no live call yet, owner runs `npm run proof:sorting` |
+| Sorting help (System 1, Clef via Ollama or Cloudflare) | Live call through Ollama Cloud with clef-flash validated 3 of 3 answers (2026-10-27); thresholds not yet calibrated |
 | Watch | Per-project switch, on by default |
 | Licence | AGPL-3.0-only for the app, Apache-2.0 for the agent connector |
 | Hosted edition and payments | Paused; managed code is kept but not deployed, and no real payment has been processed |
@@ -157,14 +157,45 @@ its fix wave (Windows, Node 24.19.0):
   whole branch ("ready with fixes": 0 Critical, 4 Important, 10 Minor); the four
   Important findings and two one-line minors were fixed and re-reviewed.
 
+Owner-run native results (2026-10-27, Windows, the owner's own subscriptions;
+`npm run proof:recall`, ten prompts: six about the brain, four generic; three
+repeats each):
+
+| Client | Hook | Pushes | Median hook time | Tool-call rate | Answered with a citation | Result |
+| --- | --- | --- | --- | --- | --- | --- |
+| Claude Code 2.1.283 | on | 30/30 | 3 ms | 1.0 | 6/6, every repeat | passed |
+| Codex 0.156.1 | on | 30/30 | 2 ms | 0.5 | 6/6, every repeat | passed |
+| Claude Code 2.1.283 | off | 0 | n/a | 1.0 | 6/6, every repeat | passed |
+| Codex 0.156.1 | off | 0 | n/a | 1.0 | 6/6, every repeat | passed |
+
+- **Push levels.** With the hook on, it pushed full context on five of the brain
+  prompts and a pointer on the sixth. It pushed nothing on all four generic prompts.
+  No canary leaked in any run.
+- **The hook answers without a search.** With the hook on, Codex answered half the
+  brain prompts correctly from the pushed evidence without calling `brain_recall`.
+  Codex then needs no decision to search.
+- **Proof harness fixes the runs needed:**
+  - The Claude run needed PR #29: `--restricted` ignores project and local settings,
+    so the proof passes the written file with `--settings`.
+  - The Codex run needed PR #30: Codex loads a project's `.codex/` layer only for
+    trusted projects, so the proof uses a temp workspace outside the repo, a `-c`
+    trust override and `--dangerously-bypass-hook-trust`.
+  - In normal use a person trusts the project and approves the hook once in `/hooks`.
+- **Live sorting check.** `npm run proof:sorting` ran through Ollama Cloud with
+  clef-flash and validated 3 of 3 answers, at an estimated 46-56 micro-USD each.
+  - The Inbox decision was routed to Northstar (0.96).
+  - Small talk was quieted (show 0.23).
+  - Calibration notes for later: the decision scored durable 0.23, under the 0.25
+    demotion line, and small talk was classed `fact` (0.59).
+
 Known limits:
 
-- No live Clef judge call and no live sorting call has been made.
-- The native recall proof (`npm run proof:recall` with and without
-  `BRAIN_PROOF_NO_HOOK=1`, for Codex and Claude Code), `scripts/native-client-proof.ts`
-  and `npm run proof:sorting` are owner-run and have not been executed. There is no
-  native result for the hook, for Codex trusting the hook, or for the Windows
-  quoting of the hook command under `cmd.exe /c`.
+- No live Clef judge ("Recall help") call has been made.
+- `scripts/native-client-proof.ts` was not re-run, and has the same Codex
+  project-trust problem the recall proof had.
+- Cursor has not been run natively.
+- The Windows quoting of the hook command under `cmd.exe /c` has not been observed.
+  Both native hook runs went through each client's own shell.
 - Embeddings are deferred to plan 5b. Thresholds are initial bands and stay
   uncalibrated until the recall log has real data.
 - `source_fts` is retained although the owner screens no longer read it.
@@ -175,7 +206,8 @@ Known limits:
   past their deadline), section 9.8 "judge can only lower" (a judge may also lift a
   pointer to full when the candidates answer the prompt) and the `Freshness`
   contract (now also `retired`).
-- Local V1 only; no real model run.
+- This is a local V1. Native client runs and one live sorting call are recorded
+  above. There is no hosted release.
 
 ## 2026-10-25 — Sorting help with Clef (branch reframe/system1-clef)
 
