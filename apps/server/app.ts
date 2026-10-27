@@ -839,6 +839,9 @@ export async function createApp(
   // Recall help is its own consent beside the preferences; the domain refuses an "on" without sorting help and on a managed brain.
   app.get("/api/v1/preferences/recall-help", (req) => req.brain.recallHelp(req.principal));
   app.patch("/api/v1/preferences/recall-help", (req) => req.brain.setRecallHelp(req.principal, req.body));
+  // Better search is its own consent beside the preferences; the domain refuses a provider the worker has not published and clears vectors on any change.
+  app.get("/api/v1/preferences/better-search", (req) => req.brain.betterSearch(req.principal));
+  app.patch("/api/v1/preferences/better-search", (req) => req.brain.setBetterSearch(req.principal, req.body));
   app.patch("/api/v1/preferences/background", (req) => {
     // A managed account cannot switch paid processing on unless this deployment's
     // operator policy is configured and a fresh worker lease exists. An explicit

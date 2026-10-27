@@ -99,6 +99,28 @@ function sortingLine(status: SortingStatus, prefs: Preferences): string {
   if (!prefs.decision_provider_enabled) return "Waiting for your consent below.";
   return `On · ${status.label ?? "sorting service"} · ${status.answers} ${status.answers === 1 ? "note" : "notes"} sorted, ${status.reviewed} reviewed`;
 }
+type BetterSearch = {
+  mode: "off" | "ollama" | "cloudflare";
+  status: { configured: boolean; provider: "ollama" | "cloudflare" | null; label: string | null; reason: string | null; last_error: string | null } | null;
+  effective: boolean;
+  reason: string;
+  worker_running: boolean;
+  caps_ok: boolean;
+  counts: { total: number; embedded: number; pending: number; withheld: number };
+  failures: number;
+  retry_at: string | null;
+  paused_until: string | null;
+};
+const BETTER_LABELS = { ollama: "Ollama on this computer", cloudflare: "Cloudflare" } as const;
+/** The one plain line Settings shows about better search. */
+function betterSearchLine(b: BetterSearch): string {
+  if (b.mode === "off") return "Off. Search matches the words you used.";
+  if (b.paused_until) return "Better search paused: the service is not answering.";
+  if (!b.effective) return `Words only right now: ${b.reason}`;
+  const label = b.status?.label ?? BETTER_LABELS[b.mode];
+  const ready = `${b.counts.embedded} of ${b.counts.total} passages ready`;
+  return b.counts.pending > 0 ? `On · ${label} · ${ready}; preparing the rest in the background` : `On · ${label} · ${ready}`;
+}
 /**
  * Monotonic auth generation. It advances whenever the browser session is
  * established, lost, or found to belong to a different account. Every
@@ -331,6 +353,10 @@ function App() {
   const [recallHelp, setRecallHelp] = useState(false);
   const [savedRecallHelp, setSavedRecallHelp] = useState(false);
   const recallConsentTouched = useRef(false);
+  // Better search is also its own consent, with its own routes.
+  const [better, setBetter] = useState<BetterSearch | null>(null);
+  const [betterChoice, setBetterChoice] = useState<BetterSearch["mode"]>("off");
+  const betterTouched = useRef(false);
   const [consentOverride, setConsentOverride] = useState<boolean | null>(null);
   // An INDEPENDENT override for the separate decision-stage consent. It is never
   // derived from the master override; an omitted field preserves the RAW stored
@@ -435,7 +461,7 @@ function App() {
   }, [dark]);
   const refresh = useCallback(async () => {
     const generation = authGeneration;
-    const [p, n, t, settings, g, paidPlan, sortingStatus, recall] = await Promise.all([
+    const [p, n, t, settings, g, paidPlan, sortingStatus, recall, betterStatus] = await Promise.all([
       api("/projects"),
       api("/search"),
       api("/today"),
@@ -446,6 +472,8 @@ function App() {
       api<SortingStatus>("/system-one/status").catch(() => null),
       // A failed read leaves recall help shown as off.
       api<{ enabled: boolean }>("/preferences/recall-help").catch(() => ({ enabled: false })),
+      // A failed read hides the better-search card rather than failing the rest.
+      api<BetterSearch>("/preferences/better-search").catch(() => null),
     ]);
     // A response that arrives after sign-out or an account change must not
     // restore the previous account's data.
@@ -461,6 +489,8 @@ function App() {
     setSortingUnavailable(sortingStatus === null);
     if (!recallConsentTouched.current) setRecallHelp(recall.enabled === true);
     setSavedRecallHelp(recall.enabled === true);
+    setBetter(betterStatus);
+    if (betterStatus && !betterTouched.current) setBetterChoice(betterStatus.mode);
   }, []);
   /**
    * Clears every piece of per-account UI state: fetched data, chosen scope,
@@ -484,6 +514,9 @@ function App() {
     setRecallHelp(false);
     setSavedRecallHelp(false);
     recallConsentTouched.current = false;
+    setBetter(null);
+    setBetterChoice("off");
+    betterTouched.current = false;
     setSavedPrefs(null);
     setBriefCount(null);
     setGrants([]);
@@ -1068,6 +1101,7 @@ function App() {
               goals={today.goals}
               busy={busy}
               refreshKey={today}
+              searchNote={better && better.mode !== "off" && !better.effective ? "Search is using words only right now." : null}
               onOpenSource={(id, opts) => void openSource(id, opts)}
               onNewProject={() => setDialog("project")}
               onSave={saveDialog}
@@ -1421,6 +1455,57 @@ function App() {
                   <button onClick={() => setDialog("forget-proof")}>
                     View checks
                   </button>
+                </article>
+              ) : null}
+              {better && runtime?.mode !== "managed" ? (
+                <article>
+                  <h2>Better search</h2>
+                  <p>Find notes by what they mean, not only by the words you used, in any language you write in.</p>
+                  <p className="status" role="status">{betterSearchLine(better)}</p>
+                  {better.status?.last_error ? <p className="muted">Last problem: {better.status.last_error}</p> : null}
+                  <form
+                    onSubmit={(e) => {
+                      e.preventDefault();
+                      void act(async () => {
+                        try {
+                          const saved = await api<{ mode: BetterSearch["mode"] }>("/preferences/better-search", { mode: betterChoice }, "PATCH");
+                          const now = await api<BetterSearch>("/preferences/better-search");
+                          setBetter(now);
+                          setBetterChoice(saved.mode);
+                          betterTouched.current = false;
+                          setNotice(saved.mode === "off" ? "Better search is off." : "Better search saved. Your notes are being prepared in the background.");
+                        } catch (error) {
+                          // A refused choice says why and the choice goes back to what is saved.
+                          setBetterChoice(better.mode);
+                          betterTouched.current = false;
+                          throw error;
+                        }
+                      });
+                    }}
+                  >
+                    <fieldset>
+                      <legend>Better search</legend>
+                      {(["off", "ollama", "cloudflare"] as const).map((mode) => {
+                        const available = mode === "off" || better.status?.provider === mode;
+                        return (
+                          <label key={mode}>
+                            <input type="radio" name="better-search" value={mode} checked={betterChoice === mode} disabled={!available && betterChoice !== mode} onChange={() => { betterTouched.current = true; setBetterChoice(mode); }} />{" "}
+                            {mode === "off"
+                              ? "Off. Search matches the words you used."
+                              : mode === "ollama"
+                                ? "On this computer (Ollama). Nothing leaves this computer."
+                                : "Cloudflare. The text of your notes, your searches and the questions your connected agents ask is sent to Cloudflare Workers AI to be turned into numbers that stay on this computer. Private notes are never sent. About 1 cent for every 500,000 words, counted against your daily limit."}
+                            {!available ? <span className="muted"> Not set up on this computer.</span> : null}
+                            {mode === "cloudflare" && available && !better.caps_ok ? <span className="muted"> Needs a daily limit and a per-preparation limit above $0 below.</span> : null}
+                          </label>
+                        );
+                      })}
+                    </fieldset>
+                    <div className="actions">
+                      <button type="submit" disabled={busy || betterChoice === better.mode}>Save better search</button>
+                    </div>
+                    <small className="muted">Changing this choice later clears what was prepared and starts again.</small>
+                  </form>
                 </article>
               ) : null}
               {prefs && savedPrefs && (sorting || sortingUnavailable) && runtime?.mode !== "managed" ? (

@@ -16,6 +16,8 @@ const connectionsPort = Number(process.env.BRAIN_E2E_CONNECTIONS_PORT ?? port + 
 // Sorting help gets its own server plus a loopback stand-in for the sorting service.
 const sortingPort = Number(process.env.BRAIN_E2E_SORTING_PORT ?? port + 14);
 const clefPort = Number(process.env.BRAIN_E2E_CLEF_PORT ?? port + 15);
+// Better search gets a loopback stand-in for the embedding service, used by the same server as sorting help.
+const embedPort = Number(process.env.BRAIN_E2E_EMBED_PORT ?? port + 16);
 const stamp = Date.now();
 const agentHome = resolve("data", `e2e-agent-home-${stamp}`);
 mkdirSync(join(agentHome, ".codex"), { recursive: true });
@@ -27,7 +29,7 @@ export default defineConfig({
   projects: [
     {
       name: "main",
-      testIgnore: /(today-v2(-empty|-bar)?|connections-v2|system-one)\.spec\.ts/,
+      testIgnore: /(today-v2(-empty|-bar)?|connections-v2|system-one|better-search)\.spec\.ts/,
       use: { baseURL: `http://127.0.0.1:${port}` },
     },
     {
@@ -47,7 +49,7 @@ export default defineConfig({
     },
     {
       name: "system1",
-      testMatch: /system-one\.spec\.ts/,
+      testMatch: /(system-one|better-search)\.spec\.ts/,
       use: { baseURL: `http://127.0.0.1:${sortingPort}` },
     },
     {
@@ -122,6 +124,13 @@ export default defineConfig({
       timeout: 30000,
     },
     {
+      command: "node tests/helpers/fake-embed.mjs",
+      port: embedPort,
+      reuseExistingServer: false,
+      env: { BRAIN_FAKE_EMBED_PORT: String(embedPort) },
+      timeout: 30000,
+    },
+    {
       command: "npm start",
       url: `http://127.0.0.1:${sortingPort}/api/v1/health/live`,
       reuseExistingServer: false,
@@ -131,6 +140,9 @@ export default defineConfig({
         BRAIN_OWNER_SECRET: "e2e-local-only",
         BRAIN_SYSTEM1_PROVIDER: "ollama",
         BRAIN_SYSTEM1_ENDPOINT: `http://127.0.0.1:${clefPort}/v1/systemone`,
+        BRAIN_EMBED_PROVIDER: "ollama",
+        BRAIN_EMBED_MODEL: "fake-concept-v1",
+        BRAIN_EMBED_ENDPOINT: `http://127.0.0.1:${embedPort}/api/embed`,
       },
       timeout: 30000,
     },
