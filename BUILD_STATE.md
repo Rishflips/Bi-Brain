@@ -34,9 +34,18 @@ What shipped (one line per task; everything is off by default and tested against
 - **Task 7: golden set v2.** 62 synthetic cases with paraphrase (8), cross-language English and Tamil (6), names and no-answer buckets and dense gates in `npm run brain-eval`. With the fake embedder: paraphrase recall at 5 goes 0.125 to 1.0, cross-language 0 to 1.0, lexical 1.0 to 1.0, names 1.0 to 1.0, no-match rate 1.0 (nine dense metrics in `data/recall-eval-metrics.json`).
 - **Task 8: owner-run proof and docs.** `scripts/better-search-proof.ts` (`npm run proof:search`, needs `BRAIN_SEARCH_LIVE=1`; without it prints how to run it and exits 1; temp folder outside the repo; never prints or writes a key or account id; a refusal test is the only part CI and agents run). PROVIDERS, UX, AGENT_INTEGRATION, API, README and `docs/superpowers/plans/2026-10-27-better-search-followups.md` (every ruling and deferred minor) updated.
 
-Verified in this worktree on 2026-10-28 (Windows, Node 24.19.0); counts are provisional until the controller's final re-run:
+Verified in this worktree on 2026-10-28 (Windows, Node 24.19.0). These are the final counts from the controller's run at the branch head, after the whole-branch review and its fix wave:
 
-- `npm run typecheck`, `npm run lint`, `npm run build`: all exit 0. `npm ci`, `npm audit` and Playwright were not re-run by this task.
+- `npm ci`, `npm run typecheck`, `npm run lint`, `npm run build`: all exit 0.
+- `npm audit --audit-level=high`: 0 vulnerabilities.
+- `npx vitest run --reporter=dot --maxWorkers=3`: 189 files, 1,955 passed, 8 skipped, 0 failed (1,182 s).
+- `npx playwright test --workers=1`: 107 passed, 0 failed, 7.1m. By project: main 69, today-v2 20, connections 7, system1 6, today-v2-bar 4, empty-brain 1. `docs/screenshots` was restored afterwards.
+- The final review's fix wave was re-reviewed. It made these changes:
+  - Only 400, 413 and 422 count as a refused passage. A bad key or a rate limit backs off instead.
+  - When every passage is refused, nothing is withheld.
+  - A write stamp keeps the vector cache correct when row ids are reused.
+
+The task-level runs below are kept for the record:
 - `npm run brain-eval`: 25/25 passed; golden set 62 cases, recall at 5 = 1.00, MRR 0.97, no-match rate 1.00, positive push rate 1.00, p95 about 54 ms; the nine dense metrics are in `data/recall-eval-metrics.json` (fake embedder: paraphrase 0.125 to 1.0, cross-language 0 to 1.0, lexical 1.0 to 1.0, names 1.0 to 1.0, dense no-match rate 1.0).
 - `npx vitest run tests/integration/better-search-proof.test.ts`: 1 passed (the refusal path: no `BRAIN_SEARCH_LIVE=1` prints the instructions, exits 1, shows no key or account id and writes no file; `proof:search` is wired in `package.json`).
 - `npx vitest run --reporter=dot`: the machine was out of memory during this task (about 44 MB free of 16 GB, other applications), so the first run lost its workers (exit code 3221226091) and the second, at `--maxWorkers=2`, took 2,816 s: 189 files, 1,899 passed, 46 failed, 8 skipped. All 46 failures were load timeouts in six files this branch does not touch (`managed-decision-advisory-persistence-review`, `managed-decision-advisory-process`, `managed-decision-advisory-worker-review`, `operations`, `paddle-http`, `paddle-store`). Re-run alone, five of the six passed (85 tests) and `paddle-store` passed on its own (7 of 7) after one load-dependent failure, so per file nothing fails; a single clean full run is still owed (the controller's final re-run decides).

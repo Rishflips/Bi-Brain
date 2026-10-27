@@ -108,3 +108,16 @@ Each ruling reads: what was decided, why, and what it costs if wrong.
 - `npm run proof:search` with Ollama (`bge-m3` pulled) and with Cloudflare. No live embedding call has been made. It also settles whether Cloudflare accepts `truncate_inputs` for `bge-m3`, and whether 0.45 is the right floor and 0.7 the right weight (the proof prints the lowest cosine of a wanted hit and the highest of a no-answer query).
 - Tamil retrieval quality on real notes is unmeasured; CI uses a fake embedder with a hand-built lexicon.
 - Everything under "Owner-run checks still owed" in `docs/superpowers/plans/2026-10-25-recall-followups.md` is still owed (`npm run proof:recall`, `scripts/native-client-proof.ts`, `npm run proof:sorting`).
+
+## Parked after the final fix wave's re-review
+
+- **An interrupted row-by-row pass can still withhold rows.** If a later row times out, gets a 5xx or 429, or hits a ledger stop, the rows the service refused earlier in that pass are written as withheld.
+  - Why: this only happens when a provider-wide refusal and an interruption occur together.
+  - Follow-up: apply the all-refused test on interrupted exits too.
+  - Cost if wrong: part of a batch stays words-only until its text changes.
+- **One bad passage can switch meaning search off for everything.** A lone pending passage that the service keeps refusing re-opens the breaker every cycle. Meaning search then goes words-only for every question, under "paused: the service is not answering", until another passage joins its batch.
+  - Why: no money is at stake, about one free call every 15 minutes.
+  - Follow-up: withhold a lone passage after N consecutive refusals sent on its own, with an honest status line.
+  - Cost if wrong: hours of words-only search on a quiet brain.
+- **A local refusal can block the all-refused rule.** A row refused locally (never sent) still counts as attempted. A pass with one local refusal therefore misses the all-refused rule.
+  - Why: rare, because secret and blank rows are filtered before sending.
