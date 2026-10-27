@@ -2,7 +2,7 @@ import type { Brain } from "../../packages/domain/service.ts";
 import type { Principal } from "../../packages/contracts/index.ts";
 import { hash } from "../../packages/domain/logic.ts";
 import type { DispatchRecord, DispatchSpec, JobLease, SpendLimits } from "../../packages/domain/spend.ts";
-import { EMBED_CALL_MS, EMBED_LOOP_MS, EMBED_RESULT_KEY, EMBED_STATE_KEY, EMBED_SWEEP_AFTER_MS, QUERY_CACHE_MS, modelKey, vectorToBase64 } from "../../packages/domain/better-search.ts";
+import { EMBED_LOOP_MS, EMBED_RESULT_KEY, EMBED_STATE_KEY, EMBED_SWEEP_AFTER_MS, QUERY_CACHE_MS, modelKey, vectorToBase64 } from "../../packages/domain/better-search.ts";
 import { EmbedError, prepareEmbed, type PreparedEmbed } from "../../packages/providers/embed.ts";
 import type { DispatchAccounting } from "./accounting.ts";
 import { noteEmbedStatus, type EmbedClient } from "./embed.ts";
@@ -18,9 +18,24 @@ type EmbedJob = { id: string; fence: number; deadline_at: string; payload: { req
 type Entry = { key: string; dim: number; vector: Float32Array; at: number };
 type Cache = Map<string, Entry>;
 const QUERY_LEASE_MS = 10_000;
-/** A Cloudflare job with less time than this before its deadline is never paid for; an Ollama job still runs, because its answer feeds the cache for free. */
-export const QUERY_MIN_LEFT_MS = 50;
+/** A Cloudflare job with less time than this before its deadline is never reserved; an Ollama job has no floor, because its answer feeds the cache for free. */
+export const QUERY_MIN_LEFT_MS = 150;
+/** The abort bound for one query call: well inside the 10 s lease, so a slow call can neither outlive its lease nor hold up later questions for long. */
+export const QUERY_CALL_MS = 2_000;
+/** Consecutive failed query calls (error response, timeout, invalid answer; never a ledger refusal or a cancellation) that start the lane's back-off, and its length. */
+export const QUERY_BACKOFF_FAILURES = 3;
+export const QUERY_BACKOFF_MS = 60_000;
+/** The cheap sweep (expired query rows cancelled, their keys deleted) runs this often; the hourly row deletion runs with the full sweep. */
+export const QUERY_KEY_SWEEP_MS = 60_000;
 const SWEEP_EVERY_MS = Math.floor(EMBED_SWEEP_AFTER_MS / 4);
+/** The lane's in-process back-off, one per cache (that is, per loop). Not persisted: a restarted worker simply tries again. */
+type Health = { failures: number; until: number };
+const HEALTH = new WeakMap<Cache, Health>();
+function healthOf(cache: Cache): Health {
+  let h = HEALTH.get(cache);
+  if (!h) HEALTH.set(cache, (h = { failures: 0, until: 0 }));
+  return h;
+}
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, Math.floor(ms)));
 
 /** Leases the oldest queued query job whose deadline is still ahead. */
@@ -57,6 +72,15 @@ function finishJob(brain: Brain, job: EmbedJob, status: "succeeded" | "cancelled
   brain.store.run("DELETE FROM settings WHERE key=?", EMBED_STATE_KEY(job.payload.request_id));
 }
 
+/** Cancels every waiting question at once (fence bumped, question text deleted), so each server wait ends now with words only. */
+function cancelQueued(brain: Brain) {
+  brain.store.transaction(() => {
+    const ids = brain.store.all<{ id: string }>("SELECT id FROM jobs WHERE kind='recall_embed' AND status='queued'");
+    brain.store.run("UPDATE jobs SET status='cancelled',fence=fence+1,lease_until=NULL WHERE kind='recall_embed' AND status='queued'");
+    for (const { id } of ids) brain.store.run("DELETE FROM settings WHERE key=? OR key=?", EMBED_STATE_KEY(id), EMBED_RESULT_KEY(id));
+  });
+}
+
 /** One query job end to end. Returns false when there was nothing to do. */
 export async function runQueryEmbedOnce(deps: QueryEmbedDeps, cache: Cache): Promise<boolean> {
   const { brain, ledger, client, owner } = deps;
@@ -88,6 +112,13 @@ export async function runQueryEmbedOnce(deps: QueryEmbedDeps, cache: Cache): Pro
     const cached = cache.get(cacheKey);
     if (cached && Date.now() - cached.at < QUERY_CACHE_MS && cached.key === key) return publish(cached), true;
     if (cached) cache.delete(cacheKey);
+    // Backing off after repeated failures: no call, the question is cancelled and the server answers with words only at once.
+    const health = healthOf(cache);
+    if (health.until > brain.clock().getTime()) {
+      finishJob(brain, job, "cancelled");
+      cancelQueued(brain);
+      return true;
+    }
     let prepared: PreparedEmbed;
     try {
       // prepareEmbed runs detectSecrets over the query again: a secret-shaped question is never sent.
@@ -154,13 +185,15 @@ export async function runQueryEmbedOnce(deps: QueryEmbedDeps, cache: Cache): Pro
       ledger.assertCanExecute?.(record.call_id, lease);
     }
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), EMBED_CALL_MS);
+    const timer = setTimeout(() => controller.abort(), QUERY_CALL_MS);
     try {
       // The one provider call, outside any transaction.
       const result = await prepared.execute(controller.signal);
       if (record) ledger.settle(record.call_id, result.cost_micro_usd);
       const entry: Entry = { key, dim: result.dim, vector: result.vectors[0], at: Date.now() };
       cache.set(cacheKey, entry);
+      health.failures = 0;
+      health.until = 0;
       publish(entry);
       // Only the time of the last answer: a batch's own error line (a back-off, refused passages) is not the query lane's to clear.
       noteEmbedStatus(brain, { last_ok_at: brain.now() });
@@ -169,6 +202,12 @@ export async function runQueryEmbedOnce(deps: QueryEmbedDeps, cache: Cache): Pro
       if (record && error instanceof EmbedError && error.actual_cost_micro_usd !== undefined) ledger.settle(record.call_id, error.actual_cost_micro_usd);
       noteEmbedStatus(brain, { last_error: error instanceof Error ? error.message : "The search model request failed." });
       finishJob(brain, job, "failed");
+      health.failures += 1;
+      if (health.failures >= QUERY_BACKOFF_FAILURES) {
+        health.until = brain.clock().getTime() + QUERY_BACKOFF_MS;
+        health.failures = 0;
+        cancelQueued(brain);
+      }
     } finally {
       clearTimeout(timer);
     }
@@ -183,19 +222,14 @@ export async function runQueryEmbedOnce(deps: QueryEmbedDeps, cache: Cache): Pro
   }
 }
 
-/** Past-deadline rows become cancelled; finished rows older than an hour that no ledger row references are deleted; orphan keys are deleted. */
-export function sweepEmbedRows(brain: Brain) {
+/** The cheap sweep, about once a minute: past-deadline rows nobody holds a live lease on become cancelled, and their keys (and orphan keys) are deleted. */
+export function sweepEmbedKeys(brain: Brain) {
   const now = brain.now();
   const cutoff = new Date(brain.clock().getTime() - EMBED_SWEEP_AFTER_MS).toISOString();
   brain.store.run(
     "UPDATE jobs SET status='cancelled',fence=fence+1,lease_until=NULL WHERE kind='recall_embed' AND status IN ('queued','running') AND deadline_at<=? AND (status='queued' OR lease_until IS NULL OR lease_until<=?)",
     now,
     now,
-  );
-  // Ollama rows (no ledger row) are deleted after an hour; Cloudflare rows stay, because the ledger references them.
-  brain.store.run(
-    "DELETE FROM jobs WHERE kind='recall_embed' AND created_at<=? AND status NOT IN ('queued','running') AND NOT EXISTS (SELECT 1 FROM provider_dispatches d WHERE d.job_id=jobs.id)",
-    cutoff,
   );
   // Only the keys still present are visited (normally none), so the sweep stays small however many rows the table keeps.
   const prefixes = [EMBED_STATE_KEY(""), EMBED_RESULT_KEY("")];
@@ -213,23 +247,39 @@ export function sweepEmbedRows(brain: Brain) {
   }
 }
 
-/** Polls every 25 ms only while better search is effective; otherwise re-reads once a second. Sweeps every 15 minutes. */
-export function startEmbedLoop(deps: QueryEmbedDeps): { stop(): Promise<void> } {
+/** The full sweep: the cheap sweep, then finished rows older than an hour that no ledger row references are deleted, and keys that pointed at them. */
+export function sweepEmbedRows(brain: Brain) {
+  const cutoff = new Date(brain.clock().getTime() - EMBED_SWEEP_AFTER_MS).toISOString();
+  sweepEmbedKeys(brain);
+  // Ollama rows (no ledger row) are deleted after an hour; Cloudflare rows stay, because the ledger references them.
+  brain.store.run(
+    "DELETE FROM jobs WHERE kind='recall_embed' AND created_at<=? AND status NOT IN ('queued','running') AND NOT EXISTS (SELECT 1 FROM provider_dispatches d WHERE d.job_id=jobs.id)",
+    cutoff,
+  );
+}
+
+/** Polls every 25 ms only while better search is effective; otherwise re-reads once a second. Cheap sweep every minute, full sweep every 15 minutes. */
+export function startEmbedLoop(deps: QueryEmbedDeps, timing: { keySweepMs?: number } = {}): { stop(): Promise<void> } {
   let running = true;
   const cache: Cache = new Map();
+  const keySweepMs = timing.keySweepMs ?? QUERY_KEY_SWEEP_MS;
   let lastSweep = 0;
+  let lastKeySweep = 0;
   const loop = (async () => {
     while (running) {
       try {
         if (Date.now() - lastSweep > SWEEP_EVERY_MS) {
           sweepEmbedRows(deps.brain);
-          lastSweep = Date.now();
+          lastSweep = lastKeySweep = Date.now();
           for (const [key, entry] of cache) if (Date.now() - entry.at >= QUERY_CACHE_MS) cache.delete(key);
+        } else if (Date.now() - lastKeySweep > keySweepMs) {
+          sweepEmbedKeys(deps.brain);
+          lastKeySweep = Date.now();
         }
         if (!deps.brain.betterSearchAllowed().on) {
           // Off, paused or not effective: no vector is kept for a choice that may change.
           cache.clear();
-          await sleep(1000);
+          await sleep(Math.min(1000, keySweepMs));
           continue;
         }
         const worked = await runQueryEmbedOnce(deps, cache);

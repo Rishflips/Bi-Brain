@@ -6,7 +6,7 @@ import { Brain } from "../../packages/domain/service.ts";
 import { LocalDispatchAccounting } from "../../apps/worker/accounting.ts";
 import { Worker } from "../../apps/worker/engine.ts";
 import { publishBetterSearchStatus } from "../../apps/worker/embed.ts";
-import { runQueryEmbedOnce, sweepEmbedRows, type QueryEmbedDeps } from "../../apps/worker/recall-embed.ts";
+import { QUERY_BACKOFF_FAILURES, QUERY_BACKOFF_MS, QUERY_CALL_MS, QUERY_KEY_SWEEP_MS, QUERY_MIN_LEFT_MS, runQueryEmbedOnce, startEmbedLoop, sweepEmbedRows, type QueryEmbedDeps } from "../../apps/worker/recall-embed.ts";
 import { embedFromEnv } from "../../packages/providers/embed-env.ts";
 import { modelKey, type EmbedProvider } from "../../packages/domain/better-search.ts";
 import { FAKE_EMBED_DIM, FAKE_EMBED_MODEL, cosine, fakeEmbed, fakeEmbedFetcher } from "../helpers/fake-embed.mjs";
@@ -142,9 +142,10 @@ describe("the query embedding fast lane", () => {
     expect(row).toMatchObject({ dispatch_key: "recall_embed", state: "settled", provider: "cloudflare" });
     expect(row.actual_micro_usd).toBeGreaterThan(0);
     expect(JSON.stringify(t.calls.bodies)).not.toContain(KEY);
-    // A job with less than 50 ms left is cancelled without a call or a hold.
+    // A job with less than 150 ms left is never reserved: it is cancelled without a call or a hold.
+    expect(QUERY_MIN_LEFT_MS).toBe(150);
     const id = "late-job";
-    t.store.run("INSERT INTO jobs(id,project_id,kind,payload,status,max_attempts,next_at,created_at,deadline_at) VALUES(?,?,?,?,?,?,?,?,?)", id, "inbox", "recall_embed", JSON.stringify({ request_id: id, request_hash: "h" }), "queued", 1, t.brain.now(), t.brain.now(), new Date(t.time.now.getTime() + 20).toISOString());
+    t.store.run("INSERT INTO jobs(id,project_id,kind,payload,status,max_attempts,next_at,created_at,deadline_at) VALUES(?,?,?,?,?,?,?,?,?)", id, "inbox", "recall_embed", JSON.stringify({ request_id: id, request_hash: "h" }), "queued", 1, t.brain.now(), t.brain.now(), new Date(t.time.now.getTime() + 140).toISOString());
     t.store.set(`recall_embed:${id}`, { query: "late question", request_hash: "h", created_at: t.brain.now() });
     expect(await runQueryEmbedOnce(t.deps, t.cache)).toBe(true);
     expect(t.calls.n).toBe(1);
@@ -167,6 +168,92 @@ describe("the query embedding fast lane", () => {
     expect(t.store.get("SELECT 1 FROM jobs WHERE id='old'")).toBeUndefined();
     expect(t.store.get<any>("SELECT status FROM jobs WHERE id='fresh'")!.status).toBe("queued");
     expect(t.keys().map((k) => k.key)).toEqual(["recall_embed:fresh"]);
+  });
+  it("an Ollama job close to its deadline still runs, because its answer feeds the cache for free", async () => {
+    const t = lane();
+    const id = "late-ollama";
+    t.store.run("INSERT INTO jobs(id,project_id,kind,payload,status,max_attempts,next_at,created_at,deadline_at) VALUES(?,?,?,?,?,?,?,?,?)", id, "inbox", "recall_embed", JSON.stringify({ request_id: id, request_hash: "h" }), "queued", 1, t.brain.now(), t.brain.now(), new Date(t.time.now.getTime() + 20).toISOString());
+    t.store.set(`recall_embed:${id}`, { query: "late question", request_hash: "h", created_at: t.brain.now() });
+    expect(await runQueryEmbedOnce(t.deps, t.cache)).toBe(true);
+    expect(t.calls.n).toBe(1);
+    expect(t.cache.size).toBe(1);
+  });
+  it("after three failed questions in a row the lane stops calling for 60 s, cancels waiting questions at once, and recovers on the next success", async () => {
+    expect([QUERY_BACKOFF_FAILURES, QUERY_BACKOFF_MS]).toEqual([3, 60_000]);
+    const t = lane();
+    t.fake.status = 503;
+    for (const q of ["first launch colour", "second launch colour"]) expect(await t.withWorker(() => t.brain.queryVector(owner, q))).toBeNull();
+    expect(t.calls.n).toBe(2);
+    // The third failure cancels a question already waiting behind it, so its server wait ends at once.
+    const mk = (id: string, created: string, query: string) => {
+      t.store.run("INSERT INTO jobs(id,project_id,kind,payload,status,max_attempts,next_at,created_at,deadline_at) VALUES(?,?,?,?,?,?,?,?,?)", id, "inbox", "recall_embed", JSON.stringify({ request_id: id, request_hash: "h" }), "queued", 1, created, created, new Date(t.time.now.getTime() + 400).toISOString());
+      t.store.set(`recall_embed:${id}`, { query, request_hash: "h", created_at: created });
+    };
+    mk("third", "2026-10-25T08:59:59.000Z", "third launch colour");
+    mk("waiting", "2026-10-25T08:59:59.500Z", "waiting launch colour");
+    expect(await runQueryEmbedOnce(t.deps, t.cache)).toBe(true);
+    expect(t.calls.n).toBe(3);
+    expect(t.store.all<any>("SELECT id,status FROM jobs WHERE id IN ('third','waiting') ORDER BY id")).toEqual([
+      { id: "third", status: "failed" },
+      { id: "waiting", status: "cancelled" },
+    ]);
+    expect(t.keys()).toEqual([]);
+    // Backing off: a new question is cancelled without a call and the server falls back well before 400 ms.
+    t.fake.status = 200;
+    const started = Date.now();
+    expect(await t.withWorker(() => t.brain.queryVector(owner, "monthly fee"))).toBeNull();
+    expect(Date.now() - started).toBeLessThan(200);
+    expect(t.calls.n).toBe(3);
+    expect(t.embedJobs().at(-1)!.status).toBe("cancelled");
+    // After the back-off the next question is asked and answered.
+    t.time.now = new Date(t.time.now.getTime() + QUERY_BACKOFF_MS + 1_000);
+    t.store.set("worker_heartbeat", t.brain.now());
+    expect(await t.withWorker(() => t.brain.queryVector(owner, "monthly fee"))).not.toBeNull();
+    expect(t.calls.n).toBe(4);
+    // The success reset the count: one more failure does not back off again.
+    t.fake.status = 503;
+    expect(await t.withWorker(() => t.brain.queryVector(owner, "fourth launch colour"))).toBeNull();
+    t.fake.status = 200;
+    expect(await t.withWorker(() => t.brain.queryVector(owner, "fifth launch colour"))).not.toBeNull();
+    expect(t.calls.n).toBe(6);
+  });
+  it("a slow call is abandoned after 2 s, well inside its lease, and counts as a failure", async () => {
+    expect(QUERY_CALL_MS).toBe(2_000);
+    const t = lane({ delayMs: 3_000 });
+    const id = "slow";
+    t.store.run("INSERT INTO jobs(id,project_id,kind,payload,status,max_attempts,next_at,created_at,deadline_at) VALUES(?,?,?,?,?,?,?,?,?)", id, "inbox", "recall_embed", JSON.stringify({ request_id: id, request_hash: "h" }), "queued", 1, t.brain.now(), t.brain.now(), new Date(t.time.now.getTime() + 400).toISOString());
+    t.store.set(`recall_embed:${id}`, { query: "slow question", request_hash: "h", created_at: t.brain.now() });
+    const started = Date.now();
+    expect(await runQueryEmbedOnce(t.deps, t.cache)).toBe(true);
+    const elapsed = Date.now() - started;
+    expect(elapsed).toBeGreaterThanOrEqual(1_900);
+    expect(elapsed).toBeLessThan(2_800);
+    expect(t.store.get<any>("SELECT status FROM jobs WHERE id=?", id)!.status).toBe("failed");
+    expect(t.cache.size).toBe(0);
+    expect(t.keys()).toEqual([]);
+  }, 10_000);
+  it("a question a crashed worker left behind is cancelled and its text deleted by the next minute's sweep", async () => {
+    expect(QUERY_KEY_SWEEP_MS).toBe(60_000);
+    const t = lane({ on: false });
+    const loop = startEmbedLoop(t.deps, { keySweepMs: 50 });
+    try {
+      // A worker leased this row (10 s lease) and died before finishing; its state still holds the question.
+      t.store.run(
+        "INSERT INTO jobs(id,project_id,kind,payload,status,max_attempts,next_at,created_at,deadline_at,lease_owner,lease_until,attempts,fence) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",
+        "crashed", "inbox", "recall_embed", JSON.stringify({ request_id: "crashed", request_hash: "h" }), "running", 1, t.brain.now(), t.brain.now(),
+        new Date(t.time.now.getTime() + 400).toISOString(), "dead-worker:embed", new Date(t.time.now.getTime() + 10_000).toISOString(), 1, 1,
+      );
+      t.store.set("recall_embed:crashed", { query: "left behind", request_hash: "h", created_at: t.brain.now() });
+      await new Promise((r) => setTimeout(r, 150));
+      // Its lease is still live: the sweep leaves it alone.
+      expect(t.keys().map((k) => k.key)).toEqual(["recall_embed:crashed"]);
+      t.time.now = new Date(t.time.now.getTime() + 61_000);
+      for (let i = 0; i < 40 && t.keys().length; i++) await new Promise((r) => setTimeout(r, 25));
+      expect(t.keys()).toEqual([]);
+      expect(t.store.get<any>("SELECT status FROM jobs WHERE id='crashed'")!.status).toBe("cancelled");
+    } finally {
+      await loop.stop();
+    }
   });
   it("the main worker loop never leases, fails or schedules a query row: only the fast lane owns it", () => {
     const t = lane();
