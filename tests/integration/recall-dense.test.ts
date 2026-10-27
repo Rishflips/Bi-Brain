@@ -1,17 +1,21 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { buildFixture, owner, type Fixture } from "../eval/recall-fixture.ts";
+import { FIXTURE_CLOCK, buildFixture, owner, type Fixture } from "../eval/recall-fixture.ts";
 import { embedFixture, fakeVector } from "../eval/dense-fixture.ts";
 import { FAKE_EMBED_DIM, FAKE_EMBED_MODEL, fakeEmbed, fakeEmbedFetcher } from "../helpers/fake-embed.mjs";
 import { Brain } from "../../packages/domain/service.ts";
 import { LocalDispatchAccounting } from "../../apps/worker/accounting.ts";
 import { runQueryEmbedOnce, type QueryEmbedDeps } from "../../apps/worker/recall-embed.ts";
 import { embedFromEnv } from "../../packages/providers/embed-env.ts";
-import { BETTER_SEARCH, BETTER_SEARCH_OFF, encodeVector, normalize } from "../../packages/domain/better-search.ts";
+import { BETTER_SEARCH, BETTER_SEARCH_OFF, encodeVector, normalize, type QueryVector } from "../../packages/domain/better-search.ts";
 import { VectorCache, bumpVectorGeneration, pendingEmbedRows } from "../../packages/storage/recall-vectors.ts";
-import type { RecallResult } from "../../packages/domain/recall.ts";
+import { deterministicLevel, fromBm25, type RecallResult } from "../../packages/domain/recall.ts";
+import { JUDGE_CANDIDATES_MAX } from "../../packages/domain/recall-judge.ts";
+import { publishSystemOneStatus } from "../../apps/worker/system-one.ts";
+import { runJudgeOnce, type JudgeDeps } from "../../apps/worker/recall-judge.ts";
+import { systemOneFromEnv } from "../../packages/providers/system-one-env.ts";
 
 let cleanup: (() => void)[] = [];
 afterEach(() => {
@@ -53,7 +57,85 @@ function pump(fx: Fixture) {
   return { withWorker, calls };
 }
 
+const SNAPSHOT = "tests/eval/recall-dense-off-snapshot.json";
+/** Every fixture id by its name, and any other id by order of first appearance, so the snapshot does not depend on ids capture chose. */
+function named(fx: Fixture, value: unknown): unknown {
+  let text = JSON.stringify(value);
+  for (const [name, id] of Object.entries(fx.ids)) text = text.split(id).join(`<${name}>`);
+  const seen = new Map<string, string>();
+  text = text.replace(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gu, (m) => seen.get(m) ?? (seen.set(m, `<id${seen.size}>`), seen.get(m)!));
+  return JSON.parse(text);
+}
+/** recallCore and recallPush for every golden query, then the recall log without its wall-clock fields, on a brain that never chose Better search. */
+async function denseOffOutputs() {
+  const dir = mkdtempSync(join(tmpdir(), "recall-off-"));
+  cleanup.push(() => rmSync(dir, { recursive: true, force: true }));
+  const fx = buildFixture(join(dir, "off.sqlite"));
+  cleanup.push(() => fx.store.close());
+  const golden = JSON.parse(readFileSync("tests/eval/recall-golden-v1.json", "utf8")) as { cases: { id: string; principal: "owner" | "agent"; query: string; history?: boolean }[] };
+  const out: Record<string, unknown> = {};
+  for (const c of golden.cases) {
+    const core = fx.brain.recallCore(c.principal === "owner" ? owner : fx.agent, { query: c.query, history: c.history ?? false, limit: 8 });
+    const push = await fx.brain.recallPush(fx.agent, { prompt: c.query, session_id: "a".repeat(64), first_prompt: true, seen: [] });
+    out[c.id] = { core, push };
+  }
+  out.recall_log = fx.brain.recallLog(owner).rows.map(({ at: _at, latency_ms: _ms, ...row }) => row);
+  return named(fx, out);
+}
+
+/** A fake Clef reply (as in recall-judge.test.ts): the choice is always the argmax of its probabilities. */
+function clefAnswer(body: any, over: { ownerWorld?: number; rel?: (i: number) => number } = {}) {
+  const answers: Record<string, unknown> = {};
+  for (const [id, q] of Object.entries<any>(body.questions)) {
+    if (q.type === "noul") {
+      answers[id] = { type: "noul", noul: over.rel ? over.rel(Number(id.split("_")[1])) : 0.9 };
+      continue;
+    }
+    const ids: string[] = Object.keys(q.criteria);
+    const ow = over.ownerWorld ?? 0.9;
+    const probabilities: Record<string, number> = id === "about_owner" ? { owner_world: ow, general: Math.max(0, 1 - ow - 0.05), unclear: 0.05 } : Object.fromEntries(ids.map((x) => [x, x === "answered" ? 0.8 : 0.2 / (ids.length - 1)]));
+    const choice = ids.reduce((best, x) => (probabilities[x] > probabilities[best] ? x : best), ids[0]);
+    answers[id] = { type: "choice", choice, confidence: probabilities[choice], probabilities };
+  }
+  return new Response(JSON.stringify({ model: "clef-flash", answers, usage: { input_tokens: 2000, output_tokens: 0 } }), { status: 200 });
+}
+// Built at runtime so no secret-shaped literal sits in the file.
+const JUDGE_KEY = ["sk", "test", "never", "a", "real", "key", "0123456789abcdef"].join("-");
+/** The embedded fixture with recall help on: a judge brain, the fake Clef behind the real judge lane, and the query vector answered in-process. */
+function withJudge(t: { fx: Fixture; dense: (q: string) => QueryVector }, rel?: (i: number) => number) {
+  const brain = new Brain(t.fx.store, () => new Date(FIXTURE_CLOCK), undefined, undefined, undefined, undefined, () => ({ ready: true, reason: "test" }));
+  brain.prefs(owner, { ...brain.prefs(owner), enabled: true, decision_provider_enabled: true, daily_cap_micro_usd: 50_000, per_job_cap_micro_usd: 5_000 });
+  brain.setRecallHelp(owner, { enabled: true });
+  publishSystemOneStatus(brain, { configured: true, label: "test" });
+  const calls = { n: 0 };
+  const fetcher = (async (_url: unknown, init: any) => {
+    calls.n++;
+    return clefAnswer(JSON.parse(init.body), { ownerWorld: 0.9, rel });
+  }) as unknown as typeof fetch;
+  const env = systemOneFromEnv({ BRAIN_SYSTEM1_PROVIDER: "ollama", BRAIN_SYSTEM1_ENDPOINT: "http://127.0.0.1:9/v1/systemone", BRAIN_DECISION_API_KEY: JUDGE_KEY });
+  if (!env.config) throw new Error(env.reason);
+  const deps: JudgeDeps = { brain, ledger: new LocalDispatchAccounting(t.fx.store, () => new Date(FIXTURE_CLOCK)), client: { config: env.config, fetcher }, owner, workerId: "judge-test", fetcher };
+  vi.spyOn(brain, "queryVector").mockImplementation(async (_p, q) => t.dense(q));
+  const agent = brain.authenticateAgent(t.fx.agentToken);
+  const push = (prompt: string) =>
+    Promise.all([
+      brain.recallPush(agent, { prompt, session_id: "b".repeat(64), first_prompt: false, seen: [] }),
+      (async () => {
+        await new Promise((r) => setTimeout(r, 60));
+        await runJudgeOnce(deps, new Map());
+      })(),
+    ]).then(([out]) => out);
+  return { brain, agent, calls, push };
+}
+
 describe("dense recall", () => {
+  it("with Better search off, recall and the hook push equal the committed plan 5 snapshot byte for byte", async () => {
+    const outputs = await denseOffOutputs();
+    // Regenerate only deliberately, from plan 5 code: UPDATE_DENSE_OFF_SNAPSHOT=1 npx vitest run tests/integration/recall-dense.test.ts -t "plan 5 snapshot".
+    if (process.env.UPDATE_DENSE_OFF_SNAPSHOT === "1") writeFileSync(SNAPSHOT, JSON.stringify(outputs, null, 1) + "\n");
+    expect(existsSync(SNAPSHOT)).toBe(true);
+    expect(JSON.stringify(outputs, null, 1) + "\n").toBe(readFileSync(SNAPSHOT, "utf8"));
+  });
   it("a paraphrased question finds the note with Better search on and not without it, for the owner and an agent", () => {
     const t = dense();
     const q = "which hue was chosen for the release";
@@ -66,7 +148,6 @@ describe("dense recall", () => {
       expect(on.near_misses.length).toBeLessThanOrEqual(3);
       const off = t.fx.brain.recallCore(p, { query: q });
       expect(off.hits.map((h) => h.id)).not.toContain(t.fx.ids["fact:launch-color"]);
-      expect(JSON.stringify(off)).toBe(JSON.stringify(t.fx.brain.recallCore(p, { query: q }, null)));
     }
     expect(t.fx.brain.recallInternal(owner, { query: q, history: false, limit: 8 }).dense).toBe(false);
     expect(t.fx.brain.recallInternal(owner, { query: q, history: false, limit: 8 }, t.dense(q)).dense).toBe(true);
@@ -142,6 +223,68 @@ describe("dense recall", () => {
       const a = t.fx.brain.recallCore(c.principal === "owner" ? owner : t.fx.agent, input);
       const b = plain.brain.recallCore(c.principal === "owner" ? owner : plain.agent, input);
       expect(named(t.fx, a)).toBe(named(plain, b));
+    }
+  });
+  it("the judge never raises a push found by meaning alone: with no word candidate it is not even asked", async () => {
+    const t = dense();
+    const j = withJudge(t);
+    const q = "which hue was chosen for the release";
+    const internal = j.brain.recallInternal(j.agent, { query: q, history: false, limit: 8 }, t.dense(q));
+    expect(internal.ranked.length).toBeGreaterThan(0);
+    expect(internal.ranked.some(fromBm25)).toBe(false);
+    const out = await j.push(q);
+    expect(out.level).toBe("none");
+    expect(out.text).toBe("");
+    expect(j.calls.n).toBe(0);
+    expect(t.fx.store.all("SELECT 1 FROM jobs WHERE kind='recall_judge'")).toEqual([]);
+    expect(j.brain.recallLog(owner).rows.at(-1)).toMatchObject({ level: "none", judged: false, dense: true });
+  });
+  it("when the judge puts a hit found by meaning alone on top, the push level is capped at the words level", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "recall-cap-"));
+    cleanup.push(() => rmSync(dir, { recursive: true, force: true }));
+    const fx = buildFixture(join(dir, "cap.sqlite"));
+    cleanup.push(() => fx.store.close());
+    // Phrased only in synonyms: no word of the query below, so only meaning finds it.
+    fx.brain.capture(owner, { project_id: fx.ids["project:northstar"], title: "Banner", body: "The shade we settled on for the banner is teal.", separate: true });
+    const t = { fx, ...embedFixture(fx) };
+    const q = "which hue was chosen for the launch";
+    const probe = withJudge(t).brain.recallInternal(t.fx.agent, { query: q, history: false, limit: 8 }, t.dense(q));
+    const top = probe.ranked.slice(0, JUDGE_CANDIDATES_MAX);
+    const meaning = top.findIndex((c) => !fromBm25(c) && probe.result.hits.some((h) => h.id === c.row.ref_id));
+    expect(meaning).toBeGreaterThanOrEqual(0);
+    expect(top.some(fromBm25)).toBe(true);
+    const words = deterministicLevel(probe.signals);
+    expect(words).not.toBe("full");
+    vi.restoreAllMocks();
+    // The judge rates the word candidates not relevant and the one found by meaning alone fully relevant, so it leads the surviving hits
+    // and the judge alone would push it in full.
+    const j = withJudge(t, (i) => (i === meaning + 1 ? 1 : 0));
+    const out = await j.push(q);
+    expect(j.calls.n).toBe(1);
+    expect(j.brain.recallLog(owner).rows.at(-1)).toMatchObject({ judged: true });
+    expect(out.level).toBe(words);
+    expect(out.text).toBe("");
+  });
+  it("Better search on never pushes louder than off: an exact-entity fact second by words stays at the words level when the pin moves it first", () => {
+    const dir = mkdtempSync(join(tmpdir(), "recall-pin-"));
+    cleanup.push(() => rmSync(dir, { recursive: true, force: true }));
+    const fx = buildFixture(join(dir, "pin.sqlite"));
+    cleanup.push(() => fx.store.close());
+    // A short note holding the exact phrase outranks the Marco fact by words.
+    fx.brain.capture(owner, { project_id: fx.ids["project:northstar"], title: "Trip", body: "Marco Lisbon trip planning for the offsite.", separate: true });
+    const e = embedFixture(fx);
+    const q = "Marco Lisbon";
+    for (const p of [owner, fx.agent]) {
+      const off = fx.brain.recallInternal(p, { query: q, history: false, limit: 8 });
+      expect(off.ranked[1].row.ref_id).toBe(fx.ids["fact:marco-role"]);
+      expect(deterministicLevel(off.signals)).toBe("pointer");
+      const on = fx.brain.recallInternal(p, { query: q, history: false, limit: 8 }, e.dense(q));
+      // The pin still orders the hits...
+      expect(on.result.hits[0].id).toBe(fx.ids["fact:marco-role"]);
+      // ...but the level and the status are the words reading, exactly as without Better search.
+      expect(deterministicLevel(on.signals)).toBe("pointer");
+      expect(on.result.status).toBe(off.result.status);
+      expect({ ...on.signals, candidates: 0 }).toEqual({ ...off.signals, candidates: 0 });
     }
   });
   it("a stale vector (another model key) is ignored, a mixed-model read is refused, and the row is pending again", () => {

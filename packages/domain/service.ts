@@ -87,6 +87,7 @@ import {
   deterministicSignals,
   deterministicStatus,
   factFreshness,
+  fromBm25,
   fuse,
   pinExact,
   recallInputSchema,
@@ -148,11 +149,15 @@ function managedBlockedMessage(
   return null;
 }
 const questionWordsOf = (h: RecallHit) => new Set(questionWords(h.kind === "fact" ? h.text : `${h.title} ${h.quote}`));
-/** The entity name a fact row's prefix carries after its project title. */
+/** The entity name a fact row's prefix carries after its project title. The one reading used by exact-entity names, the pin and the judge's pin. */
 const entityFromPrefix = (prefix: string, projectTitle: string) => {
   const lead = `${projectTitle} · `;
   return prefix.startsWith(lead) ? prefix.slice(lead.length) : "";
 };
+/** A hit's identity inside one recall: kind, id and, for a passage, its start. */
+const hitKey = (h: RecallHit) => `${h.kind}:${h.id}:${h.kind === "original" ? h.start : ""}`;
+const LEVEL_RANK: Record<PushLevel, number> = { none: 0, pointer: 1, full: 2 };
+const quieter = (a: PushLevel, b: PushLevel): PushLevel => (LEVEL_RANK[a] <= LEVEL_RANK[b] ? a : b);
 const BETTER_SEARCH_NEEDS_LIMITS = "Better search with Cloudflare needs a daily limit and a per-preparation limit above $0 in Background help & spending.";
 export class Brain {
   constructor(
@@ -3624,9 +3629,10 @@ export class Brain {
     const quiet = { level: "none" as PushLevel, text: "", hit_ids: [] as string[], digest: false };
     const finish = (out: typeof quiet, extra: { candidates: number; judged: boolean; dense: boolean }) => {
       // A push that reached the brain proves the connection works, exactly like /agent/verify.
+      // `dense` is written only when a vector was used, so with Better search off the row is plan 5's, field for field.
       this.store.run("UPDATE grants SET last_verified_at=? WHERE id=?", this.now(), p.grant_id);
       const log = this.store.setting<unknown[]>("recall_log", []);
-      log.push({ at: this.now(), grant_id: p.grant_id, client: v.client, level: out.level, candidates: extra.candidates, hits: out.hit_ids.length, latency_ms: Date.now() - started, judged: extra.judged, dense: extra.dense });
+      log.push({ at: this.now(), grant_id: p.grant_id, client: v.client, level: out.level, candidates: extra.candidates, hits: out.hit_ids.length, latency_ms: Date.now() - started, judged: extra.judged, ...(extra.dense ? { dense: true } : {}) });
       this.store.set("recall_log", log.slice(-RECALL_LOG_MAX));
       return out;
     };
@@ -3635,9 +3641,13 @@ export class Brain {
     const dense = await this.denseFor(p, v.prompt);
     const internal = this.recallInternal(p, { query: v.prompt, history: false, limit: PUSH_HITS_MAX }, dense);
     const candidates = internal.result.searched.candidates;
-    const judge = await this.judgeForPush(p, internal);
+    // The push level is term-based (R2). With no candidate found by words the judge is not asked at all: the level is the
+    // deterministic one (none, or pointer for an exact entity), so meaning alone can never make a push louder.
+    const judge = internal.ranked.some(fromBm25) ? await this.judgeForPush(p, internal) : { signals: null, hits: internal.result.hits, judged: false };
     let level = pushLevel(internal.signals, judge.signals);
     const hits = filterSeen(judge.hits, v.seen);
+    // When the judge's order leaves a hit found by meaning alone on top, the level is capped at the words level.
+    if (hits.length && internal.denseOnly.has(hitKey(hits[0]))) level = quieter(level, pushLevel(internal.signals, null));
     // Everything the agent already holds from this session is not sent again. When that removed hits, the level is re-read on what is left:
     // `full` only while the best remaining hit is itself a strong match, `pointer` for an exact entity match or a remaining related hit, else quiet.
     if (level === "full" && hits.length < judge.hits.length) {
@@ -3856,11 +3866,7 @@ ${q}`);
     if (!signals) return none;
     // An exact entity match is never hidden: facts about a named entity in the request stay, whatever the judge says.
     const named = new Set(internal.entityNames.map((n) => questionWords(n).join(" ")));
-    const entityOf = (c: Candidate) => {
-      const lead = `${titles.get(c.row.project_id) ?? ""} · `;
-      return c.row.prefix.startsWith(lead) ? c.row.prefix.slice(lead.length) : "";
-    };
-    const pinned = new Set(top.filter((c) => c.row.kind === "fact" && named.has(questionWords(entityOf(c)).join(" "))).map((c) => c.key));
+    const pinned = new Set(top.filter((c) => c.row.kind === "fact" && named.has(questionWords(entityFromPrefix(c.row.prefix, titles.get(c.row.project_id) ?? "")).join(" "))).map((c) => c.key));
     const applied = applyJudge(top, signals, pinned);
     return { signals, ranked: [...applied.kept, ...internal.ranked.slice(JUDGE_CANDIDATES_MAX)], demoted: applied.demoted };
   }
@@ -3875,8 +3881,7 @@ ${q}`);
     );
     const names = new Set<string>();
     for (const r of rows) {
-      const lead = `${titles.get(r.project_id) ?? ""} · `;
-      const entity = r.prefix.startsWith(lead) ? r.prefix.slice(lead.length) : "";
+      const entity = entityFromPrefix(r.prefix, titles.get(r.project_id) ?? "");
       const words = questionWords(entity);
       if (!words.length || names.has(entity) || !words.every((w) => terms.has(w))) continue;
       const c = this.visibleClaim(p, r.project_id, r.ref_id, false);
@@ -3905,7 +3910,7 @@ ${q}`);
     // confirms an item the principal cannot see. Only claims whose name could match are loaded.
     const termSet = new Set(fts.terms);
     const entityNames = ids.length ? this.visibleEntityNames(p, scope, termSet, visibilities) : [];
-    if (!fts.match) return { result: empty("no_match", 0), ranked: [] as Candidate[], authorized: [] as RecallHit[], signals: deterministicSignals([], [], entityNames), entityNames, scope, dense: false };
+    if (!fts.match) return { result: empty("no_match", 0), ranked: [] as Candidate[], authorized: [] as RecallHit[], signals: deterministicSignals([], [], entityNames), entityNames, scope, dense: false, denseOnly: new Set<string>() };
     const status = v.history ? "any" : "current";
     const search = (match: string, kind: "fact" | "original") => searchRecallChunks(this.store, { match, kind, projects: ids, visibilities, status, limit: CANDIDATES_PER_LIST });
     const lists: RecallLists = {
@@ -3950,7 +3955,16 @@ ${q}`);
       }
     }
     const ranked = authorized.map((a) => a.candidate);
-    const signals = deterministicSignals(fts.terms, ranked, entityNames);
+    // The words reading (R2): status, strength and push level come from the authorized word candidates in the order and with the rows
+    // words alone give them, so Better search on is never louder (nor quieter) than off. Meaning still adds hits, orders them and counts.
+    let signals = deterministicSignals(fts.terms, ranked, entityNames);
+    if (lists.dense!.length) {
+      const byWords = new Set(ranked.filter(fromBm25).map((c) => c.key));
+      const wordRanked = fuse({ facts: lists.facts, originals: lists.originals, phrase: lists.phrase }, now).filter((c) => byWords.has(c.key));
+      signals = { ...deterministicSignals(fts.terms, wordRanked, entityNames), candidates: ranked.length };
+    }
+    // Hits found by meaning alone, so the push can cap a judged level they would lead (never part of the result).
+    const denseOnly = new Set(authorized.filter((a) => !fromBm25(a.candidate)).map((a) => hitKey(a.hit)));
     const { kept, spill } = dedupe(authorized.map((a) => a.hit));
     const hits = kept.slice(0, v.limit);
     const statusOut = deterministicStatus(signals);
@@ -3960,7 +3974,7 @@ ${q}`);
       reason: `matched ${fts.terms.filter((t) => questionWordsOf(h).has(t)).length} of ${fts.terms.length} terms`,
     }));
     const result: RecallResult = { status: statusOut, as_of: now.toISOString(), searched: { ...base, candidates: ranked.length }, hits, near_misses, next_step: statusOut === "no_match" ? NO_MATCH_NEXT_STEP : FOUND_NEXT_STEP };
-    return { result, ranked, authorized: authorized.map((a) => a.hit), signals, entityNames, scope, dense: dense !== null };
+    return { result, ranked, authorized: authorized.map((a) => a.hit), signals, entityNames, scope, dense: dense !== null, denseOnly };
   }
   /** One item by id for an agent: the full original (any version it may see) or the full fact with its history. */
   agentOpen(p: Principal, input: unknown) {
