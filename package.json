@@ -48,6 +48,7 @@
     "brain-eval": "node scripts/brain-eval.mjs",
     "proof:sorting": "node --import tsx scripts/system-one-live-proof.ts",
     "proof:recall": "node --import tsx scripts/recall-agent-proof.ts",
+    "proof:search": "node --import tsx scripts/better-search-proof.ts",
     "import:folder": "node --env-file-if-exists=.env --import tsx scripts/import-folder.ts",
     "test:e2e": "playwright test",
     "db:migrate": "node --env-file-if-exists=.env --import tsx scripts/migrate.ts",
