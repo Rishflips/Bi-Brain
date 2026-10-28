@@ -5,7 +5,7 @@ standards-based OIDC login. It is **not a public release**. One central
 account/service spending authority is implemented and locally verified. The
 default-off activation path is locally verified with synthetic provider transport;
 no real owner account or live provider has been activated. Live-provider quality,
-target-host recovery, TLS and real Paddle Sandbox/live acceptance remain separate gates. Do not advertise or open the
+target-host recovery, TLS and real Dodo test-mode/live acceptance remain separate gates. Do not advertise or open the
 managed service to the public. Local self-hosting is unchanged and remains the
 supported path.
 
@@ -27,72 +27,20 @@ runtime, tenant store or local database is created.
 | `BRAIN_MANAGED_ALLOW_PAID` | no                                      | Default off. `1` is a deployment opt-in, never sufficient by itself.                                                                       |
 | `OPENAI_API_KEY`           | worker only, when separately authorized | Loaded once at worker startup; never needed by the server or written to a profile/readiness file. Rotation requires restarting the worker. |
 
-Managed subscriptions are optional and all-or-none. With every Paddle field
-absent, billing reports a plain unavailable state and the rest of BiBrain is
-unchanged. A partial set stops startup. Sandbox and live credentials, catalog
-ids, webhook destinations, and data never mix.
+Managed subscriptions are optional and all-or-none. With every `BRAIN_DODO_*`
+field absent, billing reports a plain unavailable state and the rest of BiBrain is
+unchanged. A partial set stops startup. The variables, the checkout flow and the
+remaining acceptance gates are in [DODO_PAYMENTS.md](DODO_PAYMENTS.md).
 
-| Variable                           | Required when Paddle is enabled | Notes                                                                                              |
-| ---------------------------------- | ------------------------------- | -------------------------------------------------------------------------------------------------- |
-| `BRAIN_PADDLE_MODE`                | yes                             | `sandbox` or `live`; live also requires the explicit post-review `BRAIN_PADDLE_ALLOW_LIVE=1` gate. |
-| `BRAIN_PADDLE_API_KEY`             | yes                             | Backend secret for the matching environment; never returned to the browser.                        |
-| `BRAIN_PADDLE_CLIENT_TOKEN`        | yes                             | Public Paddle.js token returned only in the authenticated own-account status.                      |
-| `BRAIN_PADDLE_PRODUCT_ID`          | yes                             | One configured recurring product.                                                                  |
-| `BRAIN_PADDLE_MONTHLY_PRICE_ID`    | yes                             | Exact monthly recurring price id.                                                                  |
-| `BRAIN_PADDLE_ANNUAL_PRICE_ID`     | yes                             | Exact annual recurring price id; must differ from monthly.                                         |
-| `BRAIN_PADDLE_ALLOWED_CURRENCIES`  | yes                             | 1–20 unique uppercase ISO codes, comma-separated; completed charges outside this allowlist deny.   |
-| `BRAIN_PADDLE_WEBHOOK_SECRET`      | yes                             | Secret for the exact notification destination.                                                     |
-| `BRAIN_PADDLE_WEBHOOK_ENDPOINT_ID` | yes                             | Exact `ntfset_…` namespace used for replay uniqueness.                                             |
-| `BRAIN_PADDLE_PORTAL_ORIGIN`       | yes                             | Independently verified bare HTTPS portal origin for this environment.                              |
-| `BRAIN_PADDLE_CHECKOUT_PATH`       | no                              | Fixed approved payment-link page on `BRAIN_PUBLIC_ORIGIN`; defaults to `/`.                        |
+## Managed subscription boundary (default off)
 
-## Managed subscription boundary (B1, default off)
-
-The authenticated Settings card offers monthly or annual checkout only when the
-complete managed Paddle configuration is valid. The server first persists one
-expiring, account-bound intent, then creates one automatic quantity-one
-transaction using only the configured price. The browser receives a public
-transaction id and public client token; it never receives the API key, webhook
-secret, identity subject, knowledge, model configuration, or allowance.
-
-Immediately before the create request can reach Paddle, the server durably marks
-the intent uncertain. A timeout, 5xx, unreadable/oversized response, process exit,
-or unusable returned checkout link therefore cannot silently free the account to
-create a second charge. A definitive rejected request may release a retry. A signed
-transaction event carrying the exact server intent can recover the transaction;
-when its transaction id is known, Settings offers **Continue secure checkout**
-instead of creating another one. An exact canceled transaction releases the intent.
-An unresolved ambiguous create stays in **Needs attention** and does not expire into
-an automatic retry; inspect Paddle before any manual remediation.
-
-`POST /api/v1/billing/webhook` is the single session/CSRF exception. Host/origin
-guards and global bounds remain active. Its `application/json` body is retained as
-raw bytes up to 256 KiB, verified against `Paddle-Signature` with a five-second
-window, and only then parsed and reduced to a PII-free projection. Exact retries
-are acknowledged once; changed-content reuse of an event id is rejected.
-
-Events are wake-up/correlation signals, never payment authority. The worker leases
-at most ten events, binds only the exact transaction created for the server-owned
-intent, and performs at most four due account reconciliations per pass. Current
-provider reads require one configured quantity-one subscription item, one matching
-positive completed transaction for the current/latest paid period in an explicitly
-allowed currency, and a bounded adjustment
-scan. Pending/approved adjustments deny or restrict; refunds and chargebacks are
-adverse evidence. Only `BillingAuthority` can publish an allowance after its own
-admission, immutable-policy, key, generation, freshness, and sealed-history checks.
-
-Checkout completion displays **Confirming your plan** until that path succeeds.
-Portal sessions are owner-initiated, short-lived, never persisted, and validated
-against the configured HTTPS portal origin. Cancellation or billing failure never
-blocks sign-in, capture, correction, search, agent revocation, export, or deletion.
-
-Local tests use synthetic keys, ids, transports, and signed payloads. They are not
-Paddle Sandbox proof. Before a Sandbox claim, configure an actual sandbox account,
-approved payment-link page, notification destination, catalog, both prices, portal
-origin, and a disposable managed tenant; then verify checkout, out-of-order/replayed
-events, cancellation, refund, renewal, monthly allowance, export, and deletion.
-Live mode additionally requires selected prices/allowances, seller/KYC/tax review,
-the written live gate, and the explicit boot flag. No values are inferred.
+The Dodo adapter is the only billing integration. Its checkout, webhook,
+reconciliation and portal behaviour, the proof it still needs, and what the
+browser never receives are documented in [DODO_PAYMENTS.md](DODO_PAYMENTS.md).
+Cancellation or billing failure never blocks sign-in, capture, correction,
+search, agent revocation, export, or deletion. The Paddle adapter this section
+used to describe was removed in plan 6 (2026-10-28); its design is kept in
+[PADDLE_BILLING_DESIGN_2026-10-17.md](history/PADDLE_BILLING_DESIGN_2026-10-17.md).
 
 The server and worker read the same validated configuration. No secret is
 printed at startup; only the mode, origin and issuer are reported.
@@ -184,7 +132,7 @@ is never read or adopted.
 
 ## Remaining gates
 
-Not implemented or verified as a release: public hosting, real Paddle Sandbox/live
+Not implemented or verified as a release: public hosting, real Dodo test-mode/live
 payments, live entitlements, live paid-model dispatch, TLS and graceful signal
 handling on the target host. The default-off billing boundary and sealed
 entitlement path are locally implemented and synthetically verified; that is not

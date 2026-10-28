@@ -3428,41 +3428,6 @@ export class Brain {
     };
   }
   /** No HTTP route since surface v2. */
-  agentSearch(
-    p: Principal,
-    project: string,
-    query: string,
-    mode: "current" | "historical" | "raw" = "current",
-    offset = 0,
-    limit = 20,
-  ) {
-    this.access(p, project);
-    query = z.string().max(200).parse(query);
-    offset = z.number().int().min(0).max(1000000).parse(offset);
-    limit = z.number().int().min(1).max(50).parse(limit);
-    if (mode === "raw")
-      return {
-        mode,
-        items: this.sources(p, project, query)
-          .slice(offset, offset + limit)
-          .map((s) => ({
-            id: s.id,
-            title: s.title,
-            excerpt: excerpt(s).quote,
-            source_version: s.version,
-          })),
-        next_offset: offset + limit,
-      };
-    return {
-      mode,
-      items: this.pages(p, project, query, mode === "historical").slice(
-        offset,
-        offset + limit,
-      ),
-      next_offset: offset + limit,
-    };
-  }
-  /** No HTTP route since surface v2. */
   agentGet(p: Principal, project: string, id: string, version?: number) {
     this.access(p, project);
     try {
@@ -3554,41 +3519,6 @@ export class Brain {
     if (p.kind === "owner" && ["receipt", "gate", "link"].includes(e.kind))
       return { kind: e.kind, item: this.entity(p, id) };
     throw new BrainError("NOT_FOUND", "Item unavailable.", 404);
-  }
-  /** No HTTP route since surface v2. */
-  agentAsk(p: Principal, project: string, question: string) {
-    this.access(p, project);
-    question = z.string().trim().min(1).max(500).parse(question);
-    const tokens = question
-      .toLocaleLowerCase()
-      .split(/\W+/)
-      .filter((t) => t.length >= 3);
-    const hits = this.currentClaims(p, project)
-      .filter((c) =>
-        tokens.some((t) =>
-          `${c.data.entity} ${c.data.aspect}`.toLocaleLowerCase().includes(t),
-        ),
-      )
-      .slice(0, 5);
-    if (!hits.length)
-      return {
-        answer: "I don't have accepted evidence for that in this project.",
-        abstained: true,
-        claims: [],
-        uncertainty:
-          "No current accepted claim matched; ask the owner or search raw separately.",
-      };
-    return {
-      answer: hits
-        .map(
-          (c) => `${c.data.entity} — ${c.data.aspect}: ${String(c.data.value)}`,
-        )
-        .join("\n"),
-      abstained: false,
-      claims: hits.map((c) => ({ id: c.id, evidence: c.data.evidence })),
-      uncertainty:
-        "Literal evidence and owner reviews are not independent truth verification.",
-    };
   }
   /** Deterministic recall: authorization before the SQL and again per hit. The only path the owner's screens use. */
   recallCore(p: Principal, input: unknown, dense: QueryVector | null = null): RecallResult {
@@ -5392,8 +5322,5 @@ ${q}`);
         .sort()
         .join("|"),
     );
-  }
-  activeEvidence(p: Principal, project: string) {
-    return this.sources(p, project).slice(0, 20).map(excerpt);
   }
 }

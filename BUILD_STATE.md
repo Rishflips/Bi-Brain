@@ -18,8 +18,53 @@ their real counts. The full delivery log from before the reframe is preserved in
 | Sorting help (System 1, Clef via Ollama or Cloudflare) | Live call through Ollama Cloud with clef-flash validated 3 of 3 answers (2026-10-27); thresholds not yet calibrated |
 | Watch | Per-project switch, on by default |
 | Licence | AGPL-3.0-only for the app, Apache-2.0 for the agent connector |
-| Hosted edition and payments | Paused; managed code is kept but not deployed, and no real payment has been processed |
-| Next plans | Cleanup of the paused hosted code (plan 6) |
+| Hosted edition and payments | Paused; the Dodo adapter, the money ledger and the managed runtime are kept but not deployed, and no real payment has been processed. The Paddle code was removed in plan 6 (2026-10-28) |
+| Next plans | Owner-run proofs (`proof:recall`, `proof:search`, `proof:sorting`); the next reframe plan is the owner's choice |
+
+## 2026-10-28 — Plan 6: cut dead code (branch reframe/cleanup)
+
+Only the items below were removed. Spec: `docs/superpowers/specs/2026-10-28-cleanup-design.md`. Plan: `docs/superpowers/plans/2026-10-28-cleanup.md`.
+
+- **Paddle remnants.** Removed in full:
+  - `packages/runtime/paddle-billing.ts`, `packages/providers/paddle-evidence.ts`, `packages/domain/paddle-signature.ts`;
+  - the Paddle client in `packages/providers/paddle.ts` and the Paddle normaliser in `packages/domain/paddle-event.ts`;
+  - `paddleConfig` and `RuntimePaddleConfig` in `apps/server/config.ts`;
+  - the "Paddle is retired" startup guards, the Paddle webhook branch and the Paddle CSP branch;
+  - the `BRAIN_PADDLE_*` scrub in `scripts/run.mjs`;
+  - five Paddle-only test files.
+
+  The frozen Dodo adapter runs on some Paddle-named code, so these stay under their current names: `PaddleStore` (the base of `DodoStore`), `PaddleBillingWorker` / `ProviderBillingWorker`, `PaddleTransport`, `PaddleMode`, `PaddleEventProjection`, the `paddle_*` tables, and the `paddle.sqlite` handling in `managed-recovery`. No migration or table changed.
+
+  A managed deployment that still sets `BRAIN_PADDLE_*` variables now starts and ignores them. Before, it refused to start.
+- **Retired UI flows.** Three modals in `apps/web/src.tsx` that nothing could open: the plan review, "Review later" and "Your plan changed after acceptance".
+- **Test-only and dead code.** `rankAnswers` (`packages/domain/ask.ts`), `Brain.agentAsk`, `Brain.agentSearch`, `Brain.activeEvidence` and `fillRecallIndex`. Tests that used these as probes now check the same facts through `currentClaims`, `pages` and `sources`.
+- **Stale docs.**
+  - The Paddle design moved to `docs/history/PADDLE_BILLING_DESIGN_2026-10-17.md`.
+  - `MANAGED_RUN`, `API`, `ARCHITECTURE` and `SECURITY_PRIVACY` now point at `DODO_PAYMENTS.md`.
+  - These were left alone on purpose: `IMPLEMENTATION_PLAN.md`, `DODO_PAYMENTS.md` and `RELEASE.md`, which have owner edits pending, and `BUSINESS.md`, a dated business record.
+
+Frozen code ran unmodified and passed: `dodo-authority`, `dodo-billing`, every `billing-*` and `managed-*` test, `paddle-store`, `paddle-authority-flow`, `paddle-transport` and `billing-ui.spec.ts`. No dodo* file, migration or `managedPreferencesPatchSchema` changed.
+
+Verified in this worktree on 2026-10-28 (Windows, Node 24.19.0):
+
+- `npm run typecheck`, `npm run lint`, `npm run build`: all exit 0.
+- `npm audit --audit-level=high`: 0 vulnerabilities.
+- `npx vitest run --reporter=dot --maxWorkers=3`: 184 files, 1,930 passed, 8 skipped, 0 failed (1,210 s). That is 5 files and 25 tests fewer than plan 5b, all of them Paddle-only or `rankAnswers` tests.
+- `npm run brain-eval`: 25/25 passed. The golden set is unchanged.
+- `npx playwright test --workers=1`: 107 passed, 0 failed (4.4m). By project: main 69, today-v2 20, connections 7, system1 6, today-v2-bar 4, empty-brain 1. `docs/screenshots` was restored afterwards.
+  - The first full run, started straight after the 20-minute Vitest run, had 3 failures in `today-v2`: two 30-second test timeouts and one 5-second wait for a project card.
+  - The `today-v2` project alone then passed 20/20, and a second full run passed 107/107.
+- Lines removed from code and tests (`apps packages scripts tests`): 2,338, against 43 added. 26 files changed.
+- Every task was reviewed; the Paddle tasks were implemented and reviewed on Opus. Fable reviewed the whole branch: ready, with 0 Critical and 0 Important findings.
+
+Known limits:
+
+- Nothing in the hosted edition was run live. This plan only removed code that production could not reach.
+- `docs/DODO_PAYMENTS.md` (lines 4–5) still says Paddle configuration refuses startup; it is now ignored instead. `docs/RELEASE.md` (line 154) still tells operators not to set `BRAIN_PADDLE_ALLOW_LIVE=1`, a variable that nothing reads any more. Both files are the owner's to update once their pending edits land.
+- `docs/IMPLEMENTATION_PLAN.md` still lists the Paddle B1 checklist, for the same reason.
+- Parked minors:
+  - the Today default still carries an unused `receipts: []`;
+  - a comment in `paddle.ts` slightly misdescribes what `paddle-store.ts` imports.
 
 ## 2026-10-27 — Better search with embeddings (branch reframe/recall-embeddings)
 
@@ -86,8 +131,8 @@ What shipped:
 - A golden set of 46 cases gates CI through `npm run brain-eval` (recall at 5,
   MRR, no-match rate, positive push rate, p95 latency).
 - The owner's Ask bar and Your brain search use the same recall core and never call
-  a model; `Brain.agentSearch`, `agentGet` and `agentAsk` are internal with no HTTP
-  route.
+  a model; `Brain.agentGet` is internal with no HTTP route (plan 6 removed the
+  test-only `agentSearch` and `agentAsk`).
 - The agent HTTP surface is v2: `GET /api/v1/agent/recall`, `GET /api/v1/agent/open`
   and `POST /api/v1/agent/recall-push`, plus `GET /api/v1/recall/log` for the owner
   and `GET`/`PATCH /api/v1/preferences/recall-help`. The v1 agent read routes are
@@ -199,7 +244,7 @@ Known limits:
 - Embeddings are deferred to plan 5b. Thresholds are initial bands and stay
   uncalibrated until the recall log has real data.
 - `source_fts` is retained although the owner screens no longer read it.
-- `rankAnswers` (`packages/domain/ask.ts`) and `Brain.agentAsk` are test-only.
+- `rankAnswers` (`packages/domain/ask.ts`) and `Brain.agentAsk` were test-only; plan 6 removed them.
 - Wall-clock latency tests may flake under heavy machine load.
 - This plan supersedes some spec text: the spec's section 3 "withheld" wording,
   section 5.1 "rows swept after an hour" (judge rows now stay and are cancelled

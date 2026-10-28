@@ -60,9 +60,9 @@ it("recognizes a plainly stated decision but never silently applies it", () => {
       expires_at: "2026-10-20T08:00:00Z",
     });
     const agent = brain.authenticateAgent(grant.token);
-    expect(brain.agentAsk(agent, "inbox", "beta pricing").answer).toBe(
-      "beta pricing — statement: paid",
-    );
+    expect(
+      brain.currentClaims(agent, "inbox").map((c) => c.data.value),
+    ).toEqual(["paid"]);
   } finally {
     store.close();
   }

@@ -53,8 +53,6 @@ import {
 } from "../../packages/runtime/paddle-worker.ts";
 
 const config = loadConfig();
-if (config.mode === "managed" && config.paddle)
-  throw new Error("Paddle is retired. Configure BRAIN_DODO_* instead.");
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 /**

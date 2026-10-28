@@ -1,8 +1,7 @@
 import type { FastifyInstance, FastifyRequest } from "fastify";
 import { z } from "zod";
 import { BrainError } from "../../packages/domain/logic.ts";
-import { PADDLE_WEBHOOK_MAX_BODY_BYTES } from "../../packages/domain/paddle-signature.ts";
-import type { PaddleBillingService } from "../../packages/runtime/paddle-billing.ts";
+import { DODO_WEBHOOK_MAX_BODY_BYTES } from "../../packages/domain/dodo-webhook.ts";
 import type { DodoBillingService } from "../../packages/runtime/dodo-billing.ts";
 
 const unavailable = () =>
@@ -31,7 +30,7 @@ function account(req: FastifyRequest): string {
 /** Registers the closed customer billing surface plus one raw-body webhook. */
 export async function registerBillingRoutes(
   app: FastifyInstance,
-  billing?: PaddleBillingService | DodoBillingService,
+  billing?: DodoBillingService,
 ): Promise<void> {
   app.get("/api/v1/billing/status", (req) => {
     const accountId = ownerAccount(req);
@@ -60,12 +59,12 @@ export async function registerBillingRoutes(
   });
 
   // This is the only JSON route that receives bytes rather than a parsed body.
-  // Each provider verifies the signature before JSON.parse.
+  // Dodo verifies the Standard Webhooks signature before JSON.parse.
   await app.register(async (webhook) => {
     webhook.removeContentTypeParser("application/json");
     webhook.addContentTypeParser(
       "application/json",
-      { parseAs: "buffer", bodyLimit: PADDLE_WEBHOOK_MAX_BODY_BYTES },
+      { parseAs: "buffer", bodyLimit: DODO_WEBHOOK_MAX_BODY_BYTES },
       (_req, body, done) => done(null, body),
     );
     webhook.post("/api/v1/billing/webhook", async (req) => {
@@ -76,15 +75,7 @@ export async function registerBillingRoutes(
           "The payment webhook body must be JSON bytes.",
           400,
         );
-      if ("provider" in billing) return billing.webhook(req.body, req.headers);
-      const header = req.headers["paddle-signature"];
-      if (typeof header !== "string")
-        throw new BrainError(
-          "INVALID_INPUT",
-          "The Paddle signature header is missing.",
-          400,
-        );
-      return billing.webhook(req.body, header);
+      return billing.webhook(req.body, req.headers);
     });
   });
 }

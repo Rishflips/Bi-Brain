@@ -79,9 +79,6 @@ it("retired claim is withheld from default answers and packs, while contradictio
     expect(conflicting.reason_codes).toContain("overlapping_conflict");
     const claim = b.entity(owner, accepted.claim_ids[0]);
     b.retireClaim(owner, claim.id, claim.version);
-    expect(b.agentAsk(owner, fixture.project, "beta status").abstained).toBe(
-      true,
-    );
     expect(b.currentClaims(owner, fixture.project)).toHaveLength(0);
     expect(b.currentClaims(owner, fixture.project, true)).toHaveLength(1);
     const answer = await runBoundTask(

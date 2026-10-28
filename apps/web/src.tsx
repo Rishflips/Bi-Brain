@@ -12,7 +12,6 @@ import type {
   Preferences,
 } from "../../packages/contracts/index.ts";
 import sample from "../../fixtures/beta-launch.json" with { type: "json" };
-import { EvidenceList } from "./components.tsx";
 import { SignIn, ConnectionUnavailable, type RuntimeMode } from "./sign-in.tsx";
 import { BrandLockup } from "./brand.tsx";
 import { takePairToken } from "./pair-link.ts";
@@ -347,7 +346,6 @@ function App() {
     [grantDuration, setGrantDuration] = useState(24),
     [agentClient, setAgentClient] = useState<AgentClient>("codex"),
     [preview, setPreview] = useState<any>(null),
-    [snooze, setSnooze] = useState(""),
     [confirmation, setConfirmation] = useState("");
   const preferencesDirty = useRef(false);
   const sortingConsentTouched = useRef(false);
@@ -366,10 +364,6 @@ function App() {
   const [decisionConsentOverride, setDecisionConsentOverride] = useState<
     boolean | null
   >(null);
-  const [comparison, setComparison] = useState<{
-    receipt: Entity;
-    goal: Entity;
-  } | null>(null);
   const [briefCount, setBriefCount] = useState<number | null | "unavailable">(
     null,
   );
@@ -534,7 +528,6 @@ function App() {
     setSourceView({});
     setProposal(null);
     setHandoff(null);
-    setComparison(null);
     setForgetProof(null);
     setForgetNeedsRetry(null);
     setNotice("");
@@ -554,7 +547,6 @@ function App() {
     setCanWrite(false);
     setGrantDuration(24);
     setAgentClient("codex");
-    setSnooze("");
     setClaimEntity("");
     setClaimKind("status");
     setClaimStatus("active");
@@ -2648,142 +2640,6 @@ function App() {
                   Save goal
                 </button>
               </form>
-            </Modal>
-          ) : null}
-          {dialog === "review" && proposal ? (
-            <Modal error={error} title={proposal.data.title} close={close}>
-              <span className="pill">Hypothesis · Prepared, not applied</span>
-              <p>{proposal.data.reason}</p>
-              <h3>Earlier plan</h3>
-              <pre>
-                {today.goals.find((g: Entity) => g.id === proposal.data.goal_id)
-                  ?.data.plan || "No accepted plan yet."}
-              </pre>
-              <h3>Saved evidence</h3>
-              <EvidenceList
-                items={proposal.data.evidence}
-                onOpen={(id) => void openSource(id)}
-              />
-              {field(
-                "Proposed plan — edit before accepting",
-                <textarea
-                  rows={9}
-                  value={artifact}
-                  onChange={(e) => setArtifact(e.target.value)}
-                  maxLength={20000}
-                />,
-              )}
-              <div className="actions">
-                <button
-                  className="primary"
-                  disabled={busy || !artifact.trim()}
-                  onClick={() =>
-                    void act(async () => {
-                      await api(`/proposals/${proposal.id}/accept`, {
-                        expected_version: proposal.version,
-                        edited_artifact: artifact,
-                      });
-                      await refresh();
-                      close();
-                      setNotice(
-                        "Plan accepted. You can undo it unless a later edit changes the plan.",
-                      );
-                    })
-                  }
-                >
-                  Keep this plan
-                </button>
-                <button
-                  onClick={() => {
-                    setSnooze("");
-                    setDialog("snooze");
-                  }}
-                >
-                  Later
-                </button>
-                <button
-                  onClick={() =>
-                    void act(async () => {
-                      await api(`/proposals/${proposal.id}/dismiss`, {
-                        expected_version: proposal.version,
-                      });
-                      await refresh();
-                      close();
-                      setNotice(
-                        "Dismissed. The same evidence will not prompt you again.",
-                      );
-                    })
-                  }
-                >
-                  Not useful
-                </button>
-              </div>
-            </Modal>
-          ) : null}
-          {dialog === "snooze" && proposal ? (
-            <Modal error={error} title="Review later" close={close}>
-              <form
-                onSubmit={(e) => {
-                  e.preventDefault();
-                  void act(async () => {
-                    await api(`/proposals/${proposal.id}/snooze`, {
-                      expected_version: proposal.version,
-                      until: new Date(snooze).toISOString(),
-                    });
-                    await refresh();
-                    close();
-                    setNotice(
-                      "Snoozed until " +
-                        new Date(snooze).toLocaleString() +
-                        ".",
-                    );
-                  });
-                }}
-              >
-                {field(
-                  "Remind me in Today at",
-                  <input
-                    type="datetime-local"
-                    required
-                    value={snooze}
-                    onChange={(e) => setSnooze(e.target.value)}
-                  />,
-                )}
-                <button className="primary" disabled={busy}>
-                  Snooze
-                </button>
-              </form>
-            </Modal>
-          ) : null}
-          {dialog === "compare" && comparison ? (
-            <Modal
-              error={error}
-              title="Your plan changed after acceptance"
-              close={close}
-            >
-              <p>
-                Undo cannot replace a later edit. Compare your plans before
-                making a new revision.
-              </p>
-              <h3>Before acceptance</h3>
-              <pre>
-                {comparison.receipt.data.previous_plan || "No previous plan."}
-              </pre>
-              <h3>Current plan</h3>
-              <pre>{comparison.goal.data.plan || "No current plan."}</pre>
-              <div className="row">
-                <button onClick={close}>Keep current plan</button>
-                <button
-                  className="primary"
-                  onClick={() => {
-                    setProposal(comparison.goal);
-                    setArtifact(comparison.goal.data.plan ?? "");
-                    setDialog("plan");
-                  }}
-                >
-                  Edit current plan
-                </button>
-              </div>
             </Modal>
           ) : null}
           {dialog === "handoff" && handoff ? (

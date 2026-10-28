@@ -19,7 +19,6 @@ import {
   type ManagedLogin,
 } from "../../packages/identity/managed-login.ts";
 import { deploymentPolicy } from "./deployment.ts";
-import type { PaddleBillingService } from "../../packages/runtime/paddle-billing.ts";
 import type { DodoBillingService } from "../../packages/runtime/dodo-billing.ts";
 import { registerBillingRoutes } from "./billing-routes.ts";
 import { systemOneCapability } from "./system-one-capability.ts";
@@ -112,8 +111,8 @@ export async function createApp(
      * reason only. Absent => false.
      */
     decisionCapability?: () => { available: boolean; reason: string };
-    /** Closed managed billing. Legacy Paddle injection supports historical tests. */
-    billing?: PaddleBillingService | DodoBillingService;
+    /** Closed managed billing (Dodo). */
+    billing?: DodoBillingService;
     /** One-step agent setup. Tests override the folders and paths it looks at. */
     agents?: Partial<AgentConnectConfig>;
   } = {},
@@ -308,9 +307,7 @@ export async function createApp(
     if (process.env.NODE_ENV === "production")
       reply.header(
         "Content-Security-Policy",
-        options.billing && !("provider" in options.billing)
-          ? "default-src 'self'; script-src 'self' https://cdn.paddle.com; style-src 'self'; img-src 'self' data: https://*.paddle.com; connect-src 'self' https://*.paddle.com; frame-src https://*.paddle.com; frame-ancestors 'none'; base-uri 'none'; object-src 'none'; form-action 'self' https://*.paddle.com"
-          : "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; object-src 'none'; form-action 'self'",
+        "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; object-src 'none'; form-action 'self'",
       );
     if (
       !req.url.startsWith("/api/v1/") ||
