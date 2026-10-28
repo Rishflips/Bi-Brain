@@ -3,7 +3,7 @@
 **Harness transition:** Owner GUI source capture remains at `/api/v1/sources`; direct agent capture is denied. Agents use `/api/v1/agent/propose` through the shared gate. Scoped `/api/v1/agent/recall` returns ranked, cited hits (current facts first, originals next; `history=true` adds replaced and retired facts) and `/api/v1/agent/open` reads one hit by id, optionally comparing two versions. Capability-filtered MCP names and their HTTP backing routes are documented in [AGENT_INTEGRATION.md](AGENT_INTEGRATION.md). Earlier endpoint descriptions below are retained for the local preview and may describe pre-harness behavior; the new harness has not cleared S4 release verification.
 
 Prefix: /api/v1. JSON request and response bodies except exports/import uploads and the
-raw signed Paddle webhook. Validate with runtime schemas. This is the normative contract;
+raw signed Dodo webhook. Validate with runtime schemas. This is the normative contract;
 verified implementation status is recorded in `BUILD_STATE.md`.
 
 ## Common rules
@@ -82,10 +82,10 @@ Use 404 for inaccessible resource IDs where revealing existence would leak infor
 | POST /exports                     | scope, format                                 | Authorized export job                                                                                                                       |
 | POST /imports/preview             | File                                          | Validated manifest and conflicts                                                                                                            |
 | POST /imports/:id/apply           | selected changes, preview_version             | Apply reviewed import                                                                                                                       |
-| GET /billing/status               | None                                          | Owner-only managed subscription state plus a resumable public transaction id only when known; unavailable in local/self-hosted mode or when not configured |
-| POST /billing/checkout-intent     | cadence (`monthly` or `annual`)               | Owner + CSRF; creates one account-bound server intent and a configured Paddle transaction; never grants allowance                           |
+| GET /billing/status               | None                                          | Owner-only managed subscription state plus a resumable hosted checkout link only when known; unavailable in local/self-hosted mode or when not configured |
+| POST /billing/checkout-intent     | cadence (`monthly` or `annual`)               | Owner + CSRF; creates one account-bound server intent and a Dodo hosted checkout session; never grants allowance                           |
 | POST /billing/portal-session      | `{}`                                          | Owner + CSRF; returns one validated short-lived customer portal URL for an existing binding                                                 |
-| POST /billing/webhook             | Exact raw JSON bytes + `Paddle-Signature`     | Only session/CSRF exception; strict byte/signature bounds, PII-free durable projection, replay-safe acknowledgement; never grants allowance |
+| POST /billing/webhook             | Exact raw JSON bytes + Standard Webhooks headers (`webhook-id`, `webhook-timestamp`, `webhook-signature`)     | Only session/CSRF exception; strict byte/signature bounds, PII-free durable projection, replay-safe acknowledgement; never grants allowance |
 
 All route mutations must be available through domain services, not raw SQL in handlers.
 Billing routes are never exposed through agent grants or MCP. A checkout return query is a
@@ -93,7 +93,7 @@ UI refresh hint only; current provider evidence and the sealed financial authori
 the sole path to a paid-processing allowance.
 An ambiguous provider create is durably locked before network I/O. Status reports
 attention without exposing a guessed transaction; it never authorizes an automatic
-second checkout. A known created transaction may be resumed through Paddle.js.
+second checkout. A known checkout session is resumed through its saved hosted checkout link.
 
 ## Asynchronous job response
 

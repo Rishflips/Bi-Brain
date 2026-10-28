@@ -133,34 +133,25 @@ and [provider activation design](superpowers/specs/2026-10-16-managed-provider-a
 ### Managed subscription boundary (locally implemented, provider proof pending)
 
 **Current provider decision, 2026-10-21:** Dodo Payments replaces Paddle after
-the rejected application. Production startup uses the Dodo adapter and refuses
+the rejected application. Production startup uses the Dodo adapter and ignores
 old Paddle configuration. Hosted checkout needs no browser SDK. Standard Webhooks
 deliveries establish correlation; independent current Dodo subscription/payment
 reads feed the existing sealed authority. Monthly and annual Dodo products map
 to one logical authority plan family with separate price references. Both stores
 remain isolated; recovery includes `dodo.sqlite` and preserves historical Paddle
-backups. See [Dodo setup](DODO_PAYMENTS.md). The following Paddle paragraphs
-describe the historical implementation, retained for audit and recovery context.
-
-Paddle Billing is an optional managed-only adapter. Configuration is all-or-none and
-environment-bound; local/self-hosted operation has no subscription dependency. The API owns
-one expiring checkout intent per account and a separate `paddle.sqlite` coordination store.
-The store records provider-create uncertainty before network I/O. Ambiguous failures
-remain locked against duplicate checkout until the exact signed transaction event
-recovers them; known created transactions are resumed rather than recreated.
-The signed webhook retains only bounded identifiers, status, timestamps and a body digest;
-raw provider payloads and customer PII are not persisted. Event leases are fenced and
-recovered, exact replays are idempotent, changed-content event-id reuse places a known
-binding into attention, and early completion events back off until the server transaction is
-attached.
-
-The worker treats events only as correlation or refresh signals. It reads the current
-quantity-one subscription, completed transaction and adjustments through a fixed-origin,
-fixed-operation, three-second/one-MiB transport, checks the configured price/product/cadence
-and charged-currency allowlist, then submits facts to `BillingAuthority`. The Paddle store has
-no authority tables and cannot create allowance. Knowledge, correction, export and deletion
-remain available when billing is absent, stale, canceled or unavailable. Cold backups include
-the coordination database and key commitment metadata, never the billing authority key.
+backups. See [Dodo setup](DODO_PAYMENTS.md). The Paddle adapter was removed in
+plan 6 (2026-10-28); its design is kept in
+[PADDLE_BILLING_DESIGN_2026-10-17.md](history/PADDLE_BILLING_DESIGN_2026-10-17.md).
+The provider-neutral pieces it left behind stay under their historical names:
+`PaddleStore` (the coordination store `DodoStore` extends, with its `paddle_*`
+tables inside `dodo.sqlite`), `PaddleBillingWorker` (exported as
+`ProviderBillingWorker`, the Dodo reconciliation pass), `PaddleTransport` (the
+bounded fetch contract) and `PaddleEventProjection` (the PII-free webhook
+projection). Events are only correlation or refresh signals; `BillingAuthority`
+alone publishes an allowance. Knowledge, correction, export and deletion remain
+available when billing is absent, stale, canceled or unavailable. Cold backups
+include the coordination database and key commitment metadata, never the billing
+authority key.
 
 ## Observability
 

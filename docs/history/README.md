@@ -14,6 +14,7 @@ These documents describe how BiBrain got here. They are kept word for word, but 
 | [SHIP_AUDIT_2026-10-07.md](SHIP_AUDIT_2026-10-07.md) | The independent deployment and ship audit |
 | [PRODUCTION_READINESS_2026-10-18.md](PRODUCTION_READINESS_2026-10-18.md) | The production readiness review |
 | [PRICING_PROPOSAL_2026-10-21.md](PRICING_PROPOSAL_2026-10-21.md) | The hosted pricing proposal (billing is paused) |
+| [PADDLE_BILLING_DESIGN_2026-10-17.md](PADDLE_BILLING_DESIGN_2026-10-17.md) | The Paddle Billing design (B1); the adapter was removed in plan 6 (2026-10-28) after Dodo replaced Paddle |
 | [prompts/](prompts/) | The Codex-era build prompts (`BUILD_WITH_SOL`, `SOL6_HARNESS_AND_SUITE_BUILD`) and two early prompt drafts (`PREPARE_BRIEF`, `REVIEW_ASSUMPTION`) |
 | [scripts/validate_build_pack.py](scripts/validate_build_pack.py) | The original build-pack validator; it is no longer run |
 

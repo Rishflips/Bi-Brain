@@ -24,7 +24,7 @@ Browser sessions, agent clients, imported content, model responses, provider net
 | Credential leakage             | Backend-only secrets, redacted logs, hashed agent tokens                                                                                                        |
 | Unsafe rendered content        | Sanitize Markdown/HTML; no script execution or dangerous URL schemes                                                                                            |
 | Forged/replayed payment signal | Verify exact raw bytes and bounded timestamp/HMAC; deduplicate by environment + endpoint + event; webhook and return URL never grant allowance                  |
-| Provider redirect/SSRF         | Backend adapter exposes fixed Paddle operations and origins only; redirects fail; portal and checkout URLs are validated against configured origins/paths       |
+| Provider redirect/SSRF         | Backend adapter exposes fixed Dodo operations and origins only; redirects fail; portal and checkout URLs are validated against configured origins/paths       |
 | Billing data leakage           | Persist only opaque provider IDs and normalized status; no raw webhook, email, card data, portal bearer URL, API key or webhook secret in exports/logs/frontend |
 | Stale or refunded entitlement  | Fresh current-provider reads plus sealed authority checks; adverse events trigger recheck; paid failures never block knowledge access/export/deletion           |
 
