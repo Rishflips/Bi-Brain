@@ -52,7 +52,7 @@ Verified in this worktree on 2026-10-28 (Windows, Node 24.19.0):
 - `npx vitest run --reporter=dot --maxWorkers=3`: 184 files, 1,930 passed, 8 skipped, 0 failed (1,210 s). That is 5 files and 25 tests fewer than plan 5b, all of them Paddle-only or `rankAnswers` tests.
 - `npm run brain-eval`: 25/25 passed. The golden set is unchanged.
 - `npx playwright test --workers=1`: 107 passed, 0 failed (4.4m). By project: main 69, today-v2 20, connections 7, system1 6, today-v2-bar 4, empty-brain 1. `docs/screenshots` was restored afterwards.
-  - The first full run, started straight after the 20-minute Vitest run, had 3 timeouts in `today-v2`.
+  - The first full run, started straight after the 20-minute Vitest run, had 3 failures in `today-v2`: two 30-second test timeouts and one 5-second wait for a project card.
   - The `today-v2` project alone then passed 20/20, and a second full run passed 107/107.
 - Lines removed from code and tests (`apps packages scripts tests`): 2,338, against 43 added. 26 files changed.
 - Every task was reviewed; the Paddle tasks were implemented and reviewed on Opus. Fable reviewed the whole branch: ready, with 0 Critical and 0 Important findings.
@@ -60,7 +60,7 @@ Verified in this worktree on 2026-10-28 (Windows, Node 24.19.0):
 Known limits:
 
 - Nothing in the hosted edition was run live. This plan only removed code that production could not reach.
-- `docs/DODO_PAYMENTS.md` (lines 4–5) and `docs/RELEASE.md` (line 154) still say Paddle configuration refuses startup. It is now ignored instead. Both files are the owner's to update once their pending edits land.
+- `docs/DODO_PAYMENTS.md` (lines 4–5) still says Paddle configuration refuses startup; it is now ignored instead. `docs/RELEASE.md` (line 154) still tells operators not to set `BRAIN_PADDLE_ALLOW_LIVE=1`, a variable that nothing reads any more. Both files are the owner's to update once their pending edits land.
 - `docs/IMPLEMENTATION_PLAN.md` still lists the Paddle B1 checklist, for the same reason.
 - Parked minors:
   - the Today default still carries an unused `receipts: []`;
