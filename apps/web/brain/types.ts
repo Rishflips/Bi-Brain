@@ -79,6 +79,8 @@ export type BrainProps = {
   busy: boolean;
   /** Changing this value reads the project again. */
   refreshKey: unknown;
+  /** A plain line under the search field, for example while search is using words only. */
+  searchNote?: string | null;
   onOpenSource: (id: string, opts?: OpenSourceOptions) => void;
   onNewProject: () => void;
   onSave: () => void;

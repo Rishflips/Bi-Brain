@@ -8,6 +8,8 @@ type Props = {
   projects: { id: string; title: string }[];
   query: string;
   onQuery: (q: string) => void;
+  /** A plain line under the field, for example while search is using words only. */
+  note?: string | null;
   onOpenSource: (id: string, opts?: OpenSourceOptions) => void;
 };
 
@@ -19,6 +21,7 @@ export function BrainSearch({
   projects,
   query,
   onQuery,
+  note,
   onOpenSource,
 }: Props) {
   const [results, setResults] = useState<SearchResults | null>(null);
@@ -70,6 +73,11 @@ export function BrainSearch({
         value={query}
         onChange={(e) => onQuery(e.target.value)}
       />
+      {note ? (
+        <p className="muted" role="status">
+          {note}
+        </p>
+      ) : null}
       {q && (
         <section
           className="tv-section"

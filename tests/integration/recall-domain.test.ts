@@ -2,11 +2,14 @@ import { describe, expect, it } from "vitest";
 import {
   buildFtsQuery,
   dedupe,
+  denseWhy,
   deterministicLevel,
   deterministicSignals,
   deterministicStatus,
   factFreshness,
+  fromBm25,
   fuse,
+  pinExact,
   recencyBoost,
   renderRecallText,
   rrf,
@@ -137,5 +140,56 @@ describe("deterministic status and level", () => {
       "Use these as evidence and cite the ids. brain_open returns a full item.",
     ]);
     expect(renderRecallText({ ...result, status: "no_match", hits: [], searched: { ...result.searched, candidates: 0 }, next_step: "x" })).toBe("no_match · 0 candidates · Inbox\nx");
+  });
+});
+
+describe("dense as a fourth list", () => {
+  it("weights the dense list 0.7, keeps the BM25 row for a shared key and the cosine for a dense-only key", () => {
+    expect(rrf([["a"], ["b"]], 60, [1, 0.7]).get("b")).toBeCloseTo(0.7 / 61);
+    expect(rrf([["a"], ["b"]], 60).get("b")).toBeCloseTo(1 / 61);
+    const shared = row({ ref_id: "s1", score: -4 });
+    const denseOnly = row({ ref_id: "s2", id: 2, score: 0.71 });
+    const out = fuse({ facts: [], originals: [shared], phrase: [], dense: [row({ ref_id: "s1", score: 0.9 }), denseOnly] }, now);
+    const s1 = out.find((c) => c.key === "original:s1:0")!;
+    const s2 = out.find((c) => c.key === "original:s2:0")!;
+    expect(s1.row.score).toBe(-4);
+    expect(s1.lists).toEqual(["originals", "dense"]);
+    expect(s2.row.score).toBe(0.71);
+    expect(s2.lists).toEqual(["dense"]);
+    expect(fromBm25(s1)).toBe(true);
+    expect(fromBm25(s2)).toBe(false);
+    expect(denseWhy(s2)).toEqual(["similar meaning"]);
+    expect(denseWhy(s1)).toEqual(["similar meaning"]);
+    expect(s1.fused).toBeGreaterThan(s2.fused);
+    // Without a dense list the output is the plan 5 output.
+    const plain = fuse({ facts: [], originals: [shared], phrase: [] }, now);
+    expect(plain.map((c) => [c.key, c.fused, c.lists])).toEqual([["original:s1:0", fuse({ facts: [], originals: [shared], phrase: [], dense: [] }, now)[0].fused, ["originals"]]]);
+  });
+  it("a dense-only candidate is never strong and never dilutes the BM25 gap", () => {
+    const top = { key: "original:a:0", row: row({ ref_id: "a", text: "launch colour cobalt debate", score: -5 }), fused: 0.03, lists: ["originals"] };
+    const denseNext = { key: "original:b:0", row: row({ ref_id: "b", id: 2, text: "launch colour amber", score: 0.6 }), fused: 0.02, lists: ["dense"] };
+    const bm25Next = { key: "original:c:0", row: row({ ref_id: "c", id: 3, text: "launch colour amber", score: -4.5 }), fused: 0.015, lists: ["originals"] };
+    expect(deterministicSignals(["launch", "colour"], [top, denseNext], []).strong).toBe(true);
+    expect(deterministicSignals(["launch", "colour"], [top, denseNext, bm25Next], []).strong).toBe(false);
+    expect(deterministicSignals(["launch", "colour"], [{ ...denseNext, row: row({ ref_id: "b", text: "launch colour cobalt", score: 0.9 }) }], []).strong).toBe(false);
+    const denseFact = { key: "fact:f", row: row({ kind: "fact", ref_id: "f", text: "Launch colour: cobalt", prefix: "Inbox · Launch colour", score: 0.9 }), fused: 0.04, lists: ["dense"] };
+    expect(deterministicSignals(["launch", "colour"], [denseFact], []).strong).toBe(false);
+    expect(deterministicSignals(["launch", "colour"], [{ ...denseFact, lists: ["facts"] }], []).strong).toBe(true);
+  });
+  it("a dense-only candidate that happens to share the words never raises the push level", () => {
+    const denseOnly = { key: "original:d:0", row: row({ ref_id: "d", text: "launch colour amber", score: 0.8 }), fused: 0.03, lists: ["dense"] };
+    const weak = { key: "original:w:0", row: row({ ref_id: "w", id: 2, text: "the launch went well", score: -2 }), fused: 0.02, lists: ["originals"] };
+    const signals = deterministicSignals(["launch", "colour"], [denseOnly, weak], []);
+    expect(signals).toMatchObject({ strong: false, matched: 1, candidates: 2 });
+    expect(deterministicLevel(signals)).toBe("none");
+    expect(deterministicStatus(signals)).toBe("partial");
+    expect(deterministicLevel(deterministicSignals(["launch", "colour"], [{ ...denseOnly, lists: ["originals", "dense"] }, weak], []))).not.toBe("none");
+  });
+  it("pinExact moves exact-name current facts to the front and keeps every other order", () => {
+    const fact = (id: string, prefix: string, status: "current" | "history" = "current") => ({ key: `fact:${id}`, row: row({ kind: "fact", ref_id: id, prefix, status }), fused: 0.01, lists: ["facts"] });
+    const ranked = [{ key: "original:x:0", row: row({ ref_id: "x" }), fused: 0.05, lists: ["dense"] }, fact("1", "Northstar · Marco"), fact("2", "Northstar · northstar"), fact("3", "Northstar · northstar", "history")];
+    const out = pinExact(ranked, (c) => c.row.prefix.replace(/^Northstar · /u, ""), ["Northstar"]);
+    expect(out.map((c) => c.key)).toEqual(["fact:2", "original:x:0", "fact:1", "fact:3"]);
+    expect(pinExact(ranked, (c) => c.row.prefix, [])).toBe(ranked);
   });
 });

@@ -118,6 +118,7 @@ export function BrainView(props: BrainProps) {
         projects={props.projects}
         query={query}
         onQuery={setQuery}
+        note={props.searchNote ?? null}
         onOpenSource={props.onOpenSource}
       />
       {loadError && (

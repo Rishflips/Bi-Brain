@@ -2,6 +2,7 @@ import { z } from "zod";
 import type { RecallMatch } from "../storage/recall-index.ts";
 import { questionWords } from "./ask.ts";
 import { STALE_DAYS } from "./brief.ts";
+import { DENSE_WEIGHT } from "./better-search.ts";
 
 export const RECALL_QUERY_MAX = 500;
 export const RECALL_LIMIT_DEFAULT = 8;
@@ -11,6 +12,8 @@ export const RRF_K = 60;
 export const MAX_TERMS = 12;
 export const MAX_CHUNKS_PER_SOURCE = 2;
 export const NEAR_MISSES_MAX = 3;
+/** The name of the fourth RRF list: dense candidates from Better search. */
+export const DENSE_LIST = "dense";
 export const NO_MATCH_NEXT_STEP =
   "Nothing recorded matches. Tell the user this is not in the brain and do not infer it. Try brain_recall with the person, project or thing as the user named it, or brain_open with a known id.";
 export const FOUND_NEXT_STEP = "Use these as evidence and cite the ids. brain_open returns a full item.";
@@ -38,9 +41,13 @@ export function buildFtsQuery(query: string): FtsQuery {
   return { terms, match: parts.join(" OR "), phrase };
 }
 
-export function rrf(lists: string[][], k = RRF_K): Map<string, number> {
+/** Reciprocal rank fusion with an optional weight per list (1 by default). */
+export function rrf(lists: string[][], k = RRF_K, weights: number[] = []): Map<string, number> {
   const out = new Map<string, number>();
-  for (const list of lists) list.forEach((key, i) => out.set(key, (out.get(key) ?? 0) + 1 / (k + i + 1)));
+  lists.forEach((list, li) => {
+    const w = weights[li] ?? 1;
+    list.forEach((key, i) => out.set(key, (out.get(key) ?? 0) + w / (k + i + 1)));
+  });
   return out;
 }
 
@@ -52,18 +59,23 @@ export function recencyBoost(capturedAt: string, now: Date): number {
 export type Candidate = { key: string; row: RecallMatch; fused: number; lists: string[] };
 export const candidateKey = (r: RecallMatch) => (r.kind === "fact" ? `fact:${r.ref_id}` : `original:${r.ref_id}:${r.ordinal}`);
 
-/** RRF over the three lists, then the deterministic multipliers. Highest first. */
-export function fuse(lists: { facts: RecallMatch[]; originals: RecallMatch[]; phrase: RecallMatch[] }, now: Date): Candidate[] {
+export type RecallLists = { facts: RecallMatch[]; originals: RecallMatch[]; phrase: RecallMatch[]; dense?: RecallMatch[] };
+/**
+ * RRF over the three BM25 lists plus the optional dense list (weight DENSE_WEIGHT), then the deterministic multipliers. Highest first.
+ * A key seen in a BM25 list keeps that row (a BM25 score, lower is better); a dense-only key keeps its cosine. Without a dense list the output is plan 5's.
+ */
+export function fuse(lists: RecallLists, now: Date): Candidate[] {
   const rows = new Map<string, RecallMatch>();
   const members = new Map<string, string[]>();
-  const keyed = (name: keyof typeof lists) =>
-    lists[name].map((r) => {
+  const keyed = (name: keyof RecallLists) =>
+    (lists[name] ?? []).map((r) => {
       const key = candidateKey(r);
       if (!rows.has(key) || rows.get(key)!.score > r.score) rows.set(key, r);
       members.set(key, [...(members.get(key) ?? []), name]);
       return key;
     });
-  const fused = rrf([keyed("facts"), keyed("originals"), keyed("phrase")]);
+  // BM25 scores are negative and cosines positive, so the `score >` rule above keeps the BM25 row for a shared key whatever the list order.
+  const fused = rrf([keyed("facts"), keyed("originals"), keyed("phrase"), keyed(DENSE_LIST)], RRF_K, [1, 1, 1, DENSE_WEIGHT]);
   return [...fused.entries()]
     .map(([key, base]) => {
       const row = rows.get(key)!;
@@ -74,6 +86,20 @@ export function fuse(lists: { facts: RecallMatch[]; originals: RecallMatch[]; ph
       return { key, row, fused: score, lists: members.get(key) ?? [] };
     })
     .sort((a, b) => b.fused - a.fused || a.key.localeCompare(b.key));
+}
+
+/** Whether a candidate was retrieved by words at all (a dense-only candidate has no BM25 score to compare). */
+export const fromBm25 = (c: Candidate) => c.lists.some((l) => l !== DENSE_LIST);
+export const denseWhy = (c: Candidate) => (c.lists.includes(DENSE_LIST) ? ["similar meaning"] : []);
+
+/** With dense candidates present, current facts whose entity the query names exactly move to the front, in their current order. Returns the input when nothing is pinned. */
+export function pinExact(ranked: Candidate[], entityOf: (c: Candidate) => string, names: string[]): Candidate[] {
+  if (!names.length) return ranked;
+  const wanted = new Set(names.map((n) => questionWords(n).join(" ")));
+  const pinned = ranked.filter((c) => c.row.kind === "fact" && c.row.status === "current" && wanted.has(questionWords(entityOf(c)).join(" ")));
+  if (!pinned.length) return ranked;
+  const set = new Set(pinned);
+  return [...pinned, ...ranked.filter((c) => !set.has(c))];
 }
 
 export type Freshness = "current" | "stale" | "replaced" | "retired";
@@ -171,13 +197,16 @@ export function deterministicSignals(terms: string[], ranked: Candidate[], entit
   let strong = false;
   if (top && terms.length > 0) {
     const n = coverage(terms, top.row.text);
-    if (top.row.kind === "fact" && top.row.status === "current" && n >= needed) strong = true;
-    else if (top.row.kind === "original" && n >= 2) {
-      const next = ranked.find((c) => c.row.kind === "original" && c !== top);
+    // Strong needs a words match: a dense-only top is never strong, and a dense-only runner-up has no BM25 score to set the gap.
+    // With no dense list every candidate is from BM25, so this is plan 5's rule unchanged.
+    if (top.row.kind === "fact" && top.row.status === "current" && n >= needed && fromBm25(top)) strong = true;
+    else if (top.row.kind === "original" && n >= 2 && fromBm25(top)) {
+      const next = ranked.find((c) => c.row.kind === "original" && c !== top && fromBm25(c));
       strong = !next || Math.abs(top.row.score) >= 1.3 * Math.abs(next.row.score);
     }
   }
-  const matched = Math.max(0, ...ranked.slice(0, 3).map((c) => coverage(terms, c.row.text)));
+  // The words reading: a dense-only candidate never counts toward `matched`, so it can never raise the push level to `pointer`.
+  const matched = Math.max(0, ...ranked.filter(fromBm25).slice(0, 3).map((c) => coverage(terms, c.row.text)));
   const topNames = [...new Set(ranked.slice(0, 3).map((c) => (c.row.kind === "fact" ? c.row.prefix.split(" · ").at(-1)! : c.row.prefix.split(" · ")[0])))];
   return { terms, exactEntity, strong, matched, candidates: ranked.length, topKind: top ? top.row.kind : null, topNames };
 }

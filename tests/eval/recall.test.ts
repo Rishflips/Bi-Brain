@@ -8,31 +8,42 @@ import { Storage } from "../../packages/storage/index.ts";
 import { Brain } from "../../packages/domain/service.ts";
 import { buildFixture, claim, owner, type Fixture } from "./recall-fixture.ts";
 import { deterministicLevel } from "../../packages/domain/recall.ts";
+import { embedFixture } from "./dense-fixture.ts";
+import type { QueryVector } from "../../packages/domain/better-search.ts";
 import type { RecallResult } from "../../packages/domain/recall.ts";
 
 const golden = JSON.parse(readFileSync(join(fileURLToPath(new URL(".", import.meta.url)), "recall-golden-v1.json"), "utf8")) as {
   cases: { id: string; tags: string[]; principal: "owner" | "agent"; query: string; history?: boolean; expect: { status: string | string[]; must_include: string[]; must_exclude: string[]; freshness: Record<string, string> } }[];
 };
 let fx: Fixture;
+let fxDense: Fixture;
+let denseFor: (q: string) => QueryVector;
 let dir: string;
 const results = new Map<string, RecallResult>();
+const denseResults = new Map<string, RecallResult>();
+const principalOf = (f: Fixture, c: { principal: string }) => (c.principal === "owner" ? owner : f.agent);
 const metrics: Record<string, number> = {};
 beforeAll(() => {
   dir = mkdtempSync(join(tmpdir(), "recall-eval-"));
   fx = buildFixture(join(dir, "brain.sqlite"));
   for (const c of golden.cases)
     results.set(c.id, fx.brain.recallCore(c.principal === "owner" ? owner : fx.agent, { query: c.query, history: c.history ?? false, limit: 8 }));
+  fxDense = buildFixture(join(dir, "dense.sqlite"));
+  ({ dense: denseFor } = embedFixture(fxDense));
+  for (const c of golden.cases) denseResults.set(c.id, fxDense.brain.recallCore(principalOf(fxDense, c), { query: c.query, history: c.history ?? false, limit: 8 }, denseFor(c.query)));
 });
 afterAll(() => {
   fx.store.close();
+  fxDense.store.close();
   rmSync(dir, { recursive: true, force: true });
   mkdirSync(resolve("data"), { recursive: true });
-  writeFileSync(resolve("data/recall-eval-metrics.json"), JSON.stringify({ golden_version: 1, cases: golden.cases.length, ...metrics }, null, 2));
+  writeFileSync(resolve("data/recall-eval-metrics.json"), JSON.stringify({ golden_version: 2, cases: golden.cases.length, ...metrics }, null, 2));
 });
 const idsIn = (r: RecallResult) => [...r.hits.map((h) => h.id), ...r.near_misses.map((n) => n.id)];
 // The caller's own query is echoed in `searched.query`; it is input, not retrieved data, so canary scans blank it.
 const everywhere = (r: RecallResult) => JSON.stringify({ ...r, searched: { ...r.searched, query: "" } });
 const positives = () => golden.cases.filter((c) => c.tags.includes("positive"));
+const bm25Cases = () => golden.cases.filter((c) => !c.tags.includes("dense"));
 
 /** A throwaway fixture for tests that mutate the brain. */
 function scratch<T>(fn: (f: Fixture, northstar: string) => T): T {
@@ -199,7 +210,7 @@ describe("recall golden set v1", () => {
     expect(agentAuth.searched.projects.map((p) => p.id)).toEqual([fx.ids["project:northstar"]]);
   });
   it("every case has the expected status and inclusions/exclusions", () => {
-    for (const c of golden.cases) {
+    for (const c of bm25Cases()) {
       const r = results.get(c.id)!;
       expect([c.expect.status].flat(), c.id).toContain(r.status);
       for (const k of c.expect.must_include) expect(r.hits.map((h) => h.id), `${c.id} must include ${k}`).toContain(fx.ids[k]);
@@ -315,4 +326,76 @@ describe("recall golden set v1", () => {
       rmSync(d, { recursive: true, force: true });
     }
   }, 240_000);
+});
+
+describe("recall golden set v2: dense on (fake embedder)", () => {
+  const bucket = (tag: string) => golden.cases.filter((c) => c.tags.includes(tag));
+  const recallAt5 = (cases: typeof golden.cases, map: Map<string, RecallResult>, f: Fixture) => {
+    if (!cases.length) throw new Error("empty bucket");
+    const hit = cases.filter((c) => {
+      const top5 = map.get(c.id)!.hits.slice(0, 5).map((h) => h.id);
+      return c.expect.must_include.every((k) => top5.includes(f.ids[k]));
+    }).length;
+    return hit / cases.length;
+  };
+  it("recall at 5 on paraphrase and cross-language is at least 0.8 with dense on, and the same buckets miss by words alone (the test is not vacuous)", () => {
+    metrics.dense_paraphrase_recall_at_5 = recallAt5(bucket("paraphrase"), denseResults, fxDense);
+    metrics.bm25_paraphrase_recall_at_5 = recallAt5(bucket("paraphrase"), results, fx);
+    metrics.dense_cross_language_recall_at_5 = recallAt5(bucket("cross-language"), denseResults, fxDense);
+    metrics.bm25_cross_language_recall_at_5 = recallAt5(bucket("cross-language"), results, fx);
+    expect(bucket("paraphrase")).toHaveLength(8);
+    expect(bucket("cross-language")).toHaveLength(6);
+    expect(metrics.dense_paraphrase_recall_at_5).toBeGreaterThanOrEqual(0.8);
+    expect(metrics.dense_cross_language_recall_at_5).toBeGreaterThanOrEqual(0.8);
+    expect(metrics.bm25_paraphrase_recall_at_5).toBeLessThanOrEqual(0.5);
+    expect(metrics.bm25_cross_language_recall_at_5).toBeLessThanOrEqual(0.5);
+  });
+  it("lexical and names buckets never get worse with dense on, and the exact entity stays first", () => {
+    metrics.bm25_lexical_recall_at_5 = recallAt5(positives(), results, fx);
+    metrics.dense_lexical_recall_at_5 = recallAt5(positives(), denseResults, fxDense);
+    metrics.bm25_names_recall_at_5 = recallAt5(bucket("names"), results, fx);
+    metrics.dense_names_recall_at_5 = recallAt5(bucket("names"), denseResults, fxDense);
+    expect(bucket("names")).toHaveLength(6);
+    expect(metrics.dense_lexical_recall_at_5).toBeGreaterThanOrEqual(metrics.bm25_lexical_recall_at_5);
+    expect(metrics.dense_names_recall_at_5).toBeGreaterThanOrEqual(metrics.bm25_names_recall_at_5);
+    expect(denseResults.get("pos-09")!.hits[0].id).toBe(fxDense.ids["fact:status-new"]);
+    expect(denseResults.get("names-01")!.hits[0].id).toBe(fxDense.ids["src:ticket"]);
+  });
+  it("no-answer queries stay quiet under the floor: no_match rate at least 0.85 and nothing found (hard)", () => {
+    const negatives = golden.cases.filter((c) => c.tags.includes("negative"));
+    metrics.dense_no_match_rate = negatives.filter((c) => denseResults.get(c.id)!.status === "no_match").length / negatives.length;
+    expect(metrics.dense_no_match_rate).toBeGreaterThanOrEqual(0.85);
+    for (const c of negatives) expect(denseResults.get(c.id)!.status, c.id).not.toBe("found");
+    for (const c of golden.cases.filter((x) => x.tags.includes("generic"))) {
+      const { signals } = fxDense.brain.recallInternal(fxDense.agent, { query: c.query, history: false, limit: 8 }, denseFor(c.query));
+      expect(deterministicLevel(signals), c.id).toBe("none");
+    }
+  });
+  it("every plan 5 case keeps its status, inclusions, exclusions and freshness with dense on (hard)", () => {
+    for (const c of bm25Cases()) {
+      const r = denseResults.get(c.id)!;
+      expect([c.expect.status].flat(), c.id).toContain(r.status);
+      for (const k of c.expect.must_include) expect(r.hits.map((h) => h.id), `${c.id} must include ${k}`).toContain(fxDense.ids[k]);
+      for (const k of c.expect.must_exclude) expect(idsIn(r), `${c.id} must exclude ${k}`).not.toContain(fxDense.ids[k]);
+      for (const [key, mark] of Object.entries(c.expect.freshness)) expect(r.hits.find((h) => h.id === fxDense.ids[key])?.freshness, `${c.id} ${key}`).toBe(mark);
+      if (r.status === "found") expect(r.near_misses).toEqual([]);
+      expect(r.near_misses.length).toBeLessThanOrEqual(3);
+    }
+    for (const c of golden.cases.filter((x) => x.tags.includes("dense"))) {
+      const r = denseResults.get(c.id)!;
+      expect([c.expect.status].flat(), c.id).toContain(r.status);
+      for (const k of c.expect.must_include) expect(r.hits.map((h) => h.id), `${c.id} must include ${k}`).toContain(fxDense.ids[k]);
+    }
+  });
+  it("authorization traps leak nowhere with dense on (hard)", () => {
+    const canaries = ["PRIVATE_CANARY_TEXT", "HYDRA_CANARY_TOKEN_TEXT", "Ana Costa", "short answers", "Owner preferences", fxDense.ids["fact:owner-name"], fxDense.ids["fact:owner-pref"], fxDense.ids["src:prefs"], fxDense.ids["fact:hydra-deploy"], fxDense.ids["src:hydra-deploy"], fxDense.ids["src:private-journal"]];
+    for (const c of golden.cases.filter((x) => x.principal === "agent")) {
+      const text = everywhere(denseResults.get(c.id)!);
+      for (const canary of canaries) expect(text, `${c.id} leaks ${canary}`).not.toContain(canary);
+    }
+    expect(denseResults.get("auth-02")!.searched.candidates).toBe(0);
+    // Private rows are embedded under Ollama (nothing leaves the machine) and still never reach an agent.
+    const leak = fxDense.brain.recallCore(fxDense.agent, { query: "was the launch colour the right call" }, denseFor("was the launch colour the right call"));
+    expect(everywhere(leak)).not.toContain("PRIVATE_CANARY");
+  });
 });

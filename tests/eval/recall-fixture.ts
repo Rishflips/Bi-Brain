@@ -58,6 +58,11 @@ export function buildFixture(dbPath: string): Fixture {
   const newStatus = note("src:new-status", northstar.id, "Status in October", "Northstar status active again since the team returned.");
   // Identity text lives only in a PRIVATE source: an agent never sees this original, so "Ana Costa" and "short answers" are clean canaries.
   const prefs = note("src:prefs", northstar.id, "Owner preferences", "Owner preference: short answers. Owner name: Ana Costa.", "private");
+  // Plan 5b targets: paraphrase, cross-language and names/ids. Wording chosen so no existing golden query matches these by words.
+  note("src:standup", northstar.id, "Morning rhythm", "The crew sync is at 9 every morning.");
+  note("src:tamil-office", northstar.id, "புதிய அலுவலகம்", "புதிய அலுவலகம் சென்னையில் திறக்கிறது. குழு ஜனவரியில் நகர்கிறது.");
+  note("src:allowance", northstar.id, "Allowance", "The quarterly tooling allowance is two thousand dollars, approved by Ana.");
+  note("src:ticket", northstar.id, "Support", "Ticket NS-4471 tracks the login outage; the patch went out in release 2.3.1.");
   claim(brain, "fact:launch-color", ids, northstar.id, launch, { entity: "Launch color", aspect: "statement", value: "cobalt", quote: "the launch color is cobalt", recorded_at: "2026-10-20T10:00:00.000Z" });
   claim(brain, "fact:amber-icons", ids, northstar.id, palette, { entity: "Amber accent", aspect: "statement", value: "kept for icons only", quote: "the amber accent was kept for icons only", recorded_at: "2026-10-19T10:00:00.000Z" });
   claim(brain, "fact:beta-opens", ids, northstar.id, beta, { entity: "Northstar beta", aspect: "statement", value: "opens November 14", quote: "The Northstar beta opens on November 14", recorded_at: "2026-10-18T10:00:00.000Z" });

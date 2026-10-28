@@ -12,6 +12,7 @@ import {
 } from "./claims.ts";
 import { Storage } from "../storage/index.ts";
 import { invalidateRecallIndex, purgeRef, recallCountsForSource, recallIndexComplete, searchRecallChunks, syncClaim, syncClaimsCiting, syncSource, type RecallVisibility } from "../storage/recall-index.ts";
+import { VectorCache, clearEmbeddings, countEmbedRows } from "../storage/recall-vectors.ts";
 import {
   captureSchema,
   outputSchema,
@@ -49,6 +50,25 @@ import {
 import { extractReviewableMemory } from "./memory-understanding.ts";
 import { adviseFrom, S1_TOPIC_MAX, workerRunning, type S1Advice, type S1Context } from "./system-one.ts";
 import type { AskAnswer, AskQuestion, AskResult } from "../providers/system-one-ask.ts";
+import {
+  BETTER_SEARCH,
+  BETTER_SEARCH_OFF,
+  BETTER_SEARCH_PAUSED,
+  BETTER_SEARCH_STATUS,
+  EMBED_DIM_MAX,
+  EMBED_DIM_MIN,
+  EMBED_RESULT_KEY,
+  EMBED_STATE_KEY,
+  EMBED_VISIBILITIES,
+  QUERY_EMBED_DEADLINE_MS,
+  QUERY_EMBED_POLL_MS,
+  betterSearchEffective,
+  denseFloor,
+  vectorFromBase64,
+  type BetterSearchSetting,
+  type BetterSearchStatus,
+  type QueryVector,
+} from "./better-search.ts";
 import { JUDGE_CANDIDATES_MAX, JUDGE_DAILY_COUNT_CAP, JUDGE_DEADLINE_MS, JUDGE_MIN_REMAINING_MICRO_USD, JUDGE_POLL_MS, JUDGE_RESULT_KEY, JUDGE_STATE_KEY, applyJudge, buildJudgeQuestions, buildJudgeState, judgeSignals, judgedStatus } from "./recall-judge.ts";
 import { buildBrief, gateFitsBrief, type BriefInput, type BriefJob } from "./brief.ts";
 import { buildProjectView } from "./project-view.ts";
@@ -63,13 +83,17 @@ import {
   RECALL_LIMIT_MAX,
   buildFtsQuery,
   dedupe,
+  denseWhy,
   deterministicSignals,
   deterministicStatus,
   factFreshness,
+  fromBm25,
   fuse,
+  pinExact,
   recallInputSchema,
   whyFor,
   type Candidate,
+  type RecallLists,
   type FactHit as RecallFactHit,
   type OriginalHit as RecallOriginalHit,
   type RecallHit,
@@ -125,6 +149,16 @@ function managedBlockedMessage(
   return null;
 }
 const questionWordsOf = (h: RecallHit) => new Set(questionWords(h.kind === "fact" ? h.text : `${h.title} ${h.quote}`));
+/** The entity name a fact row's prefix carries after its project title. The one reading used by exact-entity names, the pin and the judge's pin. */
+const entityFromPrefix = (prefix: string, projectTitle: string) => {
+  const lead = `${projectTitle} · `;
+  return prefix.startsWith(lead) ? prefix.slice(lead.length) : "";
+};
+/** A hit's identity inside one recall: kind, id and, for a passage, its start. */
+const hitKey = (h: RecallHit) => `${h.kind}:${h.id}:${h.kind === "original" ? h.start : ""}`;
+const LEVEL_RANK: Record<PushLevel, number> = { none: 0, pointer: 1, full: 2 };
+const quieter = (a: PushLevel, b: PushLevel): PushLevel => (LEVEL_RANK[a] <= LEVEL_RANK[b] ? a : b);
+const BETTER_SEARCH_NEEDS_LIMITS = "Better search with Cloudflare needs a daily limit and a per-preparation limit above $0 in Background help & spending.";
 export class Brain {
   constructor(
     readonly store: Storage,
@@ -149,6 +183,8 @@ export class Brain {
     // decision consent.
     private readonly decisionCapability?: () => { ready: boolean; reason: string },
   ) {}
+  /** The dense-scan matrix cache for this process; the stored generation keeps it honest across server and worker. */
+  private readonly vectors = new VectorCache();
   /**
    * The owner principal for this brain. An unbound local brain yields an
    * unbound owner; a managed brain yields an owner bound to its own tenant.
@@ -479,7 +515,10 @@ export class Brain {
       JSON.stringify(data),
       e.created_at,
     );
-    if (kind === "claim") syncClaim(this.store, id);
+    if (kind === "claim") {
+      syncClaim(this.store, id);
+      this.queueEmbedIfOn();
+    }
     return e;
   }
   revise(e: Entity, data: Record<string, any>) {
@@ -504,7 +543,10 @@ export class Brain {
       JSON.stringify(data),
       this.now(),
     );
-    if (e.kind === "claim") syncClaim(this.store, e.id);
+    if (e.kind === "claim") {
+      syncClaim(this.store, e.id);
+      this.queueEmbedIfOn();
+    }
     // Any goal revision (including the reasoning worker's signature/notification
     // bookkeeping) invalidates advisories bound to the PREVIOUS goal entity
     // version. Withdraw them so a stale judgment is never actively readable or
@@ -641,6 +683,7 @@ export class Brain {
           v.body,
         );
         syncSource(this.store, id);
+        this.queueEmbedIfOn();
         this.invalidate(v.project_id);
         const job = this.enqueue(v.project_id, "derive_brief", {
           principal: p,
@@ -1121,6 +1164,7 @@ export class Brain {
       syncSource(this.store, id);
       // A visibility change can make claims that cite this source owner-only (or not) in the index.
       if ((v.visibility ?? s.visibility) !== s.visibility) syncClaimsCiting(this.store, id);
+      this.queueEmbedIfOn();
       this.invalidate(s.project_id);
       if (project !== s.project_id) this.invalidate(project);
       this.enqueue(project, "derive_brief", { principal: p });
@@ -1896,6 +1940,100 @@ export class Brain {
     }
     this.store.set("recall_help_enabled", v.enabled);
     return { enabled: v.enabled };
+  }
+  /** The stored better-search choice. Its own setting, never a preference field: managed code round-trips `prefs()` into a strict schema. */
+  betterSearchSetting(): BetterSearchSetting {
+    const raw = this.store.setting<Partial<BetterSearchSetting> | null>(BETTER_SEARCH, null);
+    if (!raw || typeof raw !== "object" || (raw.mode !== "ollama" && raw.mode !== "cloudflare") || typeof raw.key !== "string") return { ...BETTER_SEARCH_OFF };
+    return { mode: raw.mode, key: raw.key, consented_at: typeof raw.consented_at === "string" ? raw.consented_at : null };
+  }
+  /** The one effectiveness read the server's query lane and the worker's loops share: consent, the worker's published setup, its heartbeat, the circuit breaker and, for Cloudflare, both limits. */
+  betterSearchAllowed(): { on: boolean; reason: string; setting: BetterSearchSetting; status: BetterSearchStatus | null } {
+    const setting = this.betterSearchSetting();
+    const status = this.store.setting<BetterSearchStatus | null>(BETTER_SEARCH_STATUS, null);
+    if (this.tenantId !== undefined) return { on: false, reason: "Better search runs on the local app only.", setting, status };
+    const effective = betterSearchEffective(setting, status, workerRunning(this.store.setting<string | null>("worker_heartbeat", null), this.clock()));
+    if (!effective.on) return { ...effective, setting, status };
+    // The worker's circuit breaker: after three failed batches nothing is embedded or queried for 15 minutes.
+    if (status?.paused_until && Date.parse(status.paused_until) > this.clock().getTime()) return { on: false, reason: BETTER_SEARCH_PAUSED, setting, status };
+    if (setting.mode === "cloudflare") {
+      const prefs = this.prefs(this.ownerPrincipal());
+      if (!(prefs.daily_cap_micro_usd > 0) || !(prefs.per_job_cap_micro_usd > 0)) return { on: false, reason: BETTER_SEARCH_NEEDS_LIMITS, setting, status };
+    }
+    return { on: true, reason: "ready", setting, status };
+  }
+  /** What the Settings card reads: the choice, what the worker published (never a credential), whether it works right now, and how far the preparation is. */
+  betterSearch(p: Principal) {
+    this.owner(p);
+    const allowed = this.betterSearchAllowed();
+    const { setting, status } = allowed;
+    const prefs = this.prefs(p);
+    const caps_ok = prefs.daily_cap_micro_usd > 0 && prefs.per_job_cap_micro_usd > 0;
+    const counts = setting.mode !== "off" && setting.key ? countEmbedRows(this.store, setting.key, EMBED_VISIBILITIES[setting.mode]) : { total: 0, embedded: 0, pending: 0, withheld: 0 };
+    const now = this.clock().getTime();
+    const future = (at: string | undefined) => (at && Date.parse(at) > now ? at : null);
+    return {
+      mode: setting.mode,
+      key: setting.key,
+      consented_at: setting.consented_at,
+      status: status
+        ? { configured: status.configured, provider: status.provider ?? null, label: status.label ?? null, reason: status.reason ?? null, key: status.key ?? null, last_error: status.last_error ?? null, last_ok_at: status.last_ok_at ?? null }
+        : null,
+      effective: allowed.on,
+      reason: allowed.reason,
+      worker_running: workerRunning(this.store.setting<string | null>("worker_heartbeat", null), this.clock()),
+      caps_ok,
+      counts,
+      failures: status?.failures ?? 0,
+      retry_at: future(status?.retry_at),
+      paused_until: future(status?.paused_until),
+    };
+  }
+  /** Off is always accepted and clears every vector. A provider needs the worker's published setup for exactly that provider and a running worker; Cloudflare also needs both limits. Any change of provider or model is a fresh choice. */
+  setBetterSearch(p: Principal, input: unknown): BetterSearchSetting {
+    this.owner(p);
+    const v = z.object({ mode: z.enum(["off", "ollama", "cloudflare"]) }).strict().parse(input);
+    if (v.mode === "off")
+      return this.store.transaction(() => {
+        this.store.set(BETTER_SEARCH, BETTER_SEARCH_OFF);
+        clearEmbeddings(this.store);
+        this.store.run("UPDATE jobs SET status='cancelled',fence=fence+1,lease_until=NULL WHERE kind IN ('embed_batch','recall_embed') AND status IN ('queued','retry_wait')");
+        return { ...BETTER_SEARCH_OFF };
+      });
+    if (this.tenantId !== undefined) throw new BrainError("BUDGET_BLOCKED", "Better search runs on the local app only.", 409);
+    const status = this.store.setting<BetterSearchStatus | null>(BETTER_SEARCH_STATUS, null);
+    const probe = betterSearchEffective({ mode: v.mode, key: status?.key ?? null, consented_at: null }, status, workerRunning(this.store.setting<string | null>("worker_heartbeat", null), this.clock()));
+    if (!probe.on || !status?.key) throw new BrainError("BUDGET_BLOCKED", probe.reason, 409);
+    if (v.mode === "cloudflare") {
+      const prefs = this.prefs(p);
+      if (!(prefs.daily_cap_micro_usd > 0) || !(prefs.per_job_cap_micro_usd > 0)) throw new BrainError("BUDGET_BLOCKED", BETTER_SEARCH_NEEDS_LIMITS, 409);
+    }
+    const key = status.key;
+    return this.store.transaction(() => {
+      // The previous choice is read under the write lock, so a concurrent choice can never leave one key's vectors under the other's consent.
+      const previous = this.betterSearchSetting();
+      const next: BetterSearchSetting = { mode: v.mode, key, consented_at: this.now() };
+      if (previous.mode !== next.mode || previous.key !== next.key) clearEmbeddings(this.store);
+      this.store.set(BETTER_SEARCH, next);
+      this.enqueueEmbedBatch();
+      return next;
+    });
+  }
+  /** One batch at a time: a queued, waiting or running batch is enough, and a batch re-queues itself while rows remain. */
+  enqueueEmbedBatch(): string | null {
+    if (this.store.get("SELECT 1 FROM jobs WHERE kind='embed_batch' AND status IN ('queued','retry_wait','running') LIMIT 1")) return null;
+    return this.enqueue("inbox", "embed_batch", { principal: this.ownerPrincipal() }).id;
+  }
+  /** Whether a batch may be queued or run now: better search can run (chosen, published, worker up, not paused, limits for Cloudflare) and the worker's back-off has passed. Read by the capture hooks, the self-heal check and the batch itself. */
+  embedQueueOpen(): boolean {
+    const allowed = this.betterSearchAllowed();
+    if (!allowed.on) return false;
+    const retryAt = allowed.status?.retry_at;
+    return !(retryAt && Date.parse(retryAt) > this.clock().getTime());
+  }
+  /** Every index write path calls this: a batch is queued only while one may run; otherwise the self-heal check picks the rows up later. With Better search off it costs one settings read and writes nothing. */
+  private queueEmbedIfOn() {
+    if (this.betterSearchSetting().mode !== "off" && this.embedQueueOpen()) this.enqueueEmbedBatch();
   }
   /**
    * RAW stored DECISION-stage consent for this owner (never the effective getter,
@@ -3453,8 +3591,8 @@ export class Brain {
     };
   }
   /** Deterministic recall: authorization before the SQL and again per hit. The only path the owner's screens use. */
-  recallCore(p: Principal, input: unknown): RecallResult {
-    return this.recallInternal(p, recallInputSchema.parse(input)).result;
+  recallCore(p: Principal, input: unknown, dense: QueryVector | null = null): RecallResult {
+    return this.recallInternal(p, recallInputSchema.parse(input), dense).result;
   }
   /**
    * The agent read verb: the deterministic core, sharpened by the optional judge when the owner allowed it.
@@ -3463,7 +3601,9 @@ export class Brain {
    */
   async recall(p: Principal, input: unknown): Promise<RecallResult> {
     const v = recallInputSchema.parse(input);
-    const internal = this.recallInternal(p, v);
+    // The candidate list, words plus meaning, is complete before the judge sees it: at most 400 ms for the vector, then at most 900 ms for the judge.
+    const dense = await this.denseFor(p, v.query);
+    const internal = this.recallInternal(p, v, dense);
     const judged = await this.judgeRanked(p, internal, v.query);
     if (!judged.signals) return internal.result;
     const hits = this.judgedHits(internal, judged, internal.result.hits);
@@ -3487,20 +3627,27 @@ export class Brain {
     const v = recallPushSchema.parse(input);
     const started = Date.now();
     const quiet = { level: "none" as PushLevel, text: "", hit_ids: [] as string[], digest: false };
-    const finish = (out: typeof quiet, extra: { candidates: number; judged: boolean }) => {
+    const finish = (out: typeof quiet, extra: { candidates: number; judged: boolean; dense: boolean }) => {
       // A push that reached the brain proves the connection works, exactly like /agent/verify.
+      // `dense` is written only when a vector was used, so with Better search off the row is plan 5's, field for field.
       this.store.run("UPDATE grants SET last_verified_at=? WHERE id=?", this.now(), p.grant_id);
       const log = this.store.setting<unknown[]>("recall_log", []);
-      log.push({ at: this.now(), grant_id: p.grant_id, client: v.client, level: out.level, candidates: extra.candidates, hits: out.hit_ids.length, latency_ms: Date.now() - started, judged: extra.judged });
+      log.push({ at: this.now(), grant_id: p.grant_id, client: v.client, level: out.level, candidates: extra.candidates, hits: out.hit_ids.length, latency_ms: Date.now() - started, judged: extra.judged, ...(extra.dense ? { dense: true } : {}) });
       this.store.set("recall_log", log.slice(-RECALL_LOG_MAX));
       return out;
     };
-    if (detectSecrets(v.prompt).length) return finish(quiet, { candidates: 0, judged: false });
-    const internal = this.recallInternal(p, { query: v.prompt, history: false, limit: PUSH_HITS_MAX });
+    if (detectSecrets(v.prompt).length) return finish(quiet, { candidates: 0, judged: false, dense: false });
+    // The vector first (at most 400 ms), then the judge (at most 900 ms): the 1,500 ms hook budget holds.
+    const dense = await this.denseFor(p, v.prompt);
+    const internal = this.recallInternal(p, { query: v.prompt, history: false, limit: PUSH_HITS_MAX }, dense);
     const candidates = internal.result.searched.candidates;
-    const judge = await this.judgeForPush(p, internal);
+    // The push level is term-based (R2). With no candidate found by words the judge is not asked at all: the level is the
+    // deterministic one (none, or pointer for an exact entity), so meaning alone can never make a push louder.
+    const judge = internal.ranked.some(fromBm25) ? await this.judgeForPush(p, internal) : { signals: null, hits: internal.result.hits, judged: false };
     let level = pushLevel(internal.signals, judge.signals);
     const hits = filterSeen(judge.hits, v.seen);
+    // When the judge's order leaves a hit found by meaning alone on top, the level is capped at the words level.
+    if (hits.length && internal.denseOnly.has(hitKey(hits[0]))) level = quieter(level, pushLevel(internal.signals, null));
     // Everything the agent already holds from this session is not sent again. When that removed hits, the level is re-read on what is left:
     // `full` only while the best remaining hit is itself a strong match, `pointer` for an exact entity match or a remaining related hit, else quiet.
     if (level === "full" && hits.length < judge.hits.length) {
@@ -3527,8 +3674,8 @@ export class Brain {
         text = level === "pointer" && d.includes(text) ? d : `${d}\n\n${text}`;
       }
     }
-    if (text && detectSecrets(text).length) return finish(quiet, { candidates, judged: judge.judged });
-    return finish({ level, text, hit_ids: used.map((h) => h.id), digest }, { candidates, judged: judge.judged });
+    if (text && detectSecrets(text).length) return finish(quiet, { candidates, judged: judge.judged, dense: internal.dense });
+    return finish({ level, text, hit_ids: used.map((h) => h.id), digest }, { candidates, judged: judge.judged, dense: internal.dense });
   }
   /** The judge for a hook push: the same advisory application as `recall`; without a judge the deterministic hits stand. */
   protected async judgeForPush(p: Principal, internal: ReturnType<Brain["recallInternal"]>): Promise<{ signals: JudgeSignals | null; hits: RecallHit[]; judged: boolean }> {
@@ -3563,7 +3710,7 @@ export class Brain {
   /** What was pushed to agents and when: levels, counts and latency. Never a prompt, an id or a passage. */
   recallLog(p: Principal) {
     this.owner(p);
-    return { rows: this.store.setting<{ at: string; grant_id: string; client: string; level: PushLevel; candidates: number; hits: number; latency_ms: number; judged: boolean }[]>("recall_log", []) };
+    return { rows: this.store.setting<{ at: string; grant_id: string; client: string; level: PushLevel; candidates: number; hits: number; latency_ms: number; judged: boolean; dense?: boolean }[]>("recall_log", []) };
   }
   /** Whether a judge call may be queued right now. Every reason is a plain sentence; none is an error to the agent. */
   recallJudgeAllowed(): { ok: boolean; reason: string } {
@@ -3621,6 +3768,73 @@ export class Brain {
     });
     return null;
   }
+  /**
+   * The query vector for dense recall, from the worker's fast lane within 400 ms, or null (words only).
+   * This process never calls a model: the key and the endpoint live in the worker. The query text is stored only
+   * under the job's state key and is deleted by whichever side finishes first.
+   */
+  async queryVector(p: Principal, query: string): Promise<QueryVector | null> {
+    this.boundTo(p);
+    // Off, not effective, the worker stale, the breaker open (paused) or a tenant brain: words only, at once, with nothing queued.
+    const allowed = this.betterSearchAllowed();
+    if (!allowed.on || !allowed.setting.key) return null;
+    const q = typeof query === "string" ? query.trim() : "";
+    if (!q || detectSecrets(q).length) return null;
+    const key = allowed.setting.key;
+    const id = randomUUID();
+    const now = this.now();
+    const deadline = new Date(this.clock().getTime() + QUERY_EMBED_DEADLINE_MS).toISOString();
+    const requestHash = hash(`${key}
+${q}`);
+    try {
+      this.store.transaction(() => {
+        this.store.run(
+          "INSERT INTO jobs(id,project_id,kind,payload,status,max_attempts,next_at,created_at,deadline_at) VALUES(?,?,?,?,?,?,?,?,?)",
+          id, "inbox", "recall_embed", JSON.stringify({ request_id: id, request_hash: requestHash }), "queued", 1, now, now, deadline,
+        );
+        this.store.set(EMBED_STATE_KEY(id), { query: q, request_hash: requestHash, created_at: now });
+      });
+      return await this.awaitQueryVector(id, QUERY_EMBED_DEADLINE_MS, key);
+    } catch {
+      // Dense recall is optional help: a storage fault means words only, never an error to the caller.
+      return null;
+    }
+  }
+  /** The vector for a recall query, only when the query has searchable words: without them recall returns before any search, so a vector would be wasted (and paid for). */
+  private async denseFor(p: Principal, query: string): Promise<QueryVector | null> {
+    return buildFtsQuery(query).match ? this.queryVector(p, query) : null;
+  }
+  /** Polls for the worker's vector every 10 ms until the deadline; a job that ended without one ends the wait at once. Validates key and shape before use. */
+  private async awaitQueryVector(requestId: string, deadlineMs: number, key: string): Promise<QueryVector | null> {
+    const until = Date.now() + Math.floor(deadlineMs);
+    const read = (): QueryVector | null | undefined => {
+      const result = this.store.setting<{ key?: unknown; dim?: unknown; vector?: unknown } | null>(EMBED_RESULT_KEY(requestId), null);
+      if (!result) return undefined;
+      this.store.run("DELETE FROM settings WHERE key=?", EMBED_RESULT_KEY(requestId));
+      // Untrusted until checked: exactly the consented model key, an integer dim in bounds, and base64 of that many finite floats.
+      const dim = result.dim;
+      if (result.key !== key || typeof dim !== "number" || !Number.isInteger(dim) || dim < EMBED_DIM_MIN || dim > EMBED_DIM_MAX || typeof result.vector !== "string") return null;
+      const vector = vectorFromBase64(result.vector, dim);
+      return vector ? { vector, key, dim } : null;
+    };
+    while (Date.now() < until) {
+      const found = read();
+      if (found !== undefined) return found;
+      const job = this.store.get<{ status: string }>("SELECT status FROM jobs WHERE id=? AND kind='recall_embed'", requestId);
+      if (!job || job.status === "failed" || job.status === "cancelled") return null;
+      await new Promise((r) => setTimeout(r, QUERY_EMBED_POLL_MS));
+    }
+    // A vector published during the last poll interval was published before the deadline: use it rather than throw it away.
+    const last = read();
+    if (last !== undefined) return last;
+    // Given up: a job nobody took is fenced and its query text deleted now; a running job finishes in the worker and only feeds its cache.
+    this.store.transaction(() => {
+      const cancelled = this.store.run("UPDATE jobs SET status='cancelled',fence=fence+1 WHERE id=? AND kind='recall_embed' AND status='queued'", requestId).changes;
+      if (cancelled) this.store.run("DELETE FROM settings WHERE key=?", EMBED_STATE_KEY(requestId));
+      this.store.run("DELETE FROM settings WHERE key=?", EMBED_RESULT_KEY(requestId));
+    });
+    return null;
+  }
   /** Runs the judge for an agent recall when allowed; the deterministic candidates are the only inputs and the only possible outputs. Owner paths never get here. */
   private async judgeRanked(p: Principal, internal: ReturnType<Brain["recallInternal"]>, request: string): Promise<{ signals: JudgeSignals | null; ranked: Candidate[]; demoted: Candidate[] }> {
     const none = { signals: null, ranked: internal.ranked, demoted: [] as Candidate[] };
@@ -3652,11 +3866,7 @@ export class Brain {
     if (!signals) return none;
     // An exact entity match is never hidden: facts about a named entity in the request stay, whatever the judge says.
     const named = new Set(internal.entityNames.map((n) => questionWords(n).join(" ")));
-    const entityOf = (c: Candidate) => {
-      const lead = `${titles.get(c.row.project_id) ?? ""} · `;
-      return c.row.prefix.startsWith(lead) ? c.row.prefix.slice(lead.length) : "";
-    };
-    const pinned = new Set(top.filter((c) => c.row.kind === "fact" && named.has(questionWords(entityOf(c)).join(" "))).map((c) => c.key));
+    const pinned = new Set(top.filter((c) => c.row.kind === "fact" && named.has(questionWords(entityFromPrefix(c.row.prefix, titles.get(c.row.project_id) ?? "")).join(" "))).map((c) => c.key));
     const applied = applyJudge(top, signals, pinned);
     return { signals, ranked: [...applied.kept, ...internal.ranked.slice(JUDGE_CANDIDATES_MAX)], demoted: applied.demoted };
   }
@@ -3671,8 +3881,7 @@ export class Brain {
     );
     const names = new Set<string>();
     for (const r of rows) {
-      const lead = `${titles.get(r.project_id) ?? ""} · `;
-      const entity = r.prefix.startsWith(lead) ? r.prefix.slice(lead.length) : "";
+      const entity = entityFromPrefix(r.prefix, titles.get(r.project_id) ?? "");
       const words = questionWords(entity);
       if (!words.length || names.has(entity) || !words.every((w) => terms.has(w))) continue;
       const c = this.visibleClaim(p, r.project_id, r.ref_id, false);
@@ -3680,7 +3889,7 @@ export class Brain {
     }
     return [...names];
   }
-  recallInternal(p: Principal, v: { query: string; project_id?: string; history: boolean; limit: number }) {
+  recallInternal(p: Principal, v: { query: string; project_id?: string; history: boolean; limit: number }, dense: QueryVector | null = null) {
     const now = this.clock();
     const scope = (v.project_id
       ? [this.store.get<{ id: string; title: string }>("SELECT id,title FROM projects WHERE id=?", v.project_id)].filter((x): x is { id: string; title: string } => !!x)
@@ -3701,21 +3910,27 @@ export class Brain {
     // confirms an item the principal cannot see. Only claims whose name could match are loaded.
     const termSet = new Set(fts.terms);
     const entityNames = ids.length ? this.visibleEntityNames(p, scope, termSet, visibilities) : [];
-    if (!fts.match) return { result: empty("no_match", 0), ranked: [] as Candidate[], authorized: [] as RecallHit[], signals: deterministicSignals([], [], entityNames), entityNames, scope };
+    if (!fts.match) return { result: empty("no_match", 0), ranked: [] as Candidate[], authorized: [] as RecallHit[], signals: deterministicSignals([], [], entityNames), entityNames, scope, dense: false, denseOnly: new Set<string>() };
     const status = v.history ? "any" : "current";
     const search = (match: string, kind: "fact" | "original") => searchRecallChunks(this.store, { match, kind, projects: ids, visibilities, status, limit: CANDIDATES_PER_LIST });
-    const lists = {
+    const lists: RecallLists = {
       facts: search(fts.match, "fact"),
       originals: search(fts.match, "original"),
       // One RRF list: the two kinds are interleaved by BM25 score (more negative is better), not concatenated.
       phrase: fts.phrase ? [...search(fts.phrase, "fact"), ...search(fts.phrase, "original")].sort((a, b) => a.score - b.score) : [],
+      // The fourth list: dense candidates for the same scope and status, under the per-model floor. Empty unless the owner chose
+      // better search and the worker answered in time; the per-hit checks below treat them exactly like every other candidate.
+      dense: dense ? this.vectors.search(this.store, { vector: dense.vector, key: dense.key, dim: dense.dim, projects: ids, visibilities, status, floor: denseFloor(dense.key), limit: CANDIDATES_PER_LIST }) : [],
     };
     const confirmations = this.store.setting<Record<string, string>>("claim_confirmations", {});
     const titles = new Map(scope.map((pr) => [pr.id, pr.title]));
     const authorized: { candidate: Candidate; hit: RecallHit }[] = [];
     // Built once, and only if a fact candidate survives verification.
     let supersessions: Map<string, string[]> | undefined;
-    for (const candidate of fuse(lists, now)) {
+    // With dense candidates present, a fact whose entity the query names exactly stays first; plan 5 ordering is untouched otherwise.
+    let fused = fuse(lists, now);
+    if (lists.dense!.length) fused = pinExact(fused, (c) => entityFromPrefix(c.row.prefix, titles.get(c.row.project_id) ?? ""), entityNames);
+    for (const candidate of fused) {
       const r = candidate.row;
       const project = { id: r.project_id, title: titles.get(r.project_id) ?? "Project" };
       try {
@@ -3724,7 +3939,7 @@ export class Brain {
           if (s.version !== r.ref_version || s.state !== "active") continue;
           const quote = Array.from(s.body).slice(r.start, r.end).join("");
           if (quote !== r.text) continue;
-          authorized.push({ candidate, hit: { kind: "original", id: s.id, version: s.version, project, title: s.title, quote, start: r.start, end: r.end, captured_at: s.captured_at, freshness: "current", why: whyFor(fts.terms, `${s.title} ${quote}`), score: candidate.fused } });
+          authorized.push({ candidate, hit: { kind: "original", id: s.id, version: s.version, project, title: s.title, quote, start: r.start, end: r.end, captured_at: s.captured_at, freshness: "current", why: [...whyFor(fts.terms, `${s.title} ${quote}`), ...denseWhy(candidate)], score: candidate.fused } });
         } else {
           // Only this candidate is loaded and verified. A claim without evidence is a hypothesis and is never presented as a fact to anyone.
           const c = this.visibleClaim(p, r.project_id, r.ref_id, v.history);
@@ -3732,7 +3947,7 @@ export class Brain {
           supersessions ??= this.supersessions(ids);
           const replacedBy = this.supersededBy(p, r.project_id, c.id, v.history, supersessions);
           const fresh = factFreshness(c, confirmations, replacedBy, now);
-          authorized.push({ candidate, hit: { kind: "fact", id: c.id, project, text: r.text, recorded_at: String(c.data.recorded_at ?? c.created_at), checked_at: fresh.checked_at, freshness: fresh.freshness, replaced_by: replacedBy, evidence: (c.data.evidence as Evidence[]).map((e) => ({ source_id: e.source_id, source_version: e.source_version, quote: e.quote })), why: whyFor(fts.terms, r.text), score: candidate.fused } });
+          authorized.push({ candidate, hit: { kind: "fact", id: c.id, project, text: r.text, recorded_at: String(c.data.recorded_at ?? c.created_at), checked_at: fresh.checked_at, freshness: fresh.freshness, replaced_by: replacedBy, evidence: (c.data.evidence as Evidence[]).map((e) => ({ source_id: e.source_id, source_version: e.source_version, quote: e.quote })), why: [...whyFor(fts.terms, r.text), ...denseWhy(candidate)], score: candidate.fused } });
         }
       } catch (e) {
         // An index row that outlived its item or its grant is dropped from every field. Anything else is a real fault and must surface.
@@ -3740,7 +3955,16 @@ export class Brain {
       }
     }
     const ranked = authorized.map((a) => a.candidate);
-    const signals = deterministicSignals(fts.terms, ranked, entityNames);
+    // The words reading (R2): status, strength and push level come from the authorized word candidates in the order and with the rows
+    // words alone give them, so Better search on is never louder (nor quieter) than off. Meaning still adds hits, orders them and counts.
+    let signals = deterministicSignals(fts.terms, ranked, entityNames);
+    if (lists.dense!.length) {
+      const byWords = new Set(ranked.filter(fromBm25).map((c) => c.key));
+      const wordRanked = fuse({ facts: lists.facts, originals: lists.originals, phrase: lists.phrase }, now).filter((c) => byWords.has(c.key));
+      signals = { ...deterministicSignals(fts.terms, wordRanked, entityNames), candidates: ranked.length };
+    }
+    // Hits found by meaning alone, so the push can cap a judged level they would lead (never part of the result).
+    const denseOnly = new Set(authorized.filter((a) => !fromBm25(a.candidate)).map((a) => hitKey(a.hit)));
     const { kept, spill } = dedupe(authorized.map((a) => a.hit));
     const hits = kept.slice(0, v.limit);
     const statusOut = deterministicStatus(signals);
@@ -3750,7 +3974,7 @@ export class Brain {
       reason: `matched ${fts.terms.filter((t) => questionWordsOf(h).has(t)).length} of ${fts.terms.length} terms`,
     }));
     const result: RecallResult = { status: statusOut, as_of: now.toISOString(), searched: { ...base, candidates: ranked.length }, hits, near_misses, next_step: statusOut === "no_match" ? NO_MATCH_NEXT_STEP : FOUND_NEXT_STEP };
-    return { result, ranked, authorized: authorized.map((a) => a.hit), signals, entityNames, scope };
+    return { result, ranked, authorized: authorized.map((a) => a.hit), signals, entityNames, scope, dense: dense !== null, denseOnly };
   }
   /** One item by id for an agent: the full original (any version it may see) or the full fact with its history. */
   agentOpen(p: Principal, input: unknown) {
@@ -4565,6 +4789,8 @@ export class Brain {
       });
       // The topic and durable hints of this answer are part of the source's recall rows.
       syncSource(this.store, sourceId);
+      // Sorting help re-syncs the note's rows, which drops their vectors: queue a batch to embed them again.
+      this.queueEmbedIfOn();
       this.applySystemOneAdvice(ctx.project_id, sourceId, version, answer.id, advice);
       return { recorded: true, advice };
     });
@@ -4885,7 +5111,7 @@ export class Brain {
         };
       });
   }
-  searchBrain(p: Principal, input: unknown) {
+  async searchBrain(p: Principal, input: unknown) {
     this.owner(p);
     const v = z.object({ q: z.string().trim().min(2).max(200) }).strict().parse(input);
     const literal = () => {
@@ -4893,9 +5119,11 @@ export class Brain {
       const claims = projects.flatMap((project) => this.currentClaims(p, project.id));
       return findInBrain(v.q, claims, this.sources(p), SEARCH_LIMIT);
     };
-    // Words under three characters never become FTS terms; the literal search is the only one that can see them.
-    if (v.q.split(/\s+/u).some((w) => Array.from(w).length < 3)) return literal();
-    const internal = this.recallInternal(p, { query: v.q, history: false, limit: RECALL_LIMIT_MAX });
+    // With a vector, meaning can find a note whatever the query's short words; without one, words under three characters never
+    // become FTS terms and the literal search is the only one that can see them (unchanged from plan 5).
+    const dense = await this.denseFor(p, v.q);
+    if (!dense && v.q.split(/\s+/u).some((w) => Array.from(w).length < 3)) return literal();
+    const internal = this.recallInternal(p, { query: v.q, history: false, limit: RECALL_LIMIT_MAX }, dense);
     const facts = internal.result.hits.filter((h): h is RecallFactHit => h.kind === "fact").slice(0, SEARCH_LIMIT);
     // Originals come from the authorized set before dedupe, so a chunk folded into its fact still lists its note.
     const seen = new Set<string>();
@@ -4912,13 +5140,15 @@ export class Brain {
       originals: originals.map((o) => ({ id: o.id, project_id: o.project.id, version: o.version, title: o.title, snippet: snippetFor(o.quote, o.title, v.q) })),
     };
   }
-  ask(p: Principal, input: unknown) {
+  async ask(p: Principal, input: unknown) {
     this.owner(p);
     const v = z.object({ q: z.string().trim().min(1).max(500) }).strict().parse(input);
     if (!questionWords(v.q).length)
       throw new BrainError("INVALID_INPUT", "Ask with a few words, for example: When does the beta open?");
+    // Better search when the owner chose it (B9): the vector first, at most 400 ms; never the judge on the owner's screens.
+    const dense = await this.denseFor(p, v.q);
     // Over-fetch, then show each fact and each note once: recall may keep two passages of one note, the Ask bar lists the best one.
-    const result = this.recallCore(p, { query: v.q, history: false, limit: 6 });
+    const result = this.recallCore(p, { query: v.q, history: false, limit: 6 }, dense);
     const seen = new Set<string>();
     const hits: AskHit[] = result.hits
       .filter((h) => !seen.has(`${h.kind}:${h.id}`) && seen.add(`${h.kind}:${h.id}`))
@@ -5107,14 +5337,14 @@ export class Brain {
         allowance: null,
       },
       jobs: this.store.all(
-        "SELECT id,kind,status,error,project_id FROM jobs WHERE kind<>'recall_judge' ORDER BY created_at DESC LIMIT 20",
+        "SELECT id,kind,status,error,project_id FROM jobs WHERE kind NOT IN ('recall_judge','embed_batch','recall_embed') ORDER BY created_at DESC LIMIT 20",
       ),
     };
   }
   job(p: Principal, id: string) {
     const j = this.store.get("SELECT * FROM jobs WHERE id=?", id);
-    // Judge rows belong to the recall fast lane alone: they are never shown, cancelled or retried by hand.
-    if (!j || j.kind === "recall_judge") throw new BrainError("NOT_FOUND", "Item unavailable.", 404);
+    // Judge and better-search rows belong to the worker alone: they are never shown, cancelled or retried by hand.
+    if (!j || j.kind === "recall_judge" || j.kind === "embed_batch" || j.kind === "recall_embed") throw new BrainError("NOT_FOUND", "Item unavailable.", 404);
     this.access(p, j.project_id);
     if (p.kind === "agent") {
       const payload = JSON.parse(j.payload);

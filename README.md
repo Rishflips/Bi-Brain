@@ -22,6 +22,7 @@ You save a note once, or your coding agents write one when they finish work. BiB
 - [Quick start](#quick-start)
 - [Connect your agents](#connect-your-agents)
 - [Optional sorting help](#optional-sorting-help)
+- [Optional better search](#optional-better-search)
 - [How you stay in control](#how-you-stay-in-control)
 - [Status](#status)
 - [How it is built](#how-it-is-built)
@@ -45,6 +46,7 @@ You save a note once, or your coding agents write one when they finish work. BiB
   - it can wake a review you already planned.
 
   It only suggests, and it stays within the daily limits you set.
+- **Better search (optional).** Designed to find notes by meaning, including across languages such as English and Tamil, with Ollama on your computer or Cloudflare. Live quality is not yet measured (the owner-run `npm run proof:search` measures it). Off by default.
 - **Watch.** Turn a project off and it goes quiet on Today, while everything stays in Your brain.
 
 ![Asking the bar a question; the answer quotes the saved original (synthetic sample)](docs/screenshots/today-v2-ask.png)
@@ -116,6 +118,26 @@ A few details:
 - **Local Ollama:** works without a key. Set `BRAIN_SYSTEM1_ENDPOINT=http://127.0.0.1:11434/v1/systemone`. This has not yet been tested against a real local Ollama.
 - **Live check:** to confirm your setup against the real service once, see [Providers](docs/PROVIDERS.md) (`npm run proof:sorting`).
 
+## Optional better search
+
+Better search finds a note by what it means, not only by the words you used. It is off by default and everything works without it.
+
+1. Pick one and add its lines to `.env` (git-ignored). Ollama needs Ollama installed and `ollama pull bge-m3` run once; nothing leaves your computer.
+
+   ```bash
+   # On this computer (Ollama)
+   BRAIN_EMBED_PROVIDER=ollama
+
+   # or Cloudflare Workers AI (shares the two lines with sorting help)
+   BRAIN_EMBED_PROVIDER=cloudflare
+   BRAIN_CLOUDFLARE_ACCOUNT_ID=your-32-character-account-id
+   BRAIN_DECISION_API_KEY=your-workers-ai-token
+   ```
+
+2. Restart BiBrain, then choose it in **Settings → Better search**. The Cloudflare choice says what is sent (notes, searches and the questions connected agents ask; never private notes), what it costs and that it counts against your daily limit.
+
+Details and the live check: [Providers](docs/PROVIDERS.md) (`npm run proof:search`, owner-run).
+
 ## How you stay in control
 
 - **Originals never change.** Corrections create new versions, and Undo never overwrites a later edit.
@@ -127,17 +149,18 @@ A few details:
 
 ## Status
 
-BiBrain is a working **single-owner local app**. This table is the honest state as of 2026-10-27. The verified details and the commands that ran are in [BUILD_STATE.md](BUILD_STATE.md).
+BiBrain is a working **single-owner local app**. This table is the honest state as of 2026-10-28. The verified details and the commands that ran are in [BUILD_STATE.md](BUILD_STATE.md).
 
 | Area | State |
 | --- | --- |
-| Local app: Today, Your brain, Connections, Settings | Works end to end; verified on Windows with 1,866 Vitest tests and 105 Playwright browser tests |
+| Local app: Today, Your brain, Connections, Settings | Works end to end; verified on Windows with 1,955 Vitest tests and 107 Playwright browser tests |
 | One-step agent connections with recall on every prompt | Verified in real Claude Code and Codex runs on Windows (`npm run proof:recall`, hook on and off); Cursor not yet run natively |
 | Sorting help with Clef | One live check through Ollama Cloud validated 3 of 3 answers; thresholds not yet calibrated |
+| Better search with embeddings | Built and gated against a fake embedder; a live run is owner-run (`npm run proof:search`) |
 | Self-hosting on your own server | Supported: [Self-hosting](docs/SELF_HOSTING.md) and `deploy/compose.yaml` |
 | Hosted edition and payments | Paused; the code is kept but not deployed |
 
-Next on the roadmap: embeddings as a second retrieval list (plan 5b), then removing the paused hosted machinery. See the [reframe brief](docs/REFRAME_BRIEF.md).
+Next on the roadmap: removing the paused hosted machinery (plan 6). See the [reframe brief](docs/REFRAME_BRIEF.md).
 
 ## How it is built
 

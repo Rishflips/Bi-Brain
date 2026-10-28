@@ -59,7 +59,7 @@ const report = {
     injected_pack_use: "local wrapper; no native client",
     forget_proof: "managed vault, SQLite projection, local backup",
     no_action_control: "unrelated intent produces no review prompt",
-    recall_gates: "recall@5 ≥ 0.90, MRR ≥ 0.75, no_match ≥ 0.85, replaced/stale/authorization/generic-level hard gates, p95 < 300 ms; asserted in tests/eval/recall.test.ts",
+    recall_gates: "recall@5 ≥ 0.90, MRR ≥ 0.75, no_match ≥ 0.85, replaced/stale/authorization/generic-level hard gates, p95 < 300 ms; with the fake embedder on: paraphrase and cross-language recall@5 ≥ 0.8, lexical and names never worse than words alone, no_match ≥ 0.85, zero leaks; asserted in tests/eval/recall.test.ts",
   },
 };
 writeFileSync(output, JSON.stringify(report, null, 2));

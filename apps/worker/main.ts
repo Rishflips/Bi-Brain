@@ -36,7 +36,10 @@ import {
 import { loadConfig } from "../server/config.ts";
 import { Worker } from "./engine.ts";
 import { publishSystemOneStatus } from "./system-one.ts";
+import { embedFromEnv } from "../../packages/providers/embed-env.ts";
+import { publishBetterSearchStatus } from "./embed.ts";
 import { startJudgeLoop } from "./recall-judge.ts";
+import { startEmbedLoop } from "./recall-embed.ts";
 import { LocalDispatchAccounting } from "./accounting.ts";
 import { systemOneFromEnv } from "../../packages/providers/system-one-env.ts";
 import { ManagedWorker } from "./managed.ts";
@@ -498,12 +501,21 @@ if (config.mode === "managed") {
       ? { configured: true, label: sorting.label }
       : { configured: false, reason: sorting.reason },
   );
+  // Better search is read from the worker's environment only; the published status carries the model key and a label, never a credential.
+  const embed = embedFromEnv(process.env);
+  publishBetterSearchStatus(
+    brain,
+    embed.config
+      ? { configured: true, provider: embed.config.provider, model: embed.config.model, key: embed.key, label: embed.label }
+      : { configured: false, reason: embed.reason },
+  );
   const worker = new Worker(
     brain,
     undefined,
     undefined,
     undefined,
     sorting.config ? { config: sorting.config } : null,
+    embed.config ? { config: embed.config } : null,
   );
   // The recall judge runs only here, beside sorting help, so the key never leaves this process.
   const judge = sorting.config
@@ -514,6 +526,10 @@ if (config.mode === "managed") {
         owner: brain.ownerPrincipal(),
         workerId: worker.id,
       })
+    : null;
+  // The query fast lane runs only here, beside the batch job, so the key and the endpoint never leave this process.
+  const embedLane = embed.config
+    ? startEmbedLoop({ brain, ledger: new LocalDispatchAccounting(storage, brain.clock), client: { config: embed.config }, owner: brain.ownerPrincipal(), workerId: worker.id })
     : null;
   let running = true;
   const stop = () => {
@@ -531,5 +547,6 @@ if (config.mode === "managed") {
     }
   }
   await judge?.stop();
+  await embedLane?.stop();
   storage.close();
 }

@@ -1,6 +1,6 @@
 # Build state
 
-Updated: 2026-10-27
+Updated: 2026-10-28
 
 This page holds the current, verified state of BiBrain. Each section below
 records one shipped plan of the 2026 reframe, with the commands that ran and
@@ -14,11 +14,59 @@ their real counts. The full delivery log from before the reframe is preserved in
 | Local app (Today, Your brain, Connections, Settings) | Works end to end on one computer; verified by Vitest and Playwright on Windows |
 | Agent connections (Codex, Claude Code, Cursor) | One-step Add writes the server entry and a prompt hook or rule file. Native recall runs passed in Claude Code 2.1.283 and Codex 0.156.1 on Windows (2026-10-27); Cursor not yet run natively |
 | Recall | FTS5 index, ranked recall, hook push; golden set gated in CI; owner-run native proof passed for both agents, hook on and off |
+| Better search (embeddings via Ollama or Cloudflare) | Off by default; fake-embedder gates in CI; live run owner-run (`npm run proof:search`) |
 | Sorting help (System 1, Clef via Ollama or Cloudflare) | Live call through Ollama Cloud with clef-flash validated 3 of 3 answers (2026-10-27); thresholds not yet calibrated |
 | Watch | Per-project switch, on by default |
 | Licence | AGPL-3.0-only for the app, Apache-2.0 for the agent connector |
 | Hosted edition and payments | Paused; managed code is kept but not deployed, and no real payment has been processed |
-| Next plans | Embeddings as a second retrieval list (plan 5b), then cleanup of the paused hosted code |
+| Next plans | Cleanup of the paused hosted code (plan 6) |
+
+## 2026-10-27 — Better search with embeddings (branch reframe/recall-embeddings)
+
+What shipped (one line per task; everything is off by default and tested against a deterministic fake embedder, never a real model):
+
+- **Task 1: provider client.** `packages/providers/embed.ts` and `embed-env.ts` call Ollama (`/api/embed`, loopback only, default `bge-m3`) or Cloudflare Workers AI (`@cf/baai/bge-m3`) with plain `fetch`, validate the vector count, size and finiteness, normalise at the edge and price Cloudflare in whole micro-USD. `BRAIN_EMBED_PROVIDER`, `BRAIN_EMBED_MODEL`, `BRAIN_EMBED_ENDPOINT` are read by the worker only; `tests/helpers/fake-embed.mjs` is the CI embedder.
+- **Task 2: vector storage.** Float32 little-endian vectors beside `recall_chunks` (no migration), guarded writes (kind, ref id, version, ordinal, text hash), and a dot-product scan over one contiguous matrix per scope, key and size. The cache invalidates through an in-process generation counter and `PRAGMA data_version` plus a per-scope fingerprint, so the worker's writes reach the server with no settings row and a database with Better search off is unchanged.
+- **Task 3: indexing.** `embed_batch` embeds up to 32 passages per call outside any transaction; the `better_search` setting and a key-free `better_search_status` are published by the worker; capture, edit and a 5-second self-heal check queue batches; Cloudflare spend goes through the dispatch ledger; a 60 s to 15 min back-off, a three-failure 15-minute breaker, a one-by-one retry for a refused batch, withheld secret and rejected passages, and fresh privacy checks before each Cloudflare send.
+- **Task 4: query lane.** A `recall_embed` fast lane embeds the question: the server waits at most 400 ms, the call is bounded at 2 s, Cloudflare keeps a 150 ms reserve floor, answers are cached for ten minutes, query failures back off in process, and crash-left query text is swept within a minute.
+- **Task 5: fusion.** Dense candidates are a fourth reciprocal-rank list (weight 0.7, per-model cosine floor 0.45 for `bge-m3`, at most 60) under the same authorization as every other candidate; exact names stay pinned; the hook push level stays term-based, also when the judge is on; Better search off equals plan 5 byte for byte (a committed snapshot, `tests/eval/recall-dense-off-snapshot.json`).
+- **Task 6: Settings card.** A Better search card with Off, On this computer (Ollama) and Cloudflare, its own owner-only `GET`/`PATCH /api/v1/preferences/better-search`, named consent (notes, searches and the questions connected agents ask; private notes never sent; "About 1 cent for every 250,000 words of English text; other languages can cost more, counted against your daily limit."), a plain status line ("Words only right now: …", "Better search paused: the service is not answering."), a words-only note under Your brain search, and a browser journey.
+- **Task 7: golden set v2.** 62 synthetic cases with paraphrase (8), cross-language English and Tamil (6), names and no-answer buckets and dense gates in `npm run brain-eval`. With the fake embedder: paraphrase recall at 5 goes 0.125 to 1.0, cross-language 0 to 1.0, lexical 1.0 to 1.0, names 1.0 to 1.0, no-match rate 1.0 (nine dense metrics in `data/recall-eval-metrics.json`).
+- **Task 8: owner-run proof and docs.** `scripts/better-search-proof.ts` (`npm run proof:search`, needs `BRAIN_SEARCH_LIVE=1`; without it prints how to run it and exits 1; temp folder outside the repo; never prints or writes a key or account id; a refusal test is the only part CI and agents run). PROVIDERS, UX, AGENT_INTEGRATION, API, README and `docs/superpowers/plans/2026-10-27-better-search-followups.md` (every ruling and deferred minor) updated.
+
+Verified in this worktree on 2026-10-28 (Windows, Node 24.19.0). These are the final counts from the controller's run at the branch head, after the whole-branch review and its fix wave:
+
+- `npm ci`, `npm run typecheck`, `npm run lint`, `npm run build`: all exit 0.
+- `npm audit --audit-level=high`: 0 vulnerabilities.
+- `npx vitest run --reporter=dot --maxWorkers=3`: 189 files, 1,955 passed, 8 skipped, 0 failed (1,182 s).
+- `npx playwright test --workers=1`: 107 passed, 0 failed, 7.1m. By project: main 69, today-v2 20, connections 7, system1 6, today-v2-bar 4, empty-brain 1. `docs/screenshots` was restored afterwards.
+- The final review's fix wave was re-reviewed. It made these changes:
+  - Only 400, 413 and 422 count as a refused passage. A bad key or a rate limit backs off instead.
+  - When every passage is refused, nothing is withheld.
+  - A write stamp keeps the vector cache correct when row ids are reused.
+
+The task-level runs below are kept for the record:
+- `npm run brain-eval`: 25/25 passed; golden set 62 cases, recall at 5 = 1.00, MRR 0.97, no-match rate 1.00, positive push rate 1.00, p95 about 54 ms; the nine dense metrics are in `data/recall-eval-metrics.json` (fake embedder: paraphrase 0.125 to 1.0, cross-language 0 to 1.0, lexical 1.0 to 1.0, names 1.0 to 1.0, dense no-match rate 1.0).
+- `npx vitest run tests/integration/better-search-proof.test.ts`: 1 passed (the refusal path: no `BRAIN_SEARCH_LIVE=1` prints the instructions, exits 1, shows no key or account id and writes no file; `proof:search` is wired in `package.json`).
+- `npx vitest run --reporter=dot`: the machine was out of memory during this task (about 44 MB free of 16 GB, other applications), so the first run lost its workers (exit code 3221226091) and the second, at `--maxWorkers=2`, took 2,816 s: 189 files, 1,899 passed, 46 failed, 8 skipped. All 46 failures were load timeouts in six files this branch does not touch (`managed-decision-advisory-persistence-review`, `managed-decision-advisory-process`, `managed-decision-advisory-worker-review`, `operations`, `paddle-http`, `paddle-store`). Re-run alone, five of the six passed (85 tests) and `paddle-store` passed on its own (7 of 7) after one load-dependent failure, so per file nothing fails; a single clean full run is still owed (the controller's final re-run decides).
+- Markdown link check over README, PROVIDERS, UX, AGENT_INTEGRATION, API and the follow-ups file: 50 relative links, 0 broken.
+- Key-isolation and behaviour greps: no `BRAIN_DECISION_API_KEY`, `OLLAMA_API_KEY`, `BRAIN_CLOUDFLARE_ACCOUNT_ID` or `BRAIN_EMBED_` under `apps/server`, `packages/domain`, `apps/web`, `apps/mcp` or `apps/cli`; no `process.env` in the four plan files; no `Authorization` in `apps/web`; no `VECTOR_GENERATION`; the engine exclusion prints three lines; `better_search` appears 0 times in `apps/web/src.tsx`; `proof:search` appears in `package.json`, `README.md` and `docs/PROVIDERS.md`.
+- The proof script itself was never run, with or without its flag, by this task (only the test's child process, which stops at the refusal).
+
+Known limits:
+
+- **No live embedding call has been made**: not with Ollama, not with Cloudflare. The results above come from a fake embedder, so they prove the plumbing, fusion and gates, not model quality. `npm run proof:search` is owner-run and has not been executed.
+- Whether Cloudflare accepts `truncate_inputs` for `@cf/baai/bge-m3` is unverified offline; if it does not, a refused batch falls into the one-by-one retry path.
+- Tamil retrieval quality is unmeasured until the owner's proof.
+- `DENSE_FLOOR` (0.45) and `DENSE_WEIGHT` (0.7) are initial values; the proof prints the cosine room to judge the floor.
+- The hook push level is term-based: a hit found only by meaning reaches `brain_recall` and the owner's screens but never makes a push louder, so a meaning-only prompt can get a quieter push than it deserves.
+- The first search of a new question may be words-only when the worker is cold or slow (the vector is cached for the next one).
+- The matrix reloads from SQLite after every index write; fine to about 100,000 passages, an incremental update is a follow-up. The cache is bounded by scope count, not bytes.
+- Better search runs on the local app only (the managed hosted mode answers 409 and hides the card).
+- Ollama Cloud does not serve embeddings, so there is no hosted Ollama choice.
+- Plan 5's owner-run checks are still owed (`npm run proof:recall`, `scripts/native-client-proof.ts`, `npm run proof:sorting`).
+- Rulings and deferred minors: [the follow-ups file](docs/superpowers/plans/2026-10-27-better-search-followups.md).
+- Local V1 only; no real model run.
 
 ## 2026-10-25 — Recall that agents use (branch reframe/recall)
 

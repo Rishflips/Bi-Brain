@@ -1,6 +1,7 @@
 import type { Storage } from "./index.ts";
 import type { PortableState } from "./vault.ts";
 import { factText } from "../domain/facts.ts";
+import { bumpVectorGeneration } from "./recall-vectors.ts";
 
 export const RECALL_INDEX_VERSION = 1;
 export const RECALL_INDEX_BUILT = "recall_index_built";
@@ -47,7 +48,7 @@ export const RECALL_DDL = `CREATE TABLE IF NOT EXISTS recall_chunks(
   text TEXT NOT NULL, prefix TEXT NOT NULL,
   recorded_at TEXT NOT NULL,
   boost REAL NOT NULL DEFAULT 1.0,
-  embedding BLOB, embedding_model TEXT, embedding_dim INTEGER,
+  embedding BLOB, embedding_model TEXT, embedding_dim INTEGER, embedded_seq INTEGER,
   UNIQUE(kind, ref_id, ref_version, ordinal));
 CREATE INDEX IF NOT EXISTS recall_chunks_ref ON recall_chunks(kind, ref_id);
 CREATE INDEX IF NOT EXISTS recall_chunks_scope ON recall_chunks(project_id, visibility, status);
@@ -237,6 +238,7 @@ export function recallRowsInDb(store: Storage): RecallRow[] {
 export function purgeRef(store: Storage, kind: RecallKind, refId: string) {
   store.run("DELETE FROM recall_fts WHERE rowid IN (SELECT id FROM recall_chunks WHERE kind=? AND ref_id=?)", kind, refId);
   store.run("DELETE FROM recall_chunks WHERE kind=? AND ref_id=?", kind, refId);
+  bumpVectorGeneration();
 }
 
 export function replaceRows(store: Storage, kind: RecallKind, refId: string, rows: RecallRow[]) {
@@ -319,6 +321,7 @@ export function syncClaimsCiting(store: Storage, sourceId: string) {
 export function clearRecallIndex(store: Storage) {
   store.run("DELETE FROM recall_fts");
   store.run("DELETE FROM recall_chunks");
+  bumpVectorGeneration();
 }
 
 /** Refills the whole index from the current tables in the caller's transaction. Small brains and tests only; production paths use rebuildRecallIndex. */
@@ -373,7 +376,7 @@ export function searchRecallChunks(
   const marks = (n: number) => Array.from({ length: n }, () => "?").join(",");
   return store
     .all<RecallMatch>(
-      `SELECT c.*, bm25(recall_fts, 1.0, 0.5) AS score FROM recall_fts f JOIN recall_chunks c ON c.id = f.rowid
+      `SELECT c.id,c.kind,c.ref_id,c.ref_version,c.project_id,c.visibility,c.status,c.ordinal,c.start,c.end,c.text,c.prefix,c.recorded_at,c.boost, bm25(recall_fts, 1.0, 0.5) AS score FROM recall_fts f JOIN recall_chunks c ON c.id = f.rowid
        WHERE recall_fts MATCH ? AND c.kind=? AND c.project_id IN (${marks(q.projects.length)}) AND c.visibility IN (${marks(q.visibilities.length)})
        ${q.status === "any" ? "" : "AND c.status=?"} ORDER BY score LIMIT ?`,
       q.match,
