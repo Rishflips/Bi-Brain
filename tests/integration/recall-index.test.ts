@@ -10,6 +10,7 @@ import type { Principal } from "../../packages/contracts/index.ts";
 import {
   chunkBody,
   chunkPrefix,
+  DURABLE_LOW,
   durableBoost,
   factRows,
   rebuildRecallIndex,
@@ -102,6 +103,11 @@ describe("chunkBody", () => {
     expect(durableBoost(0.1)).toBe(0.9);
     expect(durableBoost(0.4)).toBe(1);
     expect(durableBoost(null)).toBe(1);
+    // Ruling R1 (plan 7): the one live decision under the old 0.25 line scored 0.23 and must not be demoted.
+    expect(DURABLE_LOW).toBe(0.2);
+    expect(durableBoost(0.23)).toBe(1);
+    expect(durableBoost(0.2)).toBe(1);
+    expect(durableBoost(0.19)).toBe(0.9);
   });
 });
 
