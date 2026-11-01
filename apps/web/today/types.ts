@@ -35,6 +35,8 @@ export type BriefItem = {
     version: number;
   };
   created_at: string;
+  /** Set when sorting help judged the card not worth today's short list; it ranks last and is never hidden. */
+  quiet?: true;
   source_id?: string;
   aspect?: string;
   value?: string;

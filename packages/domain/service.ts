@@ -4610,7 +4610,7 @@ ${q}`);
         captured_at: s.captured_at,
       })),
     );
-    // Grants carry no display name, so every connected agent is named generically.
+    // A grant records which client connected, not a free display name, so each agent is named by its client.
     const agentNames = Object.fromEntries(
       (this.connections(p) as unknown as { id: string; client: string }[]).map((g) => [g.id, agentDisplayName(g.client)]),
     );
