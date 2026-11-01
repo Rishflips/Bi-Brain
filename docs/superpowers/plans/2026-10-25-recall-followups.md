@@ -140,9 +140,9 @@ Each ruling reads: what was decided, why, and what it costs if wrong.
 
 ## Owner-run checks still owed
 
-- `npm run proof:recall` for Claude Code and Codex, with and without `BRAIN_PROOF_NO_HOOK=1`.
-- `scripts/native-client-proof.ts`.
-- `npm run proof:sorting`. The live Clef sorting call and the judge call have not been made.
+- `scripts/native-client-proof.ts`. Plan 7 (2026-11-01) gave it the Codex trust fix PR #30 gave the recall proof and a refusal test; the run itself is still owed.
+- `npm run proof:search` (plan 5b).
+- Done: `npm run proof:recall` for both clients, hook on and off (2026-10-27); `npm run proof:sorting` (2026-10-27). Their calibration notes are ruled on in `docs/superpowers/specs/2026-11-01-sweep-calibrate-design.md`: the durable line moved to 0.20; everything else is read from `npm run calibrate`.
 
 ## Owner-run proof results
 

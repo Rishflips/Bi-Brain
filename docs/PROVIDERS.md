@@ -128,6 +128,39 @@ A computer is set up for exactly one provider (`BRAIN_EMBED_PROVIDER`); the Sett
 
 **Live proof is the owner's.** No live embedding call has been made on this branch; tests use the fake embedder. After setting the variables above, put `BRAIN_SEARCH_LIVE=1` on its own line in `.env` and run `npm run proof:search` (or `$env:BRAIN_SEARCH_LIVE=1; npm run proof:search` in PowerShell, then `Remove-Item Env:BRAIN_SEARCH_LIVE`); remove the line afterwards. It embeds the synthetic golden texts in a temporary folder outside the repository, prints the model key, calls, tokens, cost, recall at 5 per bucket and the cosine room around the floor (the lowest cosine of a wanted hit and the highest of a no-answer query, so you can judge 0.45), never prints the key or account id, refuses a loopback Cloudflare endpoint, and exits 0 only when paraphrase and cross-language reach 0.8 with no regression on lexical and names. Without `BRAIN_SEARCH_LIVE=1` it prints these instructions and exits 1 (nothing was proven). With Cloudflare it makes about 50 small requests, roughly 3,000 tokens, inside the free daily allowance. The floor (0.45) and weight (0.7) are initial values, not tuned on live data.
 
+### Calibration report (owner-run)
+
+Sorting help, recall help and Better search each work with a few fixed lines (for example "quiet below 0.3", "file at 0.7 or more", "a meaning match needs a cosine of 0.45"). Most of them are still first guesses. `npm run calibrate` reads your own brain and shows you how your real answers and pushes fall around each line, so you can decide whether a line should move. It never decides for you.
+
+```powershell
+npm run calibrate            # reads data/brain.sqlite (or BRAIN_DB)
+npm run calibrate -- --json  # the same report as JSON
+npm run calibrate -- --db C:\path\to\a\copy\brain.sqlite
+```
+
+**What it does.** It opens the database read-only, so it cannot change your data or settings (SQLite may leave two empty `-wal` and `-shm` files beside the database, which hold nothing). It sends nothing anywhere. It never prints the words of a note and never opens the stored note text; the sorting answers are reduced to numbers before the report runs. The report names the embedding model key of your stored vectors (for example `ollama:bge-m3:none`), which is a setting name, not content.
+
+**Exit codes.** `0` after a report. `2` when it cannot give one. Then it prints a single sentence to stderr (so `--json` output stays clean), never a stack trace or a row:
+
+- `--db` with no path after it: "--db needs the path to brain.sqlite after it: --db <path to brain.sqlite>."
+- No file at the path: "No brain found at <path>. Start BiBrain once, or pass --db <path to brain.sqlite>."
+- The file cannot be opened read-only: "Could not open <path> read-only. If BiBrain is not running, start it once, or copy brain.sqlite elsewhere and pass --db."
+- The file is not a readable BiBrain database: "<path> could not be read as a BiBrain database. Pass --db <path to brain.sqlite>, or copy the file elsewhere first."
+- The brain is from a newer BiBrain: "This brain is from a newer BiBrain. Run the calibration report from that version."
+
+**What it prints.** The title and a line saying it only reads your brain, then four parts.
+
+- **Current thresholds.** Every line with its value, the file that holds it and what it means.
+- **Sorting help.** How many notes were sorted; the spread of each answer (show, review, changes_fact, durable) in ten bands from 0.0 to 1.0; the kinds Clef saw with their mean confidence; how many decisions scored under `recall.durable_low` and how many sit within 0.05 above it; how many review answers fall within 0.1 under `sorting.review`; and, for each question you answered on a card, how many cards you kept or dropped in each confidence band.
+- **Recall pushes.** The number of pushes (the log keeps the last 2,000 at most); for each agent, how many at each level (full, pointer, none); candidate and hit counts; how many pushes were judged and how the judge answered (answered, partial, none); the spread of the judge's owner-world probability; how many used Better search and how many were near the cosine floor (within 0.05 above it); the spread of the top cosine per push; and how many passages are embedded under which model key.
+- **Suggestions and what it cannot see.** Each suggestion is labelled as a suggestion only, and each ends "Nothing changes unless you edit the code."
+
+**What to do with a suggestion.** A suggestion reads "consider <value>" only when at least 20 answers or reviewed cards exist for that question and the rule in `packages/domain/calibration.ts` is met; the line states the counts it rests on. Otherwise it reads "hold." or "Not enough data yet". The report changes nothing, on its own or later. If you agree with a suggestion, change the named constant in the file the report names, run `npx vitest run tests/integration` and `npm run brain-eval` (the golden gates must still pass), add a test that pins the new value on your evidence case, and record the change and its reason in `BUILD_STATE.md`. "Not enough data yet" means exactly that: keep using BiBrain and run the report again later.
+
+**What it cannot see.** Nothing records whether a review wake was right, so the review line only gets a spread. `durable` and `kind` get no feedback. Pushes recorded before 2026-11-01 carry no judge answers or top cosine. The cosine floor hides every passage under it, so the report sees only what passed; `npm run proof:search` prints the room around the floor. Your own searches (Ask, Your brain) are never logged. The report lists these under "What this report cannot see".
+
+**The one line that moved so far.** On 2026-11-01 the durable demotion line moved from 0.25 to 0.20, because the one live decision recorded under it (2026-10-27) scored 0.23 and a decision should count as lasting. Every other line keeps its first value until the report shows real evidence.
+
 ### Prepared decision contract and default-off managed consumer
 
 `new PreparedDecisionProvider(config, fetcher?).prepareDecision(input)` performs no
