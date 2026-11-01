@@ -5,7 +5,7 @@ import { copyFileSync, existsSync, mkdtempSync, readdirSync, readFileSync, rmSyn
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { DatabaseSync } from "node:sqlite";
-import { Storage } from "../../packages/storage/index.ts";
+import { LATEST_MIGRATION, Storage } from "../../packages/storage/index.ts";
 import { Brain } from "../../packages/domain/service.ts";
 import type { Principal } from "../../packages/contracts/index.ts";
 import type { AskResult } from "../../packages/providers/system-one-ask.ts";
@@ -165,6 +165,43 @@ describe("the calibration report", () => {
     expect(Object.getPrototypeOf(r.sorting.kind)).toBeNull();
     expect(renderCalibration(r)).not.toContain("__proto__");
   });
+  it("drops unsafe stored keys from the report object itself, so the JSON carries none of them", () => {
+    const r = calibrationReport({
+      recall_log: [
+        row({ client: "__proto__", level: "full", hits: 1 }),
+        row({ client: "bad key!", level: "none" }),
+        row({ client: "codex", level: "none", judged: true, judge: { owner_world: 0.4, general: 0.5, answered: "weird answer" as unknown as "none" } }),
+        row({ client: "codex", level: "none", judged: true, judge: { owner_world: 0.4, general: 0.5, answered: "partial" } }),
+      ],
+      s1_answers: [
+        { answers: [{ id: "kind", type: "choice", choice: "__proto__", confidence: 0.9 }] },
+        { answers: [{ id: "kind", type: "choice", choice: "has space", confidence: 0.9 }] },
+      ],
+      s1_feedback: [
+        { question: "__proto__", choice: "x", confidence: 0.5, action: "accept" },
+        { question: "bad/key", choice: "x", confidence: 0.5, action: "dismiss" },
+        { question: "show", choice: 0.5, confidence: 0.5, action: "accept" },
+      ],
+      embedded: [],
+    });
+    const json = JSON.stringify(r);
+    for (const bad of ["__proto__", "bad key", "bad/key", "has space", "weird answer", "undefined"]) {
+      expect(json).not.toContain(bad);
+      expect(renderCalibration(r)).not.toContain(bad);
+    }
+    expect(Object.keys(r.recall.by_client)).toEqual(["codex"]);
+    expect(Object.keys(r.sorting.feedback)).toEqual(["show"]);
+    expect(r.recall.judge_answered).toEqual({ partial: 1 });
+    expect(r.recall.judge_owner_world.n).toBe(2);
+  });
+  it("holds the durable line when the snapped suggestion would equal it", () => {
+    // Twenty decisions, six under 0.2 (so a quarter is met) and a 10th percentile of 0.1999: it rounds to 0.2, which is the line.
+    const durables = [...Array.from({ length: 6 }, () => 0.1999), ...Array.from({ length: 14 }, () => 0.6)];
+    const r = calibrationReport({ ...empty, s1_answers: durables.map((d) => answer({ kind: "decision", durable: d })) });
+    const s = r.suggestions.find((x) => x.threshold === "recall.durable_low")!;
+    expect(s.suggested).toBeNull();
+    expect(s.reason).toContain("the line holds");
+  });
   it("renders plain text that states it does not change your data, lists every threshold, and ends every suggestion the same way", () => {
     const text = renderCalibration(calibrationReport(empty));
     expect(text).toContain("This report only reads your brain. It does not change your data or settings, and it sends nothing.");
@@ -275,8 +312,30 @@ describe("npm run calibrate", () => {
     expect(parsed.sorting.answers).toBe(3);
     expect(parsed.suggestions.find((s: any) => s.threshold === "recall.durable_low").suggested).toBeNull();
     expect(json.stdout).not.toContain(CANARY);
+    expect(json.stdout).not.toContain("__proto__");
     expect(sha(path)).toBe(before);
     for (const n of newFiles(dir, files)) expect(SIDECARS.has(n)).toBe(true);
+  }, 60_000);
+  it("keeps unsafe stored keys out of the --json output of the script as well", () => {
+    const { path, dir } = syntheticBrain();
+    const s = new Storage(path, { vault: join(dir, "vault") });
+    try {
+      s.set("recall_log", [
+        { at: "2026-11-01T08:00:00.000Z", grant_id: "g1", client: "__proto__", level: "full", candidates: 1, hits: 1, latency_ms: 2, judged: false },
+        { at: "2026-11-01T08:01:00.000Z", grant_id: "g1", client: "bad key!", level: "none", candidates: 0, hits: 0, latency_ms: 2, judged: false },
+        { at: "2026-11-01T08:02:00.000Z", grant_id: "g1", client: "codex", level: "none", candidates: 0, hits: 0, latency_ms: 2, judged: false },
+      ]);
+    } finally {
+      s.close();
+    }
+    const json = run(["--db", path, "--json"]);
+    expect(json.status).toBe(0);
+    expect(json.stdout).not.toContain("__proto__");
+    expect(json.stdout).not.toContain("bad key");
+    expect(Object.keys(JSON.parse(json.stdout).recall.by_client)).toEqual(["codex"]);
+    const text = run(["--db", path]);
+    expect(text.stdout).not.toContain("__proto__");
+    expect(text.stdout).not.toContain("bad key");
   }, 60_000);
   it("reads the same report while another process holds the brain open in WAL mode, and honours BRAIN_DB", () => {
     const { path, dir } = syntheticBrain();
@@ -306,6 +365,19 @@ describe("npm run calibrate", () => {
     expect(r.stderr).not.toMatch(/^\s+at /mu);
     expect(existsSync(resolve("data/calibration.json"))).toBe(false);
   }, 60_000);
+  it("refuses --db followed by another flag instead of treating the flag as a path", () => {
+    const r = run(["--db", "--json"]);
+    expect(r.status).toBe(2);
+    expect(r.stdout).toBe("");
+    expect(r.stderr).toContain("--db needs the path");
+  }, 60_000);
+  it("shares Storage's schema ceiling, so a brain at the latest migration is read, not refused", () => {
+    const { path } = syntheticBrain();
+    const db = new DatabaseSync(path, { readOnly: true });
+    const top = Number((db.prepare("SELECT max(version) AS v FROM migrations").get() as { v: number }).v);
+    db.close();
+    expect(top).toBe(LATEST_MIGRATION);
+  });
   it("refuses a file that is not a BiBrain database with one sentence, no stack trace and exit 2", () => {
     const dir = mkdtempSync(join(tmpdir(), "calibrate-junk-"));
     cleanup.push(() => rmSync(dir, { recursive: true, force: true }));

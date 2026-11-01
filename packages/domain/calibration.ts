@@ -89,6 +89,12 @@ export type CalibrationReport = {
 const bag = <T>(): Record<string, T> => Object.create(null) as Record<string, T>;
 const SAFE_KEY = /^[A-Za-z0-9][A-Za-z0-9_.-]{0,39}$/u;
 const safeEntries = <T>(o: Record<string, T>): [string, T][] => Object.entries(o).filter(([k]) => SAFE_KEY.test(k));
+/** A copy of a stored-key bag with only the plain-id keys, so the report object itself (text and --json alike) never carries an unsafe key. */
+const safeBag = <T>(o: Record<string, T>): Record<string, T> => {
+  const out = bag<T>();
+  for (const [k, v] of safeEntries(o)) out[k] = v;
+  return out;
+};
 const zeros = () => Array.from({ length: BINS }, () => 0);
 /** Bin i holds [i/10, (i+1)/10); 1.0 falls in the last bin. */
 const binOf = (v: number) => Math.min(BINS - 1, Math.max(0, Math.floor(v * BINS)));
@@ -131,6 +137,7 @@ function durableSuggestion(decisionDurables: number[], low: number): Suggestion 
   const p10 = sorted[Math.min(sorted.length - 1, Math.floor(0.1 * sorted.length))];
   // Snap in integer hundredths so an on-grid value (0.15) stays on the grid; 0.15 / 0.05 is 2.9999999999999996.
   const suggested = Math.max(10, Math.floor(Math.round(p10 * 100) / 5) * 5) / 100;
+  if (suggested >= low) return { threshold, current: low, suggested: null, sample, reason: `${under} of ${sample} decisions scored under ${low}, but the 10th percentile of decision durables rounds to ${suggested}, which is not below the line, so the line holds.` };
   return { threshold, current: low, suggested, sample, reason: `${under} of ${sample} decisions scored under ${low}, and a decision should count as lasting. The 10th percentile of decision durables, rounded down to 0.05, is ${suggested}.` };
 }
 
@@ -221,8 +228,9 @@ export function calibrationReport(input: CalibrationInput): CalibrationReport {
       judged++;
       if (r.judge && typeof r.judge.owner_world === "number") {
         ownerWorld.push(r.judge.owner_world);
-        const answered = String(r.judge.answered);
-        judge_answered[answered] = (judge_answered[answered] ?? 0) + 1;
+        // An older or malformed judge object without a known `answered` still counts for its probability, not for an answer.
+        const answered = r.judge.answered;
+        if (answered === "answered" || answered === "partial" || answered === "none") judge_answered[answered] = (judge_answered[answered] ?? 0) + 1;
       } else judgedWithout++;
     }
     if (r.dense) {
@@ -240,8 +248,8 @@ export function calibrationReport(input: CalibrationInput): CalibrationReport {
 
   return {
     thresholds: [...THRESHOLDS],
-    sorting: { answers: input.s1_answers.length, noul: nouls, kind, decisions, review_near_line, feedback },
-    recall: { pushes: input.recall_log.length, by_client, candidates, hits, judged, judge_answered, judge_owner_world: histogram(ownerWorld), dense, dense_top: histogram(denseTop), dense_near_floor, embedded: input.embedded },
+    sorting: { answers: input.s1_answers.length, noul: nouls, kind: safeBag(kind), decisions, review_near_line, feedback: safeBag(feedback) },
+    recall: { pushes: input.recall_log.length, by_client: safeBag(by_client), candidates, hits: safeBag(hits), judged, judge_answered: safeBag(judge_answered), judge_owner_world: histogram(ownerWorld), dense, dense_top: histogram(denseTop), dense_near_floor, embedded: input.embedded },
     suggestions,
     gaps,
   };
@@ -268,7 +276,7 @@ export function renderCalibration(r: CalibrationReport): string {
   lines.push("Current thresholds");
   for (const t of r.thresholds) lines.push(`  ${t.id} = ${t.value}  (${t.where})`, `      ${t.meaning}`);
   lines.push("", `Sorting help: ${r.sorting.answers} sorted notes`);
-  for (const [q, h] of safeEntries(r.sorting.noul)) lines.push(...renderHistogram(`  ${q}`, h));
+  for (const [q, h] of safeEntries(r.sorting.noul)) lines.push(...renderHistogram(`  ${q === "changes_fact" ? "changes_fact (the sorting.changes line)" : q}`, h));
   const kinds = safeEntries(r.sorting.kind);
   lines.push(kinds.length ? `  kind: ${kinds.map(([k, v]) => `${k} ${v.n} (mean confidence ${v.mean_confidence})`).join(", ")}` : "  kind: no data yet");
   lines.push(`  decisions: ${r.sorting.decisions.n}; under recall.durable_low: ${r.sorting.decisions.under_durable_low}; within 0.05 above it: ${r.sorting.decisions.near_durable_low}`);

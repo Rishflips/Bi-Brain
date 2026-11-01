@@ -6,20 +6,21 @@
  * leave empty -wal and -shm sidecar files, which hold no data). It never reads or prints note text: the sorting
  * answers are reduced to their numbers before the report runs, and source_versions is never opened. The database is
  * opened with node:sqlite directly (not through Storage, whose constructor applies migrations), so SQLite enforces
- * read-only. Exit 0 after a report; 2 with one plain sentence on stderr (never a stack trace or a message that
- * carries a path or row) when the brain is missing, cannot be opened or read, or is from a newer BiBrain.
+ * read-only. Exit 0 after a report; 2 with one plain sentence on stderr (never a stack trace, SQLite's own error text or a row;
+ * the path shown is the one you gave) when the brain is missing, cannot be opened or read, or is from a newer BiBrain.
  */
 import { existsSync } from "node:fs";
 import { resolve } from "node:path";
 import { DatabaseSync } from "node:sqlite";
+import { LATEST_MIGRATION } from "../packages/storage/index.ts";
 import { calibrationReport, renderCalibration, type CalibrationInput, type RecallLogRow, type S1AnswerRow, type S1FeedbackRow } from "../packages/domain/calibration.ts";
 
 const args = process.argv.slice(2);
 const dbFlag = args.indexOf("--db");
-const path = resolve(dbFlag >= 0 && args[dbFlag + 1] ? args[dbFlag + 1] : (process.env.BRAIN_DB ?? "data/brain.sqlite"));
+const dbArg = dbFlag >= 0 ? args[dbFlag + 1] : undefined;
+const badDbArg = dbFlag >= 0 && dbArg !== undefined && dbArg.startsWith("--");
+const path = resolve(dbFlag >= 0 && dbArg && !badDbArg ? dbArg : (process.env.BRAIN_DB ?? "data/brain.sqlite"));
 const asJson = args.includes("--json");
-/** The schema version this reader understands; the same ceiling Storage applies. */
-const KNOWN_MIGRATION = 7;
 /** Every refusal is one sentence on stderr, so `--json` output on stdout stays parseable and no error text is echoed. */
 const refuse = (sentence: string): number => {
   console.error(sentence);
@@ -27,6 +28,7 @@ const refuse = (sentence: string): number => {
 };
 
 function main(): number {
+  if (badDbArg) return refuse("--db needs the path to brain.sqlite after it: --db <path to brain.sqlite>.");
   if (!existsSync(path)) return refuse(`No brain found at ${path}. Start BiBrain once, or pass --db <path to brain.sqlite>.`);
   let db: DatabaseSync;
   try {
@@ -36,7 +38,7 @@ function main(): number {
   }
   try {
     const version = Number((db.prepare("SELECT max(version) AS v FROM migrations").get() as { v?: number } | undefined)?.v ?? 0);
-    if (version > KNOWN_MIGRATION) return refuse("This brain is from a newer BiBrain. Run the calibration report from that version.");
+    if (version > LATEST_MIGRATION) return refuse("This brain is from a newer BiBrain. Run the calibration report from that version.");
     const table = (name: string) => !!db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name=?").get(name);
     const setting = <T>(key: string, fallback: T): T => {
       const row = db.prepare("SELECT value FROM settings WHERE key=?").get(key) as { value: string } | undefined;
