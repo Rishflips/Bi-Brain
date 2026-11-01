@@ -27,11 +27,11 @@
 
 Classes most likely to bite a person, in order. Each has its pinning test in the task that owns the code.
 
-1. **A read-only open of a WAL database.** The owner's `brain.sqlite` is in WAL mode; the server may be running (`-wal` and `-shm` present) or stopped (neither present). Both must open read-only and print the same report; a failure must say what to do, not stack-trace. Pinned in Task 6 by running the script once with the fixture closed and once while a `Storage` handle holds it open, and by the missing-file case.
+1. **A read-only open of a WAL database, or of a file that is not a brain.** The owner's `brain.sqlite` is in WAL mode; the server may be running (`-wal` and `-shm` present) or stopped (neither present). Both must open read-only and print the same report; a path to a text file, a bare SQLite file or a folder that cannot take the `-shm` file must end in one plain sentence on stderr and exit 2, never a stack trace or an error message that echoes a path or row. Pinned in Task 6 by running the script with the fixture closed, while a `Storage` handle holds it open, against a missing path, a junk file and a bare SQLite file.
 2. **Older log rows.** Pushes recorded before this plan have `judged: true` without `judge`, or `dense: true` without `dense_top`; a dense push with no passage over the floor also has no `dense_top`. The report must count them and name the gap, never throw. Pinned in Task 4.
 3. **Malformed sorting answers.** An `s1_answer` with no `answers` array, a `noul` whose probability is not a number, or a feedback row with a string confidence must be skipped, not crash the report. Pinned in Task 4.
 4. **A database from a newer BiBrain** (migrations version above 7) must be refused with a plain sentence and exit 2, exactly as `Storage` refuses it. Pinned in Task 6.
-5. **Note text in the output.** No path in the report may print a word from a note, in text or `--json` mode. Pinned in Task 6 with a canary word captured into the fixture and asserted absent from both outputs, and by the sha-256 of the database file before and after a run.
+5. **Note text in the output, and stored strings as keys.** No path in the report may print a word from a note, in text or `--json` mode, and a stored `kind`, `question`, `client` or `answered` value must never reach `Object.prototype` or the page unfiltered. Pinned in Task 6 with a canary word captured into the fixture and asserted absent from both outputs, by the sha-256 of the database file before and after a run (only the two empty WAL sidecars may appear beside it), and in Task 4 with a `__proto__` kind.
 
 ---
 
@@ -123,11 +123,11 @@ In `tests/integration/watch.test.ts`, replace the first `it` block (lines 23–4
 - [ ] **Step 6: Run the watch test**
 
 Run: `npx vitest run tests/integration/watch.test.ts`
-Expected: PASS. If `expect(b.brief(owner).items).toHaveLength(1)` fails with 2 items, the accepted gate left a card; read `b.brief(owner).items` in a scratch `console.log`, and if the extra card is a `stale` or `correction` card for the kept fact, change the kept body to `"Ana is the design lead."` (a statement with no status aspect) and re-run. Do not weaken the `facts` assertions.
+Expected: PASS (the pre-flight scan ran this rewrite against the repo `Brain`: an accepted gate leaves no Brief card, so the first assertion still sees one item). Do not weaken the `facts` assertions.
 
 - [ ] **Step 7: Bring `docs/UX.md` in line with Today v2 and Your brain v2**
 
-Replace lines 41–61 (from `After save:` through the paragraph ending `a generated key is not completion.`) with:
+Replace lines 41–60 (from `After save:` through the paragraph ending `a generated key is not completion.`; line 61 is the blank line before `Do not force sign-up…` and stays) with:
 
 ```markdown
 After save:
@@ -135,10 +135,10 @@ After save:
 1. Confirm the save immediately. The note is in Your brain's Originals at once.
 2. When BiBrain finds something in the note worth keeping, a card appears in the Brief on Today with Keep, Fix and Dismiss. Nothing becomes a fact until the owner keeps it.
 3. When sorting help is on, an Inbox note may also get a "File in …?" card. Otherwise the Brief stays quiet, and quiet is normal.
-4. Open it shows the saved original. Facts kept from it appear in Your brain under True now, and the project page has Preview handoff.
+4. "Open it" shows the saved original. Facts kept from it appear in Your brain under True now, and the project page has Preview handoff.
 ```
 
-Keep the paragraph that begins `Do not force sign-up in the local application.` as the next paragraph.
+The blank line and the paragraph that begins `Do not force sign-up in the local application.` follow unchanged.
 
 At line 146 (after the edit above the number shifts; find the line by text) replace
 
@@ -157,7 +157,7 @@ At the line beginning `- Preview agent handoff uses the existing server-built pr
 - [ ] **Step 8: Check the copy against the app**
 
 Run: `grep -n "No matches. Try a different word, or save something new." apps/web/brain/BrainSearch.tsx docs/UX.md` and `grep -n "Preview handoff" apps/web/brain/BrainView.tsx docs/UX.md`
-Expected: one hit in each code file and one in `docs/UX.md` per grep; `grep -n "first useful\|Preview agent handoff\|No matching notes" docs/UX.md` prints nothing.
+Expected: one hit in each code file, one `No matches.` hit in `docs/UX.md`, and at least one `Preview handoff` hit in `docs/UX.md` (the file already names the button in several places); `grep -n "first useful\|Preview agent handoff\|No matching notes" docs/UX.md` prints nothing.
 
 - [ ] **Step 9: Typecheck and lint**
 
@@ -183,14 +183,17 @@ Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>"
 ### Task 2: Native proof harness: Codex trust fix and a refusal test (Sonnet)
 
 **Files:**
-- Modify: `scripts/native-client-proof.ts:1-35`, `:185-215`, `:325-335`
+- Modify: `scripts/native-client-proof.ts:1-35`, `:80-86` (the step counter), `:185-215`, `:325-335`
+- Create: `scripts/proof-steps.ts`
 - Create: `tests/integration/native-client-proof.test.ts`
 
 **Interfaces:**
 - Consumes: nothing new. The edit copies PR #30's fix from `scripts/recall-agent-proof.ts:21-29` and `:104-112`.
-- Produces: nothing other tasks use. **The script is never run with `BRAIN_NATIVE_PROOF=1` in this plan.**
+- Produces: `isAgentRecallStep(url: string): boolean` from `scripts/proof-steps.ts` (true only for an exact `/api/v1/agent/recall` path, query string ignored). Nothing else in the plan uses it. **The script is never run with `BRAIN_NATIVE_PROOF=1` in this plan.**
 
-- [ ] **Step 1: Write the refusal test**
+Why the counter changes (spec R9): with the workspace trusted and `--dangerously-bypass-hook-trust` kept, Codex loads the `.codex/hooks.json` the one-step connect writes, so its prompt hook POSTs to `/api/v1/agent/recall-push` with the grant's key. The current counter (`req.url.startsWith("/api/v1/agent/recall")`) would count that push as an agent step and fire the owner transitions one step early. The hook stays on so the run is a real person's; only the counter becomes exact.
+
+- [ ] **Step 1: Write the refusal test and the counter test**
 
 Create `tests/integration/native-client-proof.test.ts`:
 
@@ -200,8 +203,19 @@ import { spawnSync } from "node:child_process";
 import { existsSync, readdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
+import { isAgentRecallStep } from "../../scripts/proof-steps.ts";
 
 const native = (dir: string) => (existsSync(dir) ? readdirSync(dir).filter((n) => n.startsWith("native-") || n.startsWith("bibrain-native-ws-")) : []);
+
+describe("the native proof's step counter", () => {
+  it("counts the agent's own brain_recall call and never the prompt hook's push", () => {
+    expect(isAgentRecallStep("/api/v1/agent/recall")).toBe(true);
+    expect(isAgentRecallStep("/api/v1/agent/recall?query=launch%20color")).toBe(true);
+    expect(isAgentRecallStep("/api/v1/agent/recall-push")).toBe(false);
+    expect(isAgentRecallStep("/api/v1/agent/recall/")).toBe(false);
+    expect(isAgentRecallStep("/api/v1/agent/open?id=x")).toBe(false);
+  });
+});
 
 describe("scripts/native-client-proof.ts", () => {
   it("refuses to run without its explicit flag, refuses an unknown client, and creates nothing", () => {
@@ -219,10 +233,44 @@ describe("scripts/native-client-proof.ts", () => {
 });
 ```
 
-- [ ] **Step 2: Run it to see it pass on the current script (the guard already exists)**
+- [ ] **Step 2: Run it to see the counter test fail and the refusal test pass (the guard already exists)**
 
 Run: `npx vitest run tests/integration/native-client-proof.test.ts`
-Expected: PASS. This pins the guard before the harness edit.
+Expected: the counter test FAILS (cannot find module `../../scripts/proof-steps.ts`); the refusal test PASSES, pinning the guard before the harness edit.
+
+- [ ] **Step 2b: Write the predicate and use it in the counter**
+
+Create `scripts/proof-steps.ts`:
+
+```ts
+/**
+ * Which authenticated request counts as one agent step in the native proof. Only the agent's own
+ * `brain_recall` call does: the prompt hook's `/api/v1/agent/recall-push` shares the prefix and must
+ * not be counted, or the owner transitions keyed to step numbers would fire one step early.
+ */
+export const isAgentRecallStep = (url: string): boolean => url.split("?")[0] === "/api/v1/agent/recall";
+```
+
+In `scripts/native-client-proof.ts`, add to the imports (after the `agentConnect` import):
+
+```ts
+import { isAgentRecallStep } from "./proof-steps.ts";
+```
+
+and in the `onResponse` hook replace
+
+```ts
+    req.url.startsWith("/api/v1/agent/recall") &&
+```
+
+with
+
+```ts
+    isAgentRecallStep(req.url) &&
+```
+
+Run: `npx vitest run tests/integration/native-client-proof.test.ts`
+Expected: PASS (both describes).
 
 - [ ] **Step 3: Move the Codex workspace out of the repository**
 
@@ -304,14 +352,16 @@ Expected: all exit 0. `mkdirSync` is still used (for `base` and `dataDir`), so n
 - [ ] **Step 7: Commit**
 
 ```bash
-git add scripts/native-client-proof.ts tests/integration/native-client-proof.test.ts
+git add scripts/native-client-proof.ts scripts/proof-steps.ts tests/integration/native-client-proof.test.ts
 git commit -m "fix(native-proof): run Codex in a trusted workspace outside the repo
 
 Apply the recall proof's PR #30 fix to the native acceptance script: the
 workspace moves to the system temp folder, Codex is told to trust it with a
 -c override, and the hook trust review is bypassed for the disposable run.
-A refusal test pins the guard without ever spending quota. The proof itself
-stays owner-run and was not executed.
+Codex therefore runs the prompt hook, so the step counter now matches the
+exact /api/v1/agent/recall path and never counts the hook's recall-push.
+A refusal test and a counter test pin both without ever spending quota.
+The proof itself stays owner-run and was not executed.
 
 Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>"
 ```
@@ -526,19 +576,27 @@ describe("the calibration report", () => {
     expect(r.gaps.some((g) => g.includes("1 judged push"))).toBe(true);
     expect(r.gaps.some((g) => g.includes("1 push") && g.includes("Better search"))).toBe(true);
   });
-  it("skips malformed sorting rows instead of throwing", () => {
+  it("skips malformed sorting rows instead of throwing, and never lets a stored key reach the prototype or the page", () => {
     const r = calibrationReport({
       ...empty,
-      s1_answers: [{ answers: [] }, { answers: [{ id: "show", type: "noul", probability: "x" as unknown as number }] }, { answers: undefined as unknown as never }],
+      s1_answers: [
+        { answers: [] },
+        { answers: [{ id: "show", type: "noul", probability: "x" as unknown as number }] },
+        { answers: undefined as unknown as never },
+        { answers: [{ id: "kind", type: "choice", choice: "__proto__", confidence: 0.9 }] },
+      ],
       s1_feedback: [{ question: "show", choice: 0.5, confidence: "0.5" as unknown as number, action: "accept" }],
     });
-    expect(r.sorting.answers).toBe(3);
+    expect(r.sorting.answers).toBe(4);
     expect(r.sorting.noul.show.n).toBe(0);
     expect(r.sorting.feedback.show).toBeUndefined();
+    expect(({} as { n?: unknown }).n).toBeUndefined();
+    expect(Object.getPrototypeOf(r.sorting.kind)).toBeNull();
+    expect(renderCalibration(r)).not.toContain("__proto__");
   });
-  it("renders plain text that states it changes nothing, lists every threshold, and ends every suggestion the same way", () => {
+  it("renders plain text that states it does not change your data, lists every threshold, and ends every suggestion the same way", () => {
     const text = renderCalibration(calibrationReport(empty));
-    expect(text).toContain("This report only reads your brain. It changes nothing and sends nothing.");
+    expect(text).toContain("This report only reads your brain. It does not change your data or settings, and it sends nothing.");
     for (const t of THRESHOLDS) expect(text).toContain(`${t.id} = ${t.value}`);
     const suggestionLines = text.split("\n").filter((l) => l.startsWith("- recall.") || l.startsWith("- sorting."));
     expect(suggestionLines.length).toBeGreaterThan(0);
@@ -644,6 +702,10 @@ export type CalibrationReport = {
   gaps: string[];
 };
 
+/** Grouping keys come from stored rows: they live in prototype-free objects and are printed only when they look like plain ids. */
+const bag = <T>(): Record<string, T> => Object.create(null) as Record<string, T>;
+const SAFE_KEY = /^[A-Za-z0-9_.-]{1,40}$/u;
+const safeEntries = <T>(o: Record<string, T>): [string, T][] => Object.entries(o).filter(([k]) => SAFE_KEY.test(k));
 const zeros = () => Array.from({ length: BINS }, () => 0);
 /** Bin i holds [i/10, (i+1)/10); 1.0 falls in the last bin. */
 const binOf = (v: number) => Math.min(BINS - 1, Math.max(0, Math.floor(v * BINS)));
@@ -719,9 +781,9 @@ export function calibrationReport(input: CalibrationInput): CalibrationReport {
   const gaps: string[] = [];
   // Sorting help: one answer per sorted note version; every number is a probability or a confidence, never a word.
   const answers = input.s1_answers.map(answersOf);
-  const nouls: Record<string, Histogram> = {};
+  const nouls = bag<Histogram>();
   for (const q of ["show", "review", "changes_fact", "durable"]) nouls[q] = histogram(answers.map((a) => noul(a, q)).filter((v): v is number => v !== null));
-  const kind: Record<string, { n: number; mean_confidence: number }> = {};
+  const kind = bag<{ n: number; mean_confidence: number }>();
   const decisionDurables: number[] = [];
   for (const a of answers) {
     const k = choice(a, "kind");
@@ -742,7 +804,7 @@ export function calibrationReport(input: CalibrationInput): CalibrationReport {
   };
   const reviewLine = value("sorting.review");
   const review_near_line = answers.map((a) => noul(a, "review")).filter((v): v is number => v !== null && v >= reviewLine - 0.1 && v < reviewLine).length;
-  const feedback: Record<string, KeptBuckets> = {};
+  const feedback = bag<KeptBuckets>();
   for (const f of input.s1_feedback) {
     if (typeof f?.question !== "string" || typeof f.confidence !== "number" || !Number.isFinite(f.confidence)) continue;
     if (!KEPT.has(f.action) && !DROPPED.has(f.action)) continue;
@@ -754,12 +816,12 @@ export function calibrationReport(input: CalibrationInput): CalibrationReport {
   gaps.push("durable and kind answers receive no owner feedback; the report shows their distributions only.");
 
   // Recall pushes: the content-free log (level, counts, latency, and the judge and meaning fields when those ran).
-  const by_client: Record<string, Record<PushLevel, number>> = {};
+  const by_client = bag<Record<PushLevel, number>>();
   const candidates = { "0": 0, "1-3": 0, "4-10": 0, "11+": 0 };
-  const hits: Record<string, number> = {};
+  const hits = bag<number>();
   const ownerWorld: number[] = [];
   const denseTop: number[] = [];
-  const judge_answered: Record<string, number> = {};
+  const judge_answered = bag<number>();
   let judged = 0;
   let dense = 0;
   let judgedWithout = 0;
@@ -775,7 +837,8 @@ export function calibrationReport(input: CalibrationInput): CalibrationReport {
       judged++;
       if (r.judge && typeof r.judge.owner_world === "number") {
         ownerWorld.push(r.judge.owner_world);
-        judge_answered[r.judge.answered] = (judge_answered[r.judge.answered] ?? 0) + 1;
+        const answered = String(r.judge.answered);
+        judge_answered[answered] = (judge_answered[answered] ?? 0) + 1;
       } else judgedWithout++;
     }
     if (r.dense) {
@@ -816,22 +879,22 @@ function renderBuckets(label: string, b: KeptBuckets): string[] {
 export function renderCalibration(r: CalibrationReport): string {
   const lines: string[] = [];
   lines.push("BiBrain calibration report");
-  lines.push("This report only reads your brain. It changes nothing and sends nothing.");
+  lines.push("This report only reads your brain. It does not change your data or settings, and it sends nothing.");
   lines.push("");
   lines.push("Current thresholds");
   for (const t of r.thresholds) lines.push(`  ${t.id} = ${t.value}  (${t.where})`, `      ${t.meaning}`);
   lines.push("", `Sorting help: ${r.sorting.answers} sorted notes`);
-  for (const [q, h] of Object.entries(r.sorting.noul)) lines.push(...renderHistogram(`  ${q}`, h));
-  const kinds = Object.entries(r.sorting.kind);
+  for (const [q, h] of safeEntries(r.sorting.noul)) lines.push(...renderHistogram(`  ${q}`, h));
+  const kinds = safeEntries(r.sorting.kind);
   lines.push(kinds.length ? `  kind: ${kinds.map(([k, v]) => `${k} ${v.n} (mean confidence ${v.mean_confidence})`).join(", ")}` : "  kind: no data yet");
   lines.push(`  decisions: ${r.sorting.decisions.n}; under recall.durable_low: ${r.sorting.decisions.under_durable_low}; within 0.05 above it: ${r.sorting.decisions.near_durable_low}`);
   lines.push(`  review answers within 0.1 under sorting.review: ${r.sorting.review_near_line}`);
-  for (const [q, b] of Object.entries(r.sorting.feedback)) lines.push(...renderBuckets(`  ${q}`, b));
+  for (const [q, b] of safeEntries(r.sorting.feedback)) lines.push(...renderBuckets(`  ${q}`, b));
   lines.push("", `Recall pushes: ${r.recall.pushes} (the last 2,000 at most)`);
-  for (const [client, levels] of Object.entries(r.recall.by_client)) lines.push(`  ${client}: full ${levels.full}, pointer ${levels.pointer}, none ${levels.none}`);
+  for (const [client, levels] of safeEntries(r.recall.by_client)) lines.push(`  ${client}: full ${levels.full}, pointer ${levels.pointer}, none ${levels.none}`);
   lines.push(`  candidates: 0 → ${r.recall.candidates["0"]}, 1–3 → ${r.recall.candidates["1-3"]}, 4–10 → ${r.recall.candidates["4-10"]}, 11+ → ${r.recall.candidates["11+"]}`);
-  lines.push(`  hits: ${Object.entries(r.recall.hits).sort(([a], [b]) => Number(a) - Number(b)).map(([k, v]) => `${k} → ${v}`).join(", ") || "no data yet"}`);
-  lines.push(`  judged: ${r.recall.judged}; answered: ${Object.entries(r.recall.judge_answered).map(([k, v]) => `${k} ${v}`).join(", ") || "no data yet"}`);
+  lines.push(`  hits: ${safeEntries(r.recall.hits).sort(([a], [b]) => Number(a) - Number(b)).map(([k, v]) => `${k} → ${v}`).join(", ") || "no data yet"}`);
+  lines.push(`  judged: ${r.recall.judged}; answered: ${safeEntries(r.recall.judge_answered).map(([k, v]) => `${k} ${v}`).join(", ") || "no data yet"}`);
   lines.push(...renderHistogram("  judge owner-world probability", r.recall.judge_owner_world));
   lines.push(`  with Better search: ${r.recall.dense}; near the floor (within 0.05 above it): ${r.recall.dense_near_floor}`);
   lines.push(...renderHistogram("  top cosine per push", r.recall.dense_top));
@@ -864,8 +927,9 @@ One documented table imports every tunable line from the module that owns it,
 so nothing is copied by hand. calibrationReport turns s1 answers, feedback
 rows and recall-log rows into counts, histograms and deterministic suggestions
 that need at least 20 samples; renderCalibration prints plain text that states
-it changes nothing. Older rows and malformed answers are counted or skipped,
-never thrown on.
+it does not change your data or settings. Older rows and malformed answers are
+counted or skipped, never thrown on; stored keys live in prototype-free objects
+and print only when they look like plain ids.
 
 Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>"
 ```
@@ -983,7 +1047,7 @@ The early secret return (`return finish(quiet, { candidates: 0, judged: false, d
 
 - [ ] **Step 5: Widen the `recallLog` row type**
 
-Replace the `recallLog` method (service.ts:3641-3644) with:
+Replace the `recallLog` method together with its doc comment (service.ts:3640-3644; the replacement carries its own comment) with:
 
 ```ts
   /** What was pushed to agents and when: levels, counts and latency, plus the judge's answers and the top cosine when those ran. Never a prompt, an id or a passage. */
@@ -1031,20 +1095,19 @@ Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>"
 
 **Interfaces:**
 - Consumes: `calibrationReport`, `renderCalibration`, `CalibrationInput` from `packages/domain/calibration.ts` (Task 4); `node:sqlite` `DatabaseSync(path, { readOnly: true })`.
-- Produces: the command `npm run calibrate [-- --db <path>] [--json]`; exit 0 after a report, 2 when the database is missing, cannot be opened, or is from a newer BiBrain.
+- Produces: the command `npm run calibrate [-- --db <path>] [--json]`; exit 0 after a report; exit 2 with one plain sentence on stderr (never a stack trace, never an error message that could carry a path or row) when the database is missing, cannot be opened, cannot be read as a BiBrain database, or is from a newer BiBrain.
 
 - [ ] **Step 1: Write the failing script tests**
 
-Append to `tests/integration/calibration-report.test.ts` (add the imports at the top of the file):
+Append to `tests/integration/calibration-report.test.ts`. First change line 1 to `import { afterEach, describe, expect, it } from "vitest";` (one `vitest` import, not two), then add these imports under it:
 
 ```ts
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { copyFileSync, existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { copyFileSync, existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { DatabaseSync } from "node:sqlite";
-import { afterEach } from "vitest";
 import { Storage } from "../../packages/storage/index.ts";
 import { Brain } from "../../packages/domain/service.ts";
 import type { Principal } from "../../packages/contracts/index.ts";
@@ -1076,35 +1139,44 @@ function syntheticBrain(): { dir: string; path: string } {
   cleanup.push(() => rmSync(dir, { recursive: true, force: true }));
   const path = join(dir, "brain.sqlite");
   const s = new Storage(path, { vault: join(dir, "vault") });
-  const b = new Brain(s, () => new Date("2026-11-01T09:00:00Z"), undefined, undefined, undefined, undefined, () => ({ ready: true, reason: "test" }));
-  b.prefs(owner, { ...b.prefs(owner), enabled: true, decision_provider_enabled: true, daily_cap_micro_usd: 50_000, per_job_cap_micro_usd: 5_000 });
-  const p = b.createProject(owner, "Northstar");
-  const note = (title: string, body: string) => b.capture(owner, { project_id: p.id, title, body, visibility: "project", separate: true }) as any;
-  const decision = note("Plan", `We decided Northstar ships with one plan ${CANARY}.`);
-  b.recordSystemOneResult({ id: "j1", project_id: p.id }, decision.source_id, 1, ask({ kind: "decision", durable: 0.23 }));
-  // A status statement, so the capture surely creates a review gate that the dismissal below can log against.
-  const lunch = note("Hydra", "Hydra status paused.");
-  b.recordSystemOneResult({ id: "j2", project_id: p.id }, lunch.source_id, 1, ask({ kind: "fact", show: 0.2, review: 0.68 }));
-  const status = note("Status", "The launch color is amber.");
-  b.recordSystemOneResult({ id: "j3", project_id: p.id }, status.source_id, 1, ask({ kind: "fact", show: 0.9 }));
-  // One kept review and one dismissed card, so s1_feedback has a kept and a dropped row for `show`.
-  const kept = b.entities(owner, "gate").find((g) => g.data.raw_id === status.source_id)!;
-  b.reviewGate(owner, kept.id, { action: "accept", expected_version: kept.version });
-  const quietGate = b.entities(owner, "gate").find((g) => g.data.raw_id === lunch.source_id)!;
-  const quietCard = b.brief(owner).items.find((i) => i.target.id === quietGate.id)!;
-  b.dismissBriefItem(owner, { signature: quietCard.signature });
-  s.set("recall_log", [
-    { at: "2026-11-01T08:00:00.000Z", grant_id: "g1", client: "codex", level: "full", candidates: 5, hits: 3, latency_ms: 2, judged: false },
-    { at: "2026-11-01T08:01:00.000Z", grant_id: "g1", client: "codex", level: "none", candidates: 0, hits: 0, latency_ms: 2, judged: false },
-    { at: "2026-11-01T08:02:00.000Z", grant_id: "g2", client: "claude-code", level: "pointer", candidates: 2, hits: 1, latency_ms: 3, judged: true, judge: { owner_world: 0.4, general: 0.5, answered: "partial" } },
-    { at: "2026-11-01T08:03:00.000Z", grant_id: "g2", client: "claude-code", level: "none", candidates: 3, hits: 0, latency_ms: 3, judged: true },
-    { at: "2026-11-01T08:04:00.000Z", grant_id: "g2", client: "claude-code", level: "none", candidates: 1, hits: 0, latency_ms: 4, judged: false, dense: true, dense_top: 0.47 },
-    { at: "2026-11-01T08:05:00.000Z", grant_id: "g2", client: "claude-code", level: "none", candidates: 0, hits: 0, latency_ms: 4, judged: false, dense: true },
-  ]);
-  s.close();
+  try {
+    const b = new Brain(s, () => new Date("2026-11-01T09:00:00Z"), undefined, undefined, undefined, undefined, () => ({ ready: true, reason: "test" }));
+    b.prefs(owner, { ...b.prefs(owner), enabled: true, decision_provider_enabled: true, daily_cap_micro_usd: 50_000, per_job_cap_micro_usd: 5_000 });
+    const p = b.createProject(owner, "Northstar");
+    const note = (title: string, body: string) => b.capture(owner, { project_id: p.id, title, body, visibility: "project", separate: true }) as any;
+    const decision = note("Plan", `We decided Northstar ships with one plan ${CANARY}.`);
+    b.recordSystemOneResult({ id: "j1", project_id: p.id }, decision.source_id, 1, ask({ kind: "decision", durable: 0.23 }));
+    // The status grammar needs the bare line "<name> status <state>" with no full stop (as scripts/recall-agent-proof.ts:34 writes it);
+    // "Hydra status paused." would create no gate and the dismissal below would have nothing to log against.
+    const hydra = note("Hydra", "Hydra status paused");
+    b.recordSystemOneResult({ id: "j2", project_id: p.id }, hydra.source_id, 1, ask({ kind: "fact", show: 0.2, review: 0.68 }));
+    const status = note("Status", "The launch color is amber.");
+    b.recordSystemOneResult({ id: "j3", project_id: p.id }, status.source_id, 1, ask({ kind: "fact", show: 0.9 }));
+    // One kept review and one dismissed card, so s1_feedback has a kept and a dropped row for `show`.
+    const kept = b.entities(owner, "gate").find((g) => g.data.raw_id === status.source_id)!;
+    b.reviewGate(owner, kept.id, { action: "accept", expected_version: kept.version });
+    const quietGate = b.entities(owner, "gate").find((g) => g.data.raw_id === hydra.source_id)!;
+    const quietCard = b.brief(owner).items.find((i) => i.target.id === quietGate.id)!;
+    b.dismissBriefItem(owner, { signature: quietCard.signature });
+    // Written straight into settings in the documented row shape: Task 5's own tests cover the writer; this fixture covers the reader.
+    s.set("recall_log", [
+      { at: "2026-11-01T08:00:00.000Z", grant_id: "g1", client: "codex", level: "full", candidates: 5, hits: 3, latency_ms: 2, judged: false },
+      { at: "2026-11-01T08:01:00.000Z", grant_id: "g1", client: "codex", level: "none", candidates: 0, hits: 0, latency_ms: 2, judged: false },
+      { at: "2026-11-01T08:02:00.000Z", grant_id: "g2", client: "claude-code", level: "pointer", candidates: 2, hits: 1, latency_ms: 3, judged: true, judge: { owner_world: 0.4, general: 0.5, answered: "partial" } },
+      { at: "2026-11-01T08:03:00.000Z", grant_id: "g2", client: "claude-code", level: "none", candidates: 3, hits: 0, latency_ms: 3, judged: true },
+      { at: "2026-11-01T08:04:00.000Z", grant_id: "g2", client: "claude-code", level: "none", candidates: 1, hits: 0, latency_ms: 4, judged: false, dense: true, dense_top: 0.47 },
+      { at: "2026-11-01T08:05:00.000Z", grant_id: "g2", client: "claude-code", level: "none", candidates: 0, hits: 0, latency_ms: 4, judged: false, dense: true },
+    ]);
+  } finally {
+    // Unconditional, so a failing fixture never leaves an open handle that stops rmSync on Windows.
+    s.close();
+  }
   return { dir, path };
 }
 const sha = (file: string) => createHash("sha256").update(readFileSync(file)).digest("hex");
+/** A read-only open of a WAL database may create empty `-wal` and `-shm` sidecars; nothing else may appear. */
+const SIDECARS = new Set(["brain.sqlite-wal", "brain.sqlite-shm"]);
+const newFiles = (dir: string, before: string[]) => readdirSync(dir).filter((n) => !before.includes(n));
 const run = (args: string[], env: Record<string, string | undefined> = {}) => {
   const e = { ...process.env, ...env };
   delete e.BRAIN_DB;
@@ -1114,11 +1186,12 @@ const run = (args: string[], env: Record<string, string | undefined> = {}) => {
 
 describe("npm run calibrate", () => {
   it("prints the report from a synthetic brain, never a word of a note, and leaves the file byte-identical", () => {
-    const { path } = syntheticBrain();
+    const { path, dir } = syntheticBrain();
     const before = sha(path);
+    const files = readdirSync(dir);
     const r = run(["--db", path]);
     expect(r.status).toBe(0);
-    expect(r.stdout).toContain("This report only reads your brain. It changes nothing and sends nothing.");
+    expect(r.stdout).toContain("This report only reads your brain. It does not change your data or settings, and it sends nothing.");
     expect(r.stdout).toContain("Sorting help: 3 sorted notes");
     expect(r.stdout).toContain("decisions: 1; under recall.durable_low: 0; within 0.05 above it: 1");
     expect(r.stdout).toContain("review answers within 0.1 under sorting.review: 1");
@@ -1133,8 +1206,10 @@ describe("npm run calibrate", () => {
     expect(r.stdout + r.stderr).not.toContain(CANARY);
     expect(r.stdout + r.stderr).not.toContain("Hydra status paused");
     expect(r.stdout + r.stderr).not.toContain("launch color");
+    expect(r.stderr).toBe("");
     expect(sha(path)).toBe(before);
-    expect(existsSync(path + "-journal")).toBe(false);
+    // The main file is byte-identical; a read-only WAL open may leave the two empty sidecars and nothing else.
+    for (const n of newFiles(dir, files)) expect(SIDECARS.has(n)).toBe(true);
     const json = run(["--db", path, "--json"]);
     expect(json.status).toBe(0);
     const parsed = JSON.parse(json.stdout);
@@ -1142,7 +1217,8 @@ describe("npm run calibrate", () => {
     expect(parsed.suggestions.find((s: any) => s.threshold === "recall.durable_low").suggested).toBeNull();
     expect(json.stdout).not.toContain(CANARY);
     expect(sha(path)).toBe(before);
-  });
+    for (const n of newFiles(dir, files)) expect(SIDECARS.has(n)).toBe(true);
+  }, 60_000);
   it("reads the same report while another process holds the brain open in WAL mode, and honours BRAIN_DB", () => {
     const { path, dir } = syntheticBrain();
     const held = new Storage(path, { vault: join(dir, "vault") });
@@ -1151,12 +1227,13 @@ describe("npm run calibrate", () => {
     expect(r.status).toBe(0);
     expect(r.stdout).toContain("Sorting help: 3 sorted notes");
     expect(r.stdout).toContain("Recall pushes: 6");
-  });
-  it("explains a missing brain and refuses one from a newer BiBrain, both with exit 2", () => {
+  }, 60_000);
+  it("explains a missing brain and refuses one from a newer BiBrain, both with one sentence on stderr and exit 2", () => {
     const missing = run(["--db", join(tmpdir(), "no-such-folder-" + Date.now(), "brain.sqlite")]);
     expect(missing.status).toBe(2);
-    expect(missing.stdout).toContain("No brain found at");
-    expect(missing.stdout).toContain("--db");
+    expect(missing.stdout).toBe("");
+    expect(missing.stderr).toContain("No brain found at");
+    expect(missing.stderr).toContain("--db");
     const { path, dir } = syntheticBrain();
     const newer = join(dir, "newer.sqlite");
     copyFileSync(path, newer);
@@ -1165,9 +1242,32 @@ describe("npm run calibrate", () => {
     db.close();
     const r = run(["--db", newer]);
     expect(r.status).toBe(2);
-    expect(r.stdout).toContain("newer BiBrain");
+    expect(r.stdout).toBe("");
+    expect(r.stderr).toContain("newer BiBrain");
+    expect(r.stderr).not.toMatch(/^\s+at /mu);
     expect(existsSync(resolve("data/calibration.json"))).toBe(false);
-  });
+  }, 60_000);
+  it("refuses a file that is not a BiBrain database with one sentence, no stack trace and exit 2", () => {
+    const dir = mkdtempSync(join(tmpdir(), "calibrate-junk-"));
+    cleanup.push(() => rmSync(dir, { recursive: true, force: true }));
+    // A text file named like a database, and a valid SQLite file with none of BiBrain's tables.
+    const junk = join(dir, "junk.sqlite");
+    writeFileSync(junk, "this is not a database\n");
+    const bare = join(dir, "bare.sqlite");
+    const db = new DatabaseSync(bare);
+    db.exec("CREATE TABLE unrelated(x)");
+    db.close();
+    for (const file of [junk, bare]) {
+      const r = run(["--db", file]);
+      expect(r.status).toBe(2);
+      expect(r.stdout).toBe("");
+      expect(r.stderr).toContain("could not be read as a BiBrain database");
+      expect(r.stderr).toContain("--db");
+      expect(r.stderr).not.toMatch(/^\s+at /mu);
+      expect(r.stderr).not.toContain("no such table");
+      expect(r.stderr).not.toContain("not a database");
+    }
+  }, 60_000);
 });
 ```
 
@@ -1185,10 +1285,12 @@ Create `scripts/calibrate.ts`:
  * OWNER-RUN calibration report: `npm run calibrate [-- --db <path>] [--json]`.
  *
  * Reads your local brain through a READ-ONLY handle and prints counts, histograms, the current thresholds and
- * suggestions. It changes nothing, writes nothing and sends nothing. It never reads or prints note text: the sorting
+ * suggestions. It does not change your data or settings and sends nothing (a read-only open of a WAL database may
+ * leave empty -wal and -shm sidecar files, which hold no data). It never reads or prints note text: the sorting
  * answers are reduced to their numbers before the report runs, and source_versions is never opened. The database is
  * opened with node:sqlite directly (not through Storage, whose constructor applies migrations), so SQLite enforces
- * read-only. Exit 0 after a report; 2 when the brain is missing, cannot be opened, or is from a newer BiBrain.
+ * read-only. Exit 0 after a report; 2 with one plain sentence on stderr (never a stack trace or a message that
+ * carries a path or row) when the brain is missing, cannot be opened or read, or is from a newer BiBrain.
  */
 import { existsSync } from "node:fs";
 import { resolve } from "node:path";
@@ -1201,25 +1303,23 @@ const path = resolve(dbFlag >= 0 && args[dbFlag + 1] ? args[dbFlag + 1] : (proce
 const asJson = args.includes("--json");
 /** The schema version this reader understands; the same ceiling Storage applies. */
 const KNOWN_MIGRATION = 7;
+/** Every refusal is one sentence on stderr, so `--json` output on stdout stays parseable and no error text is echoed. */
+const refuse = (sentence: string): number => {
+  console.error(sentence);
+  return 2;
+};
 
 function main(): number {
-  if (!existsSync(path)) {
-    console.log(`No brain found at ${path}. Start BiBrain once, or pass --db <path to brain.sqlite>.`);
-    return 2;
-  }
+  if (!existsSync(path)) return refuse(`No brain found at ${path}. Start BiBrain once, or pass --db <path to brain.sqlite>.`);
   let db: DatabaseSync;
   try {
     db = new DatabaseSync(path, { readOnly: true });
   } catch {
-    console.log(`Could not open ${path} read-only. If BiBrain is not running, start it once, or copy brain.sqlite elsewhere and pass --db.`);
-    return 2;
+    return refuse(`Could not open ${path} read-only. If BiBrain is not running, start it once, or copy brain.sqlite elsewhere and pass --db.`);
   }
   try {
     const version = Number((db.prepare("SELECT max(version) AS v FROM migrations").get() as { v?: number } | undefined)?.v ?? 0);
-    if (version > KNOWN_MIGRATION) {
-      console.log("This brain is from a newer BiBrain. Run the calibration report from that version.");
-      return 2;
-    }
+    if (version > KNOWN_MIGRATION) return refuse("This brain is from a newer BiBrain. Run the calibration report from that version.");
     const table = (name: string) => !!db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name=?").get(name);
     const setting = <T>(key: string, fallback: T): T => {
       const row = db.prepare("SELECT value FROM settings WHERE key=?").get(key) as { value: string } | undefined;
@@ -1237,6 +1337,10 @@ function main(): number {
     const report = calibrationReport(input);
     console.log(asJson ? JSON.stringify(report, null, 2) : renderCalibration(report));
     return 0;
+  } catch {
+    // A text file named .sqlite, a SQLite file without BiBrain's tables, or a WAL database in a folder that cannot take
+    // its -shm file all fail on the first query. The reason is never printed: it could carry a path or a row.
+    return refuse(`${path} could not be read as a BiBrain database. Pass --db <path to brain.sqlite>, or copy the file elsewhere first.`);
   } finally {
     db.close();
   }
@@ -1257,9 +1361,9 @@ In `package.json`, after the line `"proof:search": "node --import tsx scripts/be
 - [ ] **Step 5: Run the script tests**
 
 Run: `npx vitest run tests/integration/calibration-report.test.ts`
-Expected: all PASS. If the WAL test fails with "unable to open database file", the read-only open needs the `-shm` file and the temp directory was not writable for it; that is an environment fault, not a code fault: confirm by reading `r.stderr`, then keep the test and report it in the task summary.
+Expected: all four PASS (the pre-flight scan ran them with these fixture strings: about 7 s for the first, about 4 s for the others, under the 60 s timeout each carries). If the WAL test fails with the "could not be read as a BiBrain database" sentence, the read-only open needed the `-shm` file and the temp directory was not writable for it; that is an environment fault, not a code fault: confirm by running the script by hand against the fixture path, then keep the test and report it in the task summary.
 
-If `dismissBriefItem` logged no `show` row (the `show: kept / dropped` line says `n = 1`), the quiet card is not in the Brief at the moment of the lookup (`quietCard` undefined): print `b.brief(owner).items.map((i) => [i.kind, i.target.id, i.signature])` once in a scratch run to find the card for `quietGate.id`, then use its real signature. Do not weaken the `n = 2` assertion.
+If `syntheticBrain()` throws at `quietCard.signature`, the Hydra capture created no gate: check that its body is exactly `"Hydra status paused"` with no trailing punctuation (the status grammar in `capture()` matches the bare line). Do not weaken the `n = 2` assertion.
 
 - [ ] **Step 6: Typecheck and lint**
 
@@ -1276,9 +1380,10 @@ Opens brain.sqlite read-only through node:sqlite (never Storage, whose
 constructor writes), reduces sorting answers and feedback to numbers, reads
 the content-free recall log and embedded-passage counts, and prints the
 registry, histograms, suggestions and gaps. Never prints note text. Exit 2
-with a plain sentence when the brain is missing, locked or newer. Tested
-against a synthetic brain built through the real write paths, closed and
-held open, with a canary word and a byte-for-byte file check.
+with one plain sentence on stderr, never a stack trace, when the brain is
+missing, locked, unreadable or newer. Tested against a synthetic brain built
+through the real write paths, closed and held open, against a junk file and a
+bare SQLite file, with a canary word and a byte-for-byte file check.
 
 Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>"
 ```
@@ -1290,6 +1395,8 @@ Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>"
 **Files:**
 - Modify: `docs/PROVIDERS.md` (new subsection after "### Better search (embeddings, local)", before "### Prepared decision contract…")
 - Modify: `docs/NATIVE_CLIENT_SETUP.md:113-135`
+- Modify: `docs/API.md:78` (the `GET /recall/log` row)
+- Modify: `docs/AGENT_INTEGRATION.md:44` (the recall-log sentence of the Better search paragraph)
 - Modify: `docs/superpowers/plans/2026-10-25-recall-followups.md:142-147`
 - Modify: `BUILD_STATE.md` (the "At a glance" table and a new plan section)
 - Modify: `README.md` (the Status table)
@@ -1311,7 +1418,7 @@ npm run calibrate -- --json  # the same as JSON
 npm run calibrate -- --db C:\path\to\a\copy\brain.sqlite
 ```
 
-**What it does.** It opens the database read-only, so it cannot change anything; it sends nothing anywhere; and it never reads or prints the words of a note. It prints: every line with its value and the file that holds it; for sorting help, how many notes were sorted and the spread of each answer (show, review, changes, durable), what kinds Clef saw, how many decisions scored under the durable line, and for each reviewed card whether you kept or dropped it, grouped by Clef's confidence; for recall, how many pushes each agent received at each level, how many were judged and how the judge answered, how many used Better search and the spread of their top cosine. It ends with suggestions and with a list of what it cannot see.
+**What it does.** It opens the database read-only, so it cannot change your data or settings (SQLite may leave two empty `-wal` and `-shm` files beside the database, which hold nothing); it sends nothing anywhere; and it never reads or prints the words of a note. If the file cannot be read it says so in one sentence and stops. It prints: every line with its value and the file that holds it; for sorting help, how many notes were sorted and the spread of each answer (show, review, changes, durable), what kinds Clef saw, how many decisions scored under the durable line, and for each reviewed card whether you kept or dropped it, grouped by Clef's confidence; for recall, how many pushes each agent received at each level, how many were judged and how the judge answered, how many used Better search and the spread of their top cosine. It ends with suggestions and with a list of what it cannot see.
 
 **What to do with a suggestion.** A suggestion appears only when at least 20 answers or reviewed cards exist for that question and the rule in `packages/domain/calibration.ts` is met; the line states the counts it rests on. If you agree, change the named constant in the file the report names, run `npx vitest run tests/integration` and `npm run brain-eval` (the golden gates must still pass), add a test that pins the new value on your evidence case, and record the change and its reason in `BUILD_STATE.md`. Nothing changes unless you edit the code. "Not enough data yet" means exactly that: keep using BiBrain and run the report again later.
 
@@ -1322,15 +1429,38 @@ npm run calibrate -- --db C:\path\to\a\copy\brain.sqlite
 
 - [ ] **Step 2: Note the Codex trust fix in the native setup doc**
 
-In `docs/NATIVE_CLIENT_SETUP.md`, after the paragraph that ends `only the owner runs it, because it consumes subscription quota.` (line 117) add:
+In `docs/NATIVE_CLIENT_SETUP.md`, after the line that reads exactly `the owner runs it, because it consumes subscription quota.` (line 117, the last line of its paragraph) add a blank line and:
 
 ```markdown
 Since 2026-11-01 the script runs Codex the way the recall proof does: the disposable
 workspace is created in the system temp folder (outside this repository, so Codex does not
 take BiBrain itself as the project), the run adds `-c projects.<folder>.trust_level="trusted"`
 because `--ignore-user-config` hides the trust a person would normally grant, and
-`--dangerously-bypass-hook-trust` stands in for the one-time `/hooks` review. The temp
-folder's path must contain no dot; the script says so and stops if it does.
+`--dangerously-bypass-hook-trust` stands in for the one-time `/hooks` review. Codex therefore
+runs the prompt hook BiBrain wrote during the proof, as it would for a real person; the hook's
+`recall-push` requests are observed but are not counted as the agent's numbered steps, which
+match only the agent's own `brain_recall` calls. The temp folder's path must contain no dot;
+the script says so and stops if it does.
+```
+
+- [ ] **Step 2b: Name the two new recall-log fields where the log is documented**
+
+In `docs/API.md`, the `GET /recall/log` row (line 78) ends `and whether the judge ran; never a prompt, id or passage |`. Change that ending to:
+
+```markdown
+whether the judge ran and, when it did, its owner-world and general probabilities and its answered choice; when Better search ran, the top cosine among the meaning candidates; never a prompt, id or passage |
+```
+
+In `docs/AGENT_INTEGRATION.md` line 44, replace
+
+```markdown
+the content-free recall log notes only that a dense hit was among the results (`dense: true`, omitted when false).
+```
+
+with
+
+```markdown
+the content-free recall log notes that a dense hit was among the results (`dense: true`, omitted when false) and the top cosine among the meaning candidates (`dense_top`, omitted when none passed the floor); a judged push also carries the judge's owner-world and general probabilities and its answered choice (`judge`, omitted when the judge did not run). These numbers feed `npm run calibrate` (see `docs/PROVIDERS.md`).
 ```
 
 - [ ] **Step 3: Update the recall follow-ups' owed list**
@@ -1383,6 +1513,7 @@ Spec: `docs/superpowers/specs/2026-11-01-sweep-calibrate-design.md`. Plan: `docs
 - **Calibrate.** One ruling on evidence: the durable demotion line (`DURABLE_LOW`) moved from 0.25 to 0.20, because the one live decision recorded under it scored 0.23 (2026-10-27). Tests pin 0.23 → no demotion and 0.19 → ×0.9; the golden set is unchanged. Every other threshold keeps its value: the push bands behaved as intended in four owner runs, and the judge and the embeddings have never been called live.
 - **Calibration report.** `npm run calibrate` opens the owner's brain read-only (through `node:sqlite`, never `Storage`), prints every threshold from one registry (`packages/domain/calibration.ts`), histograms of the sorting answers and of kept-versus-dropped cards by confidence, pushes by agent and level, judged and Better search shares, suggestions that need at least 20 samples, and the signals it cannot see. It never prints note text and has no option to. The recall log now also records the top cosine and the judge's answers per push, only when those ran; rows with both off are byte-identical to plan 5 (the committed dense-off snapshot still matches).
 - **Gaps the report names.** No owner action records whether a review wake was right; `durable` and `kind` get no feedback; older rows carry no judge or cosine fields; the floor hides what it cuts (use `proof:search`); owner searches are never logged.
+- **Historical mentions of 0.25.** The recall plan and spec of 2026-10-25 and the sorting-run notes above (2026-10-27) name the durable line as 0.25; that is the value at the time. The current value is 0.20 (`packages/storage/recall-index.ts`), and the registry in `packages/domain/calibration.ts` is the one place to read every current line.
 
 Verified in this worktree on 2026-11-01 (Windows, Node 24.19.0):
 
@@ -1417,13 +1548,14 @@ Expected: the references and the files match.
 - [ ] **Step 8: Commit**
 
 ```bash
-git add docs/PROVIDERS.md docs/NATIVE_CLIENT_SETUP.md docs/superpowers/plans/2026-10-25-recall-followups.md BUILD_STATE.md README.md
+git add docs/PROVIDERS.md docs/NATIVE_CLIENT_SETUP.md docs/API.md docs/AGENT_INTEGRATION.md docs/superpowers/plans/2026-10-25-recall-followups.md BUILD_STATE.md README.md
 git commit -m "docs: calibration report for owners, native proof note, plan 7 build state
 
 Explain npm run calibrate (what it reads, what it prints, what to do with a
-suggestion, what it cannot see), note the Codex trust fix in the native setup
-doc, update the owed owner-run checks, and record plan 7 with its real
-verification counts in BUILD_STATE and the README status.
+suggestion, what it cannot see), note the Codex trust fix and the hook during
+the native proof, name the two new recall-log fields in API and
+AGENT_INTEGRATION, update the owed owner-run checks, and record plan 7 with
+its real verification counts in BUILD_STATE and the README status.
 
 Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>"
 ```
@@ -1432,7 +1564,8 @@ Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>"
 
 ## Self-review notes
 
-- **Spec coverage.** Part A's nine "do" items: Task 1 (seven edits), Task 2 (native proof harness), Part B consumes the calibration notes (Task 3). Part B's table: Task 3 (R1), Task 4 (registry R8, report rules R4, R5), Task 5 (R6, R7), Task 6 (R3, CLI, privacy tests), Task 7 (docs, BUILD_STATE, README). Every ruling R1–R10 is implemented or stated (R2 and R10 are constraints).
+- **Spec coverage.** Part A's ten "do" items: Task 1 (eight edits: four code or test lines, four `docs/UX.md` passages), Task 2 (native proof harness), Part B consumes the calibration notes (Task 3). Part B's table: Task 3 (R1), Task 4 (registry R8, report rules R4, R5), Task 5 (R6, R7), Task 6 (R3, CLI, privacy tests), Task 7 (docs, BUILD_STATE, README). Every ruling R1–R10 is implemented or stated (R2 and R10 are constraints).
 - **Placeholders.** None. The BUILD_STATE `<...>` markers are explicitly the real counts from Step 4 of Task 7, which the implementer must fill.
 - **Type consistency.** `RecallLogRow`, `S1AnswerRow`, `S1FeedbackRow`, `CalibrationInput` (Task 4) are what Task 6 imports; `dense_top` and `judge` (Task 5) match `RecallLogRow`; `DURABLE_LOW`, `DURABLE_HIGH`, `TOPIC_MIN_CONFIDENCE` (Task 3) are what Task 4 imports; `recallInternal` gains `denseTop`, read by `recallPush` only.
-- **Review Focus.** 1 → Task 6 (closed, held-open WAL, missing file); 2 → Task 4 (older rows); 3 → Task 4 (malformed rows); 4 → Task 6 (migration 99 copy); 5 → Task 6 (canary in text and `--json`, sha-256 before and after).
+- **Review Focus.** 1 → Task 6 (closed, held-open WAL, missing file, junk file, bare SQLite file; one sentence on stderr, no stack); 2 → Task 4 (older rows); 3 → Task 4 (malformed rows, `__proto__` key); 4 → Task 6 (migration 99 copy); 5 → Task 6 (canary in text and `--json`, sha-256 before and after, only the two WAL sidecars may appear).
+- **Pre-flight fixes applied (2026-11-01).** B1 fixture string without a full stop; I1 exact-path step counter in the native proof with its own test; I2 catch-all refusal on stderr with exit 2; I3 60 s timeouts; M1–M12 as the scan listed them.
