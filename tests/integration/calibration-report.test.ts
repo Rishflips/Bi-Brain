@@ -1,4 +1,14 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
+import { spawnSync } from "node:child_process";
+import { createHash } from "node:crypto";
+import { copyFileSync, existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join, resolve } from "node:path";
+import { DatabaseSync } from "node:sqlite";
+import { Storage } from "../../packages/storage/index.ts";
+import { Brain } from "../../packages/domain/service.ts";
+import type { Principal } from "../../packages/contracts/index.ts";
+import type { AskResult } from "../../packages/providers/system-one-ask.ts";
 import { BINS, MIN_SAMPLE, THRESHOLDS, calibrationReport, histogram, renderCalibration, type CalibrationInput, type RecallLogRow, type S1AnswerRow } from "../../packages/domain/calibration.ts";
 import { S1_THRESHOLDS } from "../../packages/domain/system-one.ts";
 import { PUSH_THRESHOLDS } from "../../packages/domain/recall-push.ts";
@@ -164,4 +174,157 @@ describe("the calibration report", () => {
     for (const l of suggestionLines) expect(l.endsWith("Nothing changes unless you edit the code.")).toBe(true);
     expect(text).not.toMatch(/model|mcp|token/iu);
   });
+});
+
+const owner: Principal = { kind: "owner" };
+const CANARY = "ZIRCON_SENTINEL";
+let cleanup: (() => void)[] = [];
+afterEach(() => {
+  for (const fn of cleanup.reverse()) fn();
+  cleanup = [];
+});
+const ask = (over: { kind?: string; durable?: number; show?: number; review?: number }): AskResult => ({
+  model: "clef-flash", usage: { input_tokens: 300, output_tokens: 0 }, cost_micro_usd: 27, price_version: "cf-clef-flash-2026-10-01", policy_version: "system-one-ask-v1",
+  answers: [
+    { id: "kind", type: "choice", choice: over.kind ?? "note", confidence: 0.9, probabilities: { decision: 0.025, fact: 0.025, question: 0.025, task: 0.025, note: 0.9 } },
+    { id: "review", type: "noul", probability: over.review ?? 0.1 },
+    { id: "show", type: "noul", probability: over.show ?? 0.9 },
+    { id: "durable", type: "noul", probability: over.durable ?? 0.5 },
+  ],
+});
+/** A synthetic brain written through the real paths: three sorted notes (one a decision at durable 0.23, one quiet), one kept and one dismissed review, and six recall-log rows. */
+function syntheticBrain(): { dir: string; path: string } {
+  const dir = mkdtempSync(join(tmpdir(), "calibrate-"));
+  cleanup.push(() => rmSync(dir, { recursive: true, force: true }));
+  const path = join(dir, "brain.sqlite");
+  const s = new Storage(path, { vault: join(dir, "vault") });
+  try {
+    const b = new Brain(s, () => new Date("2026-11-01T09:00:00Z"), undefined, undefined, undefined, undefined, () => ({ ready: true, reason: "test" }));
+    b.prefs(owner, { ...b.prefs(owner), enabled: true, decision_provider_enabled: true, daily_cap_micro_usd: 50_000, per_job_cap_micro_usd: 5_000 });
+    const p = b.createProject(owner, "Northstar");
+    const note = (title: string, body: string) => b.capture(owner, { project_id: p.id, title, body, visibility: "project", separate: true }) as any;
+    const decision = note("Plan", `We decided Northstar ships with one plan ${CANARY}.`);
+    b.recordSystemOneResult({ id: "j1", project_id: p.id }, decision.source_id, 1, ask({ kind: "decision", durable: 0.23 }));
+    // The status grammar needs the bare line "<name> status <state>" with no full stop (as scripts/recall-agent-proof.ts:34 writes it);
+    // "Hydra status paused." would create no gate and the dismissal below would have nothing to log against.
+    const hydra = note("Hydra", "Hydra status paused");
+    b.recordSystemOneResult({ id: "j2", project_id: p.id }, hydra.source_id, 1, ask({ kind: "fact", show: 0.2, review: 0.68 }));
+    const status = note("Status", "The launch color is amber.");
+    b.recordSystemOneResult({ id: "j3", project_id: p.id }, status.source_id, 1, ask({ kind: "fact", show: 0.9 }));
+    // One kept review and one dismissed card, so s1_feedback has a kept and a dropped row for `show`.
+    const kept = b.entities(owner, "gate").find((g) => g.data.raw_id === status.source_id)!;
+    b.reviewGate(owner, kept.id, { action: "accept", expected_version: kept.version });
+    const quietGate = b.entities(owner, "gate").find((g) => g.data.raw_id === hydra.source_id)!;
+    const quietCard = b.brief(owner).items.find((i) => i.target.id === quietGate.id)!;
+    b.dismissBriefItem(owner, { signature: quietCard.signature });
+    // Written straight into settings in the documented row shape: Task 5's own tests cover the writer; this fixture covers the reader.
+    s.set("recall_log", [
+      { at: "2026-11-01T08:00:00.000Z", grant_id: "g1", client: "codex", level: "full", candidates: 5, hits: 3, latency_ms: 2, judged: false },
+      { at: "2026-11-01T08:01:00.000Z", grant_id: "g1", client: "codex", level: "none", candidates: 0, hits: 0, latency_ms: 2, judged: false },
+      { at: "2026-11-01T08:02:00.000Z", grant_id: "g2", client: "claude-code", level: "pointer", candidates: 2, hits: 1, latency_ms: 3, judged: true, judge: { owner_world: 0.4, general: 0.5, answered: "partial" } },
+      { at: "2026-11-01T08:03:00.000Z", grant_id: "g2", client: "claude-code", level: "none", candidates: 3, hits: 0, latency_ms: 3, judged: true },
+      { at: "2026-11-01T08:04:00.000Z", grant_id: "g2", client: "claude-code", level: "none", candidates: 1, hits: 0, latency_ms: 4, judged: false, dense: true, dense_top: 0.47 },
+      { at: "2026-11-01T08:05:00.000Z", grant_id: "g2", client: "claude-code", level: "none", candidates: 0, hits: 0, latency_ms: 4, judged: false, dense: true },
+    ]);
+  } finally {
+    // Unconditional, so a failing fixture never leaves an open handle that stops rmSync on Windows.
+    s.close();
+  }
+  return { dir, path };
+}
+const sha = (file: string) => createHash("sha256").update(readFileSync(file)).digest("hex");
+/** A read-only open of a WAL database may create empty `-wal` and `-shm` sidecars; nothing else may appear. */
+const SIDECARS = new Set(["brain.sqlite-wal", "brain.sqlite-shm"]);
+const newFiles = (dir: string, before: string[]) => readdirSync(dir).filter((n) => !before.includes(n));
+const run = (args: string[], env: Record<string, string | undefined> = {}) => {
+  const e = { ...process.env, ...env };
+  delete e.BRAIN_DB;
+  for (const [k, v] of Object.entries(env)) if (v !== undefined) e[k] = v;
+  return spawnSync(process.execPath, ["--import", "tsx", "scripts/calibrate.ts", ...args], { encoding: "utf8", env: e, timeout: 60_000, windowsHide: true });
+};
+
+describe("npm run calibrate", () => {
+  it("prints the report from a synthetic brain, never a word of a note, and leaves the file byte-identical", () => {
+    const { path, dir } = syntheticBrain();
+    const before = sha(path);
+    const files = readdirSync(dir);
+    const r = run(["--db", path]);
+    expect(r.status).toBe(0);
+    expect(r.stdout).toContain("This report only reads your brain. It does not change your data or settings, and it sends nothing.");
+    expect(r.stdout).toContain("Sorting help: 3 sorted notes");
+    expect(r.stdout).toContain("decisions: 1; under recall.durable_low: 0; within 0.05 above it: 1");
+    expect(r.stdout).toContain("review answers within 0.1 under sorting.review: 1");
+    expect(r.stdout).toContain("show: kept / dropped by confidence (n = 2)");
+    expect(r.stdout).toContain("Recall pushes: 6");
+    expect(r.stdout).toContain("codex: full 1, pointer 0, none 1");
+    expect(r.stdout).toContain("claude-code: full 0, pointer 1, none 3");
+    expect(r.stdout).toContain("judged: 2; answered: partial 1");
+    expect(r.stdout).toContain("with Better search: 2; near the floor (within 0.05 above it): 1");
+    expect(r.stdout).toContain("recall.durable_low = 0.2");
+    expect(r.stdout).toContain("Nothing changes unless you edit the code.");
+    expect(r.stdout + r.stderr).not.toContain(CANARY);
+    expect(r.stdout + r.stderr).not.toContain("Hydra status paused");
+    expect(r.stdout + r.stderr).not.toContain("launch color");
+    expect(r.stderr).toBe("");
+    expect(sha(path)).toBe(before);
+    // The main file is byte-identical; a read-only WAL open may leave the two empty sidecars and nothing else.
+    for (const n of newFiles(dir, files)) expect(SIDECARS.has(n)).toBe(true);
+    const json = run(["--db", path, "--json"]);
+    expect(json.status).toBe(0);
+    const parsed = JSON.parse(json.stdout);
+    expect(parsed.sorting.answers).toBe(3);
+    expect(parsed.suggestions.find((s: any) => s.threshold === "recall.durable_low").suggested).toBeNull();
+    expect(json.stdout).not.toContain(CANARY);
+    expect(sha(path)).toBe(before);
+    for (const n of newFiles(dir, files)) expect(SIDECARS.has(n)).toBe(true);
+  }, 60_000);
+  it("reads the same report while another process holds the brain open in WAL mode, and honours BRAIN_DB", () => {
+    const { path, dir } = syntheticBrain();
+    const held = new Storage(path, { vault: join(dir, "vault") });
+    cleanup.push(() => held.close());
+    const r = run([], { BRAIN_DB: path });
+    expect(r.status).toBe(0);
+    expect(r.stdout).toContain("Sorting help: 3 sorted notes");
+    expect(r.stdout).toContain("Recall pushes: 6");
+  }, 60_000);
+  it("explains a missing brain and refuses one from a newer BiBrain, both with one sentence on stderr and exit 2", () => {
+    const missing = run(["--db", join(tmpdir(), "no-such-folder-" + Date.now(), "brain.sqlite")]);
+    expect(missing.status).toBe(2);
+    expect(missing.stdout).toBe("");
+    expect(missing.stderr).toContain("No brain found at");
+    expect(missing.stderr).toContain("--db");
+    const { path, dir } = syntheticBrain();
+    const newer = join(dir, "newer.sqlite");
+    copyFileSync(path, newer);
+    const db = new DatabaseSync(newer);
+    db.exec("INSERT INTO migrations VALUES(99,'2099-01-01T00:00:00.000Z')");
+    db.close();
+    const r = run(["--db", newer]);
+    expect(r.status).toBe(2);
+    expect(r.stdout).toBe("");
+    expect(r.stderr).toContain("newer BiBrain");
+    expect(r.stderr).not.toMatch(/^\s+at /mu);
+    expect(existsSync(resolve("data/calibration.json"))).toBe(false);
+  }, 60_000);
+  it("refuses a file that is not a BiBrain database with one sentence, no stack trace and exit 2", () => {
+    const dir = mkdtempSync(join(tmpdir(), "calibrate-junk-"));
+    cleanup.push(() => rmSync(dir, { recursive: true, force: true }));
+    // A text file named like a database, and a valid SQLite file with none of BiBrain's tables.
+    const junk = join(dir, "junk.sqlite");
+    writeFileSync(junk, "this is not a database\n");
+    const bare = join(dir, "bare.sqlite");
+    const db = new DatabaseSync(bare);
+    db.exec("CREATE TABLE unrelated(x)");
+    db.close();
+    for (const file of [junk, bare]) {
+      const r = run(["--db", file]);
+      expect(r.status).toBe(2);
+      expect(r.stdout).toBe("");
+      expect(r.stderr).toContain("could not be read as a BiBrain database");
+      expect(r.stderr).toContain("--db");
+      expect(r.stderr).not.toMatch(/^\s+at /mu);
+      expect(r.stderr).not.toContain("no such table");
+      expect(r.stderr).not.toContain("not a database");
+    }
+  }, 60_000);
 });
