@@ -85,6 +85,35 @@ describe("the calibration report", () => {
     expect(s.suggested).toBeNull();
     expect(s.reason).toContain("never shown");
   });
+  it("keeps an on-grid durable percentile on the grid, snaps an off-grid one down, and never suggests under 0.1", () => {
+    const withLow = (v: number) => [...Array.from({ length: 8 }, () => answer({ kind: "decision", durable: v })), ...Array.from({ length: 16 }, () => answer({ kind: "decision", durable: 0.9 }))];
+    const at = (v: number) => calibrationReport({ ...empty, s1_answers: withLow(v) }).suggestions.find((x) => x.threshold === "recall.durable_low")!.suggested;
+    expect(at(0.15)).toBe(0.15);
+    expect(at(0.17)).toBe(0.15);
+    expect(at(0.12)).toBe(0.1);
+    expect(at(0.05)).toBe(0.1);
+  });
+  it("suggests lowering the quiet line when the band under it was mostly kept, and holds when kept and dropped do not point one way", () => {
+    const kept = (n: number, c: number) => Array.from({ length: n }, () => ({ question: "show", choice: c, confidence: c, action: "accept" }));
+    const dropped = (n: number, c: number) => Array.from({ length: n }, () => ({ question: "show", choice: c, confidence: c, action: "dismiss" }));
+    const lower = calibrationReport({ ...empty, s1_feedback: [...kept(8, 0.25), ...dropped(4, 0.25), ...kept(8, 0.9)] }).suggestions.find((x) => x.threshold === "sorting.quiet")!;
+    expect(lower.suggested).toBe(0.2);
+    expect(lower.reason).toContain("8 of 12");
+    const hold = calibrationReport({ ...empty, s1_feedback: kept(20, 0.9) }).suggestions.find((x) => x.threshold === "sorting.quiet")!;
+    expect(hold.suggested).toBeNull();
+    expect(hold.reason).toContain("do not point one way");
+  });
+  it("suggests raising the file line only when most cards just above it were dropped, and counts review answers near its line", () => {
+    const fb = [
+      ...Array.from({ length: 4 }, () => ({ question: "project", choice: "p1", confidence: 0.75, action: "keep_file" })),
+      ...Array.from({ length: 21 }, () => ({ question: "project", choice: "p1", confidence: 0.75, action: "dismiss_file" })),
+    ];
+    const r = calibrationReport({ ...empty, s1_feedback: fb, s1_answers: [answer({ review: 0.65 }), answer({ review: 0.3 })] });
+    const s = r.suggestions.find((x) => x.threshold === "sorting.file")!;
+    expect(s.suggested).toBe(0.8);
+    expect(s.reason).toContain("4 of 25");
+    expect(r.sorting.review_near_line).toBe(1);
+  });
   it("counts pushes by client and level, judged and dense shares, and names older rows as gaps instead of throwing", () => {
     const log: RecallLogRow[] = [
       row({ client: "claude-code", level: "full", candidates: 5, hits: 3 }),

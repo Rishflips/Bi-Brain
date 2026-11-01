@@ -5,7 +5,7 @@
  * It never sees note text: callers pass answers, feedback numbers and log rows only.
  */
 import { S1_THRESHOLDS } from "./system-one.ts";
-import { PUSH_THRESHOLDS, type PushLevel } from "./recall-push.ts";
+import { PUSH_THRESHOLDS, RECALL_LOG_MAX, type PushLevel } from "./recall-push.ts";
 import { JUDGE_THRESHOLDS } from "./recall-judge.ts";
 import { DENSE_FLOORS, DENSE_WEIGHT } from "./better-search.ts";
 import { DURABLE_HIGH, DURABLE_LOW, TOPIC_MIN_CONFIDENCE } from "../storage/recall-index.ts";
@@ -35,6 +35,7 @@ export const THRESHOLDS: readonly Threshold[] = [
 export const MIN_SAMPLE = 20;
 export const BINS = 10;
 const HOLD = "Nothing changes unless you edit the code.";
+const LOG_MAX_TEXT = RECALL_LOG_MAX.toLocaleString("en-US");
 
 export type RecallLogRow = {
   at: string;
@@ -128,7 +129,8 @@ function durableSuggestion(decisionDurables: number[], low: number): Suggestion 
   if (under * 4 < sample) return { threshold, current: low, suggested: null, sample, reason: `${under} of ${sample} decisions scored under ${low}; fewer than a quarter, so the line holds.` };
   const sorted = [...decisionDurables].sort((a, b) => a - b);
   const p10 = sorted[Math.min(sorted.length - 1, Math.floor(0.1 * sorted.length))];
-  const suggested = Number(Math.max(0.1, Math.floor(p10 / 0.05) * 0.05).toFixed(2));
+  // Snap in integer hundredths so an on-grid value (0.15) stays on the grid; 0.15 / 0.05 is 2.9999999999999996.
+  const suggested = Math.max(10, Math.floor(Math.round(p10 * 100) / 5) * 5) / 100;
   return { threshold, current: low, suggested, sample, reason: `${under} of ${sample} decisions scored under ${low}, and a decision should count as lasting. The 10th percentile of decision durables, rounded down to 0.05, is ${suggested}.` };
 }
 
@@ -234,7 +236,7 @@ export function calibrationReport(input: CalibrationInput): CalibrationReport {
   if (judgedWithout) gaps.push(`${judgedWithout} judged push${judgedWithout === 1 ? "" : "es"} carr${judgedWithout === 1 ? "ies" : "y"} no judge answers (recorded before this version); counted under judged only.`);
   if (denseWithout) gaps.push(`${denseWithout} push${denseWithout === 1 ? "" : "es"} used Better search with no passage over the floor, or before the top cosine was recorded; counted under dense only.`);
   gaps.push("The cosine floor hides every passage under it, so this report sees only what passed. npm run proof:search prints the room around the floor.");
-  gaps.push("The recall log keeps the last 2,000 pushes. Your own searches (Ask, Your brain) are never logged.");
+  gaps.push(`The recall log keeps the last ${LOG_MAX_TEXT} pushes. Your own searches (Ask, Your brain) are never logged.`);
 
   return {
     thresholds: [...THRESHOLDS],
@@ -272,7 +274,7 @@ export function renderCalibration(r: CalibrationReport): string {
   lines.push(`  decisions: ${r.sorting.decisions.n}; under recall.durable_low: ${r.sorting.decisions.under_durable_low}; within 0.05 above it: ${r.sorting.decisions.near_durable_low}`);
   lines.push(`  review answers within 0.1 under sorting.review: ${r.sorting.review_near_line}`);
   for (const [q, b] of safeEntries(r.sorting.feedback)) lines.push(...renderBuckets(`  ${q}`, b));
-  lines.push("", `Recall pushes: ${r.recall.pushes} (the last 2,000 at most)`);
+  lines.push("", `Recall pushes: ${r.recall.pushes} (the last ${LOG_MAX_TEXT} at most)`);
   for (const [client, levels] of safeEntries(r.recall.by_client)) lines.push(`  ${client}: full ${levels.full}, pointer ${levels.pointer}, none ${levels.none}`);
   lines.push(`  candidates: 0 → ${r.recall.candidates["0"]}, 1–3 → ${r.recall.candidates["1-3"]}, 4–10 → ${r.recall.candidates["4-10"]}, 11+ → ${r.recall.candidates["11+"]}`);
   lines.push(`  hits: ${safeEntries(r.recall.hits).sort(([a], [b]) => Number(a) - Number(b)).map(([k, v]) => `${k} → ${v}`).join(", ") || "no data yet"}`);
