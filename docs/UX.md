@@ -41,9 +41,11 @@ Actions: Save to my brain; Try an example.
 After save:
 
 1. Confirm the save immediately. The note is in Your brain's Originals at once.
-2. When BiBrain finds something in the note worth keeping, a card appears in the Brief on Today with Keep, Fix and Dismiss. Nothing becomes a fact until the owner keeps it.
+2. When BiBrain finds something in the note worth keeping, a card appears in the Brief on Today with Keep and Dismiss, plus Fix where the wording can be corrected. Nothing becomes a fact until the owner keeps it.
 3. When sorting help is on, an Inbox note may also get a "File in …?" card. Otherwise the Brief stays quiet, and quiet is normal.
 4. "Open it" shows the saved original. Facts kept from it appear in Your brain under True now, and the project page has Preview handoff.
+
+Private material (a note saved as Only me, or one that looks like a secret) is kept protected and is never shown to an agent or offered to one.
 
 Do not force sign-up in the local application. Hosted identity and guest-to-account migration require a separate specification before hosted launch. Do not quietly upload a first-use note to a model provider without indicating that processing choice.
 
