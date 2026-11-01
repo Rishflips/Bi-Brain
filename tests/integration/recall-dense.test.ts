@@ -238,7 +238,12 @@ describe("dense recall", () => {
     expect(out.text).toBe("");
     expect(j.calls.n).toBe(0);
     expect(t.fx.store.all("SELECT 1 FROM jobs WHERE kind='recall_judge'")).toEqual([]);
-    expect(j.brain.recallLog(owner).rows.at(-1)).toMatchObject({ level: "none", judged: false, dense: true });
+    const logged = j.brain.recallLog(owner).rows.at(-1)!;
+    expect(logged).toMatchObject({ level: "none", judged: false, dense: true });
+    // The highest cosine among the meaning candidates is kept for calibration; it is a number, never text.
+    expect(logged.dense_top).toBeGreaterThanOrEqual(0.45);
+    expect(logged.dense_top).toBeLessThanOrEqual(1);
+    expect(logged).not.toHaveProperty("judge");
   });
   it("when the judge puts a hit found by meaning alone on top, the push level is capped at the words level", async () => {
     const dir = mkdtempSync(join(tmpdir(), "recall-cap-"));

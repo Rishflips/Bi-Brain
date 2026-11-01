@@ -3557,12 +3557,18 @@ export class Brain {
     const v = recallPushSchema.parse(input);
     const started = Date.now();
     const quiet = { level: "none" as PushLevel, text: "", hit_ids: [] as string[], digest: false };
-    const finish = (out: typeof quiet, extra: { candidates: number; judged: boolean; dense: boolean }) => {
+    const finish = (out: typeof quiet, extra: { candidates: number; judged: boolean; dense: boolean; dense_top?: number | null; judge?: JudgeSignals | null }) => {
       // A push that reached the brain proves the connection works, exactly like /agent/verify.
-      // `dense` is written only when a vector was used, so with Better search off the row is plan 5's, field for field.
+      // `dense`, `dense_top` and `judge` are written only when that feature ran, so with Better search and Recall help off
+      // the row is plan 5's, field for field (the dense-off snapshot pins this). Every value is a number or a level, never text.
       this.store.run("UPDATE grants SET last_verified_at=? WHERE id=?", this.now(), p.grant_id);
+      const round3 = (n: number) => Number(n.toFixed(3));
       const log = this.store.setting<unknown[]>("recall_log", []);
-      log.push({ at: this.now(), grant_id: p.grant_id, client: v.client, level: out.level, candidates: extra.candidates, hits: out.hit_ids.length, latency_ms: Date.now() - started, judged: extra.judged, ...(extra.dense ? { dense: true } : {}) });
+      log.push({
+        at: this.now(), grant_id: p.grant_id, client: v.client, level: out.level, candidates: extra.candidates, hits: out.hit_ids.length, latency_ms: Date.now() - started, judged: extra.judged,
+        ...(extra.dense ? { dense: true, ...(typeof extra.dense_top === "number" ? { dense_top: extra.dense_top } : {}) } : {}),
+        ...(extra.judged && extra.judge ? { judge: { owner_world: round3(extra.judge.ownerWorld), general: round3(extra.judge.general), answered: extra.judge.answered } } : {}),
+      });
       this.store.set("recall_log", log.slice(-RECALL_LOG_MAX));
       return out;
     };
@@ -3604,8 +3610,8 @@ export class Brain {
         text = level === "pointer" && d.includes(text) ? d : `${d}\n\n${text}`;
       }
     }
-    if (text && detectSecrets(text).length) return finish(quiet, { candidates, judged: judge.judged, dense: internal.dense });
-    return finish({ level, text, hit_ids: used.map((h) => h.id), digest }, { candidates, judged: judge.judged, dense: internal.dense });
+    if (text && detectSecrets(text).length) return finish(quiet, { candidates, judged: judge.judged, dense: internal.dense, dense_top: internal.denseTop, judge: judge.signals });
+    return finish({ level, text, hit_ids: used.map((h) => h.id), digest }, { candidates, judged: judge.judged, dense: internal.dense, dense_top: internal.denseTop, judge: judge.signals });
   }
   /** The judge for a hook push: the same advisory application as `recall`; without a judge the deterministic hits stand. */
   protected async judgeForPush(p: Principal, internal: ReturnType<Brain["recallInternal"]>): Promise<{ signals: JudgeSignals | null; hits: RecallHit[]; judged: boolean }> {
@@ -3637,10 +3643,12 @@ export class Brain {
     );
     return renderDigest({ projects: scope, facts, originals, recent, names });
   }
-  /** What was pushed to agents and when: levels, counts and latency. Never a prompt, an id or a passage. */
+  /** What was pushed to agents and when: levels, counts and latency, plus the judge's answers and the top cosine when those ran. Never a prompt, an id or a passage. */
   recallLog(p: Principal) {
     this.owner(p);
-    return { rows: this.store.setting<{ at: string; grant_id: string; client: string; level: PushLevel; candidates: number; hits: number; latency_ms: number; judged: boolean; dense?: boolean }[]>("recall_log", []) };
+    return {
+      rows: this.store.setting<{ at: string; grant_id: string; client: string; level: PushLevel; candidates: number; hits: number; latency_ms: number; judged: boolean; dense?: boolean; dense_top?: number; judge?: { owner_world: number; general: number; answered: "answered" | "partial" | "none" } }[]>("recall_log", []),
+    };
   }
   /** Whether a judge call may be queued right now. Every reason is a plain sentence; none is an error to the agent. */
   recallJudgeAllowed(): { ok: boolean; reason: string } {
@@ -3840,7 +3848,7 @@ ${q}`);
     // confirms an item the principal cannot see. Only claims whose name could match are loaded.
     const termSet = new Set(fts.terms);
     const entityNames = ids.length ? this.visibleEntityNames(p, scope, termSet, visibilities) : [];
-    if (!fts.match) return { result: empty("no_match", 0), ranked: [] as Candidate[], authorized: [] as RecallHit[], signals: deterministicSignals([], [], entityNames), entityNames, scope, dense: false, denseOnly: new Set<string>() };
+    if (!fts.match) return { result: empty("no_match", 0), ranked: [] as Candidate[], authorized: [] as RecallHit[], signals: deterministicSignals([], [], entityNames), entityNames, scope, dense: false, denseOnly: new Set<string>(), denseTop: null as number | null };
     const status = v.history ? "any" : "current";
     const search = (match: string, kind: "fact" | "original") => searchRecallChunks(this.store, { match, kind, projects: ids, visibilities, status, limit: CANDIDATES_PER_LIST });
     const lists: RecallLists = {
@@ -3904,7 +3912,9 @@ ${q}`);
       reason: `matched ${fts.terms.filter((t) => questionWordsOf(h).has(t)).length} of ${fts.terms.length} terms`,
     }));
     const result: RecallResult = { status: statusOut, as_of: now.toISOString(), searched: { ...base, candidates: ranked.length }, hits, near_misses, next_step: statusOut === "no_match" ? NO_MATCH_NEXT_STEP : FOUND_NEXT_STEP };
-    return { result, ranked, authorized: authorized.map((a) => a.hit), signals, entityNames, scope, dense: dense !== null, denseOnly };
+    // The highest cosine among the meaning candidates, three decimals, for the content-free recall log; null when none passed the floor.
+    const denseTop = lists.dense!.length ? Number(Math.max(...lists.dense!.map((r) => r.score)).toFixed(3)) : null;
+    return { result, ranked, authorized: authorized.map((a) => a.hit), signals, entityNames, scope, dense: dense !== null, denseOnly, denseTop };
   }
   /** One item by id for an agent: the full original (any version it may see) or the full fact with its history. */
   agentOpen(p: Principal, input: unknown) {
