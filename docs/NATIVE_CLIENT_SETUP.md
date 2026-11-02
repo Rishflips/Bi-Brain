@@ -116,6 +116,20 @@ project file in a disposable folder), so a fresh run exercises that path. That
 updated script has not yet been run against native Codex or Claude Code; only
 the owner runs it, because it consumes subscription quota.
 
+Since 2026-11-01 the script runs Codex the way the recall proof does: the disposable
+workspace is created in the system temp folder (outside this repository, so Codex does not
+take BiBrain itself as the project), the run adds `-c projects.<folder>.trust_level="trusted"`
+because `--ignore-user-config` hides the trust a person would normally grant, and
+`--dangerously-bypass-hook-trust` stands in for the one-time `/hooks` review. Codex is
+therefore expected to load and run the prompt hook BiBrain wrote during this proof, as it would
+for a real person. Nothing has yet observed this under `codex exec`. When it does run, the
+proof report's `request_statuses` shows a `/api/v1/agent/recall-push` row. That row is
+observed but is not counted as an agent step: the numbered steps match only the agent's own
+`brain_recall` calls. The Claude run in this proof has the hook off: it uses `--restricted`,
+which ignores the project and local settings that carry the hook, and the script does not pass
+them with `--settings` (the recall proof does). The temp folder's path must contain no dot; the
+script says so and stops if it does.
+
 Reproduce explicitly (consumes native subscription quota):
 
 ```powershell

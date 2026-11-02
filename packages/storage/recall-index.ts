@@ -31,9 +31,15 @@ const CHUNK_MIN = 600;
 const CHUNK_TARGET = 900;
 const CHUNK_HARD = 1200;
 const OVERLAP_MAX = 120;
-const DURABLE_HIGH = 0.6;
-const DURABLE_LOW = 0.25;
-const TOPIC_MIN_CONFIDENCE = 0.7;
+/** At or above this capture-time durable probability an original's chunks rank ×1.15. */
+export const DURABLE_HIGH = 0.6;
+/**
+ * Below this durable probability an original's chunks rank ×0.9 (never excluded). 0.25 until plan 7; the one live
+ * decision recorded under that line scored 0.23 and a decision should count as lasting (spec 2026-11-01, ruling R1).
+ */
+export const DURABLE_LOW = 0.2;
+/** A capture-time topic joins a chunk's prefix only at or above this confidence. */
+export const TOPIC_MIN_CONFIDENCE = 0.7;
 
 export const RECALL_DDL = `CREATE TABLE IF NOT EXISTS recall_chunks(
   id INTEGER PRIMARY KEY,

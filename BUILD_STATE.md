@@ -1,6 +1,6 @@
 # Build state
 
-Updated: 2026-10-28
+Updated: 2026-11-02
 
 This page holds the current, verified state of BiBrain. Each section below
 records one shipped plan of the 2026 reframe, with the commands that ran and
@@ -15,11 +15,37 @@ their real counts. The full delivery log from before the reframe is preserved in
 | Agent connections (Codex, Claude Code, Cursor) | One-step Add writes the server entry and a prompt hook or rule file. Native recall runs passed in Claude Code 2.1.283 and Codex 0.156.1 on Windows (2026-10-27); Cursor not yet run natively |
 | Recall | FTS5 index, ranked recall, hook push; golden set gated in CI; owner-run native proof passed for both agents, hook on and off |
 | Better search (embeddings via Ollama or Cloudflare) | Off by default; fake-embedder gates in CI; live run owner-run (`npm run proof:search`) |
-| Sorting help (System 1, Clef via Ollama or Cloudflare) | Live call through Ollama Cloud with clef-flash validated 3 of 3 answers (2026-10-27); thresholds not yet calibrated |
+| Sorting help (System 1, Clef via Ollama or Cloudflare) | Live call through Ollama Cloud with clef-flash validated 3 of 3 answers (2026-10-27). The durable demotion line moved to 0.20 on that run's evidence (2026-11-01); every other line keeps its first value and is read from `npm run calibrate` |
 | Watch | Per-project switch, on by default |
 | Licence | AGPL-3.0-only for the app, Apache-2.0 for the agent connector |
 | Hosted edition and payments | Paused; the Dodo adapter, the money ledger and the managed runtime are kept but not deployed, and no real payment has been processed. The Paddle code was removed in plan 6 (2026-10-28) |
-| Next plans | Owner-run proofs (`proof:recall`, `proof:search`, `proof:sorting`); the next reframe plan is the owner's choice |
+| Next plans | Owner-run: `npm run calibrate` once the brain has real answers and pushes, `npm run proof:search`, `scripts/native-client-proof.ts`; the next reframe plan is the owner's choice |
+
+## 2026-11-01 — Plan 7: sweep and calibrate (branch reframe/sweep-calibrate)
+
+Spec: `docs/superpowers/specs/2026-11-01-sweep-calibrate-design.md`. Plan: `docs/superpowers/plans/2026-11-01-sweep-calibrate.md`.
+
+- **Sweep.** Every parked item in the six follow-ups files and the Known limits above was classified (10 do, 18 obsolete, the rest kept parked with a reason). Applied: the grants test's Windows path is escaped; the `briefInput` comment is true again; the web `BriefItem` type carries `quiet?`; the watch test compares a real kept fact; `docs/UX.md` describes Today v2's after-save flow, the real no-result copy and "Preview handoff"; `scripts/native-client-proof.ts` runs Codex in a trusted temp workspace outside the repo (the fix PR #30 gave the recall proof) and has a refusal test. The proof was not run.
+- **Calibrate.** One ruling on evidence: the durable demotion line (`DURABLE_LOW`) moved from 0.25 to 0.20, because the one live decision recorded under it scored 0.23 (2026-10-27). Tests pin 0.23 → no demotion and 0.19 → ×0.9; the golden set is unchanged. Every other threshold keeps its value: the push bands behaved as intended in four owner runs, and the judge and the embeddings have never been called live.
+- **Calibration report.** `npm run calibrate` opens the owner's brain read-only (through `node:sqlite`, never `Storage`), prints every threshold from one registry (`packages/domain/calibration.ts`), histograms of the sorting answers and of kept-versus-dropped cards by confidence, pushes by agent and level, judged and Better search shares, suggestions that need at least 20 samples, and the signals it cannot see. It never prints note text and has no option to. The recall log now also records the top cosine and the judge's answers per push, only when those ran; rows with both off are byte-identical to plan 5 (the committed dense-off snapshot still matches).
+- **Gaps the report names.** No owner action records whether a review wake was right; `durable` and `kind` get no feedback; older rows carry no judge or cosine fields; the floor hides what it cuts (use `proof:search`); owner searches are never logged.
+- **Historical mentions of 0.25.** The recall plan and spec of 2026-10-25 and the sorting-run notes above (2026-10-27) name the durable line as 0.25; that is the value at the time. The current value is 0.20 (`packages/storage/recall-index.ts`), and the registry in `packages/domain/calibration.ts` is the one place to read every current line.
+
+Verified in this worktree on 2026-11-02 (Windows, Node 24.19.0):
+
+- `npm run typecheck`, `npm run lint`, `npm run build`: all exit 0.
+- `npm audit --audit-level=high`: exit 0, no high or critical findings. Moderate advisories published since plan 6 remain: `@hono/node-server` (a non-breaking fix exists), and `glob`/`minimatch` through `@fastify/static` and ESLint (fixable only by a breaking downgrade). Dependency updates are outside this plan.
+- `npx vitest run --reporter=dot --maxWorkers=3`: 186 files, 1,953 passed, 8 skipped, 0 failed (1,070 s).
+- `npm run brain-eval`: 25/25 passed. The golden set is unchanged.
+- `npx playwright test --workers=1`: 107 passed, 0 failed (5.2m). By project: main 69, today-v2 20, connections 7, system1 6, today-v2-bar 4, empty-brain 1. `docs/screenshots` was restored afterwards.
+- These are the counts from the third full run. The first was cut off by a session restart. In the second, 75 tests in three frozen billing files failed because their Windows fixture folder (`AppData/Local/Temp/opencode`) was missing at the time; those three files passed 76 of 76 (4 skipped) once it existed. One Playwright test (`proactive-goal`, a checkbox) failed under load in that run and passed 3 of 3 on its own; this branch changes no web code apart from a type comment.
+- Every task had its own review. Fable reviewed the whole branch: with fixes, 0 Critical, 1 Important (the `--json` output skipped the stored-key filter), fixed and re-reviewed.
+
+Known limits:
+
+- `npm run calibrate` has been run only against the synthetic test brain. The owner runs it against real data; until the brain holds 20 answers per question every suggestion reads "Not enough data yet".
+- The owner-run proofs still owed: `scripts/native-client-proof.ts` (harness fixed here) and `npm run proof:search`.
+- Local V1 only; no real model run in this plan.
 
 ## 2026-10-28 — Plan 6: cut dead code (branch reframe/cleanup)
 

@@ -38,11 +38,11 @@ describe("agent grants", () => {
       operations: ["read", "propose_memory"],
       expires_at: later,
       client: "codex",
-      folder: "C:\work\northstar",
+      folder: "C:\\work\\northstar",
     });
     expect(g.id).toBe(id);
     const [row] = b.connections(owner);
-    expect(row).toMatchObject({ id, client: "codex", client_name: "Codex", folder: "C:\work\northstar", status: "Not connected" });
+    expect(row).toMatchObject({ id, client: "codex", client_name: "Codex", folder: "C:\\work\\northstar", status: "Not connected" });
     const manual = b.createGrant(owner, { projects: ["inbox"], operations: ["read"], expires_at: later });
     expect(b.connections(owner).find((r: any) => r.id === manual.id)).toMatchObject({ client: "other", client_name: "A connected agent", folder: null });
   });

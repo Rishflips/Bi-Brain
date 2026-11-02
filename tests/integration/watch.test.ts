@@ -24,14 +24,19 @@ describe("watching a project", () => {
     const b = setup();
     const p = b.createProject(owner, "Northstar");
     b.capture(owner, { project_id: p.id, title: "Status", body: "northstar status active", visibility: "project" });
+    // A second note is reviewed and kept, so the project has a real fact and the comparison below compares something.
+    const kept = b.capture(owner, { project_id: p.id, title: "Launch", body: "The launch color is amber.", visibility: "project", separate: true }) as any;
+    const gate = b.entities(owner, "gate").find((g) => g.data.raw_id === kept.source_id)!;
+    b.reviewGate(owner, gate.id, { action: "accept", expected_version: gate.version });
     expect(b.projects(owner).find((x) => x.id === p.id)?.watched).toBe(true);
     expect(b.brief(owner).items).toHaveLength(1);
     const before = b.brainProject(owner, p.id);
+    expect(before.facts).toHaveLength(1);
     expect(b.watchProject(owner, p.id, { watched: false })).toEqual({ id: p.id, watched: false });
     expect(b.brief(owner).items).toEqual([]);
     const view = b.brainProject(owner, p.id);
     expect(view.waiting_for_review).toBe(0);
-    expect(view.originals).toHaveLength(1);
+    expect(view.originals).toHaveLength(2);
     expect(view.facts).toEqual(before.facts);
     expect(view.needs_decision).toEqual(before.needs_decision);
     b.watchProject(owner, p.id, { watched: true });

@@ -150,6 +150,10 @@ describe("POST /api/v1/agent/recall-push", () => {
     for (const word of ["what color did we pick for the launch", "color", "launch", "cobalt", f.ids["fact:launch-color"]]) expect(serialized).not.toContain(word);
     expect(log.rows[0]).toMatchObject({ client: "claude-code", level: "full", judged: false });
     expect(typeof log.rows[0].latency_ms).toBe("number");
+    // With Better search and Recall help off the row is plan 5's, field for field (the dense-off snapshot pins this too).
+    expect(log.rows[0]).not.toHaveProperty("dense");
+    expect(log.rows[0]).not.toHaveProperty("dense_top");
+    expect(log.rows[0]).not.toHaveProperty("judge");
   });
   it("prepends a digest on the first prompt of a session only when that prompt is a pointer or full push on a non-empty brain; generic prompts stay quiet even on the first prompt", async () => {
     const { f, push, session } = await setup();

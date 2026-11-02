@@ -40,24 +40,12 @@ Actions: Save to my brain; Try an example.
 
 After save:
 
-1. Confirm durable capture immediately.
-2. Display source with a preparation state.
-3. Show the resulting brief, or an extractive preview when no provider is configured.
-4. Offer Open it, which shows the saved original. Facts found in it appear in Your brain, and the project page has Preview handoff.
-5. Offer Keep this up to date only after the first useful result.
+1. Confirm the save immediately. The note is in Your brain's Originals at once.
+2. When BiBrain finds something in the note worth keeping, a card appears in the Brief on Today with Keep and Dismiss, plus Fix where the wording can be corrected. Nothing becomes a fact until the owner keeps it.
+3. When sorting help is on, an Inbox note may also get a "File in …?" card. Otherwise the Brief stays quiet, and quiet is normal.
+4. "Open it" shows the saved original. Facts kept from it appear in Your brain under True now, and the project page has Preview handoff.
 
-While exactly one active item exists, Today may show a restrained **first useful
-loop** beneath the saved receipt. Its three rows are derived only from real
-state: the durable original, a pending or owner-approved memory (or ordinary
-search when no clear memory exists), and a verified project connection. Each
-unfinished row has one direct action. It must not use percentages, streaks,
-confetti, fictional completion, or an infinite suggestion feed. It disappears
-after a second item is saved, so normal product use replaces onboarding rather
-than requiring a dismissal ceremony.
-
-Private material must never receive an agent action in this loop. “Available
-where you work” requires a real verified grant for the same project; a generated
-key is not completion.
+Private material (a note saved as Only me, or one that looks like a secret) is kept protected and is never shown to an agent or offered to one.
 
 Do not force sign-up in the local application. Hosted identity and guest-to-account migration require a separate specification before hosted launch. Do not quietly upload a first-use note to a model provider without indicating that processing choice.
 
@@ -143,7 +131,7 @@ Not useful removes the item from the active queue and optionally records a reaso
 The project list sits on the left. Open a project to see True now, Open questions, Originals, Needs a decision here and Goals.
 Open a fact or an original to view the retained original with the cited passage highlighted, the fact's history and the facts taken from it.
 Search covers facts and originals through the same ranked recall agents use; it never calls a sorting model. It respects access scope and deletion before matching and snippets. With Better search chosen it also matches by meaning (see Settings), and the recall judge still never sees it. While Better search is chosen but cannot work, a muted line under the search field reads "Search is using words only right now."
-No-result state: No matching notes. Try a different word or save something new.
+No-result state: No matches. Try a different word, or save something new.
 
 The selected project opens as a compact page built only from authorized saved
 state:
@@ -156,7 +144,7 @@ state:
   Undo brings it back.
 - Goals shows the real goal for the project and its plan state.
 - Recent originals open the retained source directly.
-- Preview agent handoff uses the existing server-built project handoff; it never
+- Preview handoff uses the existing server-built project handoff; it never
   claims to open or message an external agent.
 
 Your brain always shows one project, and Inbox is the no-setup default for real

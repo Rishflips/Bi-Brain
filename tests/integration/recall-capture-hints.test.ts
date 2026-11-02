@@ -42,7 +42,7 @@ describe("capture-time hints reach the recall index", () => {
     const { s, b } = setup();
     const p = b.createProject(owner, "Northstar");
     const note = (body: string) => b.capture(owner, { project_id: p.id, title: "N", body, visibility: "project", separate: true }) as any;
-    for (const [body, durable, boost] of [["Keep: the launch colour is cobalt.", 0.9, 1.15], ["Lunch at noon.", 0.1, 0.9], ["Maybe later.", 0.4, 1]] as const) {
+    for (const [body, durable, boost] of [["Keep: the launch colour is cobalt.", 0.9, 1.15], ["Lunch at noon.", 0.1, 0.9], ["Maybe later.", 0.4, 1], ["We decided Northstar ships with one plan.", 0.23, 1]] as const) {
       const saved = note(body);
       b.recordSystemOneResult({ id: "job", project_id: p.id }, saved.source_id, 1, result(durable, null));
       expect(Number(s.get("SELECT boost FROM recall_chunks WHERE ref_id=?", saved.source_id)!.boost)).toBe(boost);

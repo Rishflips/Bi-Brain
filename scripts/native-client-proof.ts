@@ -9,11 +9,13 @@ import {
   writeFileSync,
   rmSync,
 } from "node:fs";
+import { tmpdir } from "node:os";
 import { join, resolve, sep } from "node:path";
 import { Storage } from "../packages/storage/index.ts";
 import { Brain } from "../packages/domain/service.ts";
 import { createApp } from "../apps/server/app.ts";
 import { agentConnect } from "../apps/server/agent-connect.ts";
+import { isAgentRecallStep } from "./proof-steps.ts";
 
 const client = process.argv[2];
 if (
@@ -27,9 +29,12 @@ const repo = process.cwd();
 const base = resolve("test-results");
 mkdirSync(base, { recursive: true });
 const root = mkdtempSync(join(base, `native-${client}-`));
-const workspace = join(root, "workspace");
+// The workspace lives outside this repository: inside it, Codex would treat the BiBrain
+// repo as the project (reading its AGENTS.md and looking for .codex/ at the repo root).
+const workspaceBase = realpathSync.native(tmpdir());
+const workspacePrefix = join(workspaceBase, "bibrain-native-ws-");
+const workspace = realpathSync.native(mkdtempSync(workspacePrefix));
 const dataDir = join(root, "data");
-mkdirSync(workspace);
 mkdirSync(dataDir);
 const store = new Storage(join(root, "brain.sqlite"));
 const brain = new Brain(store);
@@ -81,7 +86,7 @@ app.addHook("onResponse", (req, reply, done) => {
   if (
     !!token &&
     req.headers.authorization === `Bearer ${token}` &&
-    req.url.startsWith("/api/v1/agent/recall") &&
+    isAgentRecallStep(req.url) &&
     reply.statusCode === 200
   ) {
     asks++;
@@ -183,6 +188,13 @@ Finish with a short factual account of what the tools returned, including citati
           appData,
           "npm/node_modules/@anthropic-ai/claude-code/bin/claude.exe",
         ));
+  // Codex loads a project's .codex/ layer only when the project is trusted, and trust lives
+  // in the user config that --ignore-user-config skips. A -c override trusts this disposable
+  // workspace; its key path is split on dots, so the folder path must not contain one.
+  // The one-step connect writes .codex/hooks.json, and --dangerously-bypass-hook-trust stands
+  // in for the one-time /hooks review a person does.
+  if (client === "codex" && folder.includes(".")) throw new Error(`The temporary folder ${folder} contains a dot, so Codex cannot be told to trust it. Set TEMP to a folder without dots and run again.`);
+  const codexTrust = client === "codex" ? ["-c", `projects.${folder}.trust_level="trusted"`, "--dangerously-bypass-hook-trust"] : [];
   const args =
     client === "codex"
       ? [
@@ -190,6 +202,7 @@ Finish with a short factual account of what the tools returned, including citati
             join(appData, "npm/node_modules/@openai/codex/bin/codex.js"),
           "exec",
           "--ignore-user-config", // the project's .codex/config.toml written above carries BiBrain
+          ...codexTrust,
           "--ephemeral",
           "--skip-git-repo-check",
           "--json",
@@ -327,4 +340,7 @@ Finish with a short factual account of what the tools returned, including citati
   if (!resolve(root).startsWith(base + sep))
     throw new Error("Refusing cleanup outside the disposable proof directory.");
   rmSync(root, { recursive: true, force: true });
+  if (!workspace.startsWith(workspacePrefix))
+    throw new Error("Refusing cleanup outside the disposable proof workspace.");
+  rmSync(workspace, { recursive: true, force: true });
 }

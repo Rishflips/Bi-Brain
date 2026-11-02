@@ -180,7 +180,12 @@ describe("the judge fast lane", () => {
     const session = "a".repeat(64);
     const out = await t.withWorker(() => t.brain.recallPush(t.agent, { prompt: "what is the Northstar status today", session_id: session, first_prompt: false, seen: [] }));
     expect(out.level).toBe("pointer");
-    expect(t.brain.recallLog(owner).rows.at(-1)).toMatchObject({ judged: true, level: "pointer" });
+    const logged = t.brain.recallLog(owner).rows.at(-1)!;
+    expect(logged).toMatchObject({ judged: true, level: "pointer", judge: { answered: "none" } });
+    // The judge's three numbers ride along for calibration; the owner-world probability here is the fake's 0.1.
+    expect(logged.judge!.owner_world).toBeLessThan(0.35);
+    expect(typeof logged.judge!.general).toBe("number");
+    expect(JSON.stringify(logged)).not.toContain("Northstar");
     const before = t.calls.n;
     await t.brain.ask(owner, { q: "what is the Northstar status today" });
     await t.brain.searchBrain(owner, { q: "Northstar status" });

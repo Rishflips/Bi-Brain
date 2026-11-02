@@ -13,6 +13,8 @@ import { detectSecrets } from "./secrets.ts";
 import { applyRestoreSafetyBarrier, withdrawAllAdvisories } from "./restore-policy.ts";
 import { RECALL_DDL, invalidateRecallIndex, recallIndexComplete, rebuildRecallIndex } from "./recall-index.ts";
 import { ensureVectorSchema } from "./recall-vectors.ts";
+/** The newest schema version this build writes; older builds refuse a database above it, and the calibration report shares the ceiling. */
+export const LATEST_MIGRATION = 7;
 export class Storage {
   readonly db: DatabaseSync;
   vault?: Vault;
@@ -36,7 +38,7 @@ export class Storage {
       Number(
         this.db.prepare("SELECT max(version) AS version FROM migrations").get()
           ?.version,
-      ) > 7
+      ) > LATEST_MIGRATION
     ) {
       this.db.close();
       throw new Error(
