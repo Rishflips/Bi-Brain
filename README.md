@@ -153,7 +153,7 @@ BiBrain is a working **single-owner local app**. This table is the honest state 
 
 | Area | State |
 | --- | --- |
-| Local app: Today, Your brain, Connections, Settings | Works end to end; verified on Windows with 1,953 Vitest tests and 107 Playwright browser tests |
+| Local app: Today, Your brain, Connections, Settings | Works end to end; verified in CI on Ubuntu and locally on Windows with 1,953 Vitest tests and 107 Playwright browser tests (macOS not yet tested) |
 | One-step agent connections with recall on every prompt | Verified in real Claude Code and Codex runs on Windows (`npm run proof:recall`, hook on and off); Cursor not yet run natively |
 | Sorting help with Clef | One live check through Ollama Cloud validated 3 of 3 answers; one threshold moved on that evidence, and `npm run calibrate` shows how your own answers fall around the rest |
 | Better search with embeddings | Built and gated against a fake embedder; a live run is owner-run (`npm run proof:search`) |
@@ -204,6 +204,7 @@ Tests use isolated databases, deterministic clocks and clearly synthetic fixture
 | [Providers](docs/PROVIDERS.md) | Sorting help and model providers |
 | [Run locally](docs/LOCAL_RUN.md) and [self-hosting](docs/SELF_HOSTING.md) | Running, backup and restore |
 | [Testing](docs/TESTING.md) and [release](docs/RELEASE.md) | Verification and release gates |
+| [Changelog](CHANGELOG.md) | What each release contains |
 | [History](docs/history/README.md) | Earlier build logs, audits and handoffs |
 | [AGENTS.md](AGENTS.md) | Instructions for coding agents working on this repository |
 
