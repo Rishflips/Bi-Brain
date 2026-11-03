@@ -29,16 +29,17 @@ Each invariant is stated in neutral terms. The plan pins each one with a test th
 
 An original written by a connected agent (through `brain_note`, `brain_propose`, `brain_intent`, or the session-end hook of Part B) is stored, as today, with `sources.origin = agent:<grant id>`. From this plan on:
 
-- **Reviewed state.** An agent-written original is *unreviewed* until the owner reviews it. The owner reviews it by keeping or fixing any Brief card whose evidence cites it, by editing it (a new version by the owner), or by pressing "Mark as reviewed" on the original in Your brain. Dismissing a card does not review the original. Undo of a kept card does not un-review it (the owner did look at it).
-- **Storage.** The review time lives in the `settings` table under `source_reviewed:<source id>` (an ISO time). No migration, no change to the `sources` table, no change to the portable export format. A brain restored from an export therefore has every agent-written original unreviewed again, which is the safe direction.
-- **Backfill.** On the first start after this plan, every agent-written original that an *accepted* review gate cites is marked reviewed at that gate's review time; all other agent-written rows stay unreviewed. The backfill runs once per database and is recorded under `provenance_backfill`.
+- **Reviewed state.** An agent-written original is *unreviewed* until the owner explicitly reviews *that note* through one per-note action: "Mark as reviewed" on the original in Your brain, an edit by the owner that changes its body (a new version by the owner), or the owner saving the identical text themselves (the capture returns the existing note as a duplicate, and the owner's own text counts as their review). Keeping, fixing or dismissing a Brief card derived from the note never reviews the note: the card shows one quoted line, and Keep already creates an owner-reviewed fact, which is what gets pushed. Moving a note between projects ("File in …?") does not review it either. Until the note is reviewed, every path derived from it stays labelled and capped.
+- **Storage.** The review time lives in the `settings` table under `source_reviewed:<source id>` (an ISO time). No migration, no change to the `sources` table, no change to the portable export format, no backfill and no write on opening a brain: every agent-written original that exists today starts unreviewed, and the owner marks the ones they have read. A brain restored from an export likewise has every agent-written original unreviewed again, which is the safe direction (the docs say so).
 - **Where the origin is visible.**
   - `brain_recall` hits and `GET /api/v1/agent/recall`: an original hit carries `written_by: { agent, reviewed }` when, and only when, it is agent-written. Owner-captured hits have no such field, which keeps the plan-5 snapshot byte-identical. The plain-text rendering adds `written by <agent>, not yet reviewed` (or `reviewed`) to that line.
   - `brain_open` and `GET /api/v1/sources/:id`: the same `written_by` field beside the item.
-  - The first-prompt digest: the count line adds ", N of them written by agents and not yet reviewed" when N > 0, and a `Recent:` title from an agent carries "from <agent>, not yet reviewed". Nothing changes when the brain holds no agent-written original.
+  - The first-prompt digest: the count line adds ", N of them written by agents and not yet reviewed" when N > 0; the `Recent:` list leaves unreviewed agent-written originals out (their titles are agent-chosen text), and a reviewed one is listed like any other. Nothing changes when the brain holds no agent-written original.
+  - The pointer line and the digest's topic names are built from the entity names of visible facts and from the hits that remain after unreviewed agent-written originals are removed, never from such an original's title.
+  - `GET /api/v1/context` (the continuation brief an agent may read): for an agent principal, unreviewed agent-written sources are left out of the excerpts; for the owner they are labelled `epistemic_status: "agent_unreviewed"`.
   - Your brain: the Originals list and the original page say "From <agent> · not yet reviewed" or "From <agent> · reviewed" instead of "From an agent"; the original page offers "Mark as reviewed" while it is unreviewed.
   - The Brief card an agent note produces already reads "Written down by your agent / <agent> wrote this down while it worked." and is unchanged.
-- **The push cap.** In the hook push, an unreviewed agent-written original never appears in a `full` push and never raises the level: the level is re-read on the hits that remain after those are removed, exactly as it is re-read today after already-seen hits are removed. They may still count towards a `pointer` (the pointer names projects and topics, not evidence). After review, the original is pushed like any other. The push header "Evidence from the owner's brain" therefore stays true.
+- **The push cap.** In the hook push, an unreviewed agent-written original never appears in a `full` push and never raises the level: the level is re-read on the hits that remain after those are removed, exactly as it is re-read today after already-seen hits are removed. They may still keep a `pointer` alive, whose names come from fact entities and the remaining hits, never from the note's title. After review, the original is pushed like any other. The push header "Evidence from the owner's brain" therefore stays true.
 - **`brain_recall` is unchanged in what it returns**, only labelled: an agent that calls the tool sees the note with its origin and may use it. The server instructions tell agents that an unreviewed agent-written hit is another agent's note, not the owner's statement.
 
 Owner-captured content (pasted, imported, or the files of Part B) is unchanged in every path.
@@ -46,8 +47,8 @@ Owner-captured content (pasted, imported, or the files of Part B) is unchanged i
 ### A2. Rate limiting behind a proxy
 
 - When `BRAIN_PUBLIC_ORIGIN` is set (self-host behind Caddy, and the paused managed mode), the server trusts exactly one proxy hop for the client address (`trustProxy: 1`), so the limiter sees the real client, not the proxy. The Host and Origin checks keep reading the raw headers and are not affected by forwarded headers; a test pins that a forwarded Host is still refused.
-- In every mode the limiter keys an authenticated request on a hash of its session cookie or bearer token, and an unauthenticated request on the client address. The owner's browser, each connected agent and each stranger have separate buckets. Limits keep their values (1,000 per minute globally, 10 per minute on the pairing routes).
-- Local mode keeps the loopback bind, no proxy trust, and the same limits. The only local change is that the owner's browser and each agent now count separately, which can only let through requests that were refused before.
+- The limiter stays keyed on the client address in every mode (the plugin's default). It never keys on a cookie or a bearer: a value nobody has verified must not be able to open a fresh bucket. Limits keep their values (1,000 per minute globally, 10 per minute on the pairing routes). Tests pin that varying cookies or bearers never yield a fresh bucket, that self-host keys on the forwarded client address, and that local mode behaves exactly as before.
+- Local mode keeps the loopback bind, no proxy trust, the same keys and the same limits: byte for byte unchanged.
 
 ### A3. Small hardening items
 
@@ -55,9 +56,9 @@ Owner-captured content (pasted, imported, or the files of Part B) is unchanged i
 | --- | --- | --- |
 | L1 | A top-level browser navigation (`Sec-Fetch-Mode: navigate`) to any `/api/v1/` path other than `/api/v1/health/live` is refused with 403 and a plain sentence. Page fetches, agent calls and the Docker healthcheck send no such header and are unchanged. | HTTP test |
 | L3 | `Content-Security-Policy` (unchanged value) and `X-Frame-Options: DENY` are sent on every response in every mode, not only under `NODE_ENV=production`. | HTTP test |
-| L5 | `POST /api/v1/proposals/gate` bounds `Idempotency-Key` to 200 characters like every other route. | HTTP test |
-| L6 | `bibrain connect` starts the agent adapter with an allowlisted environment (path, home, temp, locale and certificate variables, plus the two it needs). Provider, billing, sign-in and owner secrets never reach it. | CLI test |
-| L8 | The Add preview and the connection show the exact `.gitignore` lines for the files BiBrain wrote, with Copy, and say "Already in .gitignore" when the folder's `.gitignore` lists them. BiBrain still writes nothing but its own new files. | service and UI tests |
+| L5 | `POST /api/v1/proposals/gate` bounds `Idempotency-Key` through the same helper as every other route (at most 200 characters at the route; the stored key carries a short prefix, so the effective bound is a little below that, and a key over the route bound gets a plain 400). | HTTP test |
+| L6 | `bibrain connect` starts the agent adapter with an allowlisted environment (path, home, temp, locale and certificate variables, plus the two it needs). Provider, billing, sign-in and owner secrets never reach it, and neither do proxy variables, since the adapter only talks to loopback. | CLI test |
+| L8 | The Add preview shows the exact `.gitignore` lines for the files BiBrain wrote that carry machine paths (the server file, and the hook file), with Copy, and says "Already in .gitignore" when the folder's `.gitignore` lists them. Cursor's rule file is left out of the list, since a team may want it committed. BiBrain still writes nothing but its own new files. | service and UI tests |
 | I1 | Expired owner sessions are deleted when a new session is issued. | service test |
 | I2 | The Vite dev origins (`:5173`) are allowed only when `NODE_ENV` is not `production`. | policy test |
 
@@ -84,27 +85,30 @@ Ruling: both clients get a `Stop` hook, in the same file as the existing `UserPr
 **What the hook does** (`bibrain hook-end <client>`, in `apps/cli/bibrain.mjs`):
 
 1. Reads the `Stop` event from stdin (200 ms cap, as today). Anything that is not JSON with a string `last_assistant_message` ends silently.
-2. Ends silently when `stop_hook_active` is true (the turn was already continued by a stop hook), when the message has no marker line (see below), or when it looks like a secret.
-3. Idempotent per session: the hook state file (`data/hook-state/<connection>.json`, hashes only) records the hash of every message already sent for the session; a repeat sends nothing. At most 12 notes per session.
-4. Posts the first 4,000 code points of the message to `POST /api/v1/agent/session-note` on the loopback BiBrain with the connection's bearer, within a 2,500 ms budget; `redirect: "error"`; any failure ends silently.
-5. Prints `{}` to stdout and exits 0 in every case. It never prints `decision`, `reason` or `continue`, never exits 2, so it can never keep an agent running or block it.
+2. Ends silently when `stop_hook_active` is true (the turn was already continued by a stop hook), or when the message looks like a secret.
+3. Keeps only the marker lines of the message (the same rule as the server, mirrored in the CLI and pinned equal by a test): at most 10 `Decided:` lines, 10 question lines and 1 `Next step:` line, each at most 300 characters, joined with newlines and cut to 4,000 code points. Marker lines sit at the end of a reply, so the whole reply is scanned and only those lines travel. Ends silently when there is no `Decided:` or question line (a `Next step:` alone is ordinary prose), or when the kept lines look like a secret. Free text never leaves the agent's process.
+4. Idempotent per session: the hook state file (`data/hook-state/<connection>.json`, hashes only) records the hash of every text already sent for the session; a repeat sends nothing. At most 12 notes per session. The prompt hook's own state writes keep these hashes.
+5. Posts the kept lines to `POST /api/v1/agent/session-note` on the loopback BiBrain with the connection's bearer, within a 2,500 ms budget; `redirect: "error"`; any failure ends silently.
+6. Prints `{}` to stdout and exits 0 in every case. It never prints `decision`, `reason` or `continue`, never exits 2, so it can never keep an agent running or block it.
 
-**What the server does** (`Brain.sessionNote`, shared by HTTP; agents only, grant operation `propose_memory`, project = the grant's first project):
+**What the server does** (`Brain.sessionNote`, shared by HTTP; agents only, grant operation `propose_memory`):
 
-1. Refuses text that looks like a secret (nothing stored; a content-free log row says `secret`).
-2. Parses marker lines by rule (`packages/domain/session-note.ts`, pure): `Decided: <topic>: <decision>`, `Open question: …` (also `Question:`, `Unclear:`, `Still unclear:`, the same markers Your brain already reads) and `Next step: …`, with or without a leading bullet or bold marks. A `Decided:` line without a topic before the second colon is ignored. When no marker line is found, nothing is stored (`nothing` in the log). Free text outside marker lines is never copied: the note holds only what the agent marked.
-3. Hands the parsed note to the existing `agentNote` path with the idempotency key `session:<session hash>:<text hash>`, so the original is "Session note from <agent>", agent-written (A1), its decisions become "Written down by your agent" cards, its questions join Open questions, and a repeated post returns the first result. At most 12 saved notes per session.
-4. Appends a content-free row to `session_note_log` (time, connection, client, saved, reason, suggestion count, latency; never text or ids). `GET /api/v1/connections` adds `writeback: { notes, last_at }` from it.
+1. Refuses, with a plain message, a connection that reads more than one project: a session note needs exactly one project, and every connection Add creates has exactly one. Otherwise the project is the grant's only project.
+2. Refuses text that looks like a secret (nothing stored; a content-free log row says `secret`).
+3. Parses marker lines by rule (`packages/domain/session-note.ts`, pure): `Decided: <topic>: <decision>` (the topic ends at the first colon followed by a space, so a URL in the decision stays whole), `Open question: …` (also `Question:`, `Unclear:`, `Still unclear:`, the same markers Your brain already reads) and `Next step: …`, with or without a leading bullet or bold marks. Lines are capped at 300 characters, the same cap as `brain_note`, and a longer line drops only itself. A `Decided:` line without a topic is ignored. A note needs at least one decision or question; a `Next step:` alone, or no marker line, stores nothing (`nothing` in the log).
+4. Hands the parsed note to the existing `agentNote` path with the idempotency key `session:<session hash>:<text hash>`, so the original is "Session note from <agent>", agent-written (A1), its decisions become "Written down by your agent" cards, its questions join Open questions, and a repeated post returns the first result. At most 12 saved notes per session; a text already in the brain (a duplicate) is not counted again.
+5. Keeps one content-free counter per connection (`session_notes:<grant>` = `{ notes, last_at }`) and a bounded content-free log (`session_note_log`, at most 200 rows: time, connection, client, saved, reason, suggestion count, latency; never text or ids). `GET /api/v1/connections` adds `writeback: { notes, last_at }` from the counter.
 
 **The agent's side.** The server instructions and the hook's Connections copy tell the agent, in one sentence, to end a substantive reply with those marker lines. The owner keeps, fixes or dismisses the result on Today as with any agent note. Nothing becomes a fact without Keep (A1 makes the note unreviewed until then).
 
-**Add.** `secondFileContents` writes both hooks into `.claude/settings.local.json` (Claude Code) and `.codex/hooks.json` (Codex) in one file, written once and never changed; an existing file still yields the exact text to add, as today. Connections shows a second line under the recall line: "Session notes: on after your next session" (Codex: "on after Codex trusts the hook") until the first saved note, then "Session notes: 3 saved · last 2026-11-03". A connection added before this plan, whose hook file has no `Stop` entry, reads "Session notes: not set up for this connection. Add the agent again to get them." Cursor reads "Session notes: by hand (Cursor has no end-of-turn hook)".
+**Add.** `secondFileContents` writes both hooks into `.claude/settings.local.json` (Claude Code) and `.codex/hooks.json` (Codex) in one file, written once and never changed; an existing file still yields the exact text to add, as today. Connections shows a second line under the recall line: "Session notes: on after your next session" (Codex: "on after Codex trusts the hook") until the first saved note, then "Session notes: 3 saved · last <date>". A connection added before this plan, whose hook file has no `Stop` entry, reads "Session notes: add the Stop entry yourself" with a Copy button holding the exact `Stop` block (built on the page from the connection's own prompt-hook command, so no file the owner may have edited is touched) and the same paste hint as today. Cursor reads "Session notes: by hand (Cursor has no end-of-turn hook)".
 
 ### B2. Bring in what you already have
 
 - On the empty Today, the third card becomes **Bring in what you already have**: "Your `CLAUDE.md`, `AGENTS.md` and Cursor rules already describe your projects. Pick a project folder; BiBrain reads only those files and shows them before anything is saved." One control: a folder picker.
-- The browser's folder picker lists the folder; the page keeps only agent instruction files by name and path (`packages/importers/context.ts`, shared by the page and the server): `CLAUDE.md`, `CLAUDE.local.md`, `AGENTS.md`, `GEMINI.md`, `MEMORY.md`, `.cursorrules`, `.windsurfrules`, `.github/copilot-instructions.md`, `.cursor/rules/*.mdc`; never anything under `node_modules`, `.git`, `dist`, `build` or `vendor`. Only the kept files are read. The same rule runs again on the server for import kind `context`, so a crafted request cannot widen it.
-- The existing import path does the rest: preview dialog with the file list and warnings, a checkpoint, the 1 MiB per file, 4 MiB per batch and 50 file limits, secret quarantine at capture, duplicates reported, and the owner's Apply. The originals are owner-captured (`origin: manual`), because the owner chose them; their title is the relative path. No network beyond the loopback API.
+- The browser's folder picker lists the folder; the page drops the picked folder's own name from each path (so a project folder called `build` or `dist` still works, and titles read `CLAUDE.md`, not `repo/CLAUDE.md`) and keeps only agent instruction files by name and path (`packages/importers/context.ts`, shared by the page and the server): `CLAUDE.md`, `CLAUDE.local.md`, `AGENTS.md`, `GEMINI.md`, `MEMORY.md`, `.cursorrules`, `.windsurfrules`, `.github/copilot-instructions.md`, `.cursor/rules/*.mdc`; never anything under `node_modules`, `.git`, `dist`, `build`, `vendor`, `target` or `out`. Only the kept files are read. The same rule runs again on the server for import kind `context`, so a crafted request cannot widen it.
+- Each file gets its own outcome, never the batch: a file over 1 MiB or over 100,000 characters (the capture limit) is skipped with a warning naming it, on the page and again on the server, and the rest import. The 4 MiB batch and 50 file limits stay, with one plain sentence. The preview dialog, the checkpoint, secret quarantine at capture, duplicates reported and the owner's Apply are the existing import path. No network beyond the loopback API.
+- The originals are owner-imported (`origin: import`, shown as "Imported" in Your brain): the owner chose them, and they are the owner's evidence for the push, but a file from a cloned repository was written by someone else, so "Saved by you" would mislead. The dialog says "These files are saved exactly as written. Only bring in projects you trust." beside the existing evidence-not-instructions sentence.
 - `~/.claude/projects/<repo>/MEMORY.md` is reached by picking that folder; the copy says so.
 - **Parked: git log import.** The browser cannot run git and the server must not execute commands on an owner-supplied path from a page request; a `bibrain import-git` CLI command is a separate plan.
 - **Parked: an "empty brain" pointer on the first prompt.** The push says only what is recorded; a pointer on an empty brain would be an imperative aimed at the agent, which the push never carries.
@@ -112,35 +116,38 @@ Ruling: both clients get a `Stop` hook, in the same file as the existing `UserPr
 ## Data flow of provenance (A1 + B1)
 
 ```
-agent turn ends ──Stop hook──▶ bibrain hook-end ──POST /agent/session-note──▶ Brain.sessionNote
-                                                                                │ parse markers (rule)
-                                                                                ▼
-                                                                      Brain.agentNote → capture(origin agent:<grant>)
-                                                                                │              │
-                                                      gates (actor agent) ◀─────┘              └─▶ recall index (unchanged rows)
-                                                                                │
-   Today Brief card "Written down by your agent" ◀──────────────────────────────┘
-      Keep / Fix ──▶ reviewGate accept ──▶ settings source_reviewed:<id> = now
-                                                                                │
-   recall hit written_by{agent, reviewed} ◀── Brain.writtenBy(source) ◀─────────┘
+agent turn ends ──Stop hook──▶ bibrain hook-end (marker lines only) ──POST /agent/session-note──▶ Brain.sessionNote
+                                                                                                  │ parse markers (rule), one project
+                                                                                                  ▼
+                                                                                        Brain.agentNote → capture(origin agent:<grant>)
+                                                                                                  │              │
+                                                                        gates (actor agent) ◀─────┘              └─▶ recall index (unchanged rows)
+                                                                                                  │
+   Today Brief card "Written down by your agent" ◀────────────────────────────────────────────────┘
+      Keep / Fix ──▶ owner-reviewed fact (pushed as the owner's)      ✗ never reviews the note
+   Your brain: "From Codex · not yet reviewed" ── Mark as reviewed / owner edit ──▶ settings source_reviewed:<id> = now
+                                                                                                  │
+   recall hit written_by{agent, reviewed} ◀── Brain.writtenBy(source) ◀───────────────────────────┘
       │ brain_recall / GET /agent/recall: labelled, returned
-      │ recall-push: unreviewed ⇒ removed from full, level re-read; reviewed ⇒ ordinary
-      │ digest: counted and labelled
-      └ Your brain: "From Codex · not yet reviewed" + Mark as reviewed
+      │ recall-push: unreviewed ⇒ removed from full, level re-read, title never named; reviewed ⇒ ordinary
+      │ digest: counted; listed in Recent only once reviewed
+      └ GET /context: left out for agents until reviewed
 ```
 
 ## Rulings
 
-- R1. Review state is local viewing-and-trust state in `settings`, like Watch; the portable format is unchanged; restored brains fail safe to unreviewed.
-- R2. A `full` push never carries an unreviewed agent-written original, for any connection, including the one that wrote it. The writing agent reaches its own note through `brain_recall`, labelled.
+- R1. Review state is local viewing-and-trust state in `settings`, like Watch; the portable format is unchanged; nothing is backfilled and nothing is written when a brain opens; restored brains fail safe to unreviewed (documented).
+- R2. A `full` push never carries an unreviewed agent-written original, for any connection, including the one that wrote it, and never names its title. The writing agent reaches its own note through `brain_recall`, labelled.
 - R3. `written_by` is present only on agent-written items. The plan-5 snapshot stays byte-identical.
-- R4. The session-end hook uses `Stop`, not `SessionEnd`, for both clients; the rule for "something happened" is the presence of marker lines, which the agent is asked to write. No free text is stored from a turn.
+- R4. The session-end hook uses `Stop`, not `SessionEnd`, for both clients; the rule for "something happened" is at least one `Decided:` or question line, which the agent is asked to write. Only marker lines leave the agent's process, and only marker lines are stored.
 - R5. `trustProxy: 1` only when `BRAIN_PUBLIC_ORIGIN` is set; the Host/Origin policy reads raw headers and ignores forwarded ones, as before.
-- R6. Per-session and per-token limiter keys in every mode; limits unchanged.
+- R6. The limiter keys on the client address in every mode and never on an unverified cookie or bearer; local mode is byte for byte unchanged. (An earlier draft keyed on sessions and tokens; rejected in pre-flight.)
 - R7. The navigation refusal covers every `/api/v1/` path except `/api/v1/health/live`.
-- R8. The imported instruction files are owner-captured originals (`origin: manual`), titled by relative path.
+- R8. The imported instruction files are owner-imported originals (`origin: import`, "Imported"), titled by their path below the picked folder.
 - R9. Git log import and an empty-brain pointer are parked (reasons above).
 - R10. No migration. The existing `sources.origin` column plus one settings key per reviewed source carry provenance.
+- R11. "Reviewed" is one explicit per-note owner action (Mark as reviewed, an owner edit of the body, or the owner saving the same text). A Keep on a derived card never reviews the note.
+- R12. A session note needs a connection that reads exactly one project; a wider grant is refused with a plain message.
 
 ## Verification (every task, then the whole branch)
 
