@@ -14,7 +14,7 @@ export function genericClient(flag) {
 function parseV1(raw) {
   let value;
   try {
-    value = JSON.parse(String(raw).replace(/^﻿/u, "").trim());
+    value = JSON.parse(String(raw).replace(/^\uFEFF/u, "").trim());
   } catch {
     return null;
   }

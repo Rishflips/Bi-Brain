@@ -115,6 +115,7 @@ describe("bibrain recall", () => {
       const r = await run("recall", [], input, dir);
       expect(r).toMatchObject({ status: 0, stdout: '{"v":1,"context":""}', stderr: "" });
     }
+    expect(f.calls).toHaveLength(0);
     // A prompt far beyond the cap: either the 200 ms stdin cap ends the read first (nothing sent) or it arrives whole and is cut to 500 code points. Both end in the same output.
     const big = await run("recall", [], JSON.stringify({ v: 1, prompt: "what colour did we pick " + "x".repeat(2 * 1024 * 1024), session: "s" }), dir);
     expect(big.status).toBe(0);
@@ -131,6 +132,31 @@ describe("bibrain recall", () => {
     const r2 = await run("recall", [], JSON.stringify({ v: 1, prompt: "what colour did we pick for the launch", session: "s" }), dataDir(`http://127.0.0.1:${f.port}`));
     expect(r2).toMatchObject({ status: 0, stdout: '{"v":1,"context":""}' });
     expect(r2.ms).toBeLessThan(1900);
+  });
+});
+
+describe("failures stay silent", () => {
+  const safeRecall = '{"v":1,"context":""}';
+  it.each([500, 401])("prints the safe output and exits 0 when the server answers %i", async (code) => {
+    const f = await fake((_req: any, res: any) => {
+      res.writeHead(code, { "Content-Type": "application/json" });
+      res.end("{}");
+    });
+    const dir = dataDir(`http://127.0.0.1:${f.port}`);
+    const a = await run("recall", [], JSON.stringify({ v: 1, prompt: "what colour did we pick for the launch", session: "s" }), dir);
+    expect(a).toMatchObject({ status: 0, stdout: safeRecall, stderr: "" });
+    const b = await run("note", [], JSON.stringify({ v: 1, reply: "Decided: a: b", session: "s" }), dir);
+    expect(b).toMatchObject({ status: 0, stdout: '{"v":1}', stderr: "" });
+    expect(f.calls).toHaveLength(2);
+  });
+  it("prints the safe output and exits 0 without leaking when the key file is missing", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "bibrain-contract-"));
+    cleanup.push(() => rmSync(dir, { recursive: true, force: true }));
+    const a = await run("recall", [], JSON.stringify({ v: 1, prompt: "what colour did we pick for the launch", session: "s" }), dir);
+    expect(a).toMatchObject({ status: 0, stdout: safeRecall, stderr: "" });
+    const b = await run("note", [], JSON.stringify({ v: 1, reply: "Decided: a: b", session: "s" }), dir);
+    expect(b).toMatchObject({ status: 0, stdout: '{"v":1}', stderr: "" });
+    for (const out of [a.stdout, a.stderr, b.stdout, b.stderr]) expect(out).not.toMatch(/f{16}|agent-keys/);
   });
 });
 
@@ -152,6 +178,14 @@ describe("bibrain note", () => {
     const continued = await run("note", [], JSON.stringify({ v: 1, reply: "Decided: x: y", session: "B", continued: true }), dir);
     expect(continued.stdout).toBe('{"v":1}');
     expect(f.calls).toHaveLength(1);
+  });
+  it("names the client hermes when asked", async () => {
+    const f = await fake(saved);
+    const dir = dataDir(`http://127.0.0.1:${f.port}`);
+    const r = await run("note", ["--client", "hermes"], JSON.stringify({ v: 1, reply: "Decided: a: b", session: "H" }), dir);
+    expect(r).toMatchObject({ status: 0, stdout: '{"v":1}' });
+    expect(f.calls).toHaveLength(1);
+    expect(f.calls[0].body.client).toBe("hermes");
   });
   it("prints {\"v\":1} and exits 0 with no call for prose, a next step alone, a secret, bad JSON and no stdin", async () => {
     const f = await fake(saved);
