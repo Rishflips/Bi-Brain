@@ -162,9 +162,18 @@ test("Hermes is set up by hand: the steps name the HTTPS domain, the snippets ca
   expect(key).toMatch(/^[0-9a-f]{64}$/);
   for (const id of ["hermes-config", "hermes-env"]) expect(await dialog.getByTestId(id).textContent()).not.toContain(key);
   // The Hermes copy buttons answer like the others: a notice when it works, a plain message when it does not.
-  await page.evaluate(() => { Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText: async () => undefined } }); });
+  await page.evaluate(() => { (window as unknown as { __copied: string[] }).__copied = []; Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText: async (t: string) => { (window as unknown as { __copied: string[] }).__copied.push(t); } } }); });
   await dialog.getByRole("button", { name: "Copy the two lines" }).click();
   await expect(dialog.getByText("The two lines copied.")).toBeVisible();
+  const copiedEnv = await page.evaluate(() => (window as unknown as { __copied: string[] }).__copied.at(-1));
+  expect(copiedEnv).toBe("BRAIN_AGENT_TOKEN=<paste the key here>" + String.fromCharCode(10) + "BRAIN_API_URL=https://your-bibrain-domain.example" + String.fromCharCode(10));
+  expect(copiedEnv).not.toContain(key);
+  await dialog.getByRole("button", { name: "Copy the config" }).click();
+  await expect(dialog.getByText("The config copied.")).toBeVisible();
+  const copiedYaml = await page.evaluate(() => (window as unknown as { __copied: string[] }).__copied.at(-1));
+  expect(copiedYaml).toBe((await dialog.getByTestId("hermes-config").textContent()) ?? "");
+  expect(copiedYaml).toContain("${BRAIN_AGENT_TOKEN}");
+  expect(copiedYaml).not.toContain(key);
   await page.evaluate(() => { Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText: async () => { throw new Error("denied"); } } }); });
   await dialog.getByRole("button", { name: "Copy the config" }).click();
   await expect(dialog.getByText("Copying did not work. Select the text above and copy it by hand.")).toBeVisible();

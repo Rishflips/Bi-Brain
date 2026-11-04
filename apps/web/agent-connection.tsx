@@ -156,7 +156,6 @@ export function AgentSetupGuide({
             </li>
           </>
         ) : null}
-        {hermes && copyNote ? <li><p role="status" className="muted">{copyNote}</p></li> : null}
         {client === "other" ? (
           <li>
             <div>
@@ -195,6 +194,7 @@ export function AgentSetupGuide({
         </li>
         </>) : null}
       </ol>
+      {hermes && copyNote ? <p role="status" aria-live="polite" className="muted">{copyNote}</p> : null}
       {local ? (
       <details>
         <summary>Review the setup before copying</summary>

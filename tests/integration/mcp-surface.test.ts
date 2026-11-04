@@ -33,6 +33,8 @@ describe("MCP surface v2", () => {
     const { PUSH_FOOTER, PUSH_HEADER, renderPointer } = await import("../../packages/domain/recall-push.ts");
     const { CURSOR_RULE } = await import("../../packages/domain/agents.ts");
     const texts = [SERVER_INSTRUCTIONS, ...Object.values(TOOL_DESCRIPTIONS), PUSH_HEADER("2026-11-05"), PUSH_FOOTER, renderPointer(["Northstar"]), CURSOR_RULE];
+    expect(texts.length).toBeGreaterThan(5);
+    for (const t of texts) expect(t.length).toBeGreaterThan(20);
     for (const t of texts) expect(t).not.toMatch(/(Claude|Codex|Cursor|Hermes|GPT|OpenAI|Anthropic|Gemini|Llama|Nous)/);
   });
 });
