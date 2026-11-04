@@ -1,4 +1,17 @@
-export type AgentClient = "codex" | "claude-code";
+export type AgentClient = "codex" | "claude-code" | "hermes" | "other";
+
+export function clientLabel(client: AgentClient): string {
+  return client === "codex" ? "Codex" : client === "claude-code" ? "Claude Code" : client === "hermes" ? "Hermes" : "your agent";
+}
+
+const HERMES_PLACEHOLDER = "https://your-bibrain-domain.example";
+/** What Hermes needs on its own machine. The address is this BiBrain's HTTPS origin when it has one; a local address is replaced by a placeholder, because another server cannot reach it. Never contains a key. */
+export function hermesSnippet(apiUrl: string) {
+  const address = /^https:\/\//u.test(apiUrl) ? apiUrl.replace(/\/$/u, "") : HERMES_PLACEHOLDER;
+  const yaml = ["mcp_servers:", "  bibrain:", `    url: "${address}/api/v1/agent/mcp"`, "    headers:", '      Authorization: "Bearer ${BRAIN_AGENT_TOKEN}"', "    tools:", "      prompts: false", "      resources: false", ""].join("\n");
+  const env = `BRAIN_AGENT_TOKEN=<paste the key here>\nBRAIN_API_URL=${address}\n`;
+  return { address, yaml, env };
+}
 
 export function agentSetupCommand(client: AgentClient, apiUrl: string) {
   const shared = `$env:BRAIN_AGENT_TOKEN = Read-Host "Paste the BiBrain connection key"\n$env:BRAIN_API_URL = "${apiUrl}"`;
@@ -47,6 +60,20 @@ export function AgentClientPicker({
             <small>Use the same selected memory in this project.</small>
           </span>
         </label>
+        <label className="connection-choice">
+          <input type="radio" name="agent-client" value="hermes" checked={value === "hermes"} onChange={() => onChange("hermes")} />
+          <span>
+            <strong>Hermes Agent (on a server)</strong>
+            <small>Recall before each turn and a note after it, through a small plugin.</small>
+          </span>
+        </label>
+        <label className="connection-choice">
+          <input type="radio" name="agent-client" value="other" checked={value === "other"} onChange={() => onChange("other")} />
+          <span>
+            <strong>Another agent</strong>
+            <small>Anything that can call an address or run a command.</small>
+          </span>
+        </label>
       </div>
     </fieldset>
   );
@@ -69,7 +96,8 @@ export function AgentSetupGuide({
   onCopySetup: () => void;
   onDone: () => void;
 }) {
-  const clientName = client === "codex" ? "Codex" : "Claude Code";
+  const clientName = clientLabel(client);
+  const local = client === "codex" || client === "claude-code";
   return (
     <div className="connection-setup" data-ui="agent-setup-guide">
       <div className="connection-created" role="status">
@@ -93,6 +121,40 @@ export function AgentSetupGuide({
             </button>
           </div>
         </li>
+        {client === "hermes" ? (
+          <>
+            <li>
+              <div>
+                <span className="step-label">On the Hermes server, put two lines in ~/.hermes/.env</span>
+                <p>Hermes usually runs on a server next to a self-hosted BiBrain, so the address is your BiBrain's HTTPS domain, not this computer.</p>
+                <pre data-testid="hermes-env">{hermesSnippet(apiUrl).env}</pre>
+                <button type="button" onClick={() => void navigator.clipboard.writeText(hermesSnippet(apiUrl).env)} disabled={busy}>Copy the two lines</button>
+              </div>
+            </li>
+            <li>
+              <div>
+                <span className="step-label">Add BiBrain's tools to ~/.hermes/config.yaml</span>
+                <pre data-testid="hermes-config">{hermesSnippet(apiUrl).yaml}</pre>
+                <button type="button" onClick={() => void navigator.clipboard.writeText(hermesSnippet(apiUrl).yaml)} disabled={busy}>Copy the config</button>
+              </div>
+            </li>
+            <li>
+              <div>
+                <span className="step-label">Turn on recall and session notes</span>
+                <p>Copy the folder <code>integrations/hermes/bibrain</code> from BiBrain to <code>~/.hermes/plugins/bibrain</code> on the Hermes server, then run <code>hermes plugins enable bibrain</code>. It sends the first 500 characters of each turn and, after a reply, only its Decided, Open question and Next step lines. It never blocks a turn.</p>
+              </div>
+            </li>
+          </>
+        ) : null}
+        {client === "other" ? (
+          <li>
+            <div>
+              <span className="step-label">Connect it one of three ways</span>
+              <p>Tools: point its MCP setting at <code>{apiUrl}/api/v1/agent/mcp</code> with the key as a bearer header, or run BiBrain's local connector. Recall and notes: call <code>/api/v1/agent/recall-push</code> and <code>/api/v1/agent/session-note</code>, or, on this computer, <code>bibrain recall</code> and <code>bibrain note</code> with a line of JSON. The exact shapes are in docs/CONNECT_ANY_AGENT.md in the BiBrain folder.</p>
+            </div>
+          </li>
+        ) : null}
+        {local ? (<>
         <li>
           <div>
             <span className="step-label">Open a private PowerShell here</span>
@@ -120,7 +182,9 @@ export function AgentSetupGuide({
             </p>
           </div>
         </li>
+        </>) : null}
       </ol>
+      {local ? (
       <details>
         <summary>Review the setup before copying</summary>
         <pre data-testid="agent-setup-command">
@@ -131,6 +195,7 @@ export function AgentSetupGuide({
           Connections whenever you finish.
         </p>
       </details>
+      ) : null}
       <button type="button" onClick={onDone}>
         Done
       </button>

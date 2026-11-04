@@ -96,7 +96,7 @@ export function ConnectionsView({ api, projects, projectId, grants, onChanged, o
         ))}
         <section className="cx-tile" aria-labelledby="cx-other-h">
           <h2 id="cx-other-h">Any other agent</h2>
-          <p className="tv-faint">Copy a handoff of one project and paste it in. It gives no ongoing access.</p>
+          <p className="tv-faint">Hermes and any other agent connect by hand. A copied handoff of one project gives no ongoing access.</p>
           <ConnectionList api={api} grants={otherGrants} projects={projects} onChanged={changed} />
           <div className="tv-actions">
             <button type="button" className="tv-btn tv-sm" onClick={() => onPreviewHandoff(projectId)}>

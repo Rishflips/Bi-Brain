@@ -144,3 +144,26 @@ test("Claude Code gets the server file and the prompt hook, and an existing hook
   expect(readFileSync(join(second, ".claude", "settings.local.json"), "utf8")).toBe("{}\n");
   expect(existsSync(join(second, ".mcp.json"))).toBe(true);
 });
+
+test("Hermes is set up by hand: the steps name the HTTPS domain, the snippets carry no key, and the connection is listed as Hermes", async ({ page }) => {
+  await open(page);
+  const other = tile(page, "Any other agent");
+  await expect(other).toContainText("Hermes and any other agent connect by hand");
+  await other.getByRole("button", { name: "Set up by hand" }).click();
+  const dialog = page.getByRole("dialog", { name: "Connect an agent" });
+  await dialog.getByRole("radio", { name: /Hermes Agent/ }).check();
+  await dialog.getByRole("button", { name: "Create private connection" }).click();
+  await expect(dialog.getByText("Private access is ready")).toBeVisible();
+  await expect(dialog).toContainText("Hermes usually runs on a server next to a self-hosted BiBrain, so the address is your BiBrain's HTTPS domain, not this computer.");
+  await expect(dialog.getByTestId("hermes-config")).toContainText('url: "https://your-bibrain-domain.example/api/v1/agent/mcp"');
+  await expect(dialog.getByTestId("hermes-env")).toContainText("BRAIN_API_URL=https://your-bibrain-domain.example");
+  await expect(dialog).toContainText("hermes plugins enable bibrain");
+  const key = (await dialog.getByTestId("agent-connection-key").textContent())!;
+  expect(key).toMatch(/^[0-9a-f]{64}$/);
+  for (const id of ["hermes-config", "hermes-env"]) expect(await dialog.getByTestId(id).textContent()).not.toContain(key);
+  await dialog.getByRole("button", { name: "Done" }).click();
+  // The new connection lands under Any other agent, waiting for its first call, and the server names it Hermes.
+  await expect(other).toContainText("Waiting for its first call");
+  const connections = (await (await page.request.get("/api/v1/connections")).json()) as { client: string; client_name: string; status: string }[];
+  expect(connections.some((g) => g.client === "hermes" && g.client_name === "Hermes" && g.status === "Not connected")).toBe(true);
+});
