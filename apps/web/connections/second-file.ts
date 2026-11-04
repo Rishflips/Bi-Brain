@@ -49,6 +49,6 @@ export function writebackLabel(grant: Pick<Grant, "client" | "writeback">, file:
   if (file.role === "rule") return "Session notes: by hand (Cursor has no end-of-turn hook)";
   if (!hasStop(file.contents)) return "Session notes: add the Stop entry yourself";
   if (file.state === "exists") return "Session notes: add the hook yourself";
-  if (grant.writeback.notes === 0) return grant.client === "codex" ? "Session notes: on after Codex trusts the hook" : "Session notes: on after your next session";
+  if (grant.writeback.notes === 0) return grant.client === "codex" ? "Session notes: Codex asks you to approve this in /hooks, and again if the hook changes" : "Session notes: on after your next session";
   return `Session notes: ${grant.writeback.notes} saved · last ${shortDate(grant.writeback.last_at!)}`;
 }

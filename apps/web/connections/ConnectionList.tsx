@@ -51,7 +51,9 @@ export function ConnectionList({ api, grants, projects, hint = "", onChanged }: 
                 </p>
                 {g.files
                   .filter((f) => f.role !== "server")
-                  .map((f) => (
+                  .map((f) => {
+                    const stopEntry = stopEntryFor(g.client as AgentClient, f.contents);
+                    return (
                     <Fragment key={f.path}>
                       <p className="tv-faint cx-second">
                         {secondFileLabel(g, f)}
@@ -67,10 +69,10 @@ export function ConnectionList({ api, grants, projects, hint = "", onChanged }: 
                       </p>
                       <p className="tv-faint cx-second">
                         {writebackLabel(g, f)}
-                        {stopEntryFor(g.client as AgentClient, f.contents) && (
+                        {stopEntry && (
                           <>
                             {" "}
-                            <button type="button" className="tv-btn tv-ghost tv-sm" onClick={() => void navigator.clipboard.writeText(stopEntryFor(g.client as AgentClient, f.contents)!)}>
+                            <button type="button" className="tv-btn tv-ghost tv-sm" onClick={() => void navigator.clipboard.writeText(stopEntry)}>
                               Copy
                             </button>
                             <span> {g.client === "claude-code" ? "Paste it into the hooks section of the file, or run /hooks in Claude Code." : "Paste it into the hooks section of the file."}</span>
@@ -78,7 +80,8 @@ export function ConnectionList({ api, grants, projects, hint = "", onChanged }: 
                         )}
                       </p>
                     </Fragment>
-                  ))}
+                  );
+                  })}
                 {g.status !== "Connected" && g.folder && hint && <p className="tv-faint">{hint}</p>}
               </div>
               <button

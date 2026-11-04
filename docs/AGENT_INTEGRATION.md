@@ -59,7 +59,7 @@ What the hook sends: only the marker lines of the reply that just ended (`Decide
 
 What the server keeps: the marker lines only, as an unreviewed agent note the owner can review in Your brain. Decisions arrive as suggestions, never as accepted facts.
 
-Connections says it in plain words: "Session notes: on after your next session" (Claude Code) or "on after Codex trusts the hook" (Codex needs a one-time trust in `/hooks`), then "Session notes: N saved · last {date}". A file written before session notes existed has no `Stop` entry, so the tile reads "Session notes: add the Stop entry yourself" with a Copy button for the exact entry, built from that file's own prompt-hook command. BiBrain never edits the file for it.
+Connections says it in plain words: "Session notes: on after your next session" (Claude Code) or "Codex asks you to approve this in /hooks, and again if the hook changes" (Codex runs a project hook only after the exact hook is approved in `/hooks`), then "Session notes: N saved · last {date}". A file written before session notes existed has no `Stop` entry, so the tile reads "Session notes: add the Stop entry yourself" with a Copy button for the exact entry, built from that file's own prompt-hook command. BiBrain never edits the file for it.
 
 ## Promise levels
 
