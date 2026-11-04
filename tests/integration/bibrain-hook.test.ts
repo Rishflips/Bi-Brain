@@ -7,7 +7,7 @@ import { spawn } from "node:child_process";
 import { detectSecrets } from "../../packages/storage/secrets.ts";
 import { createApp } from "../../apps/server/app.ts";
 import { buildFixture, owner } from "../eval/recall-fixture.ts";
-import { adapterEnv, hookOutput, hookSkipReason, hookStatePath, looksLikeSecret, loopbackApi, noteHookState, parseArgs, parseHookStdin, readHookState, sha256 } from "../../apps/cli/lib.mjs";
+import { adapterEnv, hasMarkerLine, hookEndOutput, hookOutput, hookSkipReason, hookStatePath, looksLikeSecret, loopbackApi, markerLines, noteHookState, noteSessionEnd, parseArgs, parseHookStdin, parseStopStdin, readHookState, sha256, type HookState } from "../../apps/cli/lib.mjs";
 
 const cli = resolve("apps/cli/bibrain.mjs");
 const ID = "1b4e28ba-2fa1-41d2-883f-0016d3cca427";
@@ -261,4 +261,104 @@ describe("bibrain hook", () => {
     const fourth = await ctx("tell me about Marco");
     expect(fourth).not.toContain("current facts and");
   }, 30_000);
+});
+
+const stop = (message: string, session = "sess-1", active = false) => JSON.stringify({ hook_event_name: "Stop", session_id: session, stop_hook_active: active, last_assistant_message: message, cwd: "C:/Users/Ana/Bi Brain", transcript_path: "x" });
+function runEnd(args: string[], stdin: string | null, dir: string) {
+  return new Promise<{ status: number | null; stdout: string; stderr: string }>((done) => {
+    const child = spawn(process.execPath, [cli, "hook-end", ...args, "--connection", ID, "--data", dir], { stdio: [stdin === null ? "ignore" : "pipe", "pipe", "pipe"], env: { ...process.env, BRAIN_DB: join(dir, "brain.sqlite") } });
+    let stdout = "";
+    let stderr = "";
+    child.stdout!.on("data", (d) => (stdout += d));
+    child.stderr!.on("data", (d) => (stderr += d));
+    if (stdin !== null) child.stdin!.end(stdin);
+    child.on("close", (status) => done({ status, stdout, stderr }));
+  });
+}
+const saved = (_req: any, res: any) => {
+  res.writeHead(200, { "Content-Type": "application/json" });
+  res.end(JSON.stringify({ saved: true, source_id: "s1", suggestions: 1, open_questions: 0, duplicate: false }));
+};
+
+describe("hook-end helpers", () => {
+  it("parses a Stop event, keeps only the marker lines from the tail of a long reply, and keeps per-session note hashes without text", () => {
+    expect(parseStopStdin(stop("Open question: x?", "s", true))).toEqual({ session_id: "s", message: "Open question: x?", active: true });
+    expect(parseStopStdin('{"hook_event_name":"Stop","session_id":"s"}')).toBeNull();
+    expect(parseStopStdin("nope")).toBeNull();
+    expect(hasMarkerLine("done\n- **Decided: a: b**")).toBe(true);
+    expect(hasMarkerLine("I decided nothing")).toBe(false);
+    // The marker lines sit at the end of a long reply; the prose before them never travels.
+    const long = "prose ".repeat(2000) + "\n- **Decided: lease length: 90 seconds**\nOpen question: retry twice?\nNext step: run it.\nNext step: ignored second one.";
+    expect(markerLines(long)).toBe("Decided: lease length: 90 seconds\nOpen question: retry twice?\nNext step: run it.");
+    expect(markerLines("Next step: alone is prose")).toBeNull();
+    expect(markerLines("All done.")).toBeNull();
+    expect(markerLines("```\nDecided: quoted: in a fence\n```\nOpen question: real?")).toBe("Open question: real?");
+    expect(markerLines(`Decided: long: ${"x".repeat(301)}\nOpen question: kept?`)).toBe("Open question: kept?");
+    expect(Array.from(markerLines(Array.from({ length: 10 }, (_, i) => `Open question: ${"é".repeat(290)} ${i}?`).join("\n"))!).length).toBeLessThanOrEqual(4000);
+    let state: HookState = { sessions: {} };
+    for (let i = 0; i < 15; i++) state = noteSessionEnd(state, sha256("s"), sha256(`m${i}`), 1000 + i);
+    expect(state.sessions[sha256("s")].notes).toHaveLength(12);
+    expect(JSON.stringify(state)).not.toContain("m1");
+    // A prompt push in the same session keeps the note hashes and the digest flag.
+    state = noteHookState(state, sha256("s"), ["id1"], 2000, true);
+    expect(state.sessions[sha256("s")].notes).toHaveLength(12);
+    expect(state.sessions[sha256("s")].digested).toBe(true);
+    state = noteSessionEnd(state, sha256("s"), sha256("m99"), 3000);
+    expect(state.sessions[sha256("s")].hashes).toEqual([sha256("id1")]);
+    expect(state.sessions[sha256("s")].digested).toBe(true);
+    expect(hookEndOutput()).toBe("{}");
+  });
+});
+
+describe("bibrain hook-end", () => {
+  it("posts only the marker lines, once per session, prints {}, exits 0, and never posts a continued turn or a repeat", async () => {
+    const f = await fake(saved);
+    const dir = dataDir(`http://127.0.0.1:${f.port}`);
+    const message = "Done with the queue work, here is the summary nobody should store.\nDecided: lease length: 90 seconds\nNext step: run the recovery test.";
+    const kept = "Decided: lease length: 90 seconds\nNext step: run the recovery test.";
+    const r = await runEnd(["claude-code"], stop(message, "session-A"), dir);
+    expect(r).toMatchObject({ status: 0, stdout: "{}", stderr: "" });
+    expect(f.calls).toHaveLength(1);
+    expect(f.calls[0].headers.authorization).toBe(`Bearer ${"f".repeat(64)}`);
+    expect(f.calls[0].body).toEqual({ session_id: sha256("session-A"), client: "claude-code", text: kept });
+    expect(JSON.stringify(f.calls[0].body)).not.toContain("nobody should store");
+    const state = JSON.parse(readFileSync(join(dir, "hook-state", `${ID}.json`), "utf8"));
+    expect(state.sessions[sha256("session-A")].notes).toEqual([sha256(kept)]);
+    expect(readFileSync(join(dir, "hook-state", `${ID}.json`), "utf8")).not.toContain("lease");
+    expect((await runEnd(["claude-code"], stop(message, "session-A"), dir)).stdout).toBe("{}");
+    expect((await runEnd(["codex"], stop(message, "session-B", true), dir)).stdout).toBe("{}");
+    expect(f.calls).toHaveLength(1);
+  });
+  it("stays quiet without a decision or question line, on secrets in the reply or in the kept lines, on bad stdin, when the server is down, and past twelve notes", async () => {
+    const f = await fake(saved);
+    const dir = dataDir(`http://127.0.0.1:${f.port}`);
+    for (const [input, why] of [
+      [stop("All done, nothing to record."), "prose"],
+      [stop("Next step: run the tests."), "next step alone"],
+      [stop("Decided: api key: sk-proj-abcdefghijklmnopqrstuvwxyz123456"), "secret in the kept line"],
+      [stop("export password = hunter2hunter2hunter2\nOpen question: safe?"), "secret in the reply"],
+      ["not json", "bad stdin"],
+      [JSON.stringify({ hook_event_name: "UserPromptSubmit", prompt: "Open question: x?", session_id: "s" }), "wrong event"],
+    ] as const) {
+      const r = await runEnd(["claude-code"], input, dir);
+      expect(r.status, why).toBe(0);
+      expect(r.stdout, why).toBe("{}");
+    }
+    expect(f.calls).toHaveLength(0);
+    for (let i = 0; i < 12; i++) await runEnd(["codex"], stop(`Open question: item ${i}?`, "session-C"), dir);
+    expect(f.calls).toHaveLength(12);
+    await runEnd(["codex"], stop("Open question: one too many?", "session-C"), dir);
+    expect(f.calls).toHaveLength(12);
+    f.server.close();
+    const down = await runEnd(["codex"], stop("Open question: with the server down?", "session-D"), dir);
+    expect(down).toMatchObject({ status: 0, stdout: "{}" });
+  });
+  it("finishes inside its budget on a very long reply", async () => {
+    const f = await fake(saved);
+    const dir = dataDir(`http://127.0.0.1:${f.port}`);
+    const started = Date.now();
+    await runEnd(["claude-code"], stop("é".repeat(200_000) + "\nOpen question: at the very end?"), dir);
+    expect(Date.now() - started).toBeLessThan(4000);
+    expect(f.calls[0].body.text).toBe("Open question: at the very end?");
+  });
 });

@@ -7,6 +7,7 @@ import { Brain } from "../../packages/domain/service.ts";
 import { createApp } from "../../apps/server/app.ts";
 import { MARKER_LINE, SESSION_NOTES_PER_SESSION, parseSessionNote } from "../../packages/domain/session-note.ts";
 import type { Principal } from "../../packages/contracts/index.ts";
+import { hasMarkerLine, markerLines } from "../../apps/cli/lib.mjs";
 
 const owner: Principal = { kind: "owner" };
 let cleanup: (() => unknown)[] = [];
@@ -195,5 +196,16 @@ describe("Brain.sessionNote", () => {
     const post = () => app.inject({ method: "POST", url: "/api/v1/agent/session-note", headers: { host: "127.0.0.1:4317", authorization: `Bearer ${grant.token}` }, payload: { session_id: session, client: "codex", text: "All done." } });
     for (let i = 0; i < 60; i++) expect((await post()).statusCode).toBe(200);
     expect((await post()).statusCode).toBe(429);
+  });
+  it("the CLI's marker check and its kept lines equal the domain's", () => {
+    for (const s of [reply, "plain prose", "- Open question: x", "**Next step:** y", "  question: z", "decidedly not"]) expect(hasMarkerLine(s)).toBe(MARKER_LINE.test(s));
+    // What the CLI posts is exactly what the server would keep: parsing the kept lines again changes nothing.
+    const kept = markerLines(reply)!;
+    expect(parseSessionNote(kept)).toEqual(parseSessionNote(reply));
+    expect(markerLines("Next step: alone")).toBeNull();
+    expect(parseSessionNote("Next step: alone")).toBeNull();
+    // Fenced lines are skipped on both sides.
+    const fenced = "```\nDecided: a: b\n```\nOpen question: real?";
+    expect(parseSessionNote(markerLines(fenced)!)).toEqual(parseSessionNote(fenced));
   });
 });
