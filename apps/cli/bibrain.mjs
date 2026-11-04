@@ -4,7 +4,8 @@ import { appendFileSync, existsSync, readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawn, spawnSync } from "node:child_process";
-import { HOOK_BUDGET_MS, HOOK_CLIENTS, HOOK_END_BUDGET_MS, HOOK_END_PER_SESSION, HOOK_PROMPT_MAX, HOOK_STDIN_MS, adapterEnv, browserCommand, dataDirFor, firstCodePoints, hasMarkerLine, hookEndOutput, hookOutput, hookSkipReason, hookStatePath, keyFilePath, looksLikeSecret, loopbackApi, markerLines, noteHookState, noteSessionEnd, parseArgs, parseHookStdin, parseStopStdin, readHookState, sha256, writeHookState } from "./lib.mjs";
+import { HOOK_CLIENTS, HOOK_STDIN_MS, adapterEnv, browserCommand, dataDirFor, hookEndOutput, hookOutput, keyFilePath, parseArgs, parseHookStdin, parseStopStdin } from "./lib.mjs";
+import { genericClient, noteOutput, parseNoteInput, parseRecallInput, postNote, pushRecall, recallOutput } from "./contract.mjs";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..");
 // Read the same .env the server reads, so the port, data folder and installation
@@ -177,30 +178,9 @@ async function hook() {
     const raw = await readStdin(HOOK_STDIN_MS);
     if (raw === null) return;
     const event = parseHookStdin(raw);
-    if (!event || hookSkipReason(event.prompt)) return;
-    const file = keyFilePath(String(flags.data ?? ""), String(flags.connection ?? ""));
-    const { api, key } = JSON.parse(readFileSync(file, "utf8"));
-    if (typeof key !== "string") return;
-    const origin = loopbackApi(api);
-    const statePath = hookStatePath(String(flags.data), String(flags.connection));
-    const state = readHookState(statePath);
-    const sessionHash = sha256(event.session_id);
-    const session = state.sessions[sessionHash];
-    // performance.timeOrigin is fractional and AbortSignal.timeout needs an integer.
-    const remaining = Math.max(50, Math.floor(HOOK_BUDGET_MS - (Date.now() - startedAt)));
-    const res = await fetch(`${origin}/api/v1/agent/recall-push`, {
-      method: "POST",
-      headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
-      body: JSON.stringify({ prompt: firstCodePoints(event.prompt, HOOK_PROMPT_MAX), session_id: sessionHash, first_prompt: !session?.digested, seen: session?.hashes ?? [], client }),
-      signal: AbortSignal.timeout(remaining),
-      redirect: "error",
-    });
-    if (!res.ok) return;
-    const body = await res.json();
-    if (!body || typeof body !== "object" || !["full", "pointer", "none"].includes(body.level) || typeof body.text !== "string") return;
-    const ids = Array.isArray(body.hit_ids) ? body.hit_ids.filter((x) => typeof x === "string") : [];
-    writeHookState(statePath, noteHookState(state, sessionHash, ids, Date.now(), body.digest === true));
-    if (body.text) process.stdout.write(hookOutput(body.text));
+    if (!event) return;
+    const text = await pushRecall({ prompt: event.prompt, sessionId: event.session_id, client, dataDir: String(flags.data ?? ""), connectionId: String(flags.connection ?? ""), startedAt });
+    if (text) process.stdout.write(hookOutput(text));
   } catch {
     /* silent by design */
   }
@@ -215,35 +195,40 @@ async function hookEnd() {
     const raw = await readStdin(HOOK_STDIN_MS);
     if (raw === null) return;
     const event = parseStopStdin(raw);
-    if (!event || event.active || !hasMarkerLine(event.message) || looksLikeSecret(event.message)) return;
-    // Only the marker lines travel; the rest of the reply stays here.
-    const text = markerLines(event.message);
-    if (text === null || looksLikeSecret(text)) return;
-    const file = keyFilePath(String(flags.data ?? ""), String(flags.connection ?? ""));
-    const { api, key } = JSON.parse(readFileSync(file, "utf8"));
-    if (typeof key !== "string") return;
-    const origin = loopbackApi(api);
-    const statePath = hookStatePath(String(flags.data), String(flags.connection));
-    const state = readHookState(statePath);
-    // A client that sends no session id shares one bucket (and its per-session note cap) across those turns.
-    const sessionHash = sha256(event.session_id);
-    const messageHash = sha256(text);
-    const notes = state.sessions[sessionHash]?.notes ?? [];
-    if (notes.includes(messageHash) || notes.length >= HOOK_END_PER_SESSION) return;
-    const remaining = Math.max(50, Math.floor(HOOK_END_BUDGET_MS - (Date.now() - startedAt)));
-    const res = await fetch(`${origin}/api/v1/agent/session-note`, {
-      method: "POST",
-      headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
-      body: JSON.stringify({ session_id: sessionHash, client, text }),
-      signal: AbortSignal.timeout(remaining),
-      redirect: "error",
-    });
-    if (!res.ok) return;
-    writeHookState(statePath, noteSessionEnd(state, sessionHash, messageHash, Date.now()));
+    if (!event) return;
+    await postNote({ message: event.message, active: event.active, sessionId: event.session_id, client, dataDir: String(flags.data ?? ""), connectionId: String(flags.connection ?? ""), startedAt });
   } catch {
     /* silent by design */
   } finally {
     process.stdout.write(hookEndOutput());
+    process.exitCode = 0;
+  }
+}
+
+// The generic contract (bibrain-agent/1): { v: 1, prompt, session } in, { v: 1, context } out, always, exit 0 always.
+async function recall() {
+  let text = "";
+  try {
+    const raw = await readStdin(HOOK_STDIN_MS);
+    const input = raw === null ? null : parseRecallInput(raw);
+    if (input) text = await pushRecall({ prompt: input.prompt, sessionId: input.session, client: genericClient(flags.client), dataDir: String(flags.data ?? ""), connectionId: String(flags.connection ?? ""), startedAt });
+  } catch {
+    text = "";
+  } finally {
+    process.stdout.write(recallOutput(text));
+    process.exitCode = 0;
+  }
+}
+
+async function note() {
+  try {
+    const raw = await readStdin(HOOK_STDIN_MS);
+    const input = raw === null ? null : parseNoteInput(raw);
+    if (input) await postNote({ message: input.reply, active: input.continued, sessionId: input.session, client: genericClient(flags.client), dataDir: String(flags.data ?? ""), connectionId: String(flags.connection ?? ""), startedAt });
+  } catch {
+    /* silent by design */
+  } finally {
+    process.stdout.write(noteOutput());
     process.exitCode = 0;
   }
 }
@@ -255,6 +240,8 @@ const help = `bibrain: start BiBrain and connect agents.
   npx --no-install bibrain open              Open the running BiBrain signed in
   npx --no-install bibrain hook <agent>      Used by the agent's prompt hook; prints evidence for one prompt
   npx --no-install bibrain hook-end <agent>  Used by the agent's end-of-turn hook; proposes a session note
+  npx --no-install bibrain recall            Any agent: {"v":1,"prompt":…,"session":…} in, {"v":1,"context":…} out
+  npx --no-install bibrain note              Any agent: {"v":1,"reply":…,"session":…} in, {"v":1} out
   npx --no-install bibrain help              Show this help
 
 Run these from inside the BiBrain folder. --no-install stops npx from
@@ -270,6 +257,8 @@ try {
     await openSignedIn();
   } else if (command === "hook") await hook();
   else if (command === "hook-end") await hookEnd();
+  else if (command === "recall") await recall();
+  else if (command === "note") await note();
   else if (command === "connect") connect();
   else process.stdout.write(help + "\n");
 } catch (error) {
