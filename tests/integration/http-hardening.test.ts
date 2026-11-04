@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { Storage } from "../../packages/storage/index.ts";
 import { Brain } from "../../packages/domain/service.ts";
 import { createApp } from "../../apps/server/app.ts";
+import { canonical, hash } from "../../packages/domain/logic.ts";
 import { ManagedRuntime } from "../../packages/runtime/managed.ts";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -96,6 +97,8 @@ describe("HTTP hardening", () => {
     path.replace("/api/", "/%61pi/"),
     path.replace("/api/", "/%61%70%69/"),
     path.replace("/v1/", "/%76%31/"),
+    path.replace("/api/v1/", "/api%2Fv1/"),
+    path.replace("/api/v1/", "/api/v1%2f"),
     path.replace(/\/([a-z])([a-z-]*)$/, (_m, c: string, rest: string) => `/%${c.charCodeAt(0).toString(16)}${rest}`),
     path.replace(/\/([a-z])([a-z-]*)$/, (_m, c: string, rest: string) => `/%${c.charCodeAt(0).toString(16).toUpperCase()}${rest}`),
   ];
@@ -120,10 +123,34 @@ describe("HTTP hardening", () => {
     // The plain paths keep their gate results.
     expect((await app.inject({ url: "/api/v1/today", headers: host })).statusCode).toBe(401);
     expect((await app.inject({ url: "/api/v1/today", headers })).statusCode).toBe(200);
-    // An encoded reserved character stays encoded for the router too, so it only ever reaches a parameter.
-    const reserved = await app.inject({ url: "/api/v1/sources/a%2Fb", headers: host });
-    expect(reserved.statusCode).toBe(401);
-    expect((await app.inject({ url: "/api/v1/sources/a%2Fb", headers })).statusCode).toBe(404);
+    // An encoded slash is refused wherever it appears in the path.
+    expect((await app.inject({ url: "/api/v1/sources/a%2Fb", headers })).statusCode).toBe(400);
+    // Escapes that cannot spell a gate prefix pass through to the router and the gates as usual.
+    expect((await app.inject({ url: "/api/v1/sources/a%20b%C3%A9", headers: host })).statusCode).toBe(401);
+    expect((await app.inject({ url: "/api/v1/sources/a%20b%C3%A9", headers })).statusCode).toBe(404);
+    expect((await app.inject({ url: "/api/v1/sources/a%20b", headers: { ...headers, "sec-fetch-mode": "navigate" } })).statusCode).toBe(403);
+  });
+
+  it("opens an imported project and source whose ids hold a space and a non-ASCII character", async () => {
+    const { app, headers } = await paired();
+    const projectId = "Café notes 2024";
+    const sourceId = "note ü 1";
+    const at = "2026-01-02T03:04:05.000Z";
+    const payload = {
+      projects: [{ id: projectId, title: "Café notes", created_at: at }],
+      sources: [{ id: sourceId, project_id: projectId, version: 1, title: "First note", body: "The café opens at nine.", visibility: "project", state: "active", captured_at: at, origin: "import" }],
+      entities: [],
+    };
+    const manifest = { format_version: 1, payload, checksum: hash(canonical(payload)) };
+    const preview = await app.inject({ method: "POST", url: "/api/v1/imports/preview", headers, payload: manifest });
+    expect(preview.statusCode).toBe(200);
+    expect(preview.json().conflicts).toEqual([]);
+    expect((await app.inject({ method: "POST", url: `/api/v1/imports/${preview.json().id}/apply`, headers, payload: {} })).statusCode).toBe(200);
+    const project = await app.inject({ url: `/api/v1/brain/projects/${encodeURIComponent(projectId)}`, headers });
+    expect(project.statusCode).toBe(200);
+    const source = await app.inject({ url: `/api/v1/sources/${encodeURIComponent(sourceId)}`, headers });
+    expect(source.statusCode).toBe(200);
+    expect(JSON.stringify(source.json())).toContain("The café opens at nine.");
   });
 
   it("refuses encoded spellings of API paths before any gate, when self-hosted over HTTPS", async () => {

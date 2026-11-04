@@ -54,7 +54,7 @@ Owner-captured content (pasted, imported, or the files of Part B) is unchanged i
 
 | Item | Behaviour after this plan | Pinned by |
 | --- | --- | --- |
-| L1 | A top-level browser navigation (`Sec-Fetch-Mode: navigate`) to any `/api/v1/` path other than `/api/v1/health/live` is refused with 403 and a plain sentence. Page fetches, agent calls and the Docker healthcheck send no such header and are unchanged. | HTTP test |
+| L1 | A top-level browser navigation (`Sec-Fetch-Mode: navigate`) to any `/api/v1/` path other than the read-only health checks `/api/v1/health/live` and `/api/v1/health/ready` is refused with 403 and a plain sentence. Page fetches, agent calls and the Docker healthcheck send no such header and are unchanged. | HTTP test |
 | L3 | `Content-Security-Policy` (unchanged value) and `X-Frame-Options: DENY` are sent on every response in every mode, not only under `NODE_ENV=production`. | HTTP test |
 | L5 | `POST /api/v1/proposals/gate` bounds `Idempotency-Key` through the same helper as every other route, at 192 characters: the stored key carries the 8-character `propose:` prefix inside the shared 200-character bound. A longer key gets a plain 400 before anything is stored. | HTTP test |
 | L6 | `bibrain connect` starts the agent adapter with an allowlisted environment (path, home, temp, locale and certificate variables, plus the two it needs). Provider, billing, sign-in and owner secrets never reach it, and neither do proxy variables, since the adapter only talks to loopback. | CLI test |

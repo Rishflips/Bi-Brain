@@ -39,6 +39,9 @@ const NAVIGABLE_API_PATHS = new Set([
 // bound, so the route accepts keys up to the remainder.
 const GATE_KEY_PREFIX = "propose:";
 
+// A percent-escape of an unreserved character (A-Z a-z 0-9 - . _ ~) or of "/".
+const DISGUISING_ESCAPE = /%(?:3[0-9]|[46][1-9a-f]|[57][0-9a]|2[d-f]|5f|7e)/i;
+
 /** Only the unnormalized path of a request URL, so encoded tricks cannot match. */
 function requestPath(url: string): string {
   const end = url.search(/[?#]/);
@@ -314,17 +317,20 @@ export async function createApp(
       );
     if (deployment.secure)
       reply.header("Strict-Transport-Security", "max-age=31536000");
-    // The gates below compare the raw path. The router matches the path after
-    // decodeURI, so a path that decodeURI would change is refused here and the
-    // two always agree. Encoded reserved characters stay encoded in both.
+    // The gates below compare the raw path; the router matches it after
+    // decodeURI. Every fixed path the gates compare is made only of unreserved
+    // characters and "/", so refusing escapes of exactly those characters (and
+    // malformed escapes) keeps both decisions on the same path. Other escapes,
+    // such as spaces and UTF-8 in imported ids, decode to characters no gate
+    // prefix contains and pass through.
     const rawPath = requestPath(req.url);
-    let routedPath: string | undefined;
+    let wellFormed = true;
     try {
-      routedPath = decodeURI(rawPath);
+      decodeURI(rawPath);
     } catch {
-      routedPath = undefined;
+      wellFormed = false;
     }
-    if (routedPath !== rawPath)
+    if (!wellFormed || DISGUISING_ESCAPE.test(rawPath))
       throw new BrainError("INVALID_INPUT", "Request path not allowed.", 400);
     const host = req.headers.host ?? "";
     if (!deployment.allowsHost(host, req.url))
