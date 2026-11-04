@@ -148,18 +148,29 @@ export function TodayView(props: TodayProps) {
               </button>
             </div>
             <div className="tv-step">
-              <span className="tv-step-n">Bring history</span>
-              <h3>Import a folder</h3>
+              <span className="tv-step-n">Two minutes</span>
+              <h3>Bring in what you already have</h3>
               <p>
-                Text and Markdown files. You review what comes in before
-                anything counts as true.
+                Your CLAUDE.md, AGENTS.md and Cursor rules already describe
+                your projects. Pick a project folder; BiBrain reads only those
+                files and shows them before anything is saved. Your agent's
+                own memory folder works too.
               </p>
-              <button
-                className="tv-btn"
-                onClick={() => onNavigate("Connections")}
-              >
-                Import files
-              </button>
+              <label className="tv-btn tv-file">
+                Choose a project folder
+                <input
+                  type="file"
+                  aria-label="Choose a project folder"
+                  multiple
+                  {...({ webkitdirectory: "" } as Record<string, string>)}
+                  onChange={(e) => {
+                    // Copy the list first: resetting the input empties the live FileList.
+                    const files = Array.from(e.target.files ?? []);
+                    e.target.value = "";
+                    if (files.length) void props.onBringIn(files);
+                  }}
+                />
+              </label>
             </div>
           </div>
         </div>

@@ -74,6 +74,8 @@ export type TodayProps = {
   onOpenProject: (projectId: string) => void;
   onNavigate: (to: "Your brain" | "Connections") => void;
   onChanged: () => void | Promise<void>;
+  /** The empty-state folder pick: the page keeps only agent instruction files and previews them before anything is saved. */
+  onBringIn: (files: File[]) => Promise<void>;
   /** null: not loaded yet. "unavailable": the last check failed. */
   onBriefCount?: (n: number | null | "unavailable") => void;
 };

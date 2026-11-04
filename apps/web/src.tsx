@@ -33,6 +33,7 @@ import {
 import "@fontsource-variable/manrope/wght.css";
 import "./style.css";
 import "./refinement.css";
+import { CONTEXT_FILE_MAX_BYTES, isContextFile } from "../../packages/importers/context.ts";
 let csrf = "";
 
 function NavGlyph({ name }: { name: string }) {
@@ -769,8 +770,8 @@ function App() {
     setAdapterPreview(null);
   }
   async function previewAdapter(
-    kind: "folder" | "chat",
-    list?: FileList | null,
+    kind: "folder" | "chat" | "context",
+    list?: FileList | File[] | null,
     dropped?: { file: File; path: string }[],
   ) {
     const picked =
@@ -778,24 +779,62 @@ function App() {
       Array.from(list ?? []).map((file) => ({
         file,
         path:
-          kind === "folder" ? file.webkitRelativePath || file.name : file.name,
+          kind === "context"
+            ? (file.webkitRelativePath || file.name)
+                .split("/")
+                .slice(1)
+                .join("/") || file.name
+            : kind === "folder"
+              ? file.webkitRelativePath || file.name
+              : file.name,
       }));
-    if (!picked.length) return;
-    if (picked.length > 50)
-      throw new Error("Choose at most 50 files per batch.");
-    if (
-      picked.some(({ file }) => file.size > 1048576) ||
-      picked.reduce((sum, { file }) => sum + file.size, 0) > 4 * 1048576
-    )
-      throw new Error(
-        "Each file must be at most 1 MiB and the batch at most 4 MiB.",
-      );
+    // Only recognised instruction files are ever read; everything else stays unread.
+    const kept =
+      kind === "context"
+        ? picked.filter(({ path }) => isContextFile(path))
+        : picked;
+    if (!kept.length) {
+      if (kind === "context" && picked.length)
+        throw new Error(
+          "No instruction files found in that folder. BiBrain looks for CLAUDE.md, AGENTS.md and Cursor rules.",
+        );
+      return;
+    }
+    const warnings: string[] = [];
+    let readable = kept;
+    if (kind === "context") {
+      if (kept.length > 50)
+        throw new Error(
+          "This folder has more than 50 instruction files. Pick a smaller folder.",
+        );
+      readable = kept.filter(({ file, path }) => {
+        if (file.size > CONTEXT_FILE_MAX_BYTES) {
+          warnings.push(`${path}: larger than 1 MiB, skipped`);
+          return false;
+        }
+        return true;
+      });
+      if (readable.reduce((sum, { file }) => sum + file.size, 0) > 4 * 1048576)
+        throw new Error(
+          "These files add up to more than 4 MiB. Pick a smaller folder.",
+        );
+    } else {
+      if (kept.length > 50)
+        throw new Error("Choose at most 50 files per batch.");
+      if (
+        kept.some(({ file }) => file.size > 1048576) ||
+        kept.reduce((sum, { file }) => sum + file.size, 0) > 4 * 1048576
+      )
+        throw new Error(
+          "Each file must be at most 1 MiB and the batch at most 4 MiB.",
+        );
+    }
     const generation = authGeneration;
     const selection = {
       kind,
       project_id: scope || "inbox",
       entries: await Promise.all(
-        picked.map(async ({ file, path }) => ({
+        readable.map(async ({ file, path }) => ({
           path,
           content: await file.text(),
         })),
@@ -805,7 +844,11 @@ function App() {
     // session change during a large read cannot open a stale dialog.
     if (generation !== authGeneration) return;
     setAdapterSelection(selection);
-    setAdapterPreview(await api("/import-adapters/preview", selection));
+    const previewed = await api("/import-adapters/preview", selection);
+    setAdapterPreview({
+      ...previewed,
+      warnings: [...warnings, ...(previewed.warnings ?? [])],
+    });
     if (generation !== authGeneration) return;
     setDialog("adapter-import");
   }
@@ -1077,6 +1120,7 @@ function App() {
               }}
               onNavigate={(to) => setNav(to)}
               onChanged={() => refresh()}
+              onBringIn={(files) => act(() => previewAdapter("context", files))}
               onBriefCount={setBriefCount}
             />
           ) : nav === "Your brain" ? (
@@ -2674,11 +2718,21 @@ function App() {
           ) : null}
           {dialog === "adapter-import" && adapterPreview && adapterSelection ? (
             <Modal error={error} title="Review import" close={close}>
-              <p>
-                {adapterPreview.items.length} text items ready for{" "}
-                {projectName(adapterSelection.project_id)}. Imported
-                conversation messages are saved as evidence, not instructions.
-              </p>
+              {adapterSelection.kind === "context" ? (
+                <p>
+                  {adapterPreview.items.length} agent instruction files ready
+                  for {projectName(adapterSelection.project_id)}. These files
+                  are saved exactly as written, as imported originals. Only
+                  bring in projects you trust.
+                </p>
+              ) : (
+                <p>
+                  {adapterPreview.items.length} text items ready for{" "}
+                  {projectName(adapterSelection.project_id)}. Imported
+                  conversation messages are saved as evidence, not
+                  instructions.
+                </p>
+              )}
               <ul>
                 {adapterPreview.items.slice(0, 50).map((item: any) => (
                   <li key={item.path}>{item.title}</li>

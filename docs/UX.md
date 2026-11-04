@@ -84,7 +84,10 @@ Main content, top to bottom:
   it says "Facts unavailable right now" rather than guessing.
 
 New brain: a welcome with three ways to start (plug in an agent, paste something,
-import a folder). No fictional activity is shown.
+bring in the instruction files a project folder already holds: CLAUDE.md, AGENTS.md,
+Cursor rules and the agent's memory file, previewed before saving and shown as
+Imported in Your brain; a file over the size limit is skipped with a warning, the
+rest import). No fictional activity is shown.
 
 Failed state: the note is saved and the Brief says it could not be checked, with a
 way to try again. Never show success while a job is only queued.
