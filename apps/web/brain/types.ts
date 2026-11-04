@@ -37,6 +37,7 @@ export type Original = {
   captured_at: string;
   from: "you" | "agent" | "import";
   private: boolean;
+  written_by?: { agent: string; reviewed: boolean };
 };
 export type ProjectView = {
   project: { id: string; title: string };

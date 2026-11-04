@@ -40,7 +40,9 @@ export function Originals({ originals, total, onOpenSource, onSave }: Props) {
                   {o.title}
                 </button>
                 <span className="tv-faint">
-                  {FROM[o.from]}
+                  {o.written_by
+                    ? `From ${o.written_by.agent} · ${o.written_by.reviewed ? "reviewed" : "not yet reviewed"}`
+                    : FROM[o.from]}
                   {o.private ? " · Private" : ""}
                   {o.version > 1 ? ` · version ${o.version}` : ""}
                 </span>

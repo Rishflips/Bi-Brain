@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { Storage } from "../../packages/storage/index.ts";
 import { Brain } from "../../packages/domain/service.ts";
 import { REVIEWED_KEY, writtenByLabel } from "../../packages/domain/provenance.ts";
+import { createApp } from "../../apps/server/app.ts";
 import type { Principal } from "../../packages/contracts/index.ts";
 
 const owner: Principal = { kind: "owner" };
@@ -198,5 +199,25 @@ describe("provenance of agent-written originals", () => {
     s.run("INSERT INTO sessions VALUES('old','x','2026-11-01T00:00:00.000Z')");
     b.issueSession();
     expect(s.all("SELECT token_hash FROM sessions").map((r: any) => r.token_hash)).not.toContain("old");
+  });
+
+  it("the page reads the provenance and can mark an agent note reviewed over HTTP", async () => {
+    const { b, agent, grant } = setup();
+    const a = b.agentNote(agent, note);
+    const app = await createApp(b, { pairSecret: "test-code", static: false });
+    cleanup.push(() => void app.close());
+    const paired = await app.inject({ method: "POST", url: "/api/v1/session/pair", headers: { host: "127.0.0.1:4317" }, payload: { secret: "test-code" } });
+    const headers = { host: "127.0.0.1:4317", cookie: paired.headers["set-cookie"]!.toString().split(";")[0], "x-brain-csrf": paired.json().csrf };
+    expect((await app.inject({ url: `/api/v1/sources/${a.source_id}`, headers })).json().written_by).toEqual({ agent: "Codex", reviewed: false });
+    const marked = await app.inject({ method: "POST", url: `/api/v1/sources/${a.source_id}/reviewed`, headers, payload: {} });
+    expect(marked.statusCode).toBe(200);
+    expect(marked.json()).toEqual({ source_id: a.source_id, reviewed_at: "2026-11-03T09:00:00.000Z" });
+    expect((await app.inject({ url: `/api/v1/sources/${a.source_id}`, headers })).json().written_by).toEqual({ agent: "Codex", reviewed: true });
+    const view = (await app.inject({ url: "/api/v1/brain/projects/inbox", headers })).json();
+    expect(view.originals[0]).toMatchObject({ written_by: { agent: "Codex", reviewed: true } });
+    // An agent cannot review on the owner's behalf: an unknown key is refused, and a real agent token is forbidden.
+    expect((await app.inject({ method: "POST", url: `/api/v1/sources/${a.source_id}/reviewed`, headers: { host: "127.0.0.1:4317", authorization: `Bearer ${"f".repeat(64)}` }, payload: {} })).statusCode).toBe(401);
+    const asAgent = await app.inject({ method: "POST", url: `/api/v1/sources/${a.source_id}/reviewed`, headers: { host: "127.0.0.1:4317", authorization: `Bearer ${grant.token}` }, payload: {} });
+    expect(asAgent.statusCode).toBe(403);
   });
 });

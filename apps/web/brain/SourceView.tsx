@@ -7,12 +7,14 @@ import type { Api, Fact, FactHistoryEntry, ProjectView } from "./types.ts";
 
 type Props = {
   api: Api;
-  source: Source;
+  source: Source & { written_by?: { agent: string; reviewed: boolean } };
   quote?: string;
   factId?: string;
   projectTitle: string;
   /** The existing original actions: correct, add a fact, delete, earlier version. */
   actions: ReactNode;
+  /** Called after the owner marks an agent-written original as reviewed. */
+  onReviewed?: () => void | Promise<void>;
 };
 
 const from = (origin: string) =>
@@ -24,7 +26,7 @@ function historyNote(h: FactHistoryEntry, first: boolean) {
   return h.edited_by_owner ? "You edited this" : "Updated";
 }
 
-export function SourceView({ api, source, quote, factId, projectTitle, actions }: Props) {
+export function SourceView({ api, source, quote, factId, projectTitle, actions, onReviewed }: Props) {
   const [facts, setFacts] = useState<Fact[] | null>(null);
   const [history, setHistory] = useState<FactHistoryEntry[] | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -81,10 +83,29 @@ export function SourceView({ api, source, quote, factId, projectTitle, actions }
   return (
     <div className="yb-source">
       <p className="tv-faint">
-        {projectTitle} · {from(source.origin)} · Original version {source.version} ·{" "}
+        {projectTitle} · {source.written_by
+          ? `From ${source.written_by.agent} · ${source.written_by.reviewed ? "reviewed" : "not yet reviewed"}`
+          : from(source.origin)}{" "}
+        · Original version {source.version} ·{" "}
         {source.visibility === "private" ? "Private" : "Shareable within project"}
         {source.state !== "active" ? ` · ${source.state}` : ""}
       </p>
+      {source.written_by && !source.written_by.reviewed && (
+        <p>
+          <button
+            type="button"
+            className="tv-btn tv-sm"
+            onClick={() =>
+              void api(`/sources/${encodeURIComponent(source.id)}/reviewed`, {})
+                .then(() => onReviewed?.())
+                .catch((e) => setError(friendlyError(e)))
+            }
+          >
+            Mark as reviewed
+          </button>
+          <span className="tv-faint"> Reviewed notes can be pushed to your agents as evidence.</span>
+        </p>
+      )}
       <section className="yb-drawer-section" aria-labelledby="yb-src-orig-h">
         <h3 id="yb-src-orig-h" className="yb-eyebrow">
           Original

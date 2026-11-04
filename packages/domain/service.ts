@@ -5087,6 +5087,7 @@ ${q}`);
         decisionHistory: gates.filter(
           (g) => g.data.correction === true && ["accepted", "rejected", "reverted"].includes(g.data.status),
         ),
+        writtenBy: (s) => this.writtenBy(s),
       },
       this.clock(),
     );

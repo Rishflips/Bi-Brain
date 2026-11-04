@@ -687,8 +687,11 @@ export async function createApp(
       .object({ version: z.coerce.number().int().positive().optional() })
       .strict()
       .parse(req.query);
-    return req.brain.source(req.principal, params(req), query.version);
+    return req.brain.sourceView(req.principal, params(req), query.version);
   });
+  app.post("/api/v1/sources/:id/reviewed", (req) =>
+    req.brain.markSourceReviewed(req.principal, params(req)),
+  );
   app.post("/api/v1/sources/:id/versions", (req) =>
     req.brain.editSource(req.principal, params(req), req.body),
   );

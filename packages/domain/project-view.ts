@@ -1,5 +1,6 @@
 import type { Entity, Source } from "../contracts/index.ts";
 import { STALE_DAYS } from "./brief.ts";
+import type { WrittenBy } from "./provenance.ts";
 import { factText, valueText } from "./facts.ts";
 import { findOpenQuestions, type OpenQuestion } from "./questions.ts";
 
@@ -32,6 +33,7 @@ export type OriginalView = {
   captured_at: string;
   from: "you" | "agent" | "import";
   private: boolean;
+  written_by?: WrittenBy;
 };
 export type ProjectView = {
   project: { id: string; title: string };
@@ -53,6 +55,7 @@ export type ProjectViewInput = {
   waiting: number;
   needsDecision: Entity[];
   decisionHistory: Entity[];
+  writtenBy: (s: Source) => WrittenBy | undefined;
 };
 
 export function originFrom(origin: string): OriginalView["from"] {
@@ -103,6 +106,7 @@ export function buildProjectView(input: ProjectViewInput, now: Date): ProjectVie
       captured_at: s.captured_at,
       from: originFrom(s.origin),
       private: s.visibility === "private",
+      ...(input.writtenBy(s) ? { written_by: input.writtenBy(s) } : {}),
     }));
   return {
     project: input.project,

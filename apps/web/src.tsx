@@ -2186,6 +2186,7 @@ function App() {
                 quote={sourceView.quote}
                 factId={sourceView.factId}
                 projectTitle={projectName(source.project_id)}
+                onReviewed={() => void openSource(source.id, sourceView)}
                 actions={
                     <div className="actions">
                       <button

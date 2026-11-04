@@ -144,6 +144,7 @@ state:
   Undo brings it back.
 - Goals shows the real goal for the project and its plan state.
 - Recent originals open the retained source directly.
+- An original written by a connected agent says "From <agent> · not yet reviewed" until the owner presses "Mark as reviewed" on it or rewrites its text; then "From <agent> · reviewed". Keeping a card taken from it keeps that one fact and does not review the note. Until the note is reviewed it is never pushed to an agent as evidence.
 - Preview handoff uses the existing server-built project handoff; it never
   claims to open or message an external agent.
 
