@@ -27,12 +27,21 @@ Browser sessions, agent clients, imported content, model responses, provider net
 | Provider redirect/SSRF         | Backend adapter exposes fixed Dodo operations and origins only; redirects fail; portal and checkout URLs are validated against configured origins/paths         |
 | Billing data leakage           | Persist only opaque provider IDs and normalized status; no raw webhook, email, card data, portal bearer URL, API key or webhook secret in exports/logs/frontend |
 | Stale or refunded entitlement  | Fresh current-provider reads plus sealed authority checks; adverse events trigger recheck; paid failures never block knowledge access/export/deletion           |
+| Agent-written content presented as the owner's | Agent-written originals carry `written_by` in recall, open and context results, are counted in the first-prompt digest, and are labelled in Your brain. Until the owner reviews that note (one per-note action; keeping a derived card is not one), they never appear in a `full` push, a pointer name or the digest's recent list, never raise a push above `pointer`, and are kept out of the Recall help judge. A restored export starts with every such note unreviewed again |
+| Pre-authentication request floods | One limiter bucket per client address, never per unverified cookie or bearer. Behind the configured TLS proxy (only when `BRAIN_PUBLIC_ORIGIN` is set) exactly one hop is trusted for the client address; local mode is unchanged |
+| API opened as a page           | Top-level navigations to `/api/v1/` are refused, except `health/live` and `health/ready`. Frame and content-security headers are sent in every mode             |
+| Disguised request paths        | Paths with a malformed percent-escape, or an escape of an unreserved character or `/`, are refused, so the access checks and the router read the same path      |
+| Oversized or unbounded retry keys | The Idempotency-Key is length-bounded on every route that takes one                                                                                             |
+| Development origins in production | The Vite development origins are allowed only when `NODE_ENV` is not `production`                                                                               |
+| Secrets inherited by the agent adapter | `bibrain connect` starts the adapter with an allow-listed environment only. Provider, billing, sign-in and owner secrets never reach it                         |
 
 ## Local assumptions
 
 Single OS owner. A compromised local user account can access local data; do not claim encryption against that attacker.
 App database does not automatically imply encryption at rest. Document the actual storage protection implemented.
 Remote access is disabled by default. HTTPS reverse proxy configuration is required for supported remote self-hosting.
+Self-host and managed deployments must sit behind exactly one trusted proxy, such as the shipped Caddy. The app trusts that one hop for the client address; with trust on, the request host and protocol follow the forwarded headers (the Host and Origin checks read the raw headers and do not).
+On Windows, file modes are not enforced by the filesystem; keep `data/` under your own user profile on a shared machine.
 
 ## Data sent to providers
 

@@ -20,6 +20,8 @@
 }
 ```
 
+An agent-written original adds `written_by: { agent, reviewed }`; owner-captured originals have no such field. Until the owner reviews it, it is another agent's note, not the owner's statement.
+
 `no_match` is a normal answer, not an error: nothing recorded matched, `hits` is empty and `isError` stays false. An agent should say the topic is not in the brain instead of filling the gap, and an empty result is not proof that something is false. `isError` is set only for transport or authorization failures (for example a revoked connection). `brain_open` returns the full original or fact for an id; with `compare_version` it adds a `compare` block that says what changed between the two versions.
 
 ## Recall push
@@ -41,6 +43,8 @@ Exact lines, from `packages/domain/recall-push.ts`:
 
 On the first prompt of a session that gets a `pointer` or `full` push, the push also carries a digest under 600 characters: the projects the connection can read, counts of current facts and originals, up to three recently captured titles (labelled `Recent:`, newest capture first) and the pointer line. A session that opens with a generic prompt gets no digest on it; the hook keeps asking until a push has actually carried the digest, then never again in that session. The digest is a map of the brain, not evidence. Budgets are measured in code points, so emoji cannot overrun them. Phrasing is always factual statements about what is recorded, never imperatives aimed at the agent, and every outbound text passes secret detection first.
 
+An agent-written original the owner has not reviewed never appears in a `full` push, never raises the level above `pointer`, is kept out of the Recall help judge, and its title is never a pointer name or a `Recent:` entry. The digest counts such originals (`N of them written by agents and not yet reviewed`). Once the owner marks the note reviewed in Your brain or rewrites its text, it is pushed like any other. Keeping a card taken from it keeps that fact only. A restored export brings such notes back unreviewed.
+
 The hook never blocks a prompt. It has a total budget of 1,500 ms (stdin read capped at 200 ms, the server wait at most 900 ms when the optional judge is on), skips prompts shorter than 12 characters, slash, bang or hash commands and anything that looks like a secret, and on any failure or timeout prints nothing. It remembers hashes of the ids already pushed in each of the 20 most recent sessions (300 per session), so a repeated prompt injects nothing new. The server records only a content-free recall log (time, level, counts, latency, never a prompt, id or passage), readable by the owner at `GET /api/v1/recall/log`.
 
 **Better search.** When the owner has chosen Better search (off by default; see `docs/PROVIDERS.md`), the server first asks the worker for the prompt's vector (at most 400 ms, inside the same 1,500 ms budget) and fuses the dense candidates in before any judge call; a hit found by meaning carries `"similar meaning"` in its `why`. If the worker does not answer in time the push is built from words alone. The push level stays term-based: a hit found by meaning alone appears in `brain_recall` results but does not raise the level, with the judge on or off, and the judge is skipped when no candidate was found by words. The `brain_recall` result shape is unchanged (no new field); the content-free recall log notes that Better search ran for that push (`dense: true`, omitted when it did not) and the top cosine among the meaning candidates (`dense_top`, omitted when none passed the floor); a judged push also carries the judge's owner-world and general probabilities and its answered choice (`judge`, omitted when the judge did not run). These numbers feed `npm run calibrate` (see `docs/PROVIDERS.md`). Agents receive no vectors and never see the provider or model.
@@ -61,6 +65,10 @@ Do not market levels 3 or 4 merely because level 2 works.
 Implement a stdio MCP adapter using the official SDK. The adapter forwards requests to the local API with a scoped token. Keep business logic and policy in the server. Stdout is reserved for protocol messages; logs go to stderr with sensitive values redacted.
 
 The local stdio adapter can call an independently hosted HTTPS API using an explicit `BRAIN_API_URL`, keeping the same scoped grant checks. Remote plaintext and redirects are rejected. A hosted HTTP MCP/OAuth transport remains a later integration milestone; see [SELF_HOSTING.md](SELF_HOSTING.md). Native-client compatibility remains separately unverified.
+
+`bibrain connect` starts the adapter with an allow-listed environment only (locating programs, home and temp folders, locale and certificate variables, plus its own API address and key). Provider, billing, sign-in and owner secrets never reach it.
+
+After Add, the preview shows the `.gitignore` lines for the files BiBrain wrote that carry this computer's paths (the server file and the hook file), with a Copy button. It says the lines are already there only when the folder's `.gitignore` lists them. BiBrain never edits `.gitignore`.
 
 ## Historical minimal tool surface (replaced by the seven-tool contract above)
 
