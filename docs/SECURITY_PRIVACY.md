@@ -34,6 +34,8 @@ Browser sessions, agent clients, imported content, model responses, provider net
 | Oversized or unbounded retry keys | The Idempotency-Key is length-bounded on every route that takes one                                                                                             |
 | Development origins in production | The Vite development origins are allowed only when `NODE_ENV` is not `production`                                                                               |
 | Secrets inherited by the agent adapter | `bibrain connect` starts the adapter with an allow-listed environment only. Provider, billing, sign-in and owner secrets never reach it                         |
+| Remote MCP endpoint (`POST /api/v1/agent/mcp`) | Agent keys only (a browser session is refused with 403), POST only, JSON only, one message per request, 256 KiB bodies, 120 requests a minute per client address (this limit replaces the global one on this route). It sits behind the same Host, Origin, path and navigation checks as every route, and each tool call goes through the same HTTP routes with the caller's key and address, so grants and logs are the routes' own. No sessions, no streams, no OAuth |
+| Agent adapters (hooks, `bibrain recall` / `bibrain note`, the Hermes plugin) | One contract, `bibrain-agent/1`, one authorization. Each adapter sends at most 500 code points of prompt and only marker lines of a reply, drops secret-looking text, keeps hashes only, follows no redirects, calls HTTPS or loopback only, ends quietly inside its time budget, and never blocks a turn. The commands call loopback only; a remote harness uses HTTPS |
 
 ## Local assumptions
 

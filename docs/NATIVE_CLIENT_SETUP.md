@@ -190,6 +190,8 @@ exercise the refusal path.
 Use this when the one-step Add is not available (the hosted edition, or a client
 BiBrain does not list), or when you prefer to control each step.
 
+Hermes Agent and any other agent: choose them in the same dialog; the steps and snippets are explained in [Connect any agent](CONNECT_ANY_AGENT.md).
+
 ### Before connecting
 
 1. Start BiBrain with `npm start` and keep it running.

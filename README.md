@@ -204,6 +204,7 @@ Tests use isolated databases, deterministic clocks and clearly synthetic fixture
 | [Design brief](docs/DESIGN_BRIEF.md) and [design system](docs/DESIGN_SYSTEM.md) | Visual identity and accessibility |
 | [Architecture](docs/ARCHITECTURE.md), [Data model](docs/DATA_MODEL.md), [API](docs/API.md) | How the system fits together |
 | [Agent integration](docs/AGENT_INTEGRATION.md) and [native setup](docs/NATIVE_CLIENT_SETUP.md) | Connecting agents |
+| [Connect any agent](docs/CONNECT_ANY_AGENT.md) | The bibrain-agent/1 contract, per-harness snippets, what has run natively |
 | [Providers](docs/PROVIDERS.md) | Sorting help and model providers |
 | [Run locally](docs/LOCAL_RUN.md) and [self-hosting](docs/SELF_HOSTING.md) | Running, backup and restore |
 | [Testing](docs/TESTING.md) and [release](docs/RELEASE.md) | Verification and release gates |

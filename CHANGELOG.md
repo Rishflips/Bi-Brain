@@ -2,6 +2,25 @@
 
 All notable changes to BiBrain are recorded here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [Unreleased]
+
+Works with any agent, Hermes first.
+
+### Added
+- One documented agent contract, `bibrain-agent/1`, returned as `contract` by `GET /api/v1/agent/capabilities`.
+- `bibrain recall` and `bibrain note`: the same recall-before-a-turn and note-after-a-turn as the hooks, with a plain JSON shape on stdin and stdout for any harness on the BiBrain computer.
+- `POST /api/v1/agent/mcp`: the seven tools over MCP Streamable HTTP, for clients that only speak remote MCP.
+- A Hermes Agent plugin (`integrations/hermes/bibrain`) for recall and session notes. `hermes` is now a known connection client.
+- Hermes Agent and Another agent under Connections, Any other agent, Set up by hand, with the HTTPS-domain note in plain words.
+- The Connect any agent guide (`docs/CONNECT_ANY_AGENT.md`) and an honest compatibility matrix.
+
+### Changed
+- The empty Today card says "Your coding agents" instead of naming two of them. The README names the contract and links the guide.
+
+### Security
+- The HTTP MCP endpoint takes agent keys only, POST only, one message per request, 256 KiB bodies and 120 requests a minute per client address.
+- The Hermes plugin never blocks a turn: it runs under its own time limits (1.5 s and 2.5 s), follows no redirects, uses no proxy and is standard library only.
+
 ## [0.1.0] - 2026-11-02
 
 First public release. BiBrain is a local-first second brain that keeps AI coding agents caught up. You save a note, or a connected agent writes one when it finishes work. BiBrain keeps the original, works out what changed, and nothing becomes a fact until you keep it.
