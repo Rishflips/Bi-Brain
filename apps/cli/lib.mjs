@@ -142,7 +142,7 @@ export function hasMarkerLine(text) {
 
 /**
  * The marker lines of a reply, cleaned exactly as the server cleans them (bullet and bold marks off, trimmed; lines inside a ``` fence skipped),
- * at most 10 decisions, 10 questions and 1 next step, each at most 300 characters, joined by newlines and cut to HOOK_END_TEXT_MAX code points.
+ * at most the last 10 decisions, the last 10 questions and the last next step, each at most 300 characters, joined by newlines and cut to HOOK_END_TEXT_MAX code points.
  * Null unless a decision or a question is present. Nothing else in the reply ever leaves the agent's process.
  */
 export function markerLines(text) {
@@ -162,19 +162,20 @@ export function markerLines(text) {
     if (decided) {
       // The same split as the server: the topic ends at the first colon followed by whitespace; the decision after it is capped.
       const m = /^([^:\r\n]{1,120}):\s+(.+)$/u.exec(decided[1].trim());
-      if (m && decisions.length < HOOK_END_DECISIONS && fits(m[2].trim())) decisions.push(line);
+      if (m && fits(m[2].trim())) decisions.push(line);
       continue;
     }
     const question = /^(?:open question|still unclear|question|unclear)\s*:\s*(.+)$/iu.exec(line);
     if (question) {
-      if (questions.length < HOOK_END_QUESTIONS && fits(question[1].trim())) questions.push(line);
+      if (fits(question[1].trim())) questions.push(line);
       continue;
     }
     const nextStep = /^next step\s*:\s*(.+)$/iu.exec(line);
-    if (nextStep && next === null && fits(nextStep[1].trim())) next = line;
+    if (nextStep && fits(nextStep[1].trim())) next = line;
   }
   if (!decisions.length && !questions.length) return null;
-  return firstCodePoints([...decisions, ...questions, ...(next ? [next] : [])].join("\n"), HOOK_END_TEXT_MAX);
+  // The latest lines win: the last 10 decisions, the last 10 questions and the last next step.
+  return firstCodePoints([...decisions.slice(-HOOK_END_DECISIONS), ...questions.slice(-HOOK_END_QUESTIONS), ...(next ? [next] : [])].join("\n"), HOOK_END_TEXT_MAX);
 }
 
 /** One Stop event. Anything that is not a Stop with a string last_assistant_message is null. */

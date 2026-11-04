@@ -204,6 +204,13 @@ describe("Brain.sessionNote", () => {
     expect(parseSessionNote(kept)).toEqual(parseSessionNote(reply));
     expect(markerLines("Next step: alone")).toBeNull();
     expect(parseSessionNote("Next step: alone")).toBeNull();
+    // Past the caps the latest lines win on both sides: lines 3 to 12 of 12 decisions and questions, and the last next step.
+    const many = [...Array.from({ length: 12 }, (_, i) => `Decided: topic ${i + 1}: choice ${i + 1}`), ...Array.from({ length: 12 }, (_, i) => `Open question: q${i + 1}?`), "Next step: first.", "Next step: last."].join("\n");
+    const parsedMany = parseSessionNote(many)!;
+    expect(parsedMany.decisions.map((d) => d.topic)).toEqual(Array.from({ length: 10 }, (_, i) => `topic ${i + 3}`));
+    expect(parsedMany.open_questions).toEqual(Array.from({ length: 10 }, (_, i) => `q${i + 3}?`));
+    expect(parsedMany.next_step).toBe("last.");
+    expect(parseSessionNote(markerLines(many)!)).toEqual(parsedMany);
     // Fenced lines are skipped on both sides.
     const fenced = "```\nDecided: a: b\n```\nOpen question: real?";
     expect(parseSessionNote(markerLines(fenced)!)).toEqual(parseSessionNote(fenced));

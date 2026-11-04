@@ -53,17 +53,20 @@ export function parseSessionNote(text: string): ParsedSessionNote | null {
     const decided = /^decided\s*:\s*(.+)$/iu.exec(line);
     if (decided) {
       const m = /^([^:\r\n]{1,120}):\s+(.+)$/u.exec(decided[1].trim());
-      if (m && out.decisions.length < DECISIONS_MAX && Array.from(m[1].trim()).length <= TOPIC_MAX && fits(m[2].trim())) out.decisions.push({ topic: m[1].trim(), decision: m[2].trim() });
+      if (m && Array.from(m[1].trim()).length <= TOPIC_MAX && fits(m[2].trim())) out.decisions.push({ topic: m[1].trim(), decision: m[2].trim() });
       continue;
     }
     const question = /^(?:open question|still unclear|question|unclear)\s*:\s*(.+)$/iu.exec(line);
     if (question) {
-      if (out.open_questions.length < QUESTIONS_MAX && fits(question[1].trim())) out.open_questions.push(question[1].trim());
+      if (fits(question[1].trim())) out.open_questions.push(question[1].trim());
       continue;
     }
     const next = /^next step\s*:\s*(.+)$/iu.exec(line);
-    if (next && out.next_step === undefined && fits(next[1].trim())) out.next_step = next[1].trim();
+    if (next && fits(next[1].trim())) out.next_step = next[1].trim();
   }
+  // The latest lines win when a reply has more than the caps: the last decisions and questions, and the last next step.
+  out.decisions = out.decisions.slice(-DECISIONS_MAX);
+  out.open_questions = out.open_questions.slice(-QUESTIONS_MAX);
   if (!out.decisions.length && !out.open_questions.length) return null;
   return out;
 }

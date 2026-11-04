@@ -288,8 +288,11 @@ describe("hook-end helpers", () => {
     expect(hasMarkerLine("done\n- **Decided: a: b**")).toBe(true);
     expect(hasMarkerLine("I decided nothing")).toBe(false);
     // The marker lines sit at the end of a long reply; the prose before them never travels.
-    const long = "prose ".repeat(2000) + "\n- **Decided: lease length: 90 seconds**\nOpen question: retry twice?\nNext step: run it.\nNext step: ignored second one.";
+    const long = "prose ".repeat(2000) + "\n- **Decided: lease length: 90 seconds**\nOpen question: retry twice?\nNext step: an earlier one.\nNext step: run it.";
     expect(markerLines(long)).toBe("Decided: lease length: 90 seconds\nOpen question: retry twice?\nNext step: run it.");
+    // Past the caps the latest lines win: decisions 3 to 12 of 12, questions 3 to 12 of 12.
+    const many = Array.from({ length: 12 }, (_, i) => `Decided: topic ${i + 1}: choice ${i + 1}`).concat(Array.from({ length: 12 }, (_, i) => `Open question: q${i + 1}?`)).join("\n");
+    expect(markerLines(many)!.split("\n")).toEqual([...Array.from({ length: 10 }, (_, i) => `Decided: topic ${i + 3}: choice ${i + 3}`), ...Array.from({ length: 10 }, (_, i) => `Open question: q${i + 3}?`)]);
     expect(markerLines("Next step: alone is prose")).toBeNull();
     expect(markerLines("All done.")).toBeNull();
     expect(markerLines("```\nDecided: quoted: in a fence\n```\nOpen question: real?")).toBe("Open question: real?");
