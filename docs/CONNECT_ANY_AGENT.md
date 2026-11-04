@@ -231,6 +231,8 @@ Hermes usually runs on a server next to a self-hosted BiBrain. So the address is
          resources: false
    ```
 
+   Not yet checked against a running Hermes: whether it expands `${BRAIN_AGENT_TOKEN}` inside `headers`. If the connection is refused, put the key in Hermes's secret store or paste it in place of the variable on the server, and keep that file private.
+
 4. For recall and notes, copy the folder `integrations/hermes/bibrain` from the BiBrain folder to `~/.hermes/plugins/bibrain` on the Hermes server. Then run `hermes plugins enable bibrain`.
 
 The plugin is plain Python 3.10+ with no extra packages. It registers two hooks:
