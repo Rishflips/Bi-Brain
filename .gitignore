@@ -11,3 +11,7 @@ test-results/
 *.log
 sites-port/
 private-backups/
+
+# Python bytecode from the Hermes plugin tests
+__pycache__/
+*.pyc

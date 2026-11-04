@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { GRANT_CLIENTS } from "./agents.ts";
 
 /** Code points of marker-line text the hook may send; the CLI cuts to this before posting. */
 export const SESSION_NOTE_MAX = 4000;
@@ -18,7 +19,7 @@ export const MARKER_LINE = /^\s*(?:[-*•]\s*)?(?:\*\*)?(?:decided|open question
 export const sessionNoteSchema = z
   .object({
     session_id: z.string().regex(/^[0-9a-f]{64}$/u),
-    client: z.enum(["claude-code", "codex", "cursor", "other"]).default("other"),
+    client: z.enum(GRANT_CLIENTS).default("other"),
     text: z.string().min(1).refine((v) => Array.from(v).length <= SESSION_NOTE_MAX, "The text is cut to 4,000 characters before it is sent."),
   })
   .strict();

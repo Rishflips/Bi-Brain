@@ -28,6 +28,7 @@ import {
   AgentClientPicker,
   AgentSetupGuide,
   agentSetupCommand,
+  clientLabel,
   type AgentClient,
 } from "./agent-connection.tsx";
 import "@fontsource-variable/manrope/wght.css";
@@ -2861,11 +2862,20 @@ function App() {
                       await navigator.clipboard.writeText(
                         agentSetupCommand(agentClient, location.origin),
                       );
-                      setNotice(
-                        `${agentClient === "codex" ? "Codex" : "Claude Code"} setup copied. Paste it into a private PowerShell in this BiBrain folder.`,
-                      );
+                      if (agentClient === "codex" || agentClient === "claude-code")
+                        setNotice(
+                          `${clientLabel(agentClient)} setup copied. Paste it into a private PowerShell in this BiBrain folder.`,
+                        );
                     })
                   }
+                  onCopyText={async (text) => {
+                    try {
+                      await navigator.clipboard.writeText(text);
+                      return true;
+                    } catch {
+                      return false;
+                    }
+                  }}
                   onDone={close}
                 />
               ) : (

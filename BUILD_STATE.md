@@ -1,6 +1,6 @@
 # Build state
 
-Updated: 2026-11-04
+Updated: 2026-11-05
 
 This page holds the current, verified state of BiBrain. Each section below
 records one shipped plan of the 2026 reframe, with the commands that ran and
@@ -12,14 +12,48 @@ their real counts. The full delivery log from before the reframe is preserved in
 | Area | State |
 | --- | --- |
 | Local app (Today, Your brain, Connections, Settings) | Works end to end on one computer; verified by Vitest and Playwright on Windows |
-| Agent connections (Codex, Claude Code, Cursor) | One-step Add writes the server entry and a prompt hook or rule file. Native recall runs passed in Claude Code 2.1.283 and Codex 0.156.1 on Windows (2026-10-27); Cursor not yet run natively |
+| Agent connections (Codex, Claude Code, Cursor) | One-step Add writes the server entry and a prompt hook or rule file. Native recall runs passed in Claude Code 2.1.283 and Codex 0.156.1 on Windows (2026-10-27); Cursor not yet run natively. Any other agent connects through `bibrain-agent/1` (Hermes plugin, HTTP MCP endpoint, `bibrain recall` and `bibrain note`), tested with fakes and not run natively |
 | Recall | FTS5 index, ranked recall, hook push; golden set gated in CI; owner-run native proof passed for both agents, hook on and off |
 | Better search (embeddings via Ollama or Cloudflare) | Off by default; fake-embedder gates in CI; live run owner-run (`npm run proof:search`) |
 | Sorting help (System 1, Clef via Ollama or Cloudflare) | Live call through Ollama Cloud with clef-flash validated 3 of 3 answers (2026-10-27). The durable demotion line moved to 0.20 on that run's evidence (2026-11-01); every other line keeps its first value and is read from `npm run calibrate` |
 | Watch | Per-project switch, on by default |
 | Licence | AGPL-3.0-only for the app, Apache-2.0 for the agent connector |
 | Hosted edition and payments | Paused; the Dodo adapter, the money ledger and the managed runtime are kept but not deployed, and no real payment has been processed. The Paddle code was removed in plan 6 (2026-10-28) |
-| Next plans | Owner-run: `npm run calibrate` once the brain has real answers and pushes, `npm run proof:search`, `scripts/native-client-proof.ts`; the next reframe plan is the owner's choice |
+| Next plans | Owner-run: `npm run calibrate` once the brain has real answers and pushes, `npm run proof:search`, `scripts/native-client-proof.ts`; a native Hermes run (owner); the next reframe plan is the owner's choice |
+
+## 2026-11-05 — Plan 9: works with any agent, Hermes first (branch reframe/any-agent)
+
+Spec: `docs/superpowers/specs/2026-11-05-any-agent-design.md`. Plan: `docs/superpowers/plans/2026-11-05-any-agent.md`. Guide: `docs/CONNECT_ANY_AGENT.md`.
+
+What changed:
+- **Contract and generic commands.** One documented contract, `bibrain-agent/1`, served as `contract` by `GET /api/v1/agent/capabilities`. `bibrain recall` and `bibrain note` speak it on stdin and stdout, always valid JSON, always exit 0. The Claude Code and Codex hooks are adapters over the same two functions, with their output unchanged.
+- **HTTP MCP endpoint.** `POST /api/v1/agent/mcp` serves the same seven tools: stateless, JSON replies, agent keys only, POST only, one message per request, 256 KiB bodies, 120 requests a minute per client address (in place of the global limit on this route). No OAuth.
+- **Hermes plugin and Connections.** `integrations/hermes/bibrain` (Python, standard library only) recalls on `pre_llm_call` and leaves a note on `post_llm_call`. Connections gains Hermes Agent and Another agent under Set up by hand. `client` accepts `hermes`.
+- **Copy and docs.** Copy that named one harness where any agent would do now says "your coding agents". The Connect any agent guide holds the contract, per-harness snippets and an honest compatibility matrix.
+
+Verified in this worktree on 2026-11-05 (Windows, Node 24.19.0), all in one sequential run:
+
+- `npm run typecheck`, `npm run lint`, `npm run build`: all exit 0.
+- `npm audit --audit-level=high`: exit 0. The two moderate advisories are unchanged (`glob` and `minimatch`, which need a breaking change).
+- `CI=true npx vitest run --reporter=dot --maxWorkers=2`: 194 files, 2,040 passed, 8 skipped, 0 failed (1,067 s). The Hermes plugin tests ran under Python and were not skipped.
+- `npm run brain-eval`: 25/25 passed. The plan-5 dense-off snapshot is byte-identical.
+- `npx playwright test --workers=1`: 111 passed, 0 failed (4.6 minutes). By project: main 69, today-v2 20, connections 9, system1 6, today-v2-bar 4, empty-brain 3.
+- Code and tests: 28 files changed, 1,611 lines added and 245 removed.
+- Reviews:
+  - The pre-flight scan and its re-check found and fixed 3 Blocker and 6 Important problems before any code was written.
+  - Every task had its own review; Opus reviewed the HTTP and transport tasks.
+  - Fable's final review: ready, with 0 Critical and 0 Important findings.
+
+Known limits:
+
+- The Hermes plugin has been tested only against a fake Hermes context, never a running Hermes. The HTTP MCP endpoint has been tested only in-process, never with a real remote client. Both need an owner run.
+- Whether Hermes expands `${BRAIN_AGENT_TOKEN}` inside `headers` is not verified. The guide gives a fallback.
+- Recall and note log rows record the client name the agent sends; the labels the owner sees use the grant's stored client. Parked, because changing it would touch rows the recall snapshot pins.
+
+Known limits:
+- No native Hermes run. The plugin was tested against a fake Hermes context and a fake server only.
+- The `Stop` hooks and the HTTP MCP endpoint have not been run in a real agent session.
+- The Hermes plugin tests need Python 3.10 or later. Without it they are skipped with a message (and fail under `CI=true`).
 
 ## 2026-11-04 — Plan 8: security hardening and the safe write-back loop (branch reframe/safe-write-back)
 

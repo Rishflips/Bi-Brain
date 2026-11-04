@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import { z } from "zod";
+import { GRANT_CLIENTS } from "./agents.ts";
 import { questionWords } from "./ask.ts";
 import { deterministicLevel, type DeterministicSignals, type RecallHit } from "./recall.ts";
 
@@ -34,7 +35,7 @@ export const recallPushSchema = z
     session_id: z.string().regex(/^[0-9a-f]{64}$/u),
     first_prompt: z.boolean().default(false),
     seen: z.array(z.string().regex(/^[0-9a-f]{64}$/u)).max(300).default([]),
-    client: z.enum(["claude-code", "codex", "cursor", "other"]).default("other"),
+    client: z.enum(GRANT_CLIENTS).default("other"),
   })
   .strict();
 

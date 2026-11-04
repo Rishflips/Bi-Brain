@@ -123,7 +123,7 @@ export function TodayView(props: TodayProps) {
               <span className="tv-step-n">Fastest</span>
               <h3>Plug in an agent</h3>
               <p>
-                Claude Code or Codex can recall your projects and suggest what
+                Your coding agents can recall your projects and suggest what
                 to remember.
               </p>
               <button

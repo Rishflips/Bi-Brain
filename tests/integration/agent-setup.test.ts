@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { posix, win32 } from "node:path";
 import { AGENT_HINTS, CODEX_HOOKS_CONFIRMED, CURSOR_RULE, PREAPPROVED_TOOLS, agentHint, checkFolderShape, configContents, configTarget, detectAgents, forwardSlashes, hookCommand, secondFileContents, secondFileTarget } from "../../packages/domain/agents.ts";
+import { clientLabel, hermesSnippet } from "../../apps/web/agent-connection.tsx";
 import { detectSecrets } from "../../packages/storage/secrets.ts";
 
 const launch = {
@@ -146,5 +147,21 @@ describe("second files", () => {
       expect(secondFileContents("codex", launch)).toBeNull();
       expect(agentHint("codex")).toBe(AGENT_HINTS.codex);
     }
+  });
+});
+
+describe("Hermes by hand", () => {
+  it("builds the config and env snippets around the HTTPS domain, never a key, and falls back to a placeholder on a local address", () => {
+    const remote = hermesSnippet("https://brain.example.com");
+    expect(remote.address).toBe("https://brain.example.com");
+    expect(remote.yaml).toBe(["mcp_servers:", "  bibrain:", '    url: "https://brain.example.com/api/v1/agent/mcp"', "    headers:", '      Authorization: "Bearer ${BRAIN_AGENT_TOKEN}"', "    tools:", "      prompts: false", "      resources: false", ""].join("\n"));
+    expect(remote.env).toBe("BRAIN_AGENT_TOKEN=<paste the key here>\nBRAIN_API_URL=https://brain.example.com\n");
+    const local = hermesSnippet("http://127.0.0.1:4317");
+    expect(local.address).toBe("https://your-bibrain-domain.example");
+    expect(local.yaml).toContain('url: "https://your-bibrain-domain.example/api/v1/agent/mcp"');
+    for (const s of [remote.yaml, remote.env, local.yaml]) expect(s).not.toMatch(/[0-9a-f]{64}/);
+    expect(clientLabel("hermes")).toBe("Hermes");
+    expect(clientLabel("other")).toBe("your agent");
+    expect(clientLabel("claude-code")).toBe("Claude Code");
   });
 });

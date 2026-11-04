@@ -38,7 +38,7 @@ import {
   paidProcessingBlockedSetting,
 } from "../storage/spend.ts";
 import { safeAdd } from "./spend.ts";
-import { agentDisplayName } from "./agents.ts";
+import { AGENT_CONTRACT, GRANT_CLIENTS, agentDisplayName } from "./agents.ts";
 import { RESTORED_AGENT_ORIGIN, REVIEWED_KEY, grantOfOrigin, importOrigin, isAgentOrigin, isUnreviewedAgent, restoredImportOrigin, type WrittenBy } from "./provenance.ts";
 import type { ManagedSpendView } from "./managed-spend.ts";
 import {
@@ -2585,7 +2585,7 @@ export class Brain {
     const v = z
       .object({
         id: z.uuid().optional(),
-        client: z.enum(["codex", "claude-code", "cursor", "other"]).default("other"),
+        client: z.enum(GRANT_CLIENTS).default("other"),
         folder: z.string().max(1000).optional(),
         projects: z.array(z.string()).min(1).max(30),
         operations: z
@@ -3389,6 +3389,7 @@ export class Brain {
         ({ id, title }) => ({ id, title }),
       ),
       surface: "v2" as const,
+      contract: AGENT_CONTRACT,
     };
   }
   handoff(p: Principal, project: string) {

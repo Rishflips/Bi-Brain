@@ -1,11 +1,16 @@
 export const AGENT_CLIENTS = ["codex", "claude-code", "cursor"] as const;
 export type AgentClient = (typeof AGENT_CLIENTS)[number];
-export type GrantClient = AgentClient | "other";
+/** Every name a grant may carry: the one-step Add targets, Hermes (set up by hand, on a server) and other. */
+export const GRANT_CLIENTS = [...AGENT_CLIENTS, "hermes", "other"] as const;
+export type GrantClient = (typeof GRANT_CLIENTS)[number];
+/** The agent contract this build serves: MCP tools, the two HTTP endpoints and the generic CLI. Additive fields never bump it. */
+export const AGENT_CONTRACT = "bibrain-agent/1";
 
 const NAMES: Record<GrantClient, string> = {
   codex: "Codex",
   "claude-code": "Claude Code",
   cursor: "Cursor",
+  hermes: "Hermes",
   other: "A connected agent",
 };
 

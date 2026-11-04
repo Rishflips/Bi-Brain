@@ -1,5 +1,7 @@
 # Agent integration
 
+For any agent beyond Claude Code, Codex and Cursor, start with [Connect any agent](CONNECT_ANY_AGENT.md).
+
 **Tool contract v2 (2026-10-25):** Default MCP registers seven underscore tools, filtered by the grant's actual operations: `brain_recall` and `brain_open` (grant op `read`), `brain_note`, `brain_propose`, `brain_intent` and `brain_link` (grant op `propose_memory`), and `brain_forget` (grant op `forget`, agent-owned captures only). `project_id` is optional on reads: `brain_recall` searches every project the connection can read unless one is named, and `brain_open` takes only the id from a hit. The earlier eight-name contract with dotted names (search, get, ask, diff and the rest) is gone with no aliases; existing connections pick the new names up on their next session, with their config and key files unchanged. The server also sends short `instructions` that tell an agent when to call `brain_recall` and how to read the result. Read-only grants discover only `brain_recall` and `brain_open`, and direct HTTP mutation is denied. Client-specific enforced binding and native two-client validation remain unverified; the tested local wrapper is the only enforced path. See [HARNESS_MILESTONES.md](HARNESS_MILESTONES.md).
 
 ### Result contract
@@ -74,7 +76,9 @@ Do not market levels 3 or 4 merely because level 2 works.
 
 Implement a stdio MCP adapter using the official SDK. The adapter forwards requests to the local API with a scoped token. Keep business logic and policy in the server. Stdout is reserved for protocol messages; logs go to stderr with sensitive values redacted.
 
-The local stdio adapter can call an independently hosted HTTPS API using an explicit `BRAIN_API_URL`, keeping the same scoped grant checks. Remote plaintext and redirects are rejected. A hosted HTTP MCP/OAuth transport remains a later integration milestone; see [SELF_HOSTING.md](SELF_HOSTING.md). Native-client compatibility remains separately unverified.
+The local stdio adapter can call an independently hosted HTTPS API using an explicit `BRAIN_API_URL`, keeping the same scoped grant checks. Remote plaintext and redirects are rejected. OAuth for a hosted edition remains a later milestone; see [SELF_HOSTING.md](SELF_HOSTING.md). Native-client compatibility remains separately unverified.
+
+Since plan 9 the same tool table is also served at `POST /api/v1/agent/mcp` (stateless Streamable HTTP, bearer only, POST only, no OAuth); see [CONNECT_ANY_AGENT.md](CONNECT_ANY_AGENT.md). That guide also holds the `bibrain-agent/1` contract, which the hooks, the `bibrain recall` and `bibrain note` commands and the Hermes plugin all share.
 
 `bibrain connect` starts the adapter with an allow-listed environment only (locating programs, home and temp folders, locale and certificate variables, plus its own API address and key). Provider, billing, sign-in and owner secrets never reach it.
 
@@ -108,14 +112,18 @@ Grants contain allowed project IDs, operations, expiration, and a revocation ver
 
 Re-check permissions when jobs execute and return results. Derivatives inherit restrictive source visibility.
 
-## Compatibility matrix to fill with evidence
+## Compatibility matrix
 
-| Client | Transport | Read | Remember | Fresh-session recall | Revocation | Recall push | Status |
-|---|---|---|---|---|---|---|---|
-| Codex | stdio, installed 0.156.1 | Unverified | Unverified | Unverified | Unverified | Owner-run (scripts/recall-agent-proof.ts) | Token-free project template ready; native run not authorized |
-| Claude Code | stdio, installed 2.1.283 | Unverified | Unverified | Unverified | Unverified | Owner-run (scripts/recall-agent-proof.ts) | Project-local setup ready; native run not authorized |
-| Cursor | stdio | Unverified | Unverified | Unverified | Unverified | Rule file only | Project entry and rule file written by one-step Add; no native run |
-| Generic MCP inspector | stdio | Unverified | Unverified | N/A | Unverified | N/A | Not implemented |
+Only what has run natively is called supported. Everything else says so.
+
+| Client | Transport | Tools | Recall push | Session note | Native run | Status |
+|---|---|---|---|---|---|---|
+| Claude Code 2.1.283 | stdio | Yes | `UserPromptSubmit` hook | `Stop` hook | Recall proof passed, hook on and off (Windows, 2026-10-27); the `Stop` hook not yet run natively | Supported for recall; session note tested against the documented contract |
+| Codex 0.156.1 | stdio | Yes | `UserPromptSubmit` hook (after `/hooks` trust) | `Stop` hook | Recall proof passed, hook on and off (Windows, 2026-10-27); the `Stop` hook not yet run natively | Supported for recall; session note tested against the documented contract |
+| Cursor | stdio | Yes | Rule file only | By hand | Not run natively | Files written by one-step Add; unverified |
+| Hermes Agent | Streamable HTTP + Python plugin | Yes (`/api/v1/agent/mcp`) | `pre_llm_call` | `post_llm_call` | Not run natively | Tested with a fake `ctx` and a fake server against the documented hooks (sources in [CONNECT_ANY_AGENT.md](CONNECT_ANY_AGENT.md)) |
+| Any MCP client (remote) | Streamable HTTP | Yes | n/a | n/a | Not run natively | Endpoint tested with JSON-RPC over `app.inject` only |
+| Any harness with command hooks | `bibrain recall` / `bibrain note` | via stdio | Yes | Yes | Not run natively | Commands tested against a fake server |
 
 Two-client end-to-end verification is a local V1 release gate. If a client is unavailable, finish the adapter and inspector tests, then report that native-client gate as unverified.
 
