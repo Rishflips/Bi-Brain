@@ -172,6 +172,9 @@ it("deployment configuration rejects insecure or ambiguous public origins and em
   expect(
     deploymentPolicy(undefined, 4444).allowsOrigin("http://localhost:4444"),
   ).toBe(true);
+  expect(deploymentPolicy(undefined, 4317, true).allowsOrigin("http://localhost:5173")).toBe(true);
+  expect(deploymentPolicy(undefined, 4317, false).allowsOrigin("http://localhost:5173")).toBe(false);
+  expect(deploymentPolicy(undefined, 4317, false).allowsOrigin("http://127.0.0.1:4317")).toBe(true);
   const store = new Storage(":memory:");
   try {
     await expect(

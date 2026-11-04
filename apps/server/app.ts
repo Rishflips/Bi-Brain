@@ -30,6 +30,12 @@ const SESSION_COOKIE = "brain_session";
 const CORRELATION_MAX_AGE_SECONDS = Math.ceil(OIDC_CORRELATION_TTL_MS / 1000);
 
 /** Only the unnormalized path of a request URL, so encoded tricks cannot match. */
+// API paths a person may open directly in a browser tab.
+const NAVIGABLE_API_PATHS = new Set([
+  "/api/v1/health/live",
+  "/api/v1/health/ready",
+]);
+
 function requestPath(url: string): string {
   const end = url.search(/[?#]/);
   return end === -1 ? url : url.slice(0, end);
@@ -310,14 +316,22 @@ export async function createApp(
     reply
       .header("X-Content-Type-Options", "nosniff")
       .header("Referrer-Policy", "no-referrer")
-      .header("Cache-Control", "no-store");
-    if (deployment.secure)
-      reply.header("Strict-Transport-Security", "max-age=31536000");
-    if (process.env.NODE_ENV === "production")
-      reply.header(
+      .header("Cache-Control", "no-store")
+      .header("X-Frame-Options", "DENY")
+      .header(
         "Content-Security-Policy",
         "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; object-src 'none'; form-action 'self'",
       );
+    if (deployment.secure)
+      reply.header("Strict-Transport-Security", "max-age=31536000");
+    // The API answers page fetches and agent calls, never a page of its own: a
+    // top-level navigation to it is refused. The health checks stay openable.
+    if (
+      req.url.startsWith("/api/v1/") &&
+      !NAVIGABLE_API_PATHS.has(requestPath(req.url)) &&
+      req.headers["sec-fetch-mode"] === "navigate"
+    )
+      throw new BrainError("FORBIDDEN", "Open BiBrain from its own page.", 403);
     if (
       !req.url.startsWith("/api/v1/") ||
       req.url === "/api/v1/health/live" ||
@@ -885,11 +899,7 @@ export async function createApp(
   });
   app.get("/api/v1/connections", (req) => req.brain.connections(req.principal));
   app.post("/api/v1/proposals/gate", (req) =>
-    req.brain.propose(
-      req.principal,
-      req.body,
-      req.headers["idempotency-key"] as string | undefined,
-    ),
+    req.brain.propose(req.principal, req.body, key(req)),
   );
   app.post("/api/v1/proposals/gate/:id/review", (req) =>
     req.brain.reviewGate(req.principal, params(req), req.body),
