@@ -1,5 +1,9 @@
 // The TLS proxy must preserve Host. Forwarded headers never grant access.
-export function deploymentPolicy(publicOrigin?: string, port = 4317) {
+export function deploymentPolicy(
+  publicOrigin?: string,
+  port = 4317,
+  devOrigins = process.env.NODE_ENV !== "production",
+) {
   if (!Number.isInteger(port) || port < 1 || port > 65535)
     throw new Error("BRAIN_PORT must be an integer between 1 and 65535.");
   let remote: URL | undefined;
@@ -32,8 +36,7 @@ export function deploymentPolicy(publicOrigin?: string, port = 4317) {
   const localOrigins = new Set([
     `http://127.0.0.1:${port}`,
     `http://localhost:${port}`,
-    "http://127.0.0.1:5173",
-    "http://localhost:5173",
+    ...(devOrigins ? ["http://127.0.0.1:5173", "http://localhost:5173"] : []),
   ]);
   return {
     secure: !!remote,

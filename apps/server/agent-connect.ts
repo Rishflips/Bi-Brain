@@ -1,4 +1,4 @@
-import { existsSync, lstatSync, mkdirSync, realpathSync, statSync, unlinkSync, writeFileSync } from "node:fs";
+import { existsSync, lstatSync, mkdirSync, readFileSync, realpathSync, statSync, unlinkSync, writeFileSync } from "node:fs";
 import { dirname, isAbsolute, join, relative, sep } from "node:path";
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
@@ -35,8 +35,8 @@ export type AgentsStatus = {
 };
 export type AgentFile = { path: string; role: "server" | "hook" | "rule"; contents: string; exists: boolean };
 export type WrittenFile = { path: string; role: AgentFile["role"]; state: "written" | "exists"; contents: string };
-export type AgentPreview = { connection_id: string; file: string; contents: string; exists: boolean; files: AgentFile[] };
-export type AgentConnected = { connection_id: string; file: string; contents: string; files: WrittenFile[] };
+export type AgentPreview = { connection_id: string; file: string; contents: string; exists: boolean; files: AgentFile[]; ignore: { lines: string[]; listed: boolean } };
+export type AgentConnected = { connection_id: string; file: string; contents: string; files: WrittenFile[]; ignore: { lines: string[]; listed: boolean } };
 
 export const LOCAL_ONLY_REASON = "Adding agents in one step works in the BiBrain app on your computer.";
 const ONE_STEP_DAYS = 90;
@@ -114,6 +114,31 @@ export function agentConnect(brain: Brain, config: AgentConnectConfig) {
     return out;
   };
 
+  /** The files BiBrain writes that carry this computer's paths (the server file and a hook file), as .gitignore lines, and whether the folder's .gitignore already lists every one. A rule file is left out: it has no machine path and a team may want it committed. Read only, from the chosen folder alone (a link or an oversized file counts as not listed); never written. */
+  const ignoreFor = (client: AgentClient, real: string) => {
+    const second = secondFileTarget(client);
+    const lines = [configTarget(client).file.join("/"), ...(second && second.role === "hook" ? [second.file.join("/")] : [])];
+    let listed = false;
+    try {
+      const path = join(real, ".gitignore");
+      const st = lstatSync(path);
+      if (st.isFile() && !st.isSymbolicLink() && st.size <= 256 * 1024) {
+        // Later lines win, as in git: a negation after a match un-lists it. Leading spaces count; trailing spaces do not.
+        const state = new Map<string, boolean>();
+        for (const raw of readFileSync(path, "utf8").split(/\r?\n/u)) {
+          const line = raw.replace(/ +$/u, "");
+          if (line === "" || line.startsWith("#")) continue;
+          const negated = line.startsWith("!");
+          state.set((negated ? line.slice(1) : line).replace(/^\//u, ""), !negated);
+        }
+        listed = lines.every((l) => state.get(l) === true);
+      }
+    } catch {
+      listed = false;
+    }
+    return { lines, listed };
+  };
+
   return {
     status(p: Principal): AgentsStatus {
       brain.owner(p);
@@ -141,7 +166,7 @@ export function agentConnect(brain: Brain, config: AgentConnectConfig) {
       checkFolders(v.client, real);
       const connection_id = randomUUID();
       const files = filesFor(v.client, real, connection_id);
-      return { connection_id, file: files[0].path, contents: files[0].contents, exists: files[0].exists, files };
+      return { connection_id, file: files[0].path, contents: files[0].contents, exists: files[0].exists, files, ignore: ignoreFor(v.client, real) };
     },
     connect(p: Principal, input: unknown): AgentConnected {
       brain.owner(p);
@@ -214,7 +239,7 @@ export function agentConnect(brain: Brain, config: AgentConnectConfig) {
           500,
         );
       }
-      return { connection_id: grant.id, file, contents, files: written };
+      return { connection_id: grant.id, file, contents, files: written, ignore: ignoreFor(v.client, real) };
     },
     forget(connectionId: string) {
       if (!z.uuid().safeParse(connectionId).success) return;

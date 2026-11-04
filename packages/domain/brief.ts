@@ -1,8 +1,9 @@
 import type { Entity } from "../contracts/index.ts";
+import type { WrittenBy } from "./provenance.ts";
 import { factText, valueText as text } from "./facts.ts";
 
 export type BriefKind = "correction" | "proposal" | "failed_job" | "file" | "agent_memory" | "memory" | "stale";
-export type BriefEvidence = { source_id: string; source_version: number; quote: string };
+export type BriefEvidence = { source_id: string; source_version: number; quote: string; written_by?: WrittenBy };
 export type BriefTarget = { type: "gate" | "proposal" | "job" | "claim" | "file"; id: string; version: number };
 export type BriefItem = {
   signature: string;

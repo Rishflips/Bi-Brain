@@ -178,6 +178,21 @@
   font-weight: 700;
   color: var(--green);
 }
+.tv-file {
+  position: relative;
+  cursor: pointer;
+}
+.tv-file input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  inset: 0;
+}
+.tv-file:focus-within {
+  outline: 2px solid var(--green);
+  outline-offset: 2px;
+}
 .tv-step .tv-btn {
   justify-self: start;
   white-space: normal;

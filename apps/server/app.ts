@@ -29,6 +29,19 @@ const CORRELATION_COOKIE = "brain_login";
 const SESSION_COOKIE = "brain_session";
 const CORRELATION_MAX_AGE_SECONDS = Math.ceil(OIDC_CORRELATION_TTL_MS / 1000);
 
+// API paths a person may open directly in a browser tab. Both are read-only
+// health checks: liveness is public, readiness still needs the owner session.
+const NAVIGABLE_API_PATHS = new Set([
+  "/api/v1/health/live",
+  "/api/v1/health/ready",
+]);
+// The gate stores its retry key with this prefix inside the shared 200-character
+// bound, so the route accepts keys up to the remainder.
+const GATE_KEY_PREFIX = "propose:";
+
+// A percent-escape of an unreserved character (A-Z a-z 0-9 - . _ ~) or of "/".
+const DISGUISING_ESCAPE = /%(?:3[0-9]|[46][1-9a-f]|[57][0-9a]|2[d-f]|5f|7e)/i;
+
 /** Only the unnormalized path of a request URL, so encoded tricks cannot match. */
 function requestPath(url: string): string {
   const end = url.search(/[?#]/);
@@ -115,6 +128,8 @@ export async function createApp(
     billing?: DodoBillingService;
     /** One-step agent setup. Tests override the folders and paths it looks at. */
     agents?: Partial<AgentConnectConfig>;
+    /** Tests only: a small global limit so the buckets can be observed. */
+    rateLimitMax?: number;
   } = {},
 ) {
   const managed = options.managed;
@@ -175,11 +190,18 @@ export async function createApp(
   const app = Fastify({
     bodyLimit: 4 * 1048576,
     logger: false,
+    // Behind the configured TLS proxy, exactly one hop is trusted for the client address, so the limiter
+    // keys on the client and not on the proxy. The Host and Origin checks below read the raw headers.
+    // Locally nothing is trusted and the key stays the loopback address, as before.
+    // A function, not the number 1: this Fastify treats a numeric hop count as "trust nothing". Only the
+    // immediate peer (hop 0, the proxy) is trusted, so the key is the address that proxy appended.
+    ...(deployment.secure ? { trustProxy: (_address: string, hop: number) => hop === 0 } : {}),
   });
   await app.register(cookie);
   // The active local UI polls several authenticated views; keep the global
   // abuse guard above that normal traffic while pairing retains its tight cap.
-  await app.register(rateLimit, { max: 1000, timeWindow: 60000 });
+  // The key is the client address only: a cookie or a bearer nobody has verified must never open a bucket.
+  await app.register(rateLimit, { max: options.rateLimitMax ?? 1000, timeWindow: 60000 });
   let pairSecret: string | undefined;
   if (!managed) {
     const secretFile = resolve(dirname(localBrain!.store.path), "owner-secret");
@@ -283,7 +305,41 @@ export async function createApp(
   app.addHook("onClose", async () => {
     if (ownsLocalBrain) localBrain?.store.close();
   });
+  const securityHeaders = (reply: FastifyReply) => {
+    reply
+      .header("X-Content-Type-Options", "nosniff")
+      .header("Referrer-Policy", "no-referrer")
+      .header("Cache-Control", "no-store")
+      .header("X-Frame-Options", "DENY")
+      .header(
+        "Content-Security-Policy",
+        "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; object-src 'none'; form-action 'self'",
+      );
+    if (deployment.secure)
+      reply.header("Strict-Transport-Security", "max-age=31536000");
+  };
+  // The limiter answers before the hook below runs, so its 429 gets the same fixed headers here.
+  app.addHook("onSend", async (_req, reply, payload) => {
+    if (reply.statusCode === 429) securityHeaders(reply);
+    return payload;
+  });
   app.addHook("onRequest", async (req, reply) => {
+    securityHeaders(reply);
+    // The gates below compare the raw path; the router matches it after
+    // decodeURI. Every fixed path the gates compare is made only of unreserved
+    // characters and "/", so refusing escapes of exactly those characters (and
+    // malformed escapes) keeps both decisions on the same path. Other escapes,
+    // such as spaces and UTF-8 in imported ids, decode to characters no gate
+    // prefix contains and pass through.
+    const rawPath = requestPath(req.url);
+    let wellFormed = true;
+    try {
+      decodeURI(rawPath);
+    } catch {
+      wellFormed = false;
+    }
+    if (!wellFormed || DISGUISING_ESCAPE.test(rawPath))
+      throw new BrainError("INVALID_INPUT", "Request path not allowed.", 400);
     const host = req.headers.host ?? "";
     if (!deployment.allowsHost(host, req.url))
       throw new BrainError("FORBIDDEN", "Host not allowed.", 403);
@@ -298,17 +354,14 @@ export async function createApp(
           : "Origin not allowed.",
         403,
       );
-    reply
-      .header("X-Content-Type-Options", "nosniff")
-      .header("Referrer-Policy", "no-referrer")
-      .header("Cache-Control", "no-store");
-    if (deployment.secure)
-      reply.header("Strict-Transport-Security", "max-age=31536000");
-    if (process.env.NODE_ENV === "production")
-      reply.header(
-        "Content-Security-Policy",
-        "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; object-src 'none'; form-action 'self'",
-      );
+    // The API answers page fetches and agent calls, never a page of its own: a
+    // top-level navigation to it is refused. The health checks stay openable.
+    if (
+      req.url.startsWith("/api/v1/") &&
+      !NAVIGABLE_API_PATHS.has(rawPath) &&
+      req.headers["sec-fetch-mode"] === "navigate"
+    )
+      throw new BrainError("FORBIDDEN", "Open BiBrain from its own page.", 403);
     if (
       !req.url.startsWith("/api/v1/") ||
       req.url === "/api/v1/health/live" ||
@@ -647,8 +700,8 @@ export async function createApp(
   });
   const params = (req: FastifyRequest) =>
     z.object({ id: z.string().max(100) }).parse(req.params).id;
-  const key = (req: FastifyRequest) =>
-    z.string().max(200).optional().parse(req.headers["idempotency-key"]);
+  const key = (req: FastifyRequest, max = 200) =>
+    z.string().max(max).optional().parse(req.headers["idempotency-key"]);
   const expected = (input: unknown) =>
     z.object({ expected_version: z.number().int().positive() }).parse(input)
       .expected_version;
@@ -687,8 +740,11 @@ export async function createApp(
       .object({ version: z.coerce.number().int().positive().optional() })
       .strict()
       .parse(req.query);
-    return req.brain.source(req.principal, params(req), query.version);
+    return req.brain.sourceView(req.principal, params(req), query.version);
   });
+  app.post("/api/v1/sources/:id/reviewed", (req) =>
+    req.brain.markSourceReviewed(req.principal, params(req)),
+  );
   app.post("/api/v1/sources/:id/versions", (req) =>
     req.brain.editSource(req.principal, params(req), req.body),
   );
@@ -876,7 +932,7 @@ export async function createApp(
     req.brain.propose(
       req.principal,
       req.body,
-      req.headers["idempotency-key"] as string | undefined,
+      key(req, 200 - GATE_KEY_PREFIX.length),
     ),
   );
   app.post("/api/v1/proposals/gate/:id/review", (req) =>
@@ -1031,9 +1087,15 @@ export async function createApp(
     return req.brain.agentOpen(req.principal, v);
   });
   app.post("/api/v1/agent/recall-push", (req) => req.brain.recallPush(req.principal, req.body));
+  // A session-end hook posts at most once per reply; the per-route bucket bounds a runaway loop beyond the per-session cap.
+  app.post("/api/v1/agent/session-note", { config: { rateLimit: { max: 60, timeWindow: 60000 } } }, (req) => req.brain.sessionNote(req.principal, req.body));
   app.get("/api/v1/recall/log", (req) => req.brain.recallLog(req.principal));
   app.post("/api/v1/agent/propose", (req) =>
-    req.brain.propose(req.principal, req.body, key(req)),
+    req.brain.propose(
+      req.principal,
+      req.body,
+      key(req, 200 - GATE_KEY_PREFIX.length),
+    ),
   );
   app.post("/api/v1/agent/note", (req) =>
     req.brain.agentNote(req.principal, req.body, key(req)),

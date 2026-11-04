@@ -91,13 +91,14 @@ export function renderPointer(names: string[]): string {
   return cpLength(out) < PUSH_POINTER_MAX ? out : build([Array.from(list[0]).slice(0, 40).join("")]);
 }
 
-/** The first-prompt digest: projects, counts, three recent items, and the pointer line. Empty for an empty brain. */
-export function renderDigest(d: { projects: { title: string }[]; facts: number; originals: number; recent: { title: string; at: string }[]; names: string[] }): string {
+/** The first-prompt digest: projects, counts, three recent items, and the pointer line. Empty for an empty brain. Agent-written items the owner has not reviewed are counted; with none, the text is plan 5's. */
+export function renderDigest(d: { projects: { title: string }[]; facts: number; originals: number; recent: { title: string; at: string }[]; names: string[]; agent_unreviewed?: number }): string {
   if (d.facts + d.originals === 0 || !d.projects.length) return "";
   const projects = d.projects.map((p) => oneLine(p.title, NAME_MAX)).join(", ");
   const recent = d.recent.slice(0, 3).map((r) => `${oneLine(r.title, NAME_MAX)} (${r.at.slice(0, 10)})`).join(", ");
+  const unreviewed = d.agent_unreviewed ? `, ${d.agent_unreviewed} of them written by agents and not yet reviewed` : "";
   const parts = [
-    `The owner's brain (bibrain) covers ${projects}: ${d.facts} current facts and ${d.originals} originals.`,
+    `The owner's brain (bibrain) covers ${projects}: ${d.facts} current facts and ${d.originals} originals${unreviewed}.`,
     recent ? `Recent: ${recent}.` : "",
     renderPointer(d.names.length ? d.names : d.projects.map((p) => p.title)),
   ].filter(Boolean);

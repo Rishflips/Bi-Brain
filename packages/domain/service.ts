@@ -39,6 +39,7 @@ import {
 } from "../storage/spend.ts";
 import { safeAdd } from "./spend.ts";
 import { agentDisplayName } from "./agents.ts";
+import { RESTORED_AGENT_ORIGIN, REVIEWED_KEY, grantOfOrigin, importOrigin, isAgentOrigin, isUnreviewedAgent, restoredImportOrigin, type WrittenBy } from "./provenance.ts";
 import type { ManagedSpendView } from "./managed-spend.ts";
 import {
   advisorySourceBodyHash,
@@ -99,6 +100,7 @@ import {
   type RecallHit,
   type RecallResult,
 } from "./recall.ts";
+import { SESSION_NOTES_PER_SESSION, SESSION_NOTE_LOG_MAX, parseSessionNote, sessionNoteSchema } from "./session-note.ts";
 import { RECALL_LOG_MAX, PUSH_HITS_MAX, filterSeen, fitFull, hitIsRelated, hitIsStrong, pushLevel, recallPushSchema, renderDigest, renderPointer, type JudgeSignals, type PushLevel } from "./recall-push.ts";
 import {
   attemptReferencesSource,
@@ -194,6 +196,50 @@ export class Brain {
       ? { kind: "owner" }
       : { kind: "owner", tenantId: this.tenantId };
   }
+  /** When the owner reviewed an agent-written original, or null. Owner-captured originals are never marked. */
+  sourceReviewedAt(sourceId: string): string | null {
+    return this.store.setting<string | null>(REVIEWED_KEY(sourceId), null);
+  }
+  /** Who wrote an original, for agent-written ones only; undefined for the owner's own captures and imports. */
+  writtenBy(source: { id: string; origin: string }): WrittenBy | undefined {
+    const grantId = grantOfOrigin(source.origin);
+    if (grantId === null) return undefined;
+    const client = this.store.get<{ client: string | null }>("SELECT client FROM grants WHERE id=?", grantId)?.client;
+    return { agent: agentDisplayName(client), reviewed: this.sourceReviewedAt(source.id) !== null };
+  }
+  /** The same label by original id, for owner surfaces that only hold an id. */
+  private writtenById(sourceId: string): WrittenBy | undefined {
+    const row = this.store.get<{ id: string; origin: string }>("SELECT id,origin FROM sources WHERE id=?", sourceId);
+    return row ? this.writtenBy(row) : undefined;
+  }
+  /** True when the original with this id was written by an agent and the owner has not reviewed it. */
+  private unreviewedAgentSource(sourceId: string): boolean {
+    const row = this.store.get<{ id: string; origin: string }>("SELECT id,origin FROM sources WHERE id=?", sourceId);
+    const by = row ? this.writtenBy(row) : undefined;
+    return by !== undefined && !by.reviewed;
+  }
+  /** Records the owner's review of an agent-written original. The first time stands; a second call changes nothing. */
+  private reviewSource(sourceId: string) {
+    const row = this.store.get<{ origin: string }>("SELECT origin FROM sources WHERE id=? AND state!='deleted'", sourceId);
+    if (!row || grantOfOrigin(row.origin) === null) return;
+    if (this.sourceReviewedAt(sourceId) === null) this.store.set(REVIEWED_KEY(sourceId), this.now());
+  }
+  markSourceReviewed(p: Principal, id: string) {
+    this.owner(p);
+    const s = this.source(p, z.string().min(1).max(100).parse(id));
+    if (grantOfOrigin(s.origin) === null) throw new BrainError("INVALID_INPUT", "This original was not written by an agent.", 400);
+    if (s.state !== "active") throw new BrainError("SOURCE_WITHDRAWN", "This source is withdrawn.", 409);
+    return this.store.transaction(() => {
+      this.reviewSource(s.id);
+      return { source_id: s.id, reviewed_at: this.sourceReviewedAt(s.id)! };
+    });
+  }
+  /** An original with its provenance beside it, for the page and for brain_open. */
+  sourceView(p: Principal, id: string, version?: number): Source & { written_by?: WrittenBy } {
+    const s = this.source(p, id, version);
+    const by = this.writtenBy(s);
+    return by ? { ...s, written_by: by } : s;
+  }
   /**
    * Every authorization entry point re-checks that the principal is bound to
    * this exact brain. A local principal never authorizes a managed brain, a
@@ -255,7 +301,7 @@ export class Brain {
         project_id: preview.project_id,
         title: item.title,
         body: item.body,
-      }),
+      }, undefined, false, preview.kind === "context" ? importOrigin(item.path) : undefined),
     }));
     return {
       imported: results.filter((r: any) => !r.duplicate).length,
@@ -272,6 +318,7 @@ export class Brain {
   issueSession() {
     const token = randomBytes(32).toString("hex"),
       csrf = randomBytes(24).toString("hex");
+    this.store.run("DELETE FROM sessions WHERE expires_at<=?", this.now());
     this.store.run(
       "INSERT INTO sessions VALUES(?,?,?)",
       hash(token),
@@ -607,7 +654,7 @@ export class Brain {
     );
     return result;
   }
-  capture(p: Principal, input: unknown, key?: string, fromGate = false) {
+  capture(p: Principal, input: unknown, key?: string, fromGate = false, origin?: string) {
     if (p.kind === "agent" && !fromGate)
       throw new BrainError(
         "FORBIDDEN",
@@ -635,7 +682,10 @@ export class Brain {
           v.visibility,
           v.body,
         );
-        if (old && !v.separate) return { source_id: old.id, duplicate: true };
+        if (old && !v.separate) {
+          if (p.kind === "owner") this.reviewSource(old.id);
+          return { source_id: old.id, duplicate: true };
+        }
         const id = randomUUID();
         const scan = this.store.vault?.capture(
           id,
@@ -665,7 +715,7 @@ export class Brain {
           1,
           "active",
           v.visibility,
-          p.kind === "owner" ? "manual" : `agent:${p.grant_id}`,
+          origin ?? (p.kind === "owner" ? "manual" : `agent:${p.grant_id}`),
           this.now(),
         );
         this.store.run(
@@ -940,6 +990,51 @@ export class Brain {
       this.writeAgentNote(p, v, name, lines, decisionLines, key),
     );
   }
+  /** The session hook's write-back: marker lines from the agent's last reply become an ordinary agent note (unreviewed, cards on Today). Quiet otherwise. */
+  sessionNote(p: Principal, input: unknown) {
+    if (p.kind !== "agent") throw new BrainError("FORBIDDEN", "Use an agent token.", 403);
+    const v = sessionNoteSchema.parse(input);
+    const grant = this.grant(p)!;
+    // Every connection Add creates reads one project; a wider grant has no project to file the note in (spec R12).
+    if (grant.projects.length !== 1) throw new BrainError("INVALID_INPUT", "This connection reads more than one project; session notes need exactly one.", 400);
+    const project = grant.projects[0];
+    this.access(p, project, "propose_memory");
+    const started = Date.now();
+    type Row = { at: string; grant_id: string; client: string; saved: boolean; reason?: "secret" | "nothing" | "limit"; suggestions: number; latency_ms: number };
+    const log = (row: Omit<Row, "at" | "grant_id" | "client" | "latency_ms">) => {
+      const at = this.now();
+      const rows = this.store.setting<Row[]>("session_note_log", []);
+      rows.push({ at, grant_id: p.grant_id, client: v.client, latency_ms: Date.now() - started, ...row });
+      this.store.set("session_note_log", rows.slice(-SESSION_NOTE_LOG_MAX));
+      if (row.saved) {
+        const counter = this.store.setting<{ notes: number; last_at: string | null }>(`session_notes:${p.grant_id}`, { notes: 0, last_at: null });
+        this.store.set(`session_notes:${p.grant_id}`, { notes: counter.notes + 1, last_at: at });
+      }
+    };
+    const quiet = (reason: "secret" | "nothing" | "limit") => {
+      log({ saved: false, reason, suggestions: 0 });
+      return { saved: false as const, reason };
+    };
+    if (detectSecrets(v.text).length) return quiet("secret");
+    const parsed = parseSessionNote(v.text);
+    if (!parsed) return quiet("nothing");
+    const key = `session:${v.session_id}:${hash(v.text)}`;
+    const repeat = this.store.get("SELECT 1 FROM idempotency WHERE principal=? AND operation=? AND key=?", p.grant_id, `agent_note:${project}`, key);
+    if (!repeat) {
+      const saved = Number(this.store.get<{ n: number }>("SELECT count(*) AS n FROM idempotency WHERE principal=? AND operation=? AND key LIKE ?", p.grant_id, `agent_note:${project}`, `session:${v.session_id}:%`)?.n ?? 0);
+      if (saved >= SESSION_NOTES_PER_SESSION) return quiet("limit");
+    }
+    const r = this.agentNote(p, { project_id: project, ...parsed }, key) as { source_id: string; suggestions: number; open_questions: number; quarantined: boolean; duplicate?: boolean };
+    if (r.quarantined) return quiet("secret");
+    // A note already in the brain (same body from another session) is not a new note: nothing is counted.
+    if (!repeat && r.duplicate !== true) log({ saved: true, suggestions: r.suggestions });
+    return { saved: true as const, source_id: r.source_id, suggestions: r.suggestions, open_questions: r.open_questions, duplicate: r.duplicate === true };
+  }
+  /** What the session hook did and when: counts and reasons, never text or ids. At most 200 rows; the per-connection counters never fall off. */
+  sessionNoteLog(p: Principal) {
+    this.owner(p);
+    return { rows: this.store.setting<{ at: string; grant_id: string; client: string; saved: boolean; reason?: string; suggestions: number; latency_ms: number }[]>("session_note_log", []) };
+  }
   private writeAgentNote(
     p: Extract<Principal, { kind: "agent" }>,
     v: {
@@ -969,6 +1064,7 @@ export class Brain {
         suggestions: 0,
         open_questions: captured.quarantined ? 0 : v.open_questions.length,
         quarantined: !!captured.quarantined,
+        duplicate: !!captured.duplicate,
       };
     const owner = this.ownerPrincipal();
     const source = this.source(owner, captured.source_id);
@@ -1099,7 +1195,13 @@ export class Brain {
       })
       .strict()
       .parse(input);
-    return this.store.transaction(() => this.editSourceTx(p, id, v));
+    return this.store.transaction(() => {
+      const before = this.source(p, id).body;
+      const result = this.editSourceTx(p, id, v);
+      // Rewriting the text is the owner's review of an agent note; a rename or a move is not.
+      if (v.body !== before) this.reviewSource(id);
+      return result;
+    });
   }
   /** The edit itself. The caller holds the open transaction. */
   private editSourceTx(
@@ -1190,6 +1292,7 @@ export class Brain {
         );
         this.store.run("DELETE FROM source_fts WHERE source_id=?", id);
         purgeRef(this.store, "original", id);
+        this.store.run("DELETE FROM settings WHERE key=?", REVIEWED_KEY(id));
         this.invalidate(s.project_id);
         if (purge) {
           const copiedBodies = this.store
@@ -2470,6 +2573,7 @@ export class Brain {
             : g.last_verified_at
               ? "Connected"
               : "Not connected",
+        writeback: this.store.setting<{ notes: number; last_at: string | null }>(`session_notes:${g.id}`, { notes: 0, last_at: null }),
         recall: (() => {
           const rows = this.store.setting<{ at: string; grant_id: string; level: PushLevel }[]>("recall_log", []).filter((r) => r.grant_id === g.id);
           return { pushes: rows.length, last_push_at: rows.at(-1)?.at ?? null, last_level: rows.at(-1)?.level ?? null };
@@ -3545,6 +3649,8 @@ export class Brain {
           ...judged.demoted.map((c) => ({ kind: c.row.kind, id: c.row.ref_id, title: c.row.kind === "fact" ? c.row.text : c.row.prefix.split(" · ")[0], reason: "judged not relevant" })),
           ...internal.result.near_misses,
         ]
+          // A near miss names its item by title, so an unreviewed agent-written original is never one (its title is agent-chosen text).
+          .filter((n) => !(n.kind === "original" && this.unreviewedAgentSource(n.id)))
           .filter((n) => !hits.some((h) => h.kind === n.kind && h.id === n.id) && !seen.has(`${n.kind}:${n.id}`) && !!seen.add(`${n.kind}:${n.id}`))
           .slice(0, NEAR_MISSES_MAX);
     return { ...internal.result, status, hits, near_misses: near, next_step: status === "no_match" ? NO_MATCH_NEXT_STEP : FOUND_NEXT_STEP };
@@ -3581,18 +3687,28 @@ export class Brain {
     // deterministic one (none, or pointer for an exact entity), so meaning alone can never make a push louder.
     const judge = internal.ranked.some(fromBm25) ? await this.judgeForPush(p, internal) : { signals: null, hits: internal.result.hits, judged: false };
     let level = pushLevel(internal.signals, judge.signals);
-    const hits = filterSeen(judge.hits, v.seen);
+    // Unreviewed agent-written originals the agent may see: another agent's notes, never the owner's evidence (spec A1, R2).
+    const blocked = new Set(internal.authorized.filter(isUnreviewedAgent).map((h) => h.id));
+    const isBlocked = (c: Candidate) => c.row.kind === "original" && blocked.has(c.row.ref_id);
+    // Such notes never reach the judge (judgeRankedOnce leaves them out), so a judged level rests on the owner's candidates alone.
+    const seen = filterSeen(judge.hits, v.seen);
+    // An unreviewed agent-written original never rides in a full push.
+    const hits = seen.filter((h) => !isUnreviewedAgent(h));
     // When the judge's order leaves a hit found by meaning alone on top, the level is capped at the words level.
     if (hits.length && internal.denseOnly.has(hitKey(hits[0]))) level = quieter(level, pushLevel(internal.signals, null));
-    // Everything the agent already holds from this session is not sent again. When that removed hits, the level is re-read on what is left:
-    // `full` only while the best remaining hit is itself a strong match, `pointer` for an exact entity match or a remaining related hit, else quiet.
+    // Everything the agent already holds from this session, and every unreviewed agent note, is left out. When that removed hits, the level is re-read
+    // on what is left: `full` only while the best remaining hit is itself a strong match, `pointer` for an exact entity match or a remaining related hit, else quiet.
     if (level === "full" && hits.length < judge.hits.length) {
       const terms = internal.signals.terms;
-      if (!hits.length || !hitIsStrong(terms, hits[0])) level = internal.signals.exactEntity || hits.some((h) => hitIsRelated(terms, h)) ? "pointer" : "none";
+      if (!hits.length || !hitIsStrong(terms, hits[0])) level = internal.signals.exactEntity || seen.some((h) => hitIsRelated(terms, h)) ? "pointer" : "none";
     }
     // A judge may rate a candidate relevant that did not survive into the hits; a full push with nothing to show is never sent.
     if (level === "full" && !hits.length) level = internal.signals.exactEntity ? "pointer" : "none";
-    const names = internal.signals.topNames.length ? internal.signals.topNames : internal.entityNames;
+    // Names for the pointer and the digest: the top three candidates exactly as deterministicSignals builds topNames (from the same list), except that
+    // an unreviewed agent original is skipped first: its title is agent-chosen text and never a name here. With no such original this is plan 5's list.
+    const top = [...new Set(internal.namesRanked.filter((c) => !isBlocked(c)).slice(0, 3).map((c) => (c.row.kind === "fact" ? c.row.prefix.split(" · ").at(-1)! : c.row.prefix.split(" · ")[0])))];
+    // When only an unreviewed note matched, there is no name to give: the pointer names the projects searched, as the digest does.
+    const names = top.length ? top : internal.entityNames.length ? internal.entityNames : blocked.size ? internal.scope.map((s) => s.title) : [];
     let text = "";
     let used: RecallHit[] = [];
     if (level === "full") {
@@ -3630,18 +3746,26 @@ export class Brain {
       .sort((a, b) => (order.get(a.key) ?? 1e9 + a.i) - (order.get(b.key) ?? 1e9 + b.i))
       .map((k) => k.h);
   }
-  /** Counts and three recent titles by SQL (no bodies, no claim verification): the digest is a map of the brain, not evidence. Only what an agent may see: project-visible originals and facts the recall index marks project-visible. */
+  /** Counts and three recent titles by SQL (no bodies, no claim verification): the digest is a map of the brain, not evidence. Only what an agent may see: project-visible originals and facts the recall index marks project-visible. Agent-written originals the owner has not reviewed are counted and labelled. */
   private digestFor(scope: { id: string; title: string }[], names: string[]): string {
     if (!scope.length) return "";
     const ids = scope.map((s) => s.id);
     const marks = ids.map(() => "?").join(",");
     const facts = Number(this.store.get<{ n: number }>(`SELECT count(DISTINCT ref_id) AS n FROM recall_chunks WHERE kind='fact' AND status='current' AND visibility='project' AND project_id IN (${marks})`, ...ids)?.n ?? 0);
     const originals = Number(this.store.get<{ n: number }>(`SELECT count(*) AS n FROM sources WHERE state='active' AND visibility='project' AND project_id IN (${marks})`, ...ids)?.n ?? 0);
-    const recent = this.store.all<{ title: string; at: string }>(
-      `SELECT v.title AS title, s.captured_at AS at FROM sources s JOIN source_versions v ON v.source_id=s.id AND v.version=s.version WHERE s.state='active' AND s.visibility='project' AND s.project_id IN (${marks}) ORDER BY s.captured_at DESC, s.rowid DESC LIMIT 3`,
-      ...ids,
+    const agentUnreviewed = Number(
+      this.store.get<{ n: number }>(
+        `SELECT count(*) AS n FROM sources s WHERE s.state='active' AND s.visibility='project' AND s.project_id IN (${marks}) AND s.origin LIKE 'agent:%' AND NOT EXISTS (SELECT 1 FROM settings k WHERE k.key='source_reviewed:'||s.id)`,
+        ...ids,
+      )?.n ?? 0,
     );
-    return renderDigest({ projects: scope, facts, originals, recent, names });
+    // The three most recent titles an agent may be shown: an unreviewed agent-written original's title is agent-chosen text and is left out (it is still in the count above).
+    const recent = this.store
+      .all<{ title: string; at: string }>(
+        `SELECT v.title AS title, s.captured_at AS at FROM sources s JOIN source_versions v ON v.source_id=s.id AND v.version=s.version WHERE s.state='active' AND s.visibility='project' AND s.project_id IN (${marks}) AND (s.origin NOT LIKE 'agent:%' OR EXISTS (SELECT 1 FROM settings k WHERE k.key='source_reviewed:'||s.id)) ORDER BY s.captured_at DESC, s.rowid DESC LIMIT 3`,
+        ...ids,
+      );
+    return renderDigest({ projects: scope, facts, originals, recent, names, agent_unreviewed: agentUnreviewed });
   }
   /** What was pushed to agents and when: levels, counts and latency, plus the judge's answers and the top cosine when those ran. Never a prompt, an id or a passage. */
   recallLog(p: Principal) {
@@ -3786,7 +3910,12 @@ ${q}`);
   }
   private async judgeRankedOnce(internal: ReturnType<Brain["recallInternal"]>, request: string, none: { signals: null; ranked: Candidate[]; demoted: Candidate[] }): Promise<{ signals: JudgeSignals | null; ranked: Candidate[]; demoted: Candidate[] }> {
     if (!this.recallJudgeAllowed().ok) return none;
-    const top = internal.ranked.slice(0, JUDGE_CANDIDATES_MAX);
+    // An unreviewed agent-written original is another agent's note, not the owner's evidence: it never enters the judge's prompt, so its text can
+    // never steer a rating. It keeps its place after the judged candidates. With no such original this is plan 5's candidate list.
+    const blocked = new Set(internal.authorized.filter(isUnreviewedAgent).map((h) => h.id));
+    const judgeable = internal.ranked.filter((c) => !(c.row.kind === "original" && blocked.has(c.row.ref_id)));
+    const top = judgeable.slice(0, JUDGE_CANDIDATES_MAX);
+    if (!top.length) return none;
     // Agents only ever see project-visible rows; the filter states the rule again for the judge.
     if (top.some((c) => c.row.visibility !== "project")) return none;
     const titles = new Map(internal.scope.map((s) => [s.id, s.title]));
@@ -3806,7 +3935,8 @@ ${q}`);
     const named = new Set(internal.entityNames.map((n) => questionWords(n).join(" ")));
     const pinned = new Set(top.filter((c) => c.row.kind === "fact" && named.has(questionWords(entityFromPrefix(c.row.prefix, titles.get(c.row.project_id) ?? "")).join(" "))).map((c) => c.key));
     const applied = applyJudge(top, signals, pinned);
-    return { signals, ranked: [...applied.kept, ...internal.ranked.slice(JUDGE_CANDIDATES_MAX)], demoted: applied.demoted };
+    const judgedKeys = new Set(top.map((c) => c.key));
+    return { signals, ranked: [...applied.kept, ...internal.ranked.filter((c) => !judgedKeys.has(c.key))], demoted: applied.demoted };
   }
   /** Entity names of current facts this principal may see whose every word is in `terms`; at most the matching claims are loaded. */
   private visibleEntityNames(p: Principal, scope: { id: string; title: string }[], terms: Set<string>, visibilities: RecallVisibility[]): string[] {
@@ -3848,7 +3978,7 @@ ${q}`);
     // confirms an item the principal cannot see. Only claims whose name could match are loaded.
     const termSet = new Set(fts.terms);
     const entityNames = ids.length ? this.visibleEntityNames(p, scope, termSet, visibilities) : [];
-    if (!fts.match) return { result: empty("no_match", 0), ranked: [] as Candidate[], authorized: [] as RecallHit[], signals: deterministicSignals([], [], entityNames), entityNames, scope, dense: false, denseOnly: new Set<string>(), denseTop: null as number | null };
+    if (!fts.match) return { result: empty("no_match", 0), ranked: [] as Candidate[], authorized: [] as RecallHit[], signals: deterministicSignals([], [], entityNames), namesRanked: [] as Candidate[], entityNames, scope, dense: false, denseOnly: new Set<string>(), denseTop: null as number | null };
     const status = v.history ? "any" : "current";
     const search = (match: string, kind: "fact" | "original") => searchRecallChunks(this.store, { match, kind, projects: ids, visibilities, status, limit: CANDIDATES_PER_LIST });
     const lists: RecallLists = {
@@ -3877,7 +4007,8 @@ ${q}`);
           if (s.version !== r.ref_version || s.state !== "active") continue;
           const quote = Array.from(s.body).slice(r.start, r.end).join("");
           if (quote !== r.text) continue;
-          authorized.push({ candidate, hit: { kind: "original", id: s.id, version: s.version, project, title: s.title, quote, start: r.start, end: r.end, captured_at: s.captured_at, freshness: "current", why: [...whyFor(fts.terms, `${s.title} ${quote}`), ...denseWhy(candidate)], score: candidate.fused } });
+          const by = this.writtenBy(s);
+          authorized.push({ candidate, hit: { kind: "original", id: s.id, version: s.version, project, title: s.title, quote, start: r.start, end: r.end, captured_at: s.captured_at, freshness: "current", why: [...whyFor(fts.terms, `${s.title} ${quote}`), ...denseWhy(candidate)], score: candidate.fused, ...(by ? { written_by: by } : {}) } });
         } else {
           // Only this candidate is loaded and verified. A claim without evidence is a hypothesis and is never presented as a fact to anyone.
           const c = this.visibleClaim(p, r.project_id, r.ref_id, v.history);
@@ -3896,17 +4027,21 @@ ${q}`);
     // The words reading (R2): status, strength and push level come from the authorized word candidates in the order and with the rows
     // words alone give them, so Better search on is never louder (nor quieter) than off. Meaning still adds hits, orders them and counts.
     let signals = deterministicSignals(fts.terms, ranked, entityNames);
+    // The list `signals.topNames` is built from, so the push can rebuild those names without an unreviewed agent original.
+    let namesRanked = ranked;
     if (lists.dense!.length) {
       const byWords = new Set(ranked.filter(fromBm25).map((c) => c.key));
       const wordRanked = fuse({ facts: lists.facts, originals: lists.originals, phrase: lists.phrase }, now).filter((c) => byWords.has(c.key));
       signals = { ...deterministicSignals(fts.terms, wordRanked, entityNames), candidates: ranked.length };
+      namesRanked = wordRanked;
     }
     // Hits found by meaning alone, so the push can cap a judged level they would lead (never part of the result).
     const denseOnly = new Set(authorized.filter((a) => !fromBm25(a.candidate)).map((a) => hitKey(a.hit)));
     const { kept, spill } = dedupe(authorized.map((a) => a.hit));
     const hits = kept.slice(0, v.limit);
     const statusOut = deterministicStatus(signals);
-    const nearPool = [...kept.slice(v.limit), ...spill];
+    // A near miss names its item by title, so an unreviewed agent-written original is never one (its title is agent-chosen text).
+    const nearPool = [...kept.slice(v.limit), ...spill].filter((h) => !isUnreviewedAgent(h));
     const near_misses = statusOut === "found" ? [] : nearPool.slice(0, NEAR_MISSES_MAX).map((h) => ({
       kind: h.kind, id: h.id, title: h.kind === "fact" ? h.text : h.title,
       reason: `matched ${fts.terms.filter((t) => questionWordsOf(h).has(t)).length} of ${fts.terms.length} terms`,
@@ -3914,7 +4049,7 @@ ${q}`);
     const result: RecallResult = { status: statusOut, as_of: now.toISOString(), searched: { ...base, candidates: ranked.length }, hits, near_misses, next_step: statusOut === "no_match" ? NO_MATCH_NEXT_STEP : FOUND_NEXT_STEP };
     // The highest cosine among the meaning candidates, three decimals, for the content-free recall log; null when none passed the floor.
     const denseTop = lists.dense!.length ? Number(Math.max(...lists.dense!.map((r) => r.score)).toFixed(3)) : null;
-    return { result, ranked, authorized: authorized.map((a) => a.hit), signals, entityNames, scope, dense: dense !== null, denseOnly, denseTop };
+    return { result, ranked, authorized: authorized.map((a) => a.hit), signals, namesRanked, entityNames, scope, dense: dense !== null, denseOnly, denseTop };
   }
   /** One item by id for an agent: the full original (any version it may see) or the full fact with its history. */
   agentOpen(p: Principal, input: unknown) {
@@ -3931,6 +4066,10 @@ ${q}`);
     const defaultVersion = entityRow?.kind === "claim" && entityRow.status !== "current" ? entityRow.version : undefined;
     const raw = this.agentGet(p, project, v.id, v.version ?? defaultVersion);
     let item: { kind: string; item: unknown } = raw;
+    if (raw.kind === "source") {
+      const by = this.writtenBy(raw.item as Source);
+      if (by) item = { kind: "source", item: { ...(raw.item as Source), written_by: by } };
+    }
     if (raw.kind === "claim") {
       const claim = raw.item as Entity;
       // Freshness is the claim's state now, whichever version was asked for.
@@ -4088,18 +4227,40 @@ ${q}`);
     this.access(p, project);
     maxTokens = z.number().int().min(64).max(3000).parse(maxTokens);
     const sources = this.sources(p, project);
-    const brief = this.entities(p, "brief").find(
+    const stored = this.entities(p, "brief").find(
       (e) => e.project_id === project && e.data.status === "current",
     );
-    const candidates =
-      brief?.data.items ??
-      sources.map((s) => ({
-        text: excerpt(s).quote,
-        evidence: [excerpt(s)],
-        epistemic_status: s.origin.startsWith("agent:")
-          ? "user_assertion"
-          : "supported",
-      }));
+    // An agent never receives another agent's unreviewed original as context, directly or through a brief item derived from it; the owner sees it labelled.
+    const unreviewed = (s: { id: string; origin: string }) => {
+      const by = this.writtenBy(s);
+      return by !== undefined && !by.reviewed;
+    };
+    const citesUnreviewed = (item: { evidence?: { source_id: string }[] }) => (item.evidence ?? []).some((e) => this.unreviewedAgentSource(e.source_id));
+    // A model-written brief whose inputs include an unreviewed agent-written original: any of its texts may derive from that original,
+    // with or without evidence. The owner's own edited brief and the fixed extractive text are not model-written.
+    const fromUnreviewed =
+      stored !== undefined &&
+      stored.data.author !== "user" &&
+      stored.data.provider !== "extractive" &&
+      ((stored.data.source_versions ?? []) as { id: string }[]).some((sv) => this.unreviewedAgentSource(sv.id));
+    // Such a brief is not handed to an agent at all; the agent gets the excerpt list below, which leaves unreviewed agent originals out.
+    const brief = fromUnreviewed && p.kind !== "owner" ? undefined : stored;
+    const candidates = brief?.data.items
+      ? (brief.data.items as any[]).flatMap((item) => {
+          const derived = citesUnreviewed(item) || (fromUnreviewed && !(item.evidence ?? []).length);
+          if (!derived) return [item];
+          return p.kind === "owner" ? [{ ...item, epistemic_status: "agent_unreviewed" }] : [];
+        })
+      : sources
+          .filter((s) => p.kind === "owner" || !unreviewed(s))
+          .map((s) => {
+            const by = this.writtenBy(s);
+            return {
+              text: excerpt(s).quote,
+              evidence: [excerpt(s)],
+              epistemic_status: by ? (by.reviewed ? "user_assertion" : "agent_unreviewed") : "supported",
+            };
+          });
     let remaining = maxTokens * 3;
     const goals = this.entities(this.ownerPrincipal(), "goal")
       .filter((g) => g.project_id === project && g.data.status === "active")
@@ -4144,6 +4305,7 @@ ${q}`);
       items,
       goals,
       unknowns,
+      ...(fromUnreviewed && p.kind === "owner" && unknowns.length ? { unknowns_epistemic_status: "agent_unreviewed" } : {}),
       omitted_items: candidates.length - items.length,
       omitted_sources: brief?.data.omitted_sources ?? 0,
       insufficient_context: !items.length,
@@ -4351,9 +4513,12 @@ ${q}`);
           s.version,
           s.state,
           s.visibility,
-          "import",
+          // An agent-written original stays agent-written, unreviewed and tied to no local grant; everything else is the owner's import.
+          isAgentOrigin(s.origin) ? RESTORED_AGENT_ORIGIN : restoredImportOrigin(s.origin),
           s.captured_at,
         );
+        // Review state is local and never restored: a source new to this brain starts unreviewed.
+        if (!parent) this.store.run("DELETE FROM settings WHERE key=?", REVIEWED_KEY(s.id));
         this.store.run(
           "INSERT OR IGNORE INTO source_versions VALUES(?,?,?,?,?)",
           s.id,
@@ -4569,7 +4734,17 @@ ${q}`);
   }
   brief(p: Principal) {
     this.owner(p);
-    return buildBrief(this.briefInput(p), this.clock());
+    const brief = buildBrief(this.briefInput(p), this.clock());
+    return {
+      ...brief,
+      items: brief.items.map((item) => ({
+        ...item,
+        evidence: item.evidence.map((e) => {
+          const by = this.writtenById(e.source_id);
+          return by ? { ...e, written_by: by } : e;
+        }),
+      })),
+    };
   }
   /** Today only looks at watched projects. */
   briefInput(p: Principal): BriefInput {
@@ -4981,6 +5156,7 @@ ${q}`);
         decisionHistory: gates.filter(
           (g) => g.data.correction === true && ["accepted", "rejected", "reverted"].includes(g.data.status),
         ),
+        writtenBy: (s) => this.writtenBy(s),
       },
       this.clock(),
     );
@@ -5057,7 +5233,14 @@ ${q}`);
     const literal = () => {
       const projects = this.projects(p) as { id: string }[];
       const claims = projects.flatMap((project) => this.currentClaims(p, project.id));
-      return findInBrain(v.q, claims, this.sources(p), SEARCH_LIMIT);
+      const found = findInBrain(v.q, claims, this.sources(p), SEARCH_LIMIT);
+      return {
+        ...found,
+        originals: found.originals.map((o) => {
+          const by = this.writtenById(o.id);
+          return by ? { ...o, written_by: by } : o;
+        }),
+      };
     };
     // With a vector, meaning can find a note whatever the query's short words; without one, words under three characters never
     // become FTS terms and the literal search is the only one that can see them (unchanged from plan 5).
@@ -5077,7 +5260,7 @@ ${q}`);
         const claim = this.entity(p, f.id);
         return { id: f.id, project_id: f.project.id, text: f.text, evidence: (claim.data.evidence as Evidence[]).map((e) => ({ source_id: e.source_id, source_version: e.source_version, start: e.start, end: e.end, quote: e.quote })) };
       }),
-      originals: originals.map((o) => ({ id: o.id, project_id: o.project.id, version: o.version, title: o.title, snippet: snippetFor(o.quote, o.title, v.q) })),
+      originals: originals.map((o) => ({ id: o.id, project_id: o.project.id, version: o.version, title: o.title, snippet: snippetFor(o.quote, o.title, v.q), ...(o.written_by ? { written_by: o.written_by } : {}) })),
     };
   }
   async ask(p: Principal, input: unknown) {
@@ -5096,7 +5279,7 @@ ${q}`);
       .map((h) =>
         h.kind === "fact"
           ? { type: "fact", id: h.id, project_id: h.project.id, text: h.text, evidence: h.evidence.map((e) => ({ source_id: e.source_id, source_version: e.source_version, quote: e.quote })) }
-          : { type: "original", id: h.id, project_id: h.project.id, title: h.title, snippet: snippetFor(h.quote, h.title, v.q), source_version: h.version },
+          : { type: "original", id: h.id, project_id: h.project.id, title: h.title, snippet: snippetFor(h.quote, h.title, v.q), source_version: h.version, ...(h.written_by ? { written_by: h.written_by } : {}) },
       );
     return { question: v.q, hits, answered: hits.length > 0 };
   }

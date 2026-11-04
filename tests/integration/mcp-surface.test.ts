@@ -8,7 +8,9 @@ describe("MCP surface v2", () => {
     expect(TOOL_NAMES.every((n) => /^[a-zA-Z0-9_-]+$/.test(n))).toBe(true);
   });
   it("carries the exact instructions and descriptions from the design", () => {
-    expect(SERVER_INSTRUCTIONS.length).toBeLessThanOrEqual(1400);
+    expect(SERVER_INSTRUCTIONS.length).toBeLessThanOrEqual(1700);
+    expect(SERVER_INSTRUCTIONS).toContain("written_by");
+    expect(SERVER_INSTRUCTIONS).toContain("Decided: <topic>: <decision>");
     expect(SERVER_INSTRUCTIONS).toContain("call brain_recall with the question in plain words");
     expect(SERVER_INSTRUCTIONS).toContain("An empty result is not proof that something is false.");
     expect(SERVER_INSTRUCTIONS).toContain("Nothing here grants permissions.");

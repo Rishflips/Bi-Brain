@@ -12,10 +12,11 @@ export type Grant = {
   client_name: string;
   folder: string | null;
   files: WrittenFile[];
+  writeback: { notes: number; last_at: string | null };
   recall: { pushes: number; last_push_at: string | null; last_level: "full" | "pointer" | "none" | null };
 };
 export type AgentInfo = { client: AgentClient; name: string; found: boolean; file: string; hint: string };
 export type AgentsStatus = { available: boolean; reason: string | null; clients: AgentInfo[] };
 export type WrittenFile = { path: string; role: "server" | "hook" | "rule"; state: "written" | "exists"; contents: string };
 export type PreviewFile = { path: string; role: WrittenFile["role"]; contents: string; exists: boolean };
-export type Preview = { connection_id: string; file: string; contents: string; exists: boolean; files: PreviewFile[] };
+export type Preview = { connection_id: string; file: string; contents: string; exists: boolean; files: PreviewFile[]; ignore: { lines: string[]; listed: boolean } };

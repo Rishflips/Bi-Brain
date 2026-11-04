@@ -31,6 +31,8 @@ test("Codex is found, added to a folder in one step, connected by its first call
   await codex.getByText("See the file BiBrain will add").click();
   const preview = codex.getByTestId("agent-file");
   await expect(preview).toContainText("[mcp_servers.bibrain]");
+  await expect(codex.getByText("Keep these out of shared version control")).toBeVisible();
+  await expect(codex.getByTestId("agent-ignore")).toHaveText(".codex/config.toml\n.codex/hooks.json");
   await expect(codex.getByText("This runs BiBrain's recall on every prompt. It pre-approves nothing; Codex asks you to trust it once.")).toBeVisible();
   const contents = (await preview.textContent())!;
   expect(contents).not.toMatch(/[0-9a-f]{64}/);
@@ -126,8 +128,10 @@ test("Claude Code gets the server file and the prompt hook, and an existing hook
   await expect(claude.getByText("The second file turns on recall on every prompt. Only two read-only tools are pre-approved; nothing in it can write.")).toBeVisible();
   await claude.getByRole("button", { name: "Add to Claude Code", exact: true }).last().click();
   await expect(claude).toContainText("Recall on every prompt: on after your next prompt");
+  await expect(claude).toContainText("Session notes: on after your next session");
   const hook = readFileSync(join(folder, ".claude", "settings.local.json"), "utf8");
   expect(hook).toContain('"timeout": 5');
+  expect(hook).toContain('"Stop"');
   expect(hook).not.toMatch(/[0-9a-f]{64}/);
   const second = mkdtempSync(join(tmpdir(), "bibrain-proj-"));
   mkdirSync(join(second, ".claude"));

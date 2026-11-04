@@ -4,7 +4,7 @@ import { appendFileSync, existsSync, readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawn, spawnSync } from "node:child_process";
-import { HOOK_BUDGET_MS, HOOK_CLIENTS, HOOK_PROMPT_MAX, HOOK_STDIN_MS, browserCommand, dataDirFor, firstCodePoints, hookOutput, hookSkipReason, hookStatePath, keyFilePath, loopbackApi, noteHookState, parseArgs, parseHookStdin, readHookState, sha256, writeHookState } from "./lib.mjs";
+import { HOOK_BUDGET_MS, HOOK_CLIENTS, HOOK_END_BUDGET_MS, HOOK_END_PER_SESSION, HOOK_PROMPT_MAX, HOOK_STDIN_MS, adapterEnv, browserCommand, dataDirFor, firstCodePoints, hasMarkerLine, hookEndOutput, hookOutput, hookSkipReason, hookStatePath, keyFilePath, looksLikeSecret, loopbackApi, markerLines, noteHookState, noteSessionEnd, parseArgs, parseHookStdin, parseStopStdin, readHookState, sha256, writeHookState } from "./lib.mjs";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..");
 // Read the same .env the server reads, so the port, data folder and installation
@@ -133,10 +133,7 @@ function connect() {
     fail("This BiBrain connection file is damaged. Add the agent again from Connections in BiBrain.");
   }
   if (typeof api !== "string" || typeof key !== "string") fail("This BiBrain connection file is damaged. Add the agent again from Connections in BiBrain.");
-  const env = { ...process.env };
-  delete env.BRAIN_OWNER_SECRET;
-  env.BRAIN_AGENT_TOKEN = key;
-  env.BRAIN_API_URL = api;
+  const env = adapterEnv(process.env, api, key);
   const adapter = spawn(process.execPath, [join(root, "node_modules", "tsx", "dist", "cli.mjs"), join(root, "apps", "mcp", "main.ts")], {
     cwd: root,
     stdio: "inherit",
@@ -210,12 +207,54 @@ async function hook() {
   process.exitCode = 0;
 }
 
+// The end-of-turn hook: it may add nothing and block nothing. Any problem ends with "{}" and exit 0.
+async function hookEnd() {
+  try {
+    const client = String(positional[0] ?? "");
+    if (!HOOK_CLIENTS.includes(client)) return;
+    const raw = await readStdin(HOOK_STDIN_MS);
+    if (raw === null) return;
+    const event = parseStopStdin(raw);
+    if (!event || event.active || !hasMarkerLine(event.message) || looksLikeSecret(event.message)) return;
+    // Only the marker lines travel; the rest of the reply stays here.
+    const text = markerLines(event.message);
+    if (text === null || looksLikeSecret(text)) return;
+    const file = keyFilePath(String(flags.data ?? ""), String(flags.connection ?? ""));
+    const { api, key } = JSON.parse(readFileSync(file, "utf8"));
+    if (typeof key !== "string") return;
+    const origin = loopbackApi(api);
+    const statePath = hookStatePath(String(flags.data), String(flags.connection));
+    const state = readHookState(statePath);
+    // A client that sends no session id shares one bucket (and its per-session note cap) across those turns.
+    const sessionHash = sha256(event.session_id);
+    const messageHash = sha256(text);
+    const notes = state.sessions[sessionHash]?.notes ?? [];
+    if (notes.includes(messageHash) || notes.length >= HOOK_END_PER_SESSION) return;
+    const remaining = Math.max(50, Math.floor(HOOK_END_BUDGET_MS - (Date.now() - startedAt)));
+    const res = await fetch(`${origin}/api/v1/agent/session-note`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ session_id: sessionHash, client, text }),
+      signal: AbortSignal.timeout(remaining),
+      redirect: "error",
+    });
+    if (!res.ok) return;
+    writeHookState(statePath, noteSessionEnd(state, sessionHash, messageHash, Date.now()));
+  } catch {
+    /* silent by design */
+  } finally {
+    process.stdout.write(hookEndOutput());
+    process.exitCode = 0;
+  }
+}
+
 const help = `bibrain: start BiBrain and connect agents.
 
   npx --no-install bibrain                   Start BiBrain and open it signed in
   npx --no-install bibrain start --no-open   Start BiBrain without the browser
   npx --no-install bibrain open              Open the running BiBrain signed in
   npx --no-install bibrain hook <agent>      Used by the agent's prompt hook; prints evidence for one prompt
+  npx --no-install bibrain hook-end <agent>  Used by the agent's end-of-turn hook; proposes a session note
   npx --no-install bibrain help              Show this help
 
 Run these from inside the BiBrain folder. --no-install stops npx from
@@ -230,6 +269,7 @@ try {
     if (!(await isBiBrain())) notBiBrain();
     await openSignedIn();
   } else if (command === "hook") await hook();
+  else if (command === "hook-end") await hookEnd();
   else if (command === "connect") connect();
   else process.stdout.write(help + "\n");
 } catch (error) {

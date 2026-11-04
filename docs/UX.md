@@ -84,7 +84,10 @@ Main content, top to bottom:
   it says "Facts unavailable right now" rather than guessing.
 
 New brain: a welcome with three ways to start (plug in an agent, paste something,
-import a folder). No fictional activity is shown.
+bring in the instruction files a project folder already holds: CLAUDE.md, AGENTS.md,
+Cursor rules and the agent's memory file, previewed before saving and shown as
+Imported in Your brain; a file over the size limit is skipped with a warning, the
+rest import). No fictional activity is shown.
 
 Failed state: the note is saved and the Brief says it could not be checked, with a
 way to try again. Never show success while a job is only queued.
@@ -144,6 +147,7 @@ state:
   Undo brings it back.
 - Goals shows the real goal for the project and its plan state.
 - Recent originals open the retained source directly.
+- An original written by a connected agent says "From <agent> · not yet reviewed" until the owner presses "Mark as reviewed" on it or rewrites its text; then "From <agent> · reviewed". Keeping a card taken from it keeps that one fact and does not review the note. Until the note is reviewed it is never pushed to an agent as evidence.
 - Preview handoff uses the existing server-built project handoff; it never
   claims to open or message an external agent.
 
@@ -193,6 +197,15 @@ BiBrain has recorded a push, then "Recall on every prompt: on" ("Rule file added
 for Cursor). For Codex it reads "Recall on every prompt: on after Codex trusts
 the hook" until the first push, because Codex runs a project hook only after the
 person trusts it in `/hooks`.
+
+A second line reads "Session notes: …". It says "on after your next session" for
+Claude Code and "Codex asks you to approve this in /hooks, and again if the hook
+changes" for Codex, then "Session notes: N saved · last {date}" once one is saved; "add the
+hook yourself" when the hook file already existed; and "by hand (Cursor has no
+end-of-turn hook)" for Cursor. A connection added before session notes existed
+shows "Session notes: add the Stop entry yourself" with Copy, which copies the
+entry built from that file's own recall command. BiBrain never edits the file
+for it.
 
 **Connected.** The status becomes "Connected · last used {date}" only after the
 agent's first real authenticated call.

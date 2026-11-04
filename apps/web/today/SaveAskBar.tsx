@@ -348,7 +348,9 @@ export function SaveAskBar({
                   >
                     {h.type === "fact"
                       ? "Reviewed"
-                      : "Original, not reviewed yet"}
+                      : h.written_by
+                        ? `From ${h.written_by.agent} · ${h.written_by.reviewed ? "reviewed" : "not yet reviewed"}`
+                        : "Original, not reviewed yet"}
                   </span>
                   <p>{h.type === "fact" ? h.text : h.snippet}</p>
                   <button

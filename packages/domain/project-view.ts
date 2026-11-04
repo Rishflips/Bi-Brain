@@ -1,5 +1,6 @@
 import type { Entity, Source } from "../contracts/index.ts";
 import { STALE_DAYS } from "./brief.ts";
+import type { WrittenBy } from "./provenance.ts";
 import { factText, valueText } from "./facts.ts";
 import { findOpenQuestions, type OpenQuestion } from "./questions.ts";
 
@@ -31,7 +32,10 @@ export type OriginalView = {
   title: string;
   captured_at: string;
   from: "you" | "agent" | "import";
+  /** For an original brought in from an instruction file: that file, as picked (for example CLAUDE.md). */
+  file?: string;
   private: boolean;
+  written_by?: WrittenBy;
 };
 export type ProjectView = {
   project: { id: string; title: string };
@@ -53,7 +57,13 @@ export type ProjectViewInput = {
   waiting: number;
   needsDecision: Entity[];
   decisionHistory: Entity[];
+  writtenBy: (s: Source) => WrittenBy | undefined;
 };
+
+/** The instruction file an import came from, when the import recorded it. */
+export function importFile(origin: string): string | undefined {
+  return origin.startsWith("import:") ? origin.slice(7) || undefined : undefined;
+}
 
 export function originFrom(origin: string): OriginalView["from"] {
   if (origin === "manual") return "you";
@@ -96,14 +106,19 @@ export function buildProjectView(input: ProjectViewInput, now: Date): ProjectVie
   const originals = input.sources
     .filter((s) => s.state === "active")
     .sort((a, b) => b.captured_at.localeCompare(a.captured_at))
-    .map((s): OriginalView => ({
+    .map((s): OriginalView => {
+      const written_by = input.writtenBy(s);
+      return {
       id: s.id,
       version: s.version,
       title: s.title,
       captured_at: s.captured_at,
       from: originFrom(s.origin),
+      ...(importFile(s.origin) ? { file: importFile(s.origin) } : {}),
       private: s.visibility === "private",
-    }));
+      ...(written_by ? { written_by } : {}),
+      };
+    });
   return {
     project: input.project,
     facts,

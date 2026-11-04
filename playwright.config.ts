@@ -29,7 +29,7 @@ export default defineConfig({
   projects: [
     {
       name: "main",
-      testIgnore: /(today-v2(-empty|-bar)?|connections-v2|system-one|better-search)\.spec\.ts/,
+      testIgnore: /(today-v2(-empty|-bar)?|connections-v2|provenance|system-one|better-search)\.spec\.ts/,
       use: { baseURL: `http://127.0.0.1:${port}` },
     },
     {
@@ -44,7 +44,7 @@ export default defineConfig({
     },
     {
       name: "connections",
-      testMatch: /connections-v2\.spec\.ts/,
+      testMatch: /(connections-v2|provenance)\.spec\.ts/,
       use: { baseURL: `http://127.0.0.1:${connectionsPort}` },
     },
     {

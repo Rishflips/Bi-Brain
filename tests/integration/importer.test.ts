@@ -4,8 +4,11 @@ import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Brain } from "../../packages/domain/service.ts";
+import { canonical, hash } from "../../packages/domain/logic.ts";
 import { parseImport } from "../../packages/importers/local.ts";
 import { discoverFolder } from "../../packages/importers/folder.ts";
+import { isContextFile } from "../../packages/importers/context.ts";
+import { createApp } from "../../apps/server/app.ts";
 const owner = { kind: "owner" } as const;
 it("folder and chat adapters preview, checkpoint, deduplicate and propagate deletion", () => {
   const s = new Storage(":memory:");
@@ -122,5 +125,161 @@ it("local folder discovery reads nested text and reports unsupported attachments
     );
   } finally {
     rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+it("the context kind keeps only agent instruction files, on the page's rule and again on the server", () => {
+  for (const ok of ["CLAUDE.md", "AGENTS.md", "docs/AGENTS.md", ".cursor/rules/style.mdc", ".cursorrules", ".github/copilot-instructions.md", "MEMORY.md", "CLAUDE.local.md", "GEMINI.md", ".windsurfrules"]) expect(isContextFile(ok), ok).toBe(true);
+  for (const no of ["README.md", "node_modules/x/CLAUDE.md", ".git/AGENTS.md", "dist/CLAUDE.md", "src/index.ts", ".cursor/rules/notes.md", "claude.md.bak", "deep/a/b/c/d/e/AGENTS.md"]) expect(isContextFile(no), no).toBe(false);
+  const s = new Storage(":memory:");
+  try {
+    const b = new Brain(s);
+    const selection = {
+      kind: "context",
+      project_id: "inbox",
+      entries: [
+        { path: "CLAUDE.md", content: "# Northstar\nRun the tests before every commit." },
+        { path: "README.md", content: "not an instruction file" },
+        { path: ".cursor/rules/style.mdc", content: "---\nalwaysApply: true\n---\nUse two spaces." },
+        { path: "AGENTS.md", content: "   " },
+      ],
+    };
+    const preview = b.previewLocalImport(owner, selection);
+    expect(preview.items.map((i) => i.title)).toEqual(["CLAUDE.md", ".cursor/rules/style.mdc"]);
+    expect(preview.warnings).toEqual(["README.md: not an agent instruction file, skipped", "AGENTS.md: empty file skipped"]);
+    const r = b.applyLocalImport(owner, selection, preview.checkpoint);
+    expect(r.imported).toBe(2);
+    const saved = b.sources(owner, "inbox");
+    // Owner-imported, not "saved by you": a cloned repository's file was written by someone else.
+    expect(saved.map((x) => [x.title, x.origin]).sort()).toEqual([[".cursor/rules/style.mdc", "import:.cursor/rules/style.mdc"], ["CLAUDE.md", "import:CLAUDE.md"]]);
+    expect(saved.find((x) => x.title === "CLAUDE.md")!.body).toBe("# Northstar\nRun the tests before every commit.");
+    expect(b.writtenBy(saved[0])).toBeUndefined();
+    expect(b.brainProject(owner, "inbox").originals.map((o) => o.from)).toEqual(["import", "import"]);
+    // A plain folder import is unchanged.
+    b.applyLocalImport(owner, { kind: "folder", project_id: "inbox", entries: [{ path: "notes/x.md", content: "plain folder note" }] }, b.previewLocalImport(owner, { kind: "folder", project_id: "inbox", entries: [{ path: "notes/x.md", content: "plain folder note" }] }).checkpoint);
+    expect(b.sources(owner, "inbox").find((x) => x.title === "notes/x.md")!.origin).toBe("manual");
+    expect(() => b.previewLocalImport(owner, { ...selection, entries: Array.from({ length: 51 }, (_, i) => ({ path: `p${i}/CLAUDE.md`, content: "x" })) })).toThrow();
+  } finally {
+    s.close();
+  }
+});
+
+it("the context kind skips one oversize file with a warning and imports the rest; a plain folder import still refuses the batch", () => {
+  const s = new Storage(":memory:");
+  try {
+    const b = new Brain(s);
+    const big = "x".repeat(2 * 1048576);
+    const long = "é".repeat(100_001);
+    const selection = { kind: "context", project_id: "inbox", entries: [{ path: "AGENTS.md", content: big }, { path: "GEMINI.md", content: long }, { path: "CLAUDE.md", content: "small and kept" }] };
+    const preview = b.previewLocalImport(owner, selection);
+    expect(preview.items.map((i) => i.title)).toEqual(["CLAUDE.md"]);
+    expect(preview.warnings).toEqual(["AGENTS.md: larger than 1 MiB, skipped", "GEMINI.md: longer than 100,000 characters, skipped"]);
+    expect(b.applyLocalImport(owner, selection, preview.checkpoint).imported).toBe(1);
+    expect(() => b.previewLocalImport(owner, { kind: "folder", project_id: "inbox", entries: [{ path: "a.md", content: big }] })).toThrow(/4 MiB batch limit|per-file/);
+  } finally {
+    s.close();
+  }
+});
+
+it("an agent token cannot preview or apply a context import", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "ctx-import-"));
+  const s = new Storage(join(dir, "brain.sqlite"), { vault: join(dir, "vault") });
+  try {
+    const b = new Brain(s, () => new Date("2026-11-03T09:00:00Z"));
+    const g = b.createGrant(owner, { projects: ["inbox"], operations: ["read", "propose_memory"], expires_at: "2026-12-03T09:00:00.000Z", client: "claude-code" });
+    const app = await createApp(b, { pairSecret: "test-code", static: false });
+    const selection = { kind: "context", project_id: "inbox", entries: [{ path: "CLAUDE.md", content: "agents must not import this" }] };
+    const headers = { host: "127.0.0.1:4317", authorization: `Bearer ${g.token}` };
+    expect((await app.inject({ method: "POST", url: "/api/v1/import-adapters/preview", headers, payload: selection })).statusCode).toBe(403);
+    expect((await app.inject({ method: "POST", url: "/api/v1/import-adapters/apply", headers, payload: { checkpoint: "x", selection } })).statusCode).toBe(403);
+    expect(b.sources(owner, "inbox")).toEqual([]);
+    await app.close();
+  } finally {
+    s.close();
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+it("the context kind refuses a traversal or absolute path as that file's own outcome and imports the rest", () => {
+  const s = new Storage(":memory:");
+  try {
+    const b = new Brain(s);
+    const selection = {
+      kind: "context",
+      project_id: "inbox",
+      entries: [
+        { path: "../x/CLAUDE.md", content: "escapes" },
+        { path: "/etc/AGENTS.md", content: "absolute" },
+        { path: "C:\Users\me\CLAUDE.md", content: "drive" },
+        { path: "CLAUDE.md", content: "kept" },
+      ],
+    };
+    const preview = b.previewLocalImport(owner, selection);
+    expect(preview.items.map((i) => i.title)).toEqual(["CLAUDE.md"]);
+    expect(preview.warnings).toHaveLength(3);
+    expect(b.applyLocalImport(owner, selection, preview.checkpoint).imported).toBe(1);
+    // A plain folder import still refuses the whole batch for the same path.
+    expect(() => b.previewLocalImport(owner, { kind: "folder", project_id: "inbox", entries: [{ path: "../a.md", content: "x" }] })).toThrow();
+  } finally {
+    s.close();
+  }
+});
+
+it("a secret-looking context file is quarantined on apply, private, with its text kept out of the brain", () => {
+  const dir = mkdtempSync(join(tmpdir(), "ctx-import-"));
+  const s = new Storage(join(dir, "brain.sqlite"), { vault: join(dir, "vault") });
+  try {
+    const b = new Brain(s);
+    const selection = { kind: "context", project_id: "inbox", entries: [{ path: "CLAUDE.md", content: "Deploy with key: sk-proj-abcdefghijklmnopqrstuvwxyz123456" }, { path: "AGENTS.md", content: "Run the tests." }] };
+    const r = b.applyLocalImport(owner, selection, b.previewLocalImport(owner, selection).checkpoint);
+    expect(r.imported).toBe(2);
+    const saved = b.sources(owner, "inbox");
+    expect(JSON.stringify(saved)).not.toContain("sk-proj");
+    const q = saved.find((x) => x.title === "Quarantined source")!;
+    expect(q.visibility).toBe("private");
+    expect(saved.find((x) => x.title === "AGENTS.md")!.body).toBe("Run the tests.");
+  } finally {
+    s.close();
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+it("a long instruction-file path keeps a bounded origin that survives export and restore; bad origins fall back", () => {
+  const s = new Storage(":memory:");
+  const t = new Storage(":memory:");
+  try {
+    const b = new Brain(s);
+    const long = `${["a", "b", "c"].map((c) => c.repeat(47)).join("/")}/${"d".repeat(200 - 3 * 48 - 10)}/CLAUDE.md`;
+    expect(long.length).toBe(200);
+    const selection = { kind: "context", project_id: "inbox", entries: [{ path: long, content: "Keep commits small." }, { path: "AGENTS.md", content: "Be kind." }] };
+    const r = b.applyLocalImport(owner, selection, b.previewLocalImport(owner, selection).checkpoint);
+    expect(r.imported).toBe(2);
+    const origins = b.sources(owner, "inbox").map((x) => x.origin);
+    const longOrigin = origins.find((o) => o !== "import:AGENTS.md")!;
+    expect(longOrigin.startsWith("import:")).toBe(true);
+    expect(longOrigin.length).toBeLessThanOrEqual(200);
+    const exported = b.export(owner);
+    const target = new Brain(t);
+    const preview = target.preview(owner, exported);
+    expect(preview.conflicts).toEqual([]);
+    target.applyImport(owner, preview.id);
+    expect(target.sources(owner, "inbox").map((x) => x.origin).sort()).toEqual([...origins].sort());
+    expect(target.brainProject(owner, "inbox").originals.map((o) => o.file).sort()).toEqual(origins.map((o) => o.slice(7)).sort());
+    // A malformed or oversized import label, or an agent one, never survives as a label.
+    const forged = JSON.parse(JSON.stringify(exported));
+    forged.payload.sources[0].origin = "import:bad\u0001name";
+    forged.payload.sources[1].origin = `import:${"z".repeat(150)}`;
+    forged.checksum = hash(canonical(forged.payload));
+    const u = new Storage(":memory:");
+    try {
+      const fresh = new Brain(u);
+      fresh.applyImport(owner, fresh.preview(owner, forged).id);
+      expect(fresh.sources(owner, "inbox").map((x) => x.origin)).toEqual(["import", "import"]);
+    } finally {
+      u.close();
+    }
+  } finally {
+    s.close();
+    t.close();
   }
 });

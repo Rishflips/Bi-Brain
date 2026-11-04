@@ -166,7 +166,12 @@ export function BrainSearch({
                     >
                       <span className="yb-hit-title">{o.title}</span>
                       <span className="yb-hit-snippet">{o.snippet}</span>
-                      <span className="tv-faint">{title(o.project_id)}</span>
+                      <span className="tv-faint">
+                        {title(o.project_id)}
+                        {o.written_by
+                          ? ` · From ${o.written_by.agent} · ${o.written_by.reviewed ? "reviewed" : "not yet reviewed"}`
+                          : ""}
+                      </span>
                     </button>
                   </li>
                 ))}

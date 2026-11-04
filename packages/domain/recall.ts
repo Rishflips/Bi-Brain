@@ -3,6 +3,7 @@ import type { RecallMatch } from "../storage/recall-index.ts";
 import { questionWords } from "./ask.ts";
 import { STALE_DAYS } from "./brief.ts";
 import { DENSE_WEIGHT } from "./better-search.ts";
+import type { WrittenBy } from "./provenance.ts";
 
 export const RECALL_QUERY_MAX = 500;
 export const RECALL_LIMIT_DEFAULT = 8;
@@ -123,6 +124,8 @@ export type FactHit = {
 export type OriginalHit = {
   kind: "original"; id: string; version: number; project: { id: string; title: string }; title: string; quote: string; start: number; end: number;
   captured_at: string; freshness: "current"; why: string[]; score: number;
+  /** Only on agent-written originals: who wrote it and whether the owner has reviewed it. */
+  written_by?: WrittenBy;
 };
 export type RecallHit = FactHit | OriginalHit;
 export type NearMiss = { kind: "fact" | "original"; id: string; title: string; reason: string };
@@ -231,7 +234,7 @@ export function renderRecallText(result: RecallResult): string {
     lines.push(
       h.kind === "fact"
         ? `fact ${h.id} · ${h.checked_at.slice(0, 10)} · ${h.freshness} · ${h.text}`
-        : `original ${h.id} v${h.version} · ${h.captured_at.slice(0, 10)} · ${h.freshness} · ${h.title}: ${h.quote}`,
+        : `original ${h.id} v${h.version} · ${h.captured_at.slice(0, 10)} · ${h.freshness} · ${h.title}: ${h.quote}${h.written_by ? ` · written by ${h.written_by.agent}, ${h.written_by.reviewed ? "reviewed" : "not yet reviewed"}` : ""}`,
     );
   if (result.near_misses.length) lines.push(`near misses: ${result.near_misses.map((n) => `${n.kind} ${n.id} (${n.reason})`).join("; ")}`);
   lines.push(result.next_step);

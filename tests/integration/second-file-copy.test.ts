@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { secondFileHelper, secondFileLabel } from "../../apps/web/connections/second-file.ts";
+import { hookCommand, secondFileContents } from "../../packages/domain/agents.ts";
+import { shortDate } from "../../apps/web/brain/format.ts";
+import { secondFileHelper, secondFileLabel, stopEntryFor, writebackLabel } from "../../apps/web/connections/second-file.ts";
 
 const none = { pushes: 0, last_push_at: null, last_level: null } as const;
 const pushed = { pushes: 1, last_push_at: "2026-10-26T09:00:00.000Z", last_level: "full" } as const;
@@ -22,5 +24,34 @@ describe("second file copy", () => {
     expect(secondFileHelper("cursor")).toBe("This rule asks the agent to check your brain first. It cannot run anything.");
     expect(secondFileHelper("codex")).toBe("This runs BiBrain's recall on every prompt. It pre-approves nothing; Codex asks you to trust it once.");
     for (const c of ["claude-code", "cursor", "codex"] as const) expect(secondFileHelper(c)).not.toMatch(/\b(model|MCP|token)\b/i);
+  });
+
+  it("says plainly whether session notes are on, waiting, missing from an older file, or by hand, and offers the exact Stop entry to add", () => {
+    const none = { notes: 0, last_at: null };
+    const some = { notes: 3, last_at: "2026-11-03T09:00:00.000Z" };
+    const command = 'node "/opt/bibrain/apps/cli/bibrain.mjs" hook claude-code --connection 1b4e28ba-2fa1-41d2-883f-0016d3cca427 --data "/opt/bibrain/data"';
+    const withStop = { role: "hook", state: "written", contents: JSON.stringify({ hooks: { UserPromptSubmit: [{ hooks: [{ type: "command", command, timeout: 5 }] }], Stop: [] } }) } as const;
+    const without = { role: "hook", state: "written", contents: JSON.stringify({ hooks: { UserPromptSubmit: [{ hooks: [{ type: "command", command, timeout: 5 }] }] } }) } as const;
+    expect(writebackLabel({ client: "claude-code", writeback: none }, withStop)).toBe("Session notes: on after your next session");
+    expect(writebackLabel({ client: "codex", writeback: none }, withStop)).toBe("Session notes: Codex asks you to approve this in /hooks, and again if the hook changes");
+    expect(writebackLabel({ client: "codex", writeback: some }, withStop)).toBe(`Session notes: 3 saved · last ${shortDate(some.last_at)}`);
+    expect(writebackLabel({ client: "claude-code", writeback: none }, { ...withStop, state: "exists" })).toBe("Session notes: add the hook yourself");
+    expect(writebackLabel({ client: "claude-code", writeback: none }, without)).toBe("Session notes: add the Stop entry yourself");
+    expect(writebackLabel({ client: "cursor", writeback: none }, { role: "rule", state: "written", contents: "" })).toBe("Session notes: by hand (Cursor has no end-of-turn hook)");
+    // The entry to paste is the connection's own prompt-hook command with hook-end in place of hook; nothing in the file is touched.
+    expect(JSON.parse(stopEntryFor("claude-code", without.contents)!)).toEqual({ Stop: [{ hooks: [{ type: "command", command: command.replace(" hook claude-code ", " hook-end claude-code "), timeout: 5 }] }] });
+    expect(stopEntryFor("claude-code", withStop.contents)).toBeNull();
+    expect(stopEntryFor("claude-code", "not json")).toBeNull();
+    for (const c of ["claude-code", "cursor", "codex"] as const) expect(writebackLabel({ client: c, writeback: none }, withStop)).not.toMatch(/\b(model|MCP|token)\b/i);
+  });
+
+  it("offers the Codex Stop entry from its own command, and keeps a quoted path with spaces intact", () => {
+    const launch = { node: String.raw`C:\Program Files\nodejs\node.exe`, cli: String.raw`C:\Users\Ana\My Brain\apps\cli\bibrain.mjs`, dataDir: String.raw`C:\Users\Ana\My Brain\data`, connectionId: "1b4e28ba-2fa1-41d2-883f-0016d3cca427" };
+    const written = secondFileContents("codex", launch)!;
+    expect(JSON.parse(written).hooks.Stop[0].hooks[0].command).toBe(hookCommand("codex", launch, "hook-end"));
+    expect(hookCommand("codex", launch, "hook-end")).toBe('node "C:/Users/Ana/My Brain/apps/cli/bibrain.mjs" hook-end codex --connection 1b4e28ba-2fa1-41d2-883f-0016d3cca427 --data "C:/Users/Ana/My Brain/data"');
+    const old = JSON.stringify({ hooks: { UserPromptSubmit: JSON.parse(written).hooks.UserPromptSubmit } });
+    expect(stopEntryFor("codex", written)).toBeNull();
+    expect(JSON.parse(stopEntryFor("codex", old)!)).toEqual({ Stop: JSON.parse(written).hooks.Stop });
   });
 });

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { Entity } from "../../packages/contracts/index.ts";
 import { gateFitsBrief } from "../../packages/domain/brief.ts";
 import { factText } from "../../packages/domain/facts.ts";
+import { buildProjectView } from "../../packages/domain/project-view.ts";
 import {
   QUESTION_LIMIT,
   findOpenQuestions,
@@ -155,5 +156,29 @@ describe("gateFitsBrief", () => {
     expect(
       gateFitsBrief(gate({ status: "queued", entity: "Beta", field: { aspect: "statement", value: "x" }, evidence: [] })),
     ).toBe(false);
+  });
+});
+
+describe("originals carry provenance", () => {
+  it("labels agent-written originals by agent and review state, and owner originals as before", () => {
+    const view = buildProjectView(
+      {
+        project: { id: "inbox", title: "Inbox" },
+        claims: [],
+        confirmations: {},
+        sources: [
+          { id: "a", project_id: "inbox", version: 1, title: "Session note from Codex", body: "Decided: queue: SQLite", visibility: "project", state: "active", captured_at: "2026-11-03T09:00:00Z", origin: "agent:g1" },
+          { id: "b", project_id: "inbox", version: 1, title: "Mine", body: "text", visibility: "project", state: "active", captured_at: "2026-11-02T09:00:00Z", origin: "manual" },
+        ],
+        answered: new Set(),
+        waiting: 0,
+        needsDecision: [],
+        decisionHistory: [],
+        writtenBy: (s) => (s.origin === "agent:g1" ? { agent: "Codex", reviewed: false } : undefined),
+      },
+      new Date("2026-11-03T10:00:00Z"),
+    );
+    expect(view.originals[0]).toMatchObject({ id: "a", from: "agent", written_by: { agent: "Codex", reviewed: false } });
+    expect(view.originals[1]).not.toHaveProperty("written_by");
   });
 });

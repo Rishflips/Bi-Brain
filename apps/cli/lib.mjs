@@ -115,7 +115,7 @@ export function readHookState(path) {
 export function noteHookState(state, sessionHash, ids, now, digested = false) {
   const current = state.sessions[sessionHash] ?? { first_seen: now, last_seen: now, hashes: [] };
   const hashes = [...current.hashes, ...ids.map((id) => sha256(String(id)))].slice(-HOOK_HASHES);
-  const sessions = { ...state.sessions, [sessionHash]: { first_seen: current.first_seen, last_seen: now, hashes, digested: current.digested === true || digested === true } };
+  const sessions = { ...state.sessions, [sessionHash]: { first_seen: current.first_seen, last_seen: now, hashes, digested: current.digested === true || digested === true, ...(current.notes ? { notes: current.notes } : {}) } };
   const kept = Object.entries(sessions)
     .sort((a, b) => (b[1].last_seen ?? b[1].first_seen) - (a[1].last_seen ?? a[1].first_seen))
     .slice(0, HOOK_SESSIONS);
@@ -127,6 +127,97 @@ export function writeHookState(path, state) {
   writeFileSync(path, JSON.stringify(state), { mode: 0o600 });
 }
 
+export const HOOK_END_BUDGET_MS = 2500;
+export const HOOK_END_TEXT_MAX = 4000;
+export const HOOK_END_PER_SESSION = 12;
+const HOOK_END_LINE_MAX = 300;
+const HOOK_END_DECISIONS = 10;
+const HOOK_END_QUESTIONS = 10;
+/** The same marker test as packages/domain/session-note.ts MARKER_LINE; a test keeps them equal. */
+const MARKER = /^\s*(?:[-*•]\s*)?(?:\*\*)?(?:decided|open question|still unclear|question|unclear|next step)\s*:/imu;
+
+export function hasMarkerLine(text) {
+  return MARKER.test(text);
+}
+
+/**
+ * The marker lines of a reply, cleaned exactly as the server cleans them (bullet and bold marks off, trimmed; lines inside a ``` fence skipped),
+ * at most the last 10 decisions, the last 10 questions and the last next step, each at most 300 characters, joined by newlines and cut to HOOK_END_TEXT_MAX code points.
+ * Null unless a decision or a question is present. Nothing else in the reply ever leaves the agent's process.
+ */
+export function markerLines(text) {
+  const decisions = [];
+  const questions = [];
+  let next = null;
+  const fits = (s) => s.length > 0 && Array.from(s).length <= HOOK_END_LINE_MAX;
+  let fenced = false;
+  for (const raw of text.split(/\r?\n/u)) {
+    if (/^\s*```/u.test(raw)) {
+      fenced = !fenced;
+      continue;
+    }
+    if (fenced) continue;
+    const line = raw.trim().replace(/^[-*•]\s*/u, "").replace(/\*\*/gu, "").trim();
+    const decided = /^decided\s*:\s*(.+)$/iu.exec(line);
+    if (decided) {
+      // The same split as the server: the topic ends at the first colon followed by whitespace; the decision after it is capped.
+      const m = /^([^:\r\n]{1,120}):\s+(.+)$/u.exec(decided[1].trim());
+      if (m && fits(m[2].trim())) decisions.push(line);
+      continue;
+    }
+    const question = /^(?:open question|still unclear|question|unclear)\s*:\s*(.+)$/iu.exec(line);
+    if (question) {
+      if (fits(question[1].trim())) questions.push(line);
+      continue;
+    }
+    const nextStep = /^next step\s*:\s*(.+)$/iu.exec(line);
+    if (nextStep && fits(nextStep[1].trim())) next = line;
+  }
+  if (!decisions.length && !questions.length) return null;
+  // The latest lines win: the last 10 decisions, the last 10 questions and the last next step.
+  return firstCodePoints([...decisions.slice(-HOOK_END_DECISIONS), ...questions.slice(-HOOK_END_QUESTIONS), ...(next ? [next] : [])].join("\n"), HOOK_END_TEXT_MAX);
+}
+
+/** One Stop event. Anything that is not a Stop with a string last_assistant_message is null. */
+export function parseStopStdin(raw) {
+  let value;
+  try {
+    value = JSON.parse(raw.replace(/^\uFEFF/u, "").trim());
+  } catch {
+    return null;
+  }
+  if (!value || typeof value !== "object" || value.hook_event_name !== "Stop" || typeof value.last_assistant_message !== "string") return null;
+  return { session_id: typeof value.session_id === "string" ? value.session_id : "", message: value.last_assistant_message, active: value.stop_hook_active === true };
+}
+
+/** Remembers the hash of a message already sent for a session (12 per session), beside the push hashes. Never the text. */
+export function noteSessionEnd(state, sessionHash, messageHash, now) {
+  const current = state.sessions[sessionHash] ?? { first_seen: now, last_seen: now, hashes: [] };
+  const notes = [...(current.notes ?? []), messageHash].slice(-HOOK_END_PER_SESSION);
+  const sessions = { ...state.sessions, [sessionHash]: { ...current, last_seen: now, hashes: current.hashes ?? [], notes } };
+  const kept = Object.entries(sessions)
+    .sort((a, b) => (b[1].last_seen ?? b[1].first_seen) - (a[1].last_seen ?? a[1].first_seen))
+    .slice(0, HOOK_SESSIONS);
+  return { sessions: Object.fromEntries(kept) };
+}
+
+/** Valid JSON with no decision: the agent stops as it would have. Codex requires JSON on stdout for this event. */
+export function hookEndOutput() {
+  return "{}";
+}
+
 export function hookOutput(text) {
   return JSON.stringify({ hookSpecificOutput: { hookEventName: "UserPromptSubmit", additionalContext: text } });
+}
+
+/** What the agent adapter is allowed to inherit: locating programs, temp and home folders, locale and certificates. Compared case-insensitively, since Windows spells PATH as Path. No proxy variables: they can carry credentials, and the adapter only talks to loopback. */
+const ADAPTER_ENV = new Set(["PATH", "HOME", "USERPROFILE", "HOMEDRIVE", "HOMEPATH", "SYSTEMROOT", "WINDIR", "TEMP", "TMP", "TMPDIR", "APPDATA", "LOCALAPPDATA", "COMSPEC", "PATHEXT", "LANG", "LC_ALL", "NODE_EXTRA_CA_CERTS", "SSL_CERT_FILE"]);
+
+/** The adapter's environment: the allowlist above plus its own two variables. Provider, billing, sign-in and owner secrets never reach it. */
+export function adapterEnv(env, api, key) {
+  const out = {};
+  for (const [name, value] of Object.entries(env)) if (typeof value === "string" && ADAPTER_ENV.has(name.toUpperCase())) out[name] = value;
+  out.BRAIN_API_URL = api;
+  out.BRAIN_AGENT_TOKEN = key;
+  return out;
 }
