@@ -3,6 +3,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createApp } from "../../apps/server/app.ts";
+import { BrainError } from "../../packages/domain/logic.ts";
 import { SERVER_INSTRUCTIONS } from "../../apps/mcp/surface.ts";
 import { buildFixture, owner, type Fixture } from "../eval/recall-fixture.ts";
 
@@ -156,5 +157,49 @@ describe("Streamable HTTP MCP", () => {
     }
     const owned = await app.inject({ method: "GET", url: "/api/v1/connections", headers: { host: "127.0.0.1:4317", authorization: `Bearer ${g.token}` } });
     expect(owned.statusCode).toBe(403);
+  });
+  it("answers a failed capabilities lookup as plain HTTP: 401 unchanged and a neutral 502 without the inner body", async () => {
+    const { f, rpc } = await setup();
+    const real = f.brain.agentCapabilities.bind(f.brain);
+    f.brain.agentCapabilities = () => {
+      throw new BrainError("UNAUTHORIZED", "Access unavailable.", 401);
+    };
+    const denied = await rpc(f.agentToken, "tools/list");
+    expect(denied.statusCode).toBe(401);
+    expect(denied.json().error.message).toBe("Access unavailable.");
+    f.brain.agentCapabilities = () => {
+      throw new Error("inner detail SECRET_STACK_MARKER");
+    };
+    const broken = await rpc(f.agentToken, "tools/list");
+    expect(broken.statusCode).toBe(502);
+    expect(broken.json().error).toMatchObject({ code: "UPSTREAM_UNAVAILABLE", message: "BiBrain could not answer just now; try again shortly.", retryable: true });
+    expect(broken.body).not.toContain("SECRET_STACK_MARKER");
+    expect(broken.body).not.toContain("operation failed");
+    expect(broken.headers["x-frame-options"]).toBe("DENY");
+    f.brain.agentCapabilities = real;
+    expect((await rpc(f.agentToken, "tools/list")).statusCode).toBe(200);
+  });
+  it("passes an inner 429 through with its Retry-After when the caller's global bucket is spent", async () => {
+    dir = mkdtempSync(join(tmpdir(), "mcp-http-"));
+    fx = buildFixture(join(dir, "brain.sqlite"));
+    const app = await createApp(fx.brain, { pairSecret: "test-code", static: false, rateLimitMax: 2 });
+    close = () => app.close();
+    const send = () => app.inject({ method: "POST", url: "/api/v1/agent/mcp", remoteAddress: "10.0.0.9", headers: { host: "127.0.0.1:4317", authorization: `Bearer ${fx!.agentToken}`, accept: ACCEPT, "content-type": "application/json" }, payload: { jsonrpc: "2.0", id: 1, method: "tools/list", params: {} } });
+    expect((await send()).statusCode).toBe(200);
+    expect((await send()).statusCode).toBe(200);
+    const busy = await send();
+    expect(busy.statusCode).toBe(429);
+    expect(busy.headers["retry-after"]).toBeDefined();
+    expect(busy.json().error).toMatchObject({ code: "RATE_LIMITED", message: "BiBrain is busy; try again in a minute.", retryable: true });
+    expect(busy.headers["x-frame-options"]).toBe("DENY");
+  });
+  it("refuses a body that is not JSON with 415 before any JSON-RPC parsing", async () => {
+    const { app, f } = await setup();
+    const res = await app.inject({ method: "POST", url: "/api/v1/agent/mcp", headers: { host: "127.0.0.1:4317", authorization: `Bearer ${f.agentToken}`, accept: ACCEPT, "content-type": "text/plain" }, payload: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/list", params: {} }) });
+    expect(res.statusCode).toBe(415);
+    expect(res.json().error.message).toBe("Send the request as application/json.");
+    expect(res.body).not.toContain("jsonrpc");
+    const ok = await app.inject({ method: "POST", url: "/api/v1/agent/mcp", headers: { host: "127.0.0.1:4317", authorization: `Bearer ${f.agentToken}`, accept: ACCEPT, "content-type": "application/json; charset=utf-8" }, payload: { jsonrpc: "2.0", id: 1, method: "tools/list", params: {} } });
+    expect(ok.statusCode).toBe(200);
   });
 });
