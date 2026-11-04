@@ -24,7 +24,7 @@
 
 ## Review Focus
 
-1. Ollama answers `/api/tags` late, with a multi-megabyte body, or with garbage: the probe returns `no_ollama` inside 1,500 ms, nothing from the body is stored, and the worker starts as if Ollama were absent. (Pinned in Task 1.)
+1. Ollama answers `/api/tags` late, with a multi-megabyte body, or with garbage, or a fetcher ignores its abort signal: the probe returns `no_ollama` inside 1,500 ms on its own timer, nothing from the body is stored, the worker starts as if Ollama were absent, and the 10-minute re-probe never runs inside the tick loop, never runs for `off` or Cloudflare, and never more often than every 10 minutes. No Vitest file that starts a real worker probes the developer's Ollama. (Pinned in Task 1.)
 2. An owner who chose Off before this plan and has Ollama with the model running: Better search stays off, the status line says Off, and only a muted hint says the model is there. (Pinned in Task 2.)
 3. A `meaning_lead` row measured for one model key after the owner switches models: it never leads, Settings says "Measured for another search model. Measure again.", and a PATCH below the floor, with a sample of 19, an unknown source or a future date is a plain 400. (Pinned in Task 4.)
 4. "continue" as the first prompt on an empty brain, or later in a session with no topic: `none`, empty text, no digest, nothing invented. (Pinned in Tasks 7 and 8.)
@@ -39,13 +39,16 @@
 - Modify: `packages/domain/better-search.ts` (add `ProbeOutcome`, `EMBED_OFF_BY_SETUP`, `PROBE_REASONS`; extend `BetterSearchStatus`)
 - Modify: `packages/providers/embed-env.ts` (add `embedSetup`)
 - Modify: `apps/worker/embed.ts:27-44` (`publishBetterSearchStatus` input type)
-- Modify: `apps/worker/main.ts:502-509` (use `embedSetup`)
+- Modify: `apps/worker/engine.ts:71-72` (`embed` becomes mutable; add `setEmbed`)
+- Create: `apps/worker/embed-reprobe.ts` (the 10-minute re-probe loop)
+- Modify: `apps/worker/main.ts:502-531` (use `embedSetup`; start the re-probe; late lane start)
 - Modify: `tests/helpers/fake-embed.mjs:118-143` (answer `GET /api/tags`)
 - Modify: `playwright.config.ts` (five servers get `BRAIN_EMBED_PROVIDER: "off"`)
-- Test: `tests/integration/ollama-detect.test.ts` (new)
+- Modify: `tests/integration/restart.test.ts:22-28` (the spawned worker gets `BRAIN_EMBED_PROVIDER: "off"`)
+- Test: `tests/integration/ollama-detect.test.ts` (new; probe, setup, re-probe, and the guard that no test starts a real worker without `off`)
 
 **Interfaces:**
-- Produces: `ProbeOutcome = "found" | "no_ollama" | "no_model" | "skipped"`; `BetterSearchStatus.detected?: boolean`, `BetterSearchStatus.probe?: ProbeOutcome`; `detectOllamaModel({ endpoint?, model, fetcher?, timeoutMs? }) -> Promise<{ found: true; outcome: "found" } | { found: false; outcome: "no_ollama" | "no_model" }>`; `ollamaTagsUrl(endpoint) -> string | null`; `modelListed(body, model) -> boolean`; `embedSetup(env, probe?) -> Promise<EmbedSetup>` where `EmbedSetup = { config: EmbedConfig; label: string; key: string; detected: boolean; probe: ProbeOutcome } | { config: null; reason: string; probe: ProbeOutcome }`; `EMBED_OFF_BY_SETUP`, `PROBE_REASONS`.
+- Produces: `ProbeOutcome = "found" | "no_ollama" | "no_model" | "skipped"`; `BetterSearchStatus.detected?: boolean`, `BetterSearchStatus.probe?: ProbeOutcome`; `detectOllamaModel({ endpoint?, model, fetcher?, timeoutMs? }) -> Promise<{ found: true; outcome: "found" } | { found: false; outcome: "no_ollama" | "no_model" }>`; `ollamaTagsUrl(endpoint) -> string | null`; `modelListed(body, model) -> boolean`; `embedSetup(env, probe?) -> Promise<EmbedSetup>` where `EmbedSetup = { config: EmbedConfig; label: string; key: string; detected: boolean; probe: ProbeOutcome } | { config: null; reason: string; probe: ProbeOutcome }`; `shouldReprobe(env, setup) -> boolean`; `EMBED_OFF_BY_SETUP`, `PROBE_REASONS`; `REPROBE_MS = 600_000`; `startReprobe({ env, probe?, intervalMs?, onFound }) -> { stop(): void }`; `Worker.setEmbed(client: EmbedClient | null): void`.
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -59,8 +62,11 @@ import { Storage } from "../../packages/storage/index.ts";
 import { Brain } from "../../packages/domain/service.ts";
 import { BETTER_SEARCH_STATUS, EMBED_OFF_BY_SETUP, OLLAMA_EMBED_ENDPOINT, PROBE_REASONS, modelKey, type BetterSearchStatus } from "../../packages/domain/better-search.ts";
 import { OLLAMA_PROBE_MAX_BYTES, detectOllamaModel, modelListed, ollamaTagsUrl } from "../../packages/providers/ollama-detect.ts";
-import { embedSetup } from "../../packages/providers/embed-env.ts";
+import { embedSetup, shouldReprobe } from "../../packages/providers/embed-env.ts";
 import { publishBetterSearchStatus } from "../../apps/worker/embed.ts";
+import { REPROBE_MS, startReprobe } from "../../apps/worker/embed-reprobe.ts";
+import { readFileSync, readdirSync } from "node:fs";
+import { vi } from "vitest";
 
 let cleanup: (() => void)[] = [];
 afterEach(() => {
@@ -168,6 +174,56 @@ describe("embedSetup", () => {
     expect(store.setting<BetterSearchStatus>(BETTER_SEARCH_STATUS, null as never)).toMatchObject({ configured: false, probe: "no_ollama" });
   });
 });
+
+describe("the 10-minute re-probe", () => {
+  const notFound = { config: null, reason: PROBE_REASONS.no_ollama, probe: "no_ollama" as const };
+  it("is due only while the provider is unset and nothing was found", async () => {
+    expect(shouldReprobe({}, notFound)).toBe(true);
+    expect(shouldReprobe({}, { ...notFound, probe: "no_model" })).toBe(true);
+    expect(shouldReprobe({ BRAIN_EMBED_PROVIDER: "off" }, { config: null, reason: EMBED_OFF_BY_SETUP, probe: "skipped" })).toBe(false);
+    expect(shouldReprobe({ BRAIN_EMBED_PROVIDER: "ollama" }, { ...notFound })).toBe(false);
+    expect(shouldReprobe({ BRAIN_EMBED_ENDPOINT: "http://ollama.example.com/api/embed" }, { config: null, reason: "x", probe: "skipped" })).toBe(false);
+    const found = await embedSetup({}, (async () => ({ found: true as const, outcome: "found" as const })) as typeof detectOllamaModel);
+    expect(shouldReprobe({}, found)).toBe(false);
+  });
+  it("probes every 10 minutes on its own timer, calls back once on found, then stops; never for off", async () => {
+    vi.useFakeTimers();
+    try {
+      let calls = 0;
+      const probe = (async () => ({ found: ++calls >= 2, outcome: calls >= 2 ? ("found" as const) : ("no_ollama" as const) })) as unknown as typeof detectOllamaModel;
+      const found: unknown[] = [];
+      const loop = startReprobe({ env: {}, probe, onFound: (setup) => found.push(setup) });
+      await vi.advanceTimersByTimeAsync(REPROBE_MS - 1);
+      expect(calls).toBe(0);
+      await vi.advanceTimersByTimeAsync(1);
+      expect(calls).toBe(1);
+      expect(found).toHaveLength(0);
+      await vi.advanceTimersByTimeAsync(REPROBE_MS);
+      expect(calls).toBe(2);
+      expect(found).toHaveLength(1);
+      expect(found[0]).toMatchObject({ detected: true, probe: "found", key: modelKey("ollama", "bge-m3") });
+      await vi.advanceTimersByTimeAsync(REPROBE_MS * 3);
+      expect(calls).toBe(2);
+      loop.stop();
+      let offCalls = 0;
+      const off = startReprobe({ env: { BRAIN_EMBED_PROVIDER: "off" }, probe: (async () => { offCalls++; return { found: false as const, outcome: "no_ollama" as const }; }) as unknown as typeof detectOllamaModel, onFound: () => {} });
+      await vi.advanceTimersByTimeAsync(REPROBE_MS * 2);
+      expect(offCalls).toBe(0);
+      off.stop();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+  it("no Vitest file starts a real worker without BRAIN_EMBED_PROVIDER off (guard)", () => {
+    const files = readdirSync("tests/integration").filter((f) => f.endsWith(".test.ts")).map((f) => `tests/integration/${f}`);
+    for (const file of files) {
+      const text = readFileSync(file, "utf8");
+      const spawnsWorker = /scripts\/run\.mjs|apps\/worker\/main\.ts/u.test(text) && !/BRAIN_MANAGED|managed/iu.test(file);
+      if (spawnsWorker) expect(text, `${file} must set BRAIN_EMBED_PROVIDER: "off" on the worker it starts`).toMatch(/BRAIN_EMBED_PROVIDER:\s*"off"/u);
+    }
+    expect(readFileSync("playwright.config.ts", "utf8").match(/BRAIN_EMBED_PROVIDER: "off"/gu)).toHaveLength(5);
+  });
+});
 ```
 
 - [ ] **Step 2: Run the tests to verify they fail**
@@ -231,20 +287,59 @@ export function modelListed(body: unknown, model: string): boolean {
   });
 }
 
-/** One loopback GET inside the budget. Never throws, never retries; nothing from the body is kept beyond the yes-or-no answer. */
+/** Reads at most `max` bytes of a body and cancels the stream past that; null when the body is over the bound or missing. */
+async function boundedText(res: Response, max: number): Promise<string | null> {
+  if (Number(res.headers.get("content-length") ?? 0) > max) return null;
+  if (!res.body) return null;
+  const reader = res.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    total += value.byteLength;
+    if (total > max) {
+      await reader.cancel();
+      return null;
+    }
+    chunks.push(value);
+  }
+  return Buffer.concat(chunks).toString("utf8");
+}
+
+/**
+ * One loopback GET inside the budget. The deadline is the probe's own timer, raced against the call and the body read, so a
+ * fetcher that ignores its signal cannot hold the worker. Never throws, never retries; nothing from the body is kept beyond the answer.
+ */
 export async function detectOllamaModel(opts: { endpoint?: string; model: string; fetcher?: typeof fetch; timeoutMs?: number }): Promise<OllamaProbe> {
   const url = ollamaTagsUrl(opts.endpoint ?? OLLAMA_EMBED_ENDPOINT);
   if (!url) return { found: false, outcome: "no_ollama" };
   const fetcher = opts.fetcher ?? fetch;
-  try {
-    const res = await fetcher(url, { method: "GET", signal: AbortSignal.timeout(opts.timeoutMs ?? OLLAMA_PROBE_MS), redirect: "error" });
+  const ms = opts.timeoutMs ?? OLLAMA_PROBE_MS;
+  const controller = new AbortController();
+  let timer: NodeJS.Timeout | undefined;
+  const deadline = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => {
+      controller.abort();
+      reject(new Error("probe timeout"));
+    }, ms);
+    timer.unref?.();
+  });
+  const call = (async (): Promise<OllamaProbe> => {
+    const res = await fetcher(url, { method: "GET", signal: controller.signal, redirect: "error" });
     if (!res.ok) return { found: false, outcome: "no_ollama" };
-    if (Number(res.headers.get("content-length") ?? 0) > OLLAMA_PROBE_MAX_BYTES) return { found: false, outcome: "no_ollama" };
-    const text = await res.text();
-    if (text.length > OLLAMA_PROBE_MAX_BYTES) return { found: false, outcome: "no_ollama" };
+    const text = await boundedText(res, OLLAMA_PROBE_MAX_BYTES);
+    if (text === null) return { found: false, outcome: "no_ollama" };
     return modelListed(JSON.parse(text), opts.model) ? { found: true, outcome: "found" } : { found: false, outcome: "no_model" };
+  })();
+  try {
+    return await Promise.race([call, deadline]);
   } catch {
     return { found: false, outcome: "no_ollama" };
+  } finally {
+    clearTimeout(timer);
+    // A late rejection from the call after the deadline won must not become an unhandled rejection.
+    call.catch(() => {});
   }
 }
 ```
@@ -272,6 +367,12 @@ export async function embedSetup(env: Record<string, string | undefined>, probe:
   if (provider) return { ...base, detected: false, probe: result.outcome };
   return { config: null, reason: PROBE_REASONS[result.outcome], probe: result.outcome };
 }
+
+/** Whether the worker should look again later: only with nothing set and a probe that found no Ollama or no model. Never for off, an explicit provider, an invalid setup, or found. */
+export function shouldReprobe(env: Record<string, string | undefined>, setup: EmbedSetup): boolean {
+  if ((env.BRAIN_EMBED_PROVIDER ?? "").trim()) return false;
+  return setup.config === null && (setup.probe === "no_ollama" || setup.probe === "no_model");
+}
 ```
 
 - [ ] **Step 6: Carry the fields through the status and the worker**
@@ -284,21 +385,93 @@ In `apps/worker/embed.ts`, change the `from` parameter type of `publishBetterSea
 
 and add `type ProbeOutcome` to the import from `../../packages/domain/better-search.ts`. The body spreads `from`, so nothing else changes.
 
-In `apps/worker/main.ts`, replace the import `import { embedFromEnv } from "../../packages/providers/embed-env.ts";` with `import { embedSetup } from "../../packages/providers/embed-env.ts";`, and replace lines 502–509 with:
+In `apps/worker/engine.ts:71-72`, make the client replaceable: change `private readonly embed: EmbedClient | null = null,` to `private embed: EmbedClient | null = null,` and add, after the constructor:
 
 ```ts
-  // Better search is read from the worker's environment only; with nothing set, a loopback Ollama is probed once for the search model.
-  // The published status carries the model key, a label and the probe's outcome, never a credential or anything from the probe's reply.
-  const embed = await embedSetup(process.env);
-  publishBetterSearchStatus(
-    brain,
-    embed.config
-      ? { configured: true, provider: embed.config.provider, model: embed.config.model, key: embed.key, label: embed.label, detected: embed.detected, probe: embed.probe }
-      : { configured: false, reason: embed.reason, probe: embed.probe },
-  );
+  /** A late detection (the 10-minute re-probe found Ollama): the engine's batch job and self-heal check use the new client from the next tick. */
+  setEmbed(client: EmbedClient | null) {
+    this.embed = client;
+  }
 ```
 
-(The block is already inside the module's top-level `else`, where `await worker.tick()` runs, so top-level `await` is available.)
+Create the re-probe loop:
+
+```ts
+// apps/worker/embed-reprobe.ts
+import { embedSetup, shouldReprobe, type EmbedSetup } from "../../packages/providers/embed-env.ts";
+import { detectOllamaModel } from "../../packages/providers/ollama-detect.ts";
+
+/** How often the worker looks again for a loopback Ollama while nothing was found (spec 1.1, R1). */
+export const REPROBE_MS = 600_000;
+export type Reprobe = { stop(): void };
+
+/**
+ * An unref'd timer off the tick loop: every 10 minutes, the same bounded loopback probe. It runs only while `shouldReprobe` says so,
+ * calls `onFound` once with the detected setup, then stops itself. No log line; nothing from the reply is kept.
+ */
+export function startReprobe(opts: { env: Record<string, string | undefined>; probe?: typeof detectOllamaModel; intervalMs?: number; onFound: (setup: EmbedSetup & { config: NonNullable<EmbedSetup["config"]> }) => void }): Reprobe {
+  const initial: EmbedSetup = { config: null, reason: "", probe: "no_ollama" };
+  if (!shouldReprobe(opts.env, initial)) return { stop() {} };
+  let busy = false;
+  const timer = setInterval(async () => {
+    if (busy) return;
+    busy = true;
+    try {
+      const setup = await embedSetup(opts.env, opts.probe ?? detectOllamaModel);
+      if (setup.config && setup.detected) {
+        clearInterval(timer);
+        opts.onFound(setup as EmbedSetup & { config: NonNullable<EmbedSetup["config"]> });
+      }
+    } catch {
+      /* A probe that throws is a probe that found nothing; the next tick looks again. */
+    } finally {
+      busy = false;
+    }
+  }, opts.intervalMs ?? REPROBE_MS);
+  timer.unref?.();
+  return { stop: () => clearInterval(timer) };
+}
+```
+
+In `apps/worker/main.ts`, replace the import `import { embedFromEnv } from "../../packages/providers/embed-env.ts";` with `import { embedSetup, shouldReprobe } from "../../packages/providers/embed-env.ts";` and add `import { startReprobe } from "./embed-reprobe.ts";`. Replace lines 502–509 with:
+
+```ts
+  // Better search is read from the worker's environment only; with nothing set, a loopback Ollama is probed for the search model, once now
+  // and every 10 minutes while nothing was found. The published status carries the model key, a label and the probe's outcome, never a
+  // credential or anything from the probe's reply.
+  const embed = await embedSetup(process.env);
+  const publishEmbed = (setup: typeof embed) =>
+    publishBetterSearchStatus(
+      brain,
+      setup.config
+        ? { configured: true, provider: setup.config.provider, model: setup.config.model, key: setup.key, label: setup.label, detected: setup.detected, probe: setup.probe }
+        : { configured: false, reason: setup.reason, probe: setup.probe },
+    );
+  publishEmbed(embed);
+```
+
+Replace the `const embedLane = embed.config ? startEmbedLoop({…}) : null;` statement (lines 529–531) with:
+
+```ts
+  const lane = (config: NonNullable<typeof embed.config>) =>
+    startEmbedLoop({ brain, ledger: new LocalDispatchAccounting(storage, brain.clock), client: { config }, owner: brain.ownerPrincipal(), workerId: worker.id });
+  let embedLane = embed.config ? lane(embed.config) : null;
+  // A later detection: publish it, hand the engine its client, and start the query lane. Nothing else changes; the owner's stored choice still wins.
+  const reprobe = shouldReprobe(process.env, embed)
+    ? startReprobe({
+        env: process.env,
+        onFound: (setup) => {
+          publishEmbed(setup);
+          worker.setEmbed({ config: setup.config });
+          embedLane ??= lane(setup.config);
+        },
+      })
+    : null;
+```
+
+and after `await judge?.stop();` add `reprobe?.stop();` before `await embedLane?.stop();`.
+
+(The block is already inside the module's top-level `else`, where `await worker.tick()` runs, so top-level `await` is available. `Worker` is constructed with `embed.config ? { config: embed.config } : null` as today; the late `setEmbed` replaces that null.)
 
 - [ ] **Step 7: Teach the fake server `/api/tags`, and keep every other Playwright server away from the owner's Ollama**
 
@@ -312,17 +485,19 @@ In `tests/helpers/fake-embed.mjs`, inside `createServer((req, res) => {`, before
     }
 ```
 
-In `playwright.config.ts`, add `BRAIN_EMBED_PROVIDER: "off",` to the `env` of the `port`, `emptyPort`, `todayPort`, `barPort` and `connectionsPort` servers (the five `npm start` entries that do not set `BRAIN_EMBED_PROVIDER`). The sorting server keeps `BRAIN_EMBED_PROVIDER: "ollama"` with the fake endpoint, so its probe hits the fake server and reports `found`.
+In `playwright.config.ts`, add `BRAIN_EMBED_PROVIDER: "off",` to the `env` of the `port`, `emptyPort`, `todayPort`, `barPort` and `connectionsPort` servers (the five `npm start` entries that do not set `BRAIN_EMBED_PROVIDER`). The sorting server keeps `BRAIN_EMBED_PROVIDER: "ollama"` with the fake endpoint, so its probe hits the fake server and reports `found`. Add one comment above the fake-embed `webServer` entry: `// Listed before the sorting server and awaited on its port, so the worker's startup probe finds it listening; an explicit ollama setup re-probes only at start.`
+
+In `tests/integration/restart.test.ts:22-28`, add `BRAIN_EMBED_PROVIDER: "off",` to the spawned process's `env` (after `BRAIN_PORT`): that test starts a real worker through `scripts/run.mjs`, and without it the worker would probe the developer's own Ollama. The guard test in Step 1 fails until this line exists.
 
 - [ ] **Step 8: Run the tests**
 
-Run: `npx vitest run tests/integration/ollama-detect.test.ts tests/integration/embed-provider.test.ts tests/integration/better-search-http.test.ts --reporter=dot --maxWorkers=1 && npm run typecheck && npm run lint`
-Expected: PASS; typecheck and lint exit 0.
+Run: `npx vitest run tests/integration/ollama-detect.test.ts tests/integration/embed-provider.test.ts tests/integration/better-search-http.test.ts tests/integration/restart.test.ts --reporter=dot --maxWorkers=1 && npm run typecheck && npm run lint`
+Expected: PASS (the silence case ends inside its 80 ms budget because the probe races its own timer); typecheck and lint exit 0.
 
 - [ ] **Step 9: Commit**
 
 ```bash
-git add packages/providers/ollama-detect.ts packages/providers/embed-env.ts packages/domain/better-search.ts apps/worker/embed.ts apps/worker/main.ts tests/helpers/fake-embed.mjs playwright.config.ts tests/integration/ollama-detect.test.ts
+git add packages/providers/ollama-detect.ts packages/providers/embed-env.ts packages/domain/better-search.ts apps/worker/embed.ts apps/worker/engine.ts apps/worker/embed-reprobe.ts apps/worker/main.ts tests/helpers/fake-embed.mjs playwright.config.ts tests/integration/restart.test.ts tests/integration/ollama-detect.test.ts
 git commit -m "feat: probe loopback Ollama for the search model at worker start
 
 Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>"
@@ -517,8 +692,8 @@ Append to `tests/integration/better-search-copy.test.ts` (add `AUTOMATIC_NOTICE,
 ```ts
 describe("automatic Better search copy", () => {
   it("names Ollama only in the one setup instruction the owner has to type, and never a status code", () => {
-    expect(plainProbe("no_ollama")).toBe("Ollama was not found on this computer when BiBrain started. Install Ollama, run `ollama pull bge-m3`, and restart BiBrain.");
-    expect(plainProbe("no_model")).toBe("Ollama is running on this computer, but its search model is not pulled. Run `ollama pull bge-m3` and restart BiBrain.");
+    expect(plainProbe("no_ollama")).toBe("Ollama was not found on this computer. Install Ollama and run `ollama pull bge-m3`; BiBrain checks again every 10 minutes.");
+    expect(plainProbe("no_model")).toBe("Ollama is running on this computer, but its search model is not pulled. Run `ollama pull bge-m3`; BiBrain checks again every 10 minutes.");
     expect(plainProbe("found")).toBeNull();
     expect(plainProbe("skipped")).toBeNull();
     expect(plainProbe(null)).toBeNull();
@@ -530,7 +705,15 @@ describe("automatic Better search copy", () => {
     // The worker's probe sentences and the off-by-setup sentence map to the closed setup line, never to the generic one.
     expect(plainSearchReason(PROBE_REASONS.no_ollama)).toBe(SETUP);
     expect(plainSearchReason(PROBE_REASONS.no_model)).toBe(SETUP);
-    expect(plainSearchReason(EMBED_OFF_BY_SETUP)).toBe(SETUP);
+    // An owner who chose off on purpose is not told the setup is wrong.
+    expect(plainSearchReason(EMBED_OFF_BY_SETUP)).toBe("Better search is turned off by this computer's setup.");
+    expect(plainSearchProblem(EMBED_OFF_BY_SETUP)).toBe("Better search is turned off by this computer's setup.");
+  });
+  it("lets the owner pin an automatic choice with Save", () => {
+    const status = { key: "ollama:fake-concept-v1:none" };
+    expect(betterSearchCanSave({ mode: "ollama", key: status.key, status, automatic: true }, "ollama")).toBe(true);
+    expect(betterSearchCanSave({ mode: "ollama", key: status.key, status, automatic: false }, "ollama")).toBe(false);
+    expect(betterSearchCanSave({ mode: "ollama", key: status.key, status, automatic: true }, "off")).toBe(true);
   });
 });
 ```
@@ -545,7 +728,18 @@ Expected: FAIL, `plainProbe` is not exported.
 In `apps/web/better-search-copy.ts`, add to `known` before the `not set up on this computer|…` line:
 
 ```ts
-  if (/was not found on this computer|search model is not pulled|turned off by this computer's setup/i.test(text)) return "Better search is not set up correctly on this computer. See Providers in the docs.";
+  if (/^Better search is turned off by this computer's setup\.$/u.test(text)) return text;
+  if (/was not found on this computer|search model is not pulled/i.test(text)) return "Better search is not set up correctly on this computer. See Providers in the docs.";
+```
+
+change `betterSearchCanSave` to take `automatic` and allow Save while the choice is automatic (so the owner can pin it):
+
+```ts
+export function betterSearchCanSave(better: { mode: string; key: string | null; status: { key?: string | null } | null; automatic?: boolean }, choice: string): boolean {
+  if (choice !== better.mode) return true;
+  if (better.automatic) return true;
+  return better.mode !== "off" && !!better.status?.key && better.status.key !== better.key;
+}
 ```
 
 and append:
@@ -557,8 +751,8 @@ export const AUTOMATIC_NOTICE = "BiBrain found a search model running in Ollama 
 export const DETECTED_HINT = "A search model is running in Ollama on this computer. Choose On this computer to use it.";
 /** The one place the model's name is allowed on the card: the instruction the owner has to type. Null when there is nothing to do. */
 export function plainProbe(probe: string | null | undefined): string | null {
-  if (probe === "no_ollama") return "Ollama was not found on this computer when BiBrain started. Install Ollama, run `ollama pull bge-m3`, and restart BiBrain.";
-  if (probe === "no_model") return "Ollama is running on this computer, but its search model is not pulled. Run `ollama pull bge-m3` and restart BiBrain.";
+  if (probe === "no_ollama") return "Ollama was not found on this computer. Install Ollama and run `ollama pull bge-m3`; BiBrain checks again every 10 minutes.";
+  if (probe === "no_model") return "Ollama is running on this computer, but its search model is not pulled. Run `ollama pull bge-m3`; BiBrain checks again every 10 minutes.";
   return null;
 }
 ```
@@ -626,7 +820,7 @@ test("Better search is on by itself with a local model, turns off on request, an
 
 - [ ] **Step 6: Update the UX note**
 
-In `docs/UX.md` line 112, after "Hidden in managed mode.", append: ` When BiBrain's background worker found Ollama with the search model on this computer and no choice is stored, the card opens on by itself: the status reads "On (this computer) · Ollama on this computer · N of M passages ready" and a paragraph says that BiBrain found a search model running in Ollama on this computer, that nothing leaves the computer, and that choosing Off turns it off and keeps it off. With Off stored and the model present, a muted hint offers "On this computer". When the probe found nothing, "Last check: …" gives the one-line setup instruction.`
+In `docs/UX.md` line 112, change "Off (the default; search matches the words you used)" to "Off (search matches the words you used)" and, after "Hidden in managed mode.", append: ` When BiBrain's background worker found Ollama with the search model on this computer and no choice is stored, the card opens on by itself: the status reads "On (this computer) · Ollama on this computer · N of M passages ready" and a paragraph says that BiBrain found a search model running in Ollama on this computer, that nothing leaves the computer, and that choosing Off turns it off and keeps it off; Save stays enabled so the owner can pin the choice. With Off stored and the model present, a muted hint offers "On this computer". When the probe found nothing, "Last check: …" gives the one-line setup instruction and says BiBrain checks again every 10 minutes.`
 
 - [ ] **Step 7: Run the gates for this task**
 
@@ -670,7 +864,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createApp } from "../../apps/server/app.ts";
 import { publishBetterSearchStatus } from "../../apps/worker/embed.ts";
-import { MEANING_LEAD, MEANING_LEAD_MIN_SAMPLE, modelKey, type MeaningLead } from "../../packages/domain/better-search.ts";
+import { MEANING_LEAD, MEANING_LEAD_MIN_SAMPLE, modelKey, type MeaningLead, type QueryVector } from "../../packages/domain/better-search.ts";
 import { meaningLead } from "../../packages/domain/recall-push.ts";
 import { MIN_SAMPLE } from "../../packages/domain/calibration.ts";
 import { buildFixture, owner, type Fixture } from "../eval/recall-fixture.ts";
@@ -693,9 +887,19 @@ function dense() {
   vi.spyOn(fx.brain, "queryVector").mockImplementation(async (_p, q) => e.dense(q));
   return { fx, ...e };
 }
-const PARAPHRASE = "which hue was chosen for the release";
+// No word of this prompt is in any fixture passage: only meaning finds the launch-colour fact, so the leader is dense-only.
+const PARAPHRASE = "the hue picked for the premiere";
 const push = (fx: Fixture, prompt: string, session = "e".repeat(64)) => fx.brain.recallPush(fx.agent, { prompt, session_id: session, first_prompt: false, seen: [] });
 const lastLog = (fx: Fixture) => fx.brain.recallLog(owner).rows.at(-1)!;
+const keyOf = (h: { kind: string; id: string; start?: number }) => `${h.kind}:${h.id}:${h.kind === "original" ? h.start : ""}`;
+/** The cosine of the hit that leads a dense recall of `prompt`, and the cosines of every dense-only hit after it. */
+function leaderCosine(fx: Fixture, vec: (q: string) => QueryVector, prompt: string) {
+  const internal = fx.brain.recallInternal(fx.agent, { query: prompt, history: false, limit: 6 }, vec(prompt));
+  const [lead, ...rest] = internal.result.hits;
+  const cos = internal.denseScores.get(keyOf(lead));
+  if (cos === undefined || !internal.denseOnly.has(keyOf(lead))) throw new Error(`${prompt}: the leader is not dense-only`);
+  return { internal, cos, others: rest.map((h) => ({ id: h.id, denseOnly: internal.denseOnly.has(keyOf(h)), cos: internal.denseScores.get(keyOf(h)) ?? null })) };
+}
 
 describe("the meaning-lead rule", () => {
   it("raises only a dense-only, reviewed, leading hit at or above a set threshold, and nothing while unset", () => {
@@ -716,13 +920,16 @@ describe("the meaning-lead rule", () => {
     const { fx, dense: vec } = dense();
     const before = await push(fx, PARAPHRASE);
     expect(before.level).toBe("none");
-    expect(lastLog(fx)).toMatchObject({ dense: true, level: "none" });
+    // Before any line: the row records the leader's cosine (so calibrate can compare like with like) and nothing else new.
+    expect(lastLog(fx)).toMatchObject({ dense: true, level: "none", lead_cos: expect.any(Number) });
     expect(lastLog(fx)).not.toHaveProperty("lead");
-    const internal = fx.brain.recallInternal(fx.agent, { query: PARAPHRASE, history: false, limit: 6 }, vec(PARAPHRASE));
-    const top = internal.denseTop!;
-    expect(top).toBeGreaterThanOrEqual(0.45);
-    expect(internal.denseScores.size).toBeGreaterThan(0);
-    const reach = Math.floor(top * 100) / 100;
+    expect(lastLog(fx)).not.toHaveProperty("lead_at");
+    const { cos, internal } = leaderCosine(fx, vec, PARAPHRASE);
+    expect(internal.result.hits[0].id).toBe(fx.ids["fact:launch-color"]);
+    expect(cos).toBeGreaterThanOrEqual(0.45);
+    expect(lastLog(fx).lead_cos).toBe(Number(cos.toFixed(3)));
+    // The line is set from the leader's own cosine, rounded down to two decimals, so the leader reaches it.
+    const reach = Math.max(0.45, Math.floor(cos * 100) / 100);
     const applied = fx.brain.setMeaningLead(owner, { threshold: reach, sample: 54, source: "proof:search", measured_at: "2026-10-25" });
     expect(applied).toMatchObject({ threshold: reach, key: modelKey("ollama", FAKE_EMBED_MODEL), sample: 54, source: "proof:search", measured_at: "2026-10-25" });
     expect(fx.brain.meaningLeadThreshold()).toBe(reach);
@@ -730,32 +937,63 @@ describe("the meaning-lead rule", () => {
     expect(after.level).toBe("full");
     expect(after.hit_ids[0]).toBe(fx.ids["fact:launch-color"]);
     expect(after.text).toContain("Launch color: cobalt");
-    expect(lastLog(fx)).toMatchObject({ dense: true, level: "full", lead: true });
-    // Above the hit's score: today's behaviour again, and no lead field on the row.
-    fx.brain.setMeaningLead(owner, { threshold: Math.min(0.99, Math.ceil(top * 100) / 100 + 0.01), sample: 54, source: "calibrate", measured_at: "2026-10-25" });
+    expect(lastLog(fx)).toMatchObject({ dense: true, level: "full", lead: true, lead_at: reach });
+    // Above the leader's score: today's behaviour again; the row still says a line was in force (lead_at) but not that it led.
+    const above = Math.min(0.99, Math.ceil(cos * 100) / 100 + 0.01);
+    fx.brain.setMeaningLead(owner, { threshold: above, sample: 54, source: "calibrate", measured_at: "2026-10-25" });
     const over = await push(fx, PARAPHRASE, "a".repeat(64));
     expect(over.level).toBe("none");
+    expect(lastLog(fx)).toMatchObject({ lead_at: above });
     expect(lastLog(fx)).not.toHaveProperty("lead");
-    // A word match is never counted as a meaning lead.
+    // A word match is never counted as a meaning lead, and a word-led row carries no lead_cos.
     fx.brain.setMeaningLead(owner, { threshold: reach, sample: 54, source: "proof:search", measured_at: "2026-10-25" });
     const words = await push(fx, "launch color", "b".repeat(64));
     expect(words.level).toBe("full");
     expect(lastLog(fx)).not.toHaveProperty("lead");
+    expect(lastLog(fx)).not.toHaveProperty("lead_cos");
   });
-  it("never lets an unreviewed agent-written note lead, with the threshold set", async () => {
-    const { fx } = dense();
+  it("renders only the leader, word-found hits and dense-only hits at or above the line; a sub-threshold neighbour never rides along", async () => {
+    const { fx, dense: vec } = dense();
+    // "the squad huddle" maps onto the stand-up note (leader) and, more weakly, onto the weekly notes; both are dense-only.
+    const PROMPT = "the squad huddle";
+    const { cos, others } = leaderCosine(fx, vec, PROMPT);
+    const weaker = others.filter((o) => o.denseOnly && o.cos !== null && o.cos < cos);
+    expect(weaker.length, "the fixture must give the leader at least one weaker dense-only neighbour").toBeGreaterThan(0);
+    const line = Math.max(0.45, Math.min(Math.floor(cos * 100) / 100, Math.ceil(Math.max(...weaker.map((w) => w.cos!)) * 100) / 100 + 0.01));
+    expect(line).toBeLessThanOrEqual(cos);
+    fx.brain.setMeaningLead(owner, { threshold: line, sample: 20, source: "proof:search", measured_at: "2026-10-25" });
+    const r = await push(fx, PROMPT, "d".repeat(64));
+    expect(r.level).toBe("full");
+    expect(r.hit_ids[0]).toBe(fx.ids["src:standup"]);
+    for (const w of weaker) if (w.cos! < line) expect(r.hit_ids, `${w.id} is under the line`).not.toContain(w.id);
+    expect(r.text.split("\n").length - 2).toBe(r.hit_ids.length);
+  });
+  it("never lets an unreviewed agent-written note lead, and lets the same note lead once the owner reviewed it", async () => {
+    const { fx, dense: vec } = dense();
     fx.brain.setMeaningLead(owner, { threshold: 0.45, sample: 20, source: "proof:search", measured_at: "2026-10-25" });
     const writer = fx.brain.createGrant(owner, { projects: [fx.ids["project:northstar"]], operations: ["read", "propose_memory"], expires_at: "2027-01-01T00:00:00.000Z", client: "codex" });
     const writerP = fx.brain.authenticateAgent(writer.token);
-    // Only this agent note carries the standup/team concepts in Tamil; the fake embedder maps the English paraphrase onto it.
-    fx.brain.sessionNote(writerP, { session_id: "9".repeat(64), client: "codex", text: "Decided: குழு சந்திப்பு: வியாழன் காலை" });
-    // Re-embed what the note added, then ask by meaning only.
-    const { embedFixture: embedAgain } = await import("../eval/dense-fixture.ts");
-    embedAgain(fx);
-    const r = await push(fx, "when does the squad huddle on thursday", "c".repeat(64));
-    expect(r.level).not.toBe("full");
-    expect(r.text).not.toContain("வியாழன்");
+    // Only this note holds the deploy/hotfix concepts (fake lexicon: deploy~deployment, patch~hotfix); no owner passage shares them, and no word of the prompt is in it.
+    const saved = fx.brain.sessionNote(writerP, { session_id: "9".repeat(64), client: "codex", text: "Decided: deployment hotfix: ship the hotfix before the deployment" }) as { saved: boolean; source_id: string };
+    expect(saved.saved).toBe(true);
+    embedFixture(fx);
+    const PROMPT = "patch the deploy";
+    const internal = fx.brain.recallInternal(fx.agent, { query: PROMPT, history: false, limit: 6 }, vec(PROMPT));
+    const denseOnly = internal.authorized.filter((h) => internal.denseOnly.has(keyOf(h)));
+    expect(denseOnly.map((h) => h.id), "the agent note must be the only dense-only hit").toEqual([saved.source_id]);
+    expect(internal.authorized.filter((h) => !internal.denseOnly.has(keyOf(h)))).toHaveLength(0);
+    const r = await push(fx, PROMPT, "c".repeat(64));
+    expect(r.level).toBe("none");
+    expect(r.hit_ids).not.toContain(saved.source_id);
+    expect(r.text).not.toContain("hotfix");
+    expect(lastLog(fx)).toMatchObject({ lead_at: 0.45 });
     expect(lastLog(fx)).not.toHaveProperty("lead");
+    // The positive twin: once reviewed, the same note is the owner's evidence and the rule applies to it.
+    fx.brain.markSourceReviewed(owner, saved.source_id);
+    const led = await push(fx, PROMPT, "g".repeat(64));
+    expect(led.level).toBe("full");
+    expect(led.hit_ids).toEqual([saved.source_id]);
+    expect(lastLog(fx)).toMatchObject({ lead: true });
   });
   it("is bound to the model key it was measured with, and refuses bad input and the wrong caller", async () => {
     const { fx } = dense();
@@ -768,8 +1006,11 @@ describe("the meaning-lead rule", () => {
     expect((await req("GET", "/api/v1/preferences/meaning-lead")).statusCode).toBe(401);
     expect((await req("GET", "/api/v1/preferences/meaning-lead", undefined, headers)).json()).toEqual({ lead: null, effective: null, reason: "Not yet calibrated." });
     const good = { threshold: 0.6, sample: 20, source: "proof:search", measured_at: "2026-10-25" };
-    for (const bad of [{ ...good, threshold: 0.44 }, { ...good, threshold: 1 }, { ...good, sample: 19 }, { ...good, source: "guess" }, { ...good, measured_at: "2026-10-26" }, { ...good, measured_at: "yesterday" }, { ...good, extra: 1 }])
+    // The fixture clock is 2026-10-25T09:00Z: today and tomorrow (an owner ahead of UTC) are accepted, the day after is not.
+    for (const bad of [{ ...good, threshold: 0.44 }, { ...good, threshold: 1 }, { ...good, sample: 19 }, { ...good, source: "guess" }, { ...good, measured_at: "2026-10-27" }, { ...good, measured_at: "yesterday" }, { ...good, measured_at: "2026-02-30" }, { ...good, extra: 1 }])
       expect((await req("PATCH", "/api/v1/preferences/meaning-lead", bad, headers)).statusCode, JSON.stringify(bad)).toBe(400);
+    expect((await req("PATCH", "/api/v1/preferences/meaning-lead", { ...good, measured_at: "2026-10-26" }, headers)).statusCode).toBe(200);
+    expect((await req("DELETE", "/api/v1/preferences/meaning-lead", {}, { ...headers, "content-type": "application/json" })).statusCode).toBe(200);
     expect(fx.store.setting(MEANING_LEAD, null)).toBeNull();
     expect((await req("PATCH", "/api/v1/preferences/meaning-lead", good, { cookie: headers.cookie })).statusCode).toBe(403);
     expect((await req("PATCH", "/api/v1/preferences/meaning-lead", good, { authorization: `Bearer ${fx.agentToken}` })).statusCode).toBe(403);
@@ -878,8 +1119,10 @@ In `packages/domain/service.ts`, add `MEANING_LEAD, MEANING_LEAD_MAX, MEANING_LE
     const floor = denseFloor(key);
     const threshold = Number(v.threshold.toFixed(2));
     if (threshold < floor || threshold > MEANING_LEAD_MAX) throw new BrainError("INVALID_INPUT", `The value must be between ${floor} (the floor for this search model) and ${MEANING_LEAD_MAX}.`, 400);
-    const today = this.now().slice(0, 10);
-    if (Number.isNaN(Date.parse(`${v.measured_at}T00:00:00.000Z`)) || v.measured_at > today) throw new BrainError("INVALID_INPUT", "The measured date must be a real date and not in the future.", 400);
+    // A real calendar date (2026-02-30 parses, so it is checked against its own round trip) no later than tomorrow in UTC, for an owner ahead of UTC.
+    const parsed = Date.parse(`${v.measured_at}T00:00:00.000Z`);
+    const latest = new Date(this.clock().getTime() + 86_400_000).toISOString().slice(0, 10);
+    if (Number.isNaN(parsed) || new Date(parsed).toISOString().slice(0, 10) !== v.measured_at || v.measured_at > latest) throw new BrainError("INVALID_INPUT", "The measured date must be a real date no later than tomorrow (UTC).", 400);
     const lead: MeaningLead = { threshold, key, sample: v.sample, source: v.source, measured_at: v.measured_at, applied_at: this.now() };
     this.store.set(MEANING_LEAD, lead);
     return lead;
@@ -907,15 +1150,26 @@ In `recallPush`, after the block `if (level === "full" && hits.length < judge.hi
     // Meaning matches can lead (plan 10): only with the owner-applied line, only for the hit that leads, after every rule above. R5.
     let led = false;
     const leadLine = this.meaningLeadThreshold();
+    // The leader's cosine when it was found by meaning alone: logged so calibrate can compare the log to the line it measures (never the list's top cosine).
+    const leadCos = hits.length && internal.denseOnly.has(hitKey(hits[0])) ? (internal.denseScores.get(hitKey(hits[0])) ?? null) : null;
     if (leadLine !== null && level !== "full" && hits.length) {
-      const key = hitKey(hits[0]);
-      const raised = meaningLead(level, { denseOnly: internal.denseOnly.has(key), cosine: internal.denseScores.get(key) ?? null, unreviewed: isUnreviewedAgent(hits[0]) }, leadLine);
+      const raised = meaningLead(level, { denseOnly: internal.denseOnly.has(hitKey(hits[0])), cosine: leadCos, unreviewed: isUnreviewedAgent(hits[0]) }, leadLine);
       led = raised !== level;
       level = raised;
     }
+    // A led push renders the leader, every hit found by words, and only those meaning-only hits that also reach the line (R13).
+    if (led) hits = hits.filter((h, i) => i === 0 || !internal.denseOnly.has(hitKey(h)) || (internal.denseScores.get(hitKey(h)) ?? -1) >= leadLine!);
 ```
 
-Extend the `finish` extra type with `lead?: boolean` and add `...(extra.lead ? { lead: true } : {}),` to the log row after the `judge` spread. Pass `lead: led` in the final `finish(...)` call and in the secret-quietened call before it (`lead: led` there too, since the level was computed; the quiet row records `none`, and `led` is then false in practice because the text was dropped, so pass `lead: false` on that line to keep the row plain).
+(`hits` becomes `let hits = …` where it is declared.) Extend the `finish` extra type with `lead?: boolean; lead_at?: number | null; lead_cos?: number | null` and add, after the `judge` spread in the log row:
+
+```ts
+        ...(typeof extra.lead_at === "number" ? { lead_at: extra.lead_at } : {}),
+        ...(typeof extra.lead_cos === "number" ? { lead_cos: Number(extra.lead_cos.toFixed(3)) } : {}),
+        ...(extra.lead ? { lead: true } : {}),
+```
+
+Pass `lead: led, lead_at: leadLine, lead_cos: leadCos` in the final `finish(...)` call and `lead: false, lead_at: leadLine, lead_cos: leadCos` in the secret-quietened call before it. With Better search off `leadCos` is null and `leadLine` is null, so no row gains a field (the snapshot pins this).
 
 - [ ] **Step 7: The routes**
 
@@ -957,27 +1211,54 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 
 - [ ] **Step 1: Write the failing tests**
 
-Append to `tests/integration/calibration-report.test.ts` (add `meaningLeadFromLog, suggestMeaningLead` to the calibration import, and `import type { MeaningLead } from "../../packages/domain/better-search.ts";`):
+Append to `tests/integration/calibration-report.test.ts` (add `meaningLeadFromLog, suggestMeaningLead` to the calibration import; add `import type { MeaningLead } from "../../packages/domain/better-search.ts";`, `import { buildFixture, owner } from "../eval/recall-fixture.ts";`, `import { embedFixture } from "../eval/dense-fixture.ts";`, and a module-level `let cleanup: (() => void)[] = [];` with an `afterEach` that runs and clears it, beside the file's existing `afterEach`):
 
 ```ts
 describe("meaning-lead suggestions", () => {
-  it("from the proof: 0.05 above the loudest no-answer cosine, only when every wanted hit still qualifies and the floor is kept", () => {
-    expect(suggestMeaningLead({ highestNegative: 0.58, lowestWanted: 0.71, floor: 0.45, sample: 54 })).toMatchObject({ threshold: "search.meaning_lead", current: null, suggested: 0.63, sample: 54 });
-    expect(suggestMeaningLead({ highestNegative: 0.3, lowestWanted: 0.71, floor: 0.45, sample: 54 }).suggested).toBe(0.45);
-    const overlap = suggestMeaningLead({ highestNegative: 0.7, lowestWanted: 0.71, floor: 0.45, sample: 54 });
+  it("from the proof: 0.05 above the loudest no-answer cosine, only with 20 negatives, only when every wanted hit still qualifies, never under the floor or over 0.99", () => {
+    expect(suggestMeaningLead({ highestNegative: 0.58, lowestWanted: 0.71, floor: 0.45, negatives: 30, positives: 37 })).toMatchObject({ threshold: "search.meaning_lead", current: null, suggested: 0.63, sample: 30 });
+    expect(suggestMeaningLead({ highestNegative: 0.3, lowestWanted: 0.71, floor: 0.45, negatives: 30, positives: 37 }).suggested).toBe(0.45);
+    expect(suggestMeaningLead({ highestNegative: 0.97, lowestWanted: 1, floor: 0.45, negatives: 30, positives: 37 }).suggested).toBe(0.99);
+    const overlap = suggestMeaningLead({ highestNegative: 0.7, lowestWanted: 0.71, floor: 0.45, negatives: 30, positives: 37 });
     expect(overlap.suggested).toBeNull();
     expect(overlap.reason).toMatch(/no safe value/u);
-    expect(suggestMeaningLead({ highestNegative: 0.58, lowestWanted: 0.71, floor: 0.45, sample: 19 })).toMatchObject({ suggested: null, reason: expect.stringMatching(/Not enough data yet/u) });
-    expect(suggestMeaningLead({ highestNegative: -1, lowestWanted: 1, floor: 0.45, sample: 54 }).suggested).toBe(0.45);
+    // The safe side rests on the negatives alone: 19 negatives is not enough however many positives there are.
+    expect(suggestMeaningLead({ highestNegative: 0.58, lowestWanted: 0.71, floor: 0.45, negatives: 19, positives: 100 })).toMatchObject({ suggested: null, sample: 19, reason: expect.stringMatching(/not enough evidence/u) });
+    expect(suggestMeaningLead({ highestNegative: -1, lowestWanted: 1, floor: 0.45, negatives: 0, positives: 37 })).toMatchObject({ suggested: null, reason: expect.stringMatching(/not enough evidence/u) });
   });
-  it("from the log: the 90th percentile of none-level top cosines plus 0.05, with at least 20 rows on each side and no overlap with full pushes", () => {
-    const none = Array.from({ length: 25 }, (_, i) => row({ dense: true, dense_top: 0.46 + (i % 10) * 0.01, level: "none" }));
-    const full = Array.from({ length: 25 }, (_, i) => row({ dense: true, dense_top: 0.7 + (i % 10) * 0.01, level: "full" }));
-    const s = meaningLeadFromLog([...none, ...full, row({ level: "pointer" })], 0.45, null);
-    expect(s).toMatchObject({ threshold: "search.meaning_lead", current: null, suggested: 0.6, sample: 50 });
+  it("from the log: the 90th percentile of the leader's cosine on quiet pushes plus 0.05, from plain-prompt rows written while no line was in force", () => {
+    const none = Array.from({ length: 25 }, (_, i) => row({ dense: true, dense_top: 0.9, lead_cos: 0.46 + (i % 10) * 0.01, level: "none" }));
+    const full = Array.from({ length: 25 }, (_, i) => row({ dense: true, dense_top: 0.9, lead_cos: 0.7 + (i % 10) * 0.01, level: "full" }));
+    // Sorted, index 22 of 25 is 0.54: 0.54 + 0.05 = 0.59 (the expected value is computed, not rounded by eye).
+    const sortedNone = none.map((r) => r.lead_cos!).sort((a, b) => a - b);
+    const expected = Number((sortedNone[Math.floor(0.9 * sortedNone.length)] + 0.05).toFixed(2));
+    expect(expected).toBe(0.59);
+    const skipped = [
+      row({ dense: true, lead_cos: 0.95, level: "none", lead_at: 0.6 }),
+      row({ dense: true, lead_cos: 0.95, level: "full", lead: true, lead_at: 0.6 }),
+      row({ dense: true, lead_cos: 0.95, level: "none", intent: "continuation", topic: "session" }),
+      row({ level: "none", intent: "ack" }),
+      row({ dense: true, dense_top: 0.95, level: "none" }),
+      row({ level: "pointer" }),
+    ];
+    const s = meaningLeadFromLog([...none, ...full, ...skipped], 0.45, null);
+    expect(s).toMatchObject({ threshold: "search.meaning_lead", current: null, suggested: expected, sample: 50 });
     expect(meaningLeadFromLog([...none.slice(0, 19), ...full], 0.45, null)).toMatchObject({ suggested: null, reason: expect.stringMatching(/Not enough data yet/u) });
-    const overlapping = Array.from({ length: 25 }, (_, i) => row({ dense: true, dense_top: 0.5 + (i % 10) * 0.01, level: "full" }));
+    const overlapping = Array.from({ length: 25 }, (_, i) => row({ dense: true, lead_cos: 0.5 + (i % 10) * 0.01, level: "full" }));
     expect(meaningLeadFromLog([...none, ...overlapping], 0.45, 0.6)).toMatchObject({ current: 0.6, suggested: null, reason: expect.stringMatching(/overlap/u) });
+  });
+  it("keeps a separate file of no-answer queries for the proof, all quiet by words and under the fake embedder", () => {
+    const file = JSON.parse(readFileSync("tests/eval/recall-no-answer-v1.json", "utf8")) as { queries: string[] };
+    expect(new Set(file.queries).size).toBeGreaterThanOrEqual(20);
+    const dir = mkdtempSync(join(tmpdir(), "no-answer-"));
+    cleanup.push(() => rmSync(dir, { recursive: true, force: true }));
+    const fx = buildFixture(join(dir, "brain.sqlite"));
+    cleanup.push(() => fx.store.close());
+    const { dense } = embedFixture(fx);
+    for (const q of file.queries) {
+      expect(fx.brain.recallCore(owner, { query: q }).status, q).toBe("no_match");
+      expect(fx.brain.recallCore(owner, { query: q }, dense(q)).status, `${q} (dense)`).not.toBe("found");
+    }
   });
   it("prints the applied line with its provenance, or not set, and lists the log suggestion as a suggestion only", () => {
     const lead: MeaningLead = { threshold: 0.63, key: "ollama:bge-m3:none", sample: 54, source: "proof:search", measured_at: "2026-11-06", applied_at: "2026-11-07T09:12:00.000Z" };
@@ -1013,29 +1294,42 @@ In `packages/domain/calibration.ts`:
 const round2 = (x: number) => Number(x.toFixed(2));
 const percentile = (sorted: number[], p: number) => sorted[Math.min(sorted.length - 1, Math.floor(p * sorted.length))];
 const LEAD = "search.meaning_lead";
-/** From npm run proof:search: 0.05 above the loudest no-answer cosine, never under the floor, only while every wanted hit still reaches it. */
-export function suggestMeaningLead(input: { highestNegative: number; lowestWanted: number; floor: number; sample: number }): Suggestion {
-  const { sample } = input;
-  if (sample < MIN_SAMPLE) return { threshold: LEAD, current: null, suggested: null, sample, reason: `Not enough data yet (${sample} of ${MIN_SAMPLE} queries scanned).` };
-  const candidate = round2(Math.max(input.floor, input.highestNegative + 0.05));
-  if (candidate > input.lowestWanted) return { threshold: LEAD, current: null, suggested: null, sample, reason: `no safe value: the highest no-answer cosine (${round2(input.highestNegative)}) plus 0.05 is above the lowest wanted hit (${round2(input.lowestWanted)}), so no line keeps every wanted hit while refusing every no-answer query.` };
-  return { threshold: LEAD, current: null, suggested: candidate, sample, reason: `The highest cosine of a no-answer query was ${round2(input.highestNegative)}; 0.05 above it (and at least the floor ${input.floor}) every wanted hit (lowest ${round2(input.lowestWanted)}) still qualifies.` };
+export const LEAD_MAX = 0.99;
+/**
+ * From npm run proof:search. The safe side of the line rests on the no-answer queries alone, so the sample is the negative count and
+ * 20 negatives are required whatever the positive count: 0.05 above the loudest no-answer cosine, never under the floor, never over
+ * 0.99 (the most Settings accepts), only while every wanted hit still reaches it.
+ */
+export function suggestMeaningLead(input: { highestNegative: number; lowestWanted: number; floor: number; negatives: number; positives: number }): Suggestion {
+  const sample = input.negatives;
+  if (sample < MIN_SAMPLE || !Number.isFinite(input.highestNegative) || input.highestNegative < 0) return { threshold: LEAD, current: null, suggested: null, sample, reason: `not enough evidence: ${sample} no-answer queries scanned (${input.positives} with an answer); ${MIN_SAMPLE} no-answer queries are needed, because they alone show how loud a wrong match can be.` };
+  const candidate = round2(Math.min(LEAD_MAX, Math.max(input.floor, input.highestNegative + 0.05)));
+  if (candidate > input.lowestWanted) return { threshold: LEAD, current: null, suggested: null, sample, reason: `no safe value: the highest no-answer cosine (${round2(input.highestNegative)}) plus 0.05 is above the lowest wanted hit (${round2(input.lowestWanted)}), so no line keeps every wanted hit while refusing every no-answer query (${sample} no-answer and ${input.positives} answered queries scanned).` };
+  return { threshold: LEAD, current: null, suggested: candidate, sample, reason: `The highest cosine of a no-answer query was ${round2(input.highestNegative)} over ${sample} no-answer queries; 0.05 above it (at least the floor ${input.floor}, at most ${LEAD_MAX}) every wanted hit (lowest ${round2(input.lowestWanted)}, ${input.positives} queries) still qualifies.` };
 }
-/** From the recall log: pushes that used Better search, split by level. No ground truth: the report says so. */
+/**
+ * From the recall log: only rows written while no line was in force (no lead_at), for a plain prompt (no intent), where Better search ran
+ * and the leading hit was found by meaning alone (lead_cos). Split by level and compared on the leader's cosine, the number the line is
+ * applied to. No ground truth, and the quiet group holds the very prompts the line would serve: the report says both.
+ */
 export function meaningLeadFromLog(rows: RecallLogRow[], floor: number, current: number | null): Suggestion {
-  const tops = (level: PushLevel) => rows.filter((r) => r?.dense && typeof r.dense_top === "number" && Number.isFinite(r.dense_top) && r.level === level).map((r) => r.dense_top as number).sort((a, b) => a - b);
-  const none = tops("none");
-  const full = tops("full");
+  const usable = rows.filter((r) => r?.dense && typeof r.lead_cos === "number" && Number.isFinite(r.lead_cos) && r.lead_at === undefined && r.intent === undefined && !r.lead);
+  const cos = (level: PushLevel) => usable.filter((r) => r.level === level).map((r) => r.lead_cos as number).sort((a, b) => a - b);
+  const none = cos("none");
+  const full = cos("full");
   const sample = none.length + full.length;
-  if (none.length < MIN_SAMPLE || full.length < MIN_SAMPLE) return { threshold: LEAD, current, suggested: null, sample, reason: `Not enough data yet (${none.length} quiet and ${full.length} full pushes with a top cosine; ${MIN_SAMPLE} of each are needed).` };
-  const candidate = round2(Math.max(floor, percentile(none, 0.9) + 0.05));
+  if (none.length < MIN_SAMPLE || full.length < MIN_SAMPLE) return { threshold: LEAD, current, suggested: null, sample, reason: `Not enough data yet (${none.length} quiet and ${full.length} full pushes led by a meaning match, written while no line was applied; ${MIN_SAMPLE} of each are needed).` };
+  const p90 = percentile(none, 0.9);
+  const candidate = round2(Math.min(LEAD_MAX, Math.max(floor, p90 + 0.05)));
   const median = percentile(full, 0.5);
-  if (candidate >= median) return { threshold: LEAD, current, suggested: null, sample, reason: `The top cosines of quiet and full pushes overlap (90th percentile of quiet ${round2(percentile(none, 0.9))}, median of full ${round2(median)}), so the log cannot separate them; the line holds.` };
-  return { threshold: LEAD, current, suggested: candidate, sample, reason: `9 in 10 pushes where words found nothing had a top cosine under ${round2(percentile(none, 0.9))}; 0.05 above it stays below the median full push (${round2(median)}).` };
+  if (candidate >= median) return { threshold: LEAD, current, suggested: null, sample, reason: `The leader cosines of quiet and full pushes overlap (90th percentile of quiet ${round2(p90)}, median of full ${round2(median)}), so the log cannot separate them; the line holds.` };
+  return { threshold: LEAD, current, suggested: candidate, sample, reason: `9 in 10 pushes where words found nothing had a leading meaning match under ${round2(p90)}; 0.05 above it stays below the median full push (${round2(median)}). Quiet pushes include the paraphrases this line would serve, so this value is conservative.` };
 }
 ```
 
-5. In `calibrationReport`, after `const dense_near_floor = …`, add `const meaning_lead = input.meaning_lead ?? null;` and append `meaningLeadFromLog(input.recall_log, floor, meaning_lead?.threshold ?? null)` to the `suggestions` array (it is built earlier; move its construction after this point or push onto it). Add `meaning_lead` to the returned `recall` object. Push one more gap: `"The log does not record whether a push was right, so the meaning-lead suggestion from it is weaker evidence than npm run proof:search, which measures a real model on known texts."`.
+Extend `RecallLogRow` with the plan 10 fields, all optional: `lead?: boolean; lead_at?: number; lead_cos?: number; intent?: "ack" | "continuation" | "decision"; topic?: "session" | "digest" | "none";`.
+
+5. In `calibrationReport`, after `const dense_near_floor = …`, add `const meaning_lead = input.meaning_lead ?? null;` and append `meaningLeadFromLog(input.recall_log, floor, meaning_lead?.threshold ?? null)` to the `suggestions` array (it is built earlier; move its construction after this point or push onto it). Add `meaning_lead` to the returned `recall` object. Push one more gap: `"The log does not record whether a push was right, so the meaning-lead suggestion from it is weaker evidence than npm run proof:search, which measures the search service on known texts; rows written after a line was applied are never used, so the suggestion cannot feed on its own effect."` (the word "model" must not appear: an existing test asserts the rendered report never contains it).
 
 6. In `renderCalibration`, after the `embedded passages` line add:
 
@@ -1050,14 +1344,48 @@ and change the suggestions line to print `current` as `unset` when null: `` `- $
 
 - [ ] **Step 4: The scripts (edit, do not run)**
 
-In `scripts/better-search-proof.ts`, import `suggestMeaningLead` from `../packages/domain/calibration.ts`, count scanned queries (`let scanned = 0;` incremented once per case where a cosine was read, in both branches), and after the `lowest cosine …` line add:
+Create `tests/eval/recall-no-answer-v1.json`: twenty more no-answer queries for the proof's negative side, kept out of the golden set so the dense-off snapshot is untouched (the test in Step 1 pins that every one is `no_match` by words and never `found` under the fake embedder):
+
+```json
+{
+  "version": 1,
+  "note": "No-answer queries scanned by npm run proof:search beside the golden set's negatives, so the meaning-lead suggestion rests on at least 20 of them. None is in the golden set; adding here never changes the dense-off snapshot.",
+  "queries": [
+    "how do I rotate an AWS access key",
+    "what is the capital of Mongolia",
+    "convert this CSV to parquet with pandas",
+    "why does my Docker build cache miss every time",
+    "write a haiku about autumn rain",
+    "explain Kubernetes liveness and readiness probes",
+    "what is the airspeed of an unladen swallow",
+    "fix the null pointer exception in the Java servlet",
+    "how many calories are in a banana",
+    "set up a cron job that runs every Sunday at 3am",
+    "translate good morning into Portuguese",
+    "what does the borrow checker complain about here",
+    "recommend a podcast about Roman history",
+    "generate a strong password policy for the intranet",
+    "how do I undo the last git commit but keep the changes",
+    "what is the difference between a mutex and a semaphore",
+    "draft a polite out-of-office reply",
+    "explain how a bloom filter works",
+    "which chess opening should a beginner learn first",
+    "what time zone is Perth in"
+  ]
+}
+```
+
+In `scripts/better-search-proof.ts`, import `suggestMeaningLead` from `../packages/domain/calibration.ts` and `readFileSync` is already imported. After the golden `buckets` are built, read the extra file and add its queries to the negative scan as synthetic cases: `const extra = JSON.parse(readFileSync(join(process.cwd(), "tests/eval/recall-no-answer-v1.json"), "utf8")) as { queries: string[] }; buckets.negative.push(...extra.queries.map((query, i) => ({ id: `extra-neg-${i + 1}`, tags: ["negative", "extra"], principal: "owner" as const, query, expect: { must_include: [] } })));`. Count distinct cases, not scans: `const negativeIds = new Set<string>(); const positiveIds = new Set<string>();` and add `c.id` to `negativeIds` in the negative branch and to `positiveIds` in the other branch, once per case regardless of how many buckets it appears in. After the `lowest cosine …` line add:
 
 ```ts
-    const lead = suggestMeaningLead({ highestNegative, lowestWanted, floor: denseFloor(key), sample: scanned });
-    console.log("\nMeaning matches can lead (a suggestion only; apply it yourself in Settings → Better search → Meaning matches can lead):");
-    console.log(lead.suggested === null ? `  no value suggested. ${lead.reason}` : `  threshold ${lead.suggested}  sample ${lead.sample} queries  source proof:search  measured ${new Date().toISOString().slice(0, 10)}  model ${key}\n  Why: ${lead.reason}`);
-    console.log("  This measures the real model on BiBrain's synthetic golden texts, not on your notes.");
+    const lead = suggestMeaningLead({ highestNegative, lowestWanted, floor: denseFloor(key), negatives: negativeIds.size, positives: positiveIds.size });
+    console.log(`\nScanned ${negativeIds.size} no-answer queries (${golden.cases.filter((c) => c.tags.includes("negative")).length} from the golden set, ${extra.queries.length} from tests/eval/recall-no-answer-v1.json) and ${positiveIds.size} answered queries (distinct cases).`);
+    console.log("Meaning matches can lead (a suggestion only; apply it yourself in Settings → Better search → Meaning matches can lead):");
+    console.log(lead.suggested === null ? `  no value suggested. ${lead.reason}` : `  threshold ${lead.suggested}  sample ${lead.sample} no-answer queries  source proof:search  measured ${new Date().toISOString().slice(0, 10)}  model ${key}\n  Why: ${lead.reason}`);
+    console.log("  This measures the real model on BiBrain's synthetic texts, not on your notes.");
 ```
+
+The pass line is unchanged: the extra negatives count toward `scores.negative` exactly as the golden ones do (`negative.dense >= 0.85`).
 
 In `scripts/calibrate.ts`, after `const recall_log = …`, add `const meaning_lead = setting<MeaningLead | null>("meaning_lead", null);` (import `type MeaningLead` from `../packages/domain/better-search.ts`) and pass `meaning_lead` in `input`.
 
@@ -1069,7 +1397,7 @@ Expected: PASS; exit 0. Do not run `npm run proof:search` or `npm run calibrate`
 - [ ] **Step 6: Commit**
 
 ```bash
-git add packages/domain/calibration.ts scripts/better-search-proof.ts scripts/calibrate.ts tests/integration/calibration-report.test.ts
+git add packages/domain/calibration.ts scripts/better-search-proof.ts scripts/calibrate.ts tests/eval/recall-no-answer-v1.json tests/integration/calibration-report.test.ts
 git commit -m "feat: proof:search and calibrate suggest a meaning-lead threshold with its sample size
 
 Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>"
@@ -1132,14 +1460,14 @@ In `apps/web/src.tsx`:
 
 1. Import `meaningLeadLine, type MeaningLeadView` from `./better-search-copy.ts`.
 2. Beside the Better search state add `const [lead, setLead] = useState<MeaningLeadView | null>(null);` and `const [leadForm, setLeadForm] = useState({ threshold: "", sample: "", source: "proof:search", measured_at: "" });`.
-3. Where Settings loads `/preferences/better-search` (line 474), also load `api<MeaningLeadView>("/preferences/meaning-lead").catch(() => null)` into `setLead`.
-4. Inside the Better search `<article>`, after the existing `</form>` and before `</article>`, add:
+3. Where Settings loads `/preferences/better-search` (line 474), also load `api<MeaningLeadView>("/preferences/meaning-lead").catch(() => null)` into `setLead`. In the Better search form's submit handler, after `setBetter(now);`, add `setLead(await api<MeaningLeadView>("/preferences/meaning-lead").catch(() => null));` so the line changes as soon as Better search is turned off or on.
+4. Inside the Better search `<article>`, after the existing `</form>` and before `</article>`, add (the line is not a second `role="status"`: the card already has one, and Playwright's strict mode would refuse two):
 
 ```tsx
                   {lead ? (
                     <section aria-labelledby="meaning-lead-heading">
                       <h3 id="meaning-lead-heading">Meaning matches can lead</h3>
-                      <p className="status" role="status">{meaningLeadLine(lead)}</p>
+                      <p className="status" data-testid="meaning-lead-line" aria-live="polite">{meaningLeadLine(lead)}</p>
                       {lead.reason !== "Turn Better search on first." ? (
                         <form
                           onSubmit={(e) => {
@@ -1157,7 +1485,7 @@ In `apps/web/src.tsx`:
                           <label>Measured on <input type="date" required value={leadForm.measured_at} onChange={(e) => setLeadForm({ ...leadForm, measured_at: e.target.value })} /></label>
                           <div className="actions">
                             <button type="submit" disabled={busy}>Apply this value</button>
-                            {lead.lead ? <button type="button" disabled={busy} onClick={() => void act(async () => { await api("/preferences/meaning-lead", undefined, "DELETE"); setLead(await api<MeaningLeadView>("/preferences/meaning-lead")); setNotice("Meaning matches no longer lead a push."); })}>Clear</button> : null}
+                            {lead.lead ? <button type="button" disabled={busy} onClick={() => void act(async () => { await api("/preferences/meaning-lead", {}, "DELETE"); setLead(await api<MeaningLeadView>("/preferences/meaning-lead")); setNotice("Meaning matches no longer lead a push."); })}>Clear</button> : null}
                           </div>
                           <small className="muted">Nothing is applied by itself. Enter the value a measurement printed, with its sample size and date.</small>
                         </form>
@@ -1166,21 +1494,22 @@ In `apps/web/src.tsx`:
                   ) : null}
 ```
 
-(`api` sends `DELETE` with no body when `method` is given; check its `headers` branch sends the CSRF header for every non-GET, as the PATCH already relies on.)
+(`api` always sends `Content-Type: application/json` and adds a body only when one is given; Fastify refuses an empty body under that content type, so the Clear button sends `{}` exactly as `api("/session", {}, "DELETE")` does today. The route ignores the body; Task 4's route test sends `{}` with the JSON content type to pin it.)
 
 - [ ] **Step 5: Extend the journey**
 
 In `tests/e2e/better-search.spec.ts`, after the first `await expect(card(page).getByRole("radio", { name: /^Cloudflare\./ })).toBeDisabled();` add:
 
 ```ts
-  const leadLine = card(page).getByRole("status").nth(1);
+  // The card's own role="status" stays unique; the lead line is found by its test id. The date is a fixed past date, so it passes the server's "no later than tomorrow (UTC)" check on any day the suite runs.
+  const leadLine = card(page).getByTestId("meaning-lead-line");
   await expect(leadLine).toHaveText(/^Not yet calibrated\./);
   await card(page).getByLabel("Score (from the tool's suggestion)").fill("0.6");
   await card(page).getByLabel("Queries measured").fill("20");
-  await card(page).getByLabel("Measured on").fill("2026-11-06");
+  await card(page).getByLabel("Measured on").fill("2026-10-25");
   await card(page).getByRole("button", { name: "Apply this value" }).click();
   await expect(page.getByText("Meaning matches can now lead a push at the value you entered.")).toBeVisible();
-  await expect(leadLine).toHaveText(/^Calibrated at 0\.6: .* From proof:search, 20 queries measured on 2026-11-06/);
+  await expect(leadLine).toHaveText(/^Calibrated at 0\.6: .* From proof:search, 20 queries measured on 2026-10-25/);
   await card(page).getByRole("button", { name: "Clear" }).click();
   await expect(leadLine).toHaveText(/^Not yet calibrated\./);
 ```
@@ -1225,12 +1554,12 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { spawn } from "node:child_process";
-import { ACK_PROMPTS, CONTINUATION_PROMPTS, DECISION_WORDS, RECALL_SESSION_TOPICS, SESSION_TOPICS_MAX, SESSION_TOPIC_TTL_MS, normalizePrompt, promptIntent, rememberTopic, topicFor, type SessionTopics } from "../../packages/domain/recall-intent.ts";
+import { ACK_PROMPTS, CONTINUATION_PROMPTS, DECISION_WORDS, RECALL_SESSION_TOPICS, SESSION_TOPICS_MAX, SESSION_TOPIC_TTL_MS, normalizePrompt, promptIntent, rememberTopic, topicFor, topicKey, type SessionTopics } from "../../packages/domain/recall-intent.ts";
 import { hashId } from "../../packages/domain/recall-push.ts";
 import { CONTINUATION_PROMPTS as CLI_CONTINUATION, hookSkipReason, isContinuationPrompt, normalizePrompt as cliNormalize } from "../../apps/cli/lib.mjs";
 import { Storage } from "../../packages/storage/index.ts";
 import { Brain } from "../../packages/domain/service.ts";
-import { buildFixture, owner, type Fixture } from "../eval/recall-fixture.ts";
+import { buildFixture, owner } from "../eval/recall-fixture.ts";
 
 let cleanup: (() => unknown)[] = [];
 afterEach(async () => {
@@ -1248,8 +1577,23 @@ describe("prompt intent", () => {
     expect(promptIntent("what was decided about Marco")).toEqual({ kind: "decision", topicTerms: ["marco"] });
     expect(promptIntent("did we choose a price")).toEqual({ kind: "decision", topicTerms: ["price"] });
     expect(promptIntent("what did we go with for auth?")).toEqual({ kind: "decision", topicTerms: ["auth"] });
-    expect(promptIntent("the decision on pricing")).toEqual({ kind: "decision", topicTerms: ["pricing"] });
-    for (const p of ["which hue was chosen for the release", "how did Northstar status change", "should we pick React", "write a function that picks the best route", "how do I reverse a linked list in Python", "What does the git rebase --onto flag do?", "what is the zephyr cadence we settled on", "Thanks a lot for that!", "launch color"])
+    expect(promptIntent("What color did we settle on for the launch?")).toEqual({ kind: "decision", topicTerms: ["color", "launch"] });
+    // Participles: the common past forms are decision questions too.
+    expect(promptIntent("have we decided on a caterer")).toEqual({ kind: "decision", topicTerms: ["caterer"] });
+    expect(promptIntent("were we agreed on the beta date")).toEqual({ kind: "decision", topicTerms: ["beta", "date"] });
+    expect(promptIntent("what have we decided about the launch")).toEqual({ kind: "decision", topicTerms: ["launch"] });
+    expect(promptIntent("what has been decided on pricing")).toEqual({ kind: "decision", topicTerms: ["pricing"] });
+    expect(promptIntent("had we already settled the caterer")).toEqual({ kind: "decision", topicTerms: ["caterer"] });
+    expect(promptIntent("what have we decided")).toEqual({ kind: "continuation", topicTerms: [] });
+    // Zero false positives on ordinary prompts: present-tense how-tos, "you"/"I", phrasal "pick up", noun phrases, and everything generic.
+    for (const p of [
+      "which hue was chosen for the release", "how did Northstar status change", "should we pick React", "write a function that picks the best route",
+      "how do I reverse a linked list in Python", "What does the git rebase --onto flag do?", "what is the zephyr cadence we settled on", "Thanks a lot for that!", "launch color",
+      "how do I decide between a list and a set", "do you pick the first element when the list is sorted", "Did you choose the right sorting algorithm for this function?",
+      "did we pick up the dry cleaning", "did we pick out a venue yet", "the decision on pricing is pending, draft an email", "do we agree on the api shape",
+      "can we decide this later", "will we choose a vendor next week", "we decided to use React, now add the router", "I picked the second option, continue the refactor",
+      "did the team agree the schema", "was it decided", "what was the weather like when we picked the venue",
+    ])
       expect(promptIntent(p).kind, p).toBe("plain");
     expect(normalizePrompt("  OK, Continue!!  ")).toBe("continue");
     for (const w of ["decide", "picked", "chosen", "agreed"]) expect(DECISION_WORDS.has(w)).toBe(true);
@@ -1260,23 +1604,28 @@ describe("prompt intent", () => {
     for (const p of ["  OK, Continue!!  ", "please go on.", "What did we decide?", "thanks"]) expect(cliNormalize(p)).toBe(normalizePrompt(p));
     for (const p of CONTINUATION_PROMPTS) expect(isContinuationPrompt(p), p).toBe(true);
     for (const p of ["continue", "next", "go on", "recap"]) expect(hookSkipReason(p), p).toBeNull();
-    for (const p of ["thanks", "ok", "yes", "short", "hi there"]) expect(hookSkipReason(p), p).toBe("short");
-    expect(hookSkipReason("/continue")).toBe("command");
+    for (const p of ["thanks", "ok", "yes", "short", "hi there", "/continue"]) expect(hookSkipReason(p), p).toBe("short");
+    expect(hookSkipReason("/continue with the migration")).toBe("command");
   });
-  it("keeps at most 20 live sessions, 12 words each, for two hours, and never answers for another session", () => {
+  it("keeps at most 20 live entries, 12 words each, for two hours, keyed by grant and session, and never answers for another key", () => {
     const now = new Date("2026-10-25T09:00:00.000Z");
+    const G = "11111111-0000-4000-8000-000000000099";
+    const k = (session: string, grant = G) => topicKey(grant, session);
+    expect(k("a".repeat(64))).toBe(`${G}:${"a".repeat(64)}`);
     let topics: SessionTopics = {};
-    for (let i = 0; i < 25; i++) topics = rememberTopic(topics, String(i).padStart(64, "0"), ["beta", "open"], new Date(now.getTime() + i * 1000));
+    for (let i = 0; i < 25; i++) topics = rememberTopic(topics, k(String(i).padStart(64, "0")), ["beta", "open"], new Date(now.getTime() + i * 1000));
     expect(Object.keys(topics)).toHaveLength(SESSION_TOPICS_MAX);
-    expect(topicFor(topics, "0".repeat(64), now)).toBeNull();
-    expect(topicFor(topics, "24".padStart(64, "0"), now)).toEqual(["beta", "open"]);
-    const many = rememberTopic({}, "a".repeat(64), Array.from({ length: 20 }, (_, i) => `w${i}`), now);
-    expect(topicFor(many, "a".repeat(64), now)).toHaveLength(12);
-    expect(topicFor(many, "b".repeat(64), now)).toBeNull();
-    expect(topicFor(many, "a".repeat(64), new Date(now.getTime() + SESSION_TOPIC_TTL_MS - 1))).toEqual(topicFor(many, "a".repeat(64), now));
-    expect(topicFor(many, "a".repeat(64), new Date(now.getTime() + SESSION_TOPIC_TTL_MS))).toBeNull();
-    expect(Object.keys(rememberTopic(many, "c".repeat(64), ["x"], new Date(now.getTime() + SESSION_TOPIC_TTL_MS)))).toEqual(["c".repeat(64)]);
-    expect(topicFor({ ["d".repeat(64)]: { terms: "nope" as unknown as string[], at: now.toISOString() } }, "d".repeat(64), now)).toBeNull();
+    expect(topicFor(topics, k("0".repeat(64)), now)).toBeNull();
+    expect(topicFor(topics, k("24".padStart(64, "0")), now)).toEqual(["beta", "open"]);
+    const many = rememberTopic({}, k("a".repeat(64)), Array.from({ length: 20 }, (_, i) => `w${i}`), now);
+    expect(topicFor(many, k("a".repeat(64)), now)).toHaveLength(12);
+    expect(topicFor(many, k("b".repeat(64)), now)).toBeNull();
+    // The same session hash under another grant is another key.
+    expect(topicFor(many, k("a".repeat(64), "22222222-0000-4000-8000-000000000099"), now)).toBeNull();
+    expect(topicFor(many, k("a".repeat(64)), new Date(now.getTime() + SESSION_TOPIC_TTL_MS - 1))).toEqual(topicFor(many, k("a".repeat(64)), now));
+    expect(topicFor(many, k("a".repeat(64)), new Date(now.getTime() + SESSION_TOPIC_TTL_MS))).toBeNull();
+    expect(Object.keys(rememberTopic(many, k("c".repeat(64)), ["x"], new Date(now.getTime() + SESSION_TOPIC_TTL_MS)))).toEqual([k("c".repeat(64))]);
+    expect(topicFor({ [k("d".repeat(64))]: { terms: "nope" as unknown as string[], at: now.toISOString() } }, k("d".repeat(64)), now)).toBeNull();
   });
 });
 
@@ -1297,20 +1646,24 @@ describe("the push with intent", () => {
     const first = await brain.recallPush(agent, { prompt: "when does the beta open", session_id: s1, first_prompt: true, seen: [] });
     expect(first.level).toBe("full");
     expect(row(brain)).not.toHaveProperty("intent");
-    expect(fx.store.setting<SessionTopics>(RECALL_SESSION_TOPICS, {})[s1]?.terms).toEqual(["beta", "open"]);
+    expect(fx.store.setting<SessionTopics>(RECALL_SESSION_TOPICS, {})[topicKey(agent.grant_id!, s1)]?.terms).toEqual(["beta", "open"]);
     const again = await brain.recallPush(agent, { prompt: "continue", session_id: s1, first_prompt: false, seen: first.hit_ids.map(hashId) });
     expect(again.level).not.toBe("full");
     expect(row(brain)).toMatchObject({ intent: "continuation", topic: "session" });
     const other = await brain.recallPush(agent, { prompt: "continue", session_id: "2".repeat(64), first_prompt: false, seen: [] });
     expect(other).toEqual({ level: "none", text: "", hit_ids: [], digest: false });
     expect(row(brain)).toMatchObject({ intent: "continuation", topic: "none", candidates: 0 });
+    // Another connection sending the same session hash never reads this connection's topic.
+    const second = brain.createGrant(owner, { projects: [fx.ids["project:northstar"]], operations: ["read"], expires_at: "2027-01-01T00:00:00.000Z", client: "codex" });
+    const stranger = await brain.recallPush(brain.authenticateAgent(second.token), { prompt: "continue", session_id: s1, first_prompt: false, seen: [] });
+    expect(stranger).toEqual({ level: "none", text: "", hit_ids: [], digest: false });
     at = new Date(at.getTime() + SESSION_TOPIC_TTL_MS);
     const late = await brain.recallPush(agent, { prompt: "continue", session_id: s1, first_prompt: false, seen: [] });
     expect(late.level).toBe("none");
     expect(row(brain)).toMatchObject({ intent: "continuation", topic: "none" });
     // A generic prompt stores no topic, and an acknowledgement never searches.
     await brain.recallPush(agent, { prompt: "how do I reverse a linked list in Python", session_id: "3".repeat(64), first_prompt: true, seen: [] });
-    expect(fx.store.setting<SessionTopics>(RECALL_SESSION_TOPICS, {})["3".repeat(64)]).toBeUndefined();
+    expect(fx.store.setting<SessionTopics>(RECALL_SESSION_TOPICS, {})[topicKey(agent.grant_id!, "3".repeat(64))]).toBeUndefined();
     expect(await brain.recallPush(agent, { prompt: "thanks", session_id: s1, first_prompt: false, seen: [] })).toEqual({ level: "none", text: "", hit_ids: [], digest: false });
     expect(row(brain)).toMatchObject({ intent: "ack", candidates: 0 });
   });
@@ -1337,7 +1690,7 @@ describe("the push with intent", () => {
     expect(r.level).toBe("full");
     expect(r.hit_ids[0]).toBe(fx.ids["fact:caterer"]);
     expect(row(brain)).toMatchObject({ intent: "decision" });
-    expect(fx.store.setting<SessionTopics>(RECALL_SESSION_TOPICS, {})["6".repeat(64)]?.terms).toEqual(["caterer"]);
+    expect(fx.store.setting<SessionTopics>(RECALL_SESSION_TOPICS, {})[topicKey(agent.grant_id!, "6".repeat(64))]?.terms).toEqual(["caterer"]);
     const same = await brain.recallPush(agent, { prompt: "what color did we pick for the launch", session_id: "7".repeat(64), first_prompt: false, seen: [] });
     expect(same.level).toBe("full");
     expect(row(brain)).not.toHaveProperty("intent");
@@ -1422,7 +1775,20 @@ export const CONTINUATION_PROMPTS: readonly string[] = [
 export const ACK_PROMPTS: readonly string[] = ["thanks", "thank you", "ok", "okay", "yes", "no", "sure", "great", "nice", "cool", "done", "lgtm", "good", "fine", "yep", "nope", "got it", "k", "ty", "thx", "perfect", "sounds good"];
 /** The words a decision question is read without (after questionWords' trailing-s strip). */
 export const DECISION_WORDS: ReadonlySet<string> = new Set(["decide", "decided", "decision", "pick", "picked", "choose", "chose", "chosen", "settle", "settled", "agree", "agreed"]);
-const DECISION_INTENT = /\b(?:did|have|had|do|were|was)\s+(?:we|you|i)\s+(?:\S+\s+){0,2}?(?:decide|pick|choose|settle|agree|go with)\b|\bwhat\s+(?:was|were|is|got)\s+(?:decided|chosen|picked|agreed|settled)\b|\b(?:our|the)\s+decision\s+(?:on|about|for)\b/iu;
+/**
+ * Three narrow shapes, all about what WE decided in the past: "did we (…) decide/pick/choose/settle/agree/go with" (not phrasal
+ * "pick up/out/off/apart"), "have/had/were/was we (already) decided/agreed/settled/picked/chosen", and "what was/were/has been/have we
+ * decided/chosen/picked/agreed/settled". Never "do", "does", "should", "can", "will", "I", "you", a bare "was it decided", or the noun
+ * phrase "the decision on": those are how-tos, plans or statements, and stay plain. The unit test pins a list of ordinary prompts at zero false positives.
+ */
+const DECISION_INTENT = new RegExp(
+  [
+    String.raw`\bdid\s+we\s+(?:\S+\s+){0,2}?(?:decide|pick|choose|settle|agree|go\s+with)\b(?!\s+(?:up|out|off|apart)\b)`,
+    String.raw`\b(?:have|had|were|was)\s+we\s+(?:already\s+)?(?:decided|agreed|settled|picked|chosen)\b`,
+    String.raw`\bwhat\s+(?:was|were|has\s+been|have\s+we)\s+(?:decided|chosen|picked|agreed|settled)\b`,
+  ].join("|"),
+  "iu",
+);
 
 /** Lowercase, one space between words, no leading "ok," / "okay," / "please", no trailing punctuation. The same function lives in the CLI. */
 export function normalizePrompt(prompt: string): string {
@@ -1459,6 +1825,11 @@ export function topicFor(topics: SessionTopics, session: string, now: Date): str
   const words = wordsOf(t!);
   return words.length ? words : null;
 }
+
+/** The store key: grant id and session hash, so one connection can never read or overwrite another's topic (both are validated ids, never free text). */
+export function topicKey(grantId: string, sessionHash: string): string {
+  return `${grantId}:${sessionHash}`;
+}
 ```
 
 - [ ] **Step 4: The CLI's copy and the exception**
@@ -1492,7 +1863,7 @@ export function isContinuationPrompt(prompt: string): boolean;
 
 - [ ] **Step 5: `recallInternal` reads a second term set**
 
-In `packages/domain/service.ts`, import `RECALL_SESSION_TOPICS, promptIntent, rememberTopic, topicFor, type SessionTopics` from `./recall-intent.ts`.
+In `packages/domain/service.ts`, import `RECALL_SESSION_TOPICS, promptIntent, rememberTopic, topicFor, topicKey, type SessionTopics` from `./recall-intent.ts`.
 
 Change the signature to `recallInternal(p: Principal, v: { … }, dense: QueryVector | null = null, levelTerms?: string[])`. In the early return add `topicSignals: null as DeterministicSignals | null`. Replace the signals block with:
 
@@ -1525,7 +1896,7 @@ Replace `recallPush` from its signature to the final `return finish(...)` with t
     const v = recallPushSchema.parse(input);
     const started = Date.now();
     const quiet = { level: "none" as PushLevel, text: "", hit_ids: [] as string[], digest: false };
-    type Extra = { candidates: number; judged: boolean; dense: boolean; dense_top?: number | null; judge?: JudgeSignals | null; intent?: "ack" | "continuation" | "decision"; topic?: "session" | "digest" | "none"; lead?: boolean };
+    type Extra = { candidates: number; judged: boolean; dense: boolean; dense_top?: number | null; judge?: JudgeSignals | null; intent?: "ack" | "continuation" | "decision"; topic?: "session" | "digest" | "none"; lead?: boolean; lead_at?: number | null; lead_cos?: number | null };
     const finish = (out: typeof quiet, extra: Extra) => {
       // A push that reached the brain proves the connection works, exactly like /agent/verify.
       // `dense`, `dense_top`, `judge`, `intent`, `topic` and `lead` are written only when that feature ran, so with everything off
@@ -1539,6 +1910,8 @@ Replace `recallPush` from its signature to the final `return finish(...)` with t
         ...(extra.judged && extra.judge ? { judge: { owner_world: round3(extra.judge.ownerWorld), general: round3(extra.judge.general), answered: extra.judge.answered } } : {}),
         ...(extra.intent ? { intent: extra.intent } : {}),
         ...(extra.topic ? { topic: extra.topic } : {}),
+        ...(typeof extra.lead_at === "number" ? { lead_at: extra.lead_at } : {}),
+        ...(typeof extra.lead_cos === "number" ? { lead_cos: Number(extra.lead_cos.toFixed(3)) } : {}),
         ...(extra.lead ? { lead: true } : {}),
       });
       this.store.set("recall_log", log.slice(-RECALL_LOG_MAX));
@@ -1553,7 +1926,7 @@ Replace `recallPush` from its signature to the final `return finish(...)` with t
     let query = v.prompt;
     let topic: "session" | "digest" | "none" | undefined;
     if (intent.kind === "continuation") {
-      const terms = topicFor(topics, v.session_id, now);
+      const terms = topicFor(topics, topicKey(p.grant_id!, v.session_id), now);
       if (terms) {
         query = terms.join(" ");
         topic = "session";
@@ -1582,7 +1955,7 @@ Replace `recallPush` from its signature to the final `return finish(...)` with t
     // Such notes never reach the judge (judgeRankedOnce leaves them out), so a judged level rests on the owner's candidates alone.
     const seen = filterSeen(judge.hits, v.seen);
     // An unreviewed agent-written original never rides in a full push.
-    const hits = seen.filter((h) => !isUnreviewedAgent(h));
+    let hits = seen.filter((h) => !isUnreviewedAgent(h));
     // When the judge's order leaves a hit found by meaning alone on top, the level is capped at the words level.
     if (hits.length && internal.denseOnly.has(hitKey(hits[0]))) level = quieter(level, pushLevel(signals, null));
     // Everything the agent already holds from this session, and every unreviewed agent note, is left out. When that removed hits, the level is re-read
@@ -1594,12 +1967,15 @@ Replace `recallPush` from its signature to the final `return finish(...)` with t
     // Meaning matches can lead (plan 10): only with the owner-applied line, only for the hit that leads, after every rule above. R5.
     let led = false;
     const leadLine = this.meaningLeadThreshold();
+    // The leader's cosine when it was found by meaning alone: logged so calibrate can compare the log to the line it measures (never the list's top cosine).
+    const leadCos = hits.length && internal.denseOnly.has(hitKey(hits[0])) ? (internal.denseScores.get(hitKey(hits[0])) ?? null) : null;
     if (leadLine !== null && level !== "full" && hits.length) {
-      const key = hitKey(hits[0]);
-      const raised = meaningLead(level, { denseOnly: internal.denseOnly.has(key), cosine: internal.denseScores.get(key) ?? null, unreviewed: isUnreviewedAgent(hits[0]) }, leadLine);
+      const raised = meaningLead(level, { denseOnly: internal.denseOnly.has(hitKey(hits[0])), cosine: leadCos, unreviewed: isUnreviewedAgent(hits[0]) }, leadLine);
       led = raised !== level;
       level = raised;
     }
+    // A led push renders the leader, every hit found by words, and only those meaning-only hits that also reach the line (R13).
+    if (led) hits = hits.filter((h, i) => i === 0 || !internal.denseOnly.has(hitKey(h)) || (internal.denseScores.get(hitKey(h)) ?? -1) >= leadLine!);
     // A judge may rate a candidate relevant that did not survive into the hits; a full push with nothing to show is never sent.
     if (level === "full" && !hits.length) level = signals.exactEntity ? "pointer" : "none";
     // Names for the pointer and the digest: the top three candidates exactly as deterministicSignals builds topNames (from the same list), except that
@@ -1627,16 +2003,17 @@ Replace `recallPush` from its signature to the final `return finish(...)` with t
     const extra: Extra = {
       candidates, judged: judge.judged, dense: internal.dense, dense_top: internal.denseTop, judge: judge.signals,
       ...(intent.kind === "continuation" ? { intent: "continuation" as const, topic } : louderTopic ? { intent: "decision" as const } : {}),
+      lead_at: leadLine, lead_cos: leadCos,
       ...(led ? { lead: true } : {}),
     };
     if (text && detectSecrets(text).length) return finish(quiet, { ...extra, lead: false });
     // Remember the topic of a prompt that found something, so "continue" in this session can mean it (R8). Content words only; a continuation never overwrites it.
-    if (level !== "none" && intent.kind !== "continuation") this.store.set(RECALL_SESSION_TOPICS, rememberTopic(topics, v.session_id, intent.kind === "decision" ? intent.topicTerms : signals.terms, now));
+    if (level !== "none" && intent.kind !== "continuation") this.store.set(RECALL_SESSION_TOPICS, rememberTopic(topics, topicKey(p.grant_id!, v.session_id), intent.kind === "decision" ? intent.topicTerms : signals.terms, now));
     return finish({ level, text, hit_ids: used.map((h) => h.id), digest }, extra);
   }
 ```
 
-(`deterministicLevel` must be imported from `./recall.ts` in `service.ts` if it is not already; `LEVEL_RANK`, `quieter` and `hitKey` are module-level constants above the class.)
+(`deterministicLevel` and `type DeterministicSignals` are not yet imported in `service.ts`: add both to its import from `./recall.ts`. `LEVEL_RANK`, `quieter` and `hitKey` are module-level constants above the class.)
 
 - [ ] **Step 7: Run the tests and the snapshot**
 
@@ -1659,7 +2036,7 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 **Files:**
 - Create: `tests/eval/recall-short-golden-v1.json`
 - Create: `tests/eval/recall-short.test.ts`
-- Modify: `scripts/brain-eval.mjs:35-41` (name the new golden file), `:60` (the `recall_gates` sentence)
+- Modify: `scripts/brain-eval.mjs:27-31` (name the new golden file), `:50` (the `recall_gates` sentence)
 
 **Interfaces:**
 - Consumes: `recallPush`, `recallLog`, `embedFixture`, `hashId`.
@@ -1684,7 +2061,7 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
       { "prompt": "continue", "first_prompt": false, "expect": { "level": "none", "text": "", "digest": false, "log": { "intent": "continuation", "topic": "none" } } } ] },
     { "id": "short-05", "tags": ["short", "ack"], "session": "s5", "steps": [
       { "prompt": "thanks", "first_prompt": true, "expect": { "level": "none", "text": "", "log": { "intent": "ack" } } },
-      { "prompt": "ok", "first_prompt": false, "expect": { "level": "none", "text": "" } },
+      { "prompt": "ok", "first_prompt": false, "expect": { "level": "none", "text": "", "log": { "intent": "ack" } } },
       { "prompt": "Thanks a lot for that!", "first_prompt": false, "expect": { "level": "none", "text": "" } } ] },
     { "id": "dec-01", "tags": ["short", "decision"], "session": "d1", "steps": [ { "prompt": "what did we pick for the caterer", "first_prompt": false, "expect": { "level": "full", "hit_includes": ["fact:caterer"], "log": { "intent": "decision" } } } ] },
     { "id": "dec-02", "tags": ["short", "decision"], "session": "d2", "steps": [ { "prompt": "what did we agree for the beta", "first_prompt": false, "expect": { "level": "full", "hit_includes": ["fact:beta-opens"], "log": { "intent": "decision" } } } ] },
@@ -1801,6 +2178,7 @@ Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>"
 - Modify: `docs/AGENT_INTEGRATION.md:50-52`
 - Modify: `docs/CONNECT_ANY_AGENT.md:94`
 - Modify: `docs/SECURITY_PRIVACY.md` (one paragraph in the agents or data section)
+- Modify: `docs/API.md:76` (the better-search row; a new meaning-lead row)
 - Modify: `README.md:49`, `:124-139`, `:162`
 - Modify: `CHANGELOG.md` (Unreleased)
 - Modify: `BUILD_STATE.md` (At a glance rows; a new plan 10 section with `TBD counts from Task 10` markers)
@@ -1823,7 +2201,7 @@ In "Better search (embeddings, local)":
 
 `docs/CONNECT_ANY_AGENT.md` line 94: "Do not send prompts shorter than 12 characters, except the continuation phrases the hook sends (`continue`, `go on`, `keep going`, `carry on`, `proceed`, `next`, `resume`, `where were we`, `what did we decide`, `recap` and the rest of the list in `apps/cli/lib.mjs`), slash, bang or hash commands, or anything that looks like a secret."
 
-`docs/SECURITY_PRIVACY.md`: one paragraph where agent data is described: "For `continue`-style prompts the server keeps a session topic: the lowercase content words of the last agent prompt that found something, per session hash, at most 12 words and 20 sessions, dropped after two hours. It never holds the prompt, an id or a passage, is never logged or shown, and is deleted with the brain. The Better search startup probe contacts only Ollama on this computer and keeps nothing from its reply."
+`docs/SECURITY_PRIVACY.md`: one paragraph where agent data is described: "For `continue`-style prompts the server keeps a session topic: the lowercase content words of the last agent prompt that found something, keyed by connection and session hash, at most 12 words and 20 entries, dropped after two hours. These are words from an agent's prompt, kept for two hours whether or not Better search or any calibration is on; a word that looks like a key is never stored because such prompts are dropped before any search. It never holds the prompt, an id or a passage, is never logged or shown, and is deleted with the brain. The Better search probe contacts only Ollama on this computer, at start and every 10 minutes while nothing was found, and keeps nothing from its reply."
 
 - [ ] **Step 3: README and changelog**
 
@@ -1837,11 +2215,15 @@ In "At a glance": change the Better search row to "On by itself with a local Oll
 
 - [ ] **Step 5: Check and commit**
 
-Run: `grep -rn "Off by default" README.md docs/PROVIDERS.md | grep -i "better search"`
-Expected: no line still says Better search is off by default.
+Also `docs/API.md`: in the `GET/PATCH /preferences/better-search` row, add to the GET description "`automatic` (on by itself because the worker found Ollama with the search model on this computer), `detected` and `probe` (the worker's key-free probe outcome)", and add a row after it:
+
+`| GET/PATCH/DELETE /preferences/meaning-lead | \`{threshold, sample, source, measured_at}\` (PATCH); \`{}\` (DELETE) | Owner only (403 for agents; PATCH and DELETE need the page's CSRF header). The owner-applied "meaning matches can lead" line. GET returns \`{lead, effective, reason}\`: the stored line with its provenance (threshold, model key, sample, source, measured_at, applied_at) or null, the threshold in force now or null, and a plain reason. PATCH stores it with the current search model key and the server's clock; a 400 is a value under the model's floor or over 0.99, a sample under 20, an unknown source or a bad date; a 409 means Better search is not on. DELETE clears it. |`
+
+Run: `grep -rn "off by default\|Off by default\|Off (the default" docs/*.md BUILD_STATE.md CHANGELOG.md README.md | grep -i "better search\|embed\|meaning"`
+Expected: no line still says Better search is off by default (the stale statements were at `docs/AGENT_INTEGRATION.md:52`, `docs/UX.md:112` (fixed in Task 3), `BUILD_STATE.md:17`, `CHANGELOG.md:54`, `README.md:49` and `:125`; fix any the grep still finds).
 
 ```bash
-git add docs/PROVIDERS.md docs/AGENT_INTEGRATION.md docs/CONNECT_ANY_AGENT.md docs/SECURITY_PRIVACY.md README.md CHANGELOG.md BUILD_STATE.md
+git add docs/PROVIDERS.md docs/AGENT_INTEGRATION.md docs/CONNECT_ANY_AGENT.md docs/SECURITY_PRIVACY.md docs/API.md README.md CHANGELOG.md BUILD_STATE.md
 git commit -m "docs: recall by meaning by default, the meaning-lead score and short prompts
 
 Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>"
@@ -1901,3 +2283,4 @@ Report, in the words of `AGENTS.md`: what changed, the commands actually run, wh
 - **Type consistency.** `ProbeOutcome`, `detected` and `probe` (Task 1) are the names read in Tasks 2, 3 and 4. `BetterSearchSetting.automatic` (Task 2) is the field the card reads (Task 3). `MeaningLead`, `meaningLeadThreshold()`, `denseScores` and `lead` (Task 4) are the names used in Task 7's full `recallPush` and in Task 5's report. `promptIntent`, `topicFor`, `rememberTopic`, `RECALL_SESSION_TOPICS` (Task 7) are the names Task 8's expectations rest on through the log fields `intent` and `topic`. `recallInternal`'s fourth parameter `levelTerms` and its `topicSignals` return match between Steps 5 and 6 of Task 7.
 - **Review Focus.** Item 1 is pinned in Task 1 (late, huge, garbage, refused, silent); item 2 in Task 2 (explicit Off with a detected model) and Task 3's journey; item 3 in Task 4 (changed key never leads; floor, sample, source and date refusals); item 4 in Task 7 (empty brain, no topic later in a session) and Task 8 (`short-04`, `dec-07`); item 5 in Task 7 (other session null, expiry at exactly two hours).
 - **Snapshot.** Tasks 2, 4 and 7 each run the plan 5 snapshot test; the reasoning for why it holds is written at each run step, so a failure is diagnosed against a stated expectation rather than regenerated.
+- **Pre-flight (2026-11-06).** Applied: B1 (the probe races its own timer; byte-bounded body); B2 (a prompt with no word hit, `reach` from the leader's cosine); B3 (the agent note is the only dense-only hit, with a reviewed twin that leads); B4 (computed expectation 0.59; the gap sentence avoids "model"); B5 (`/continue` is short, `/continue with the migration` is a command; the unused import is gone); B6 (`ok` rows carry `intent: "ack"`); B7 (Clear sends `{}`; the route test sends `{}` under the JSON content type); B8 (the lead line has a test id, not a second status role; the lead view is refetched after the Better search Save; dates are fixed past dates). I1 (the 10-minute re-probe: `startReprobe`, `shouldReprobe`, `Worker.setEmbed`, a late lane start; spec 1.1, 1.3, 1.4, R1; Tasks 1, 3, 9). I2 (a led push renders only word-found hits and meaning-only hits at or above the line; R13; Task 4 test). I3 (`restart.test.ts` sets `BRAIN_EMBED_PROVIDER: "off"`; a guard test in Task 1; R15). I4 (three narrow regex shapes, participles included, a varied plain list pinned at zero false positives; the spec's 3.1 row). I5 (the proof counts negatives separately, needs 20 of them from a new no-answer file, clamps to 0.99, counts distinct cases; the log suggestion uses `lead_cos`, skips rows with `lead_at`, `lead`, or an `intent`; R14; `RecallLogRow` extended). Minors M1 to M12 applied (M2 as a comment; M4 and M7 as copy; M5 via `betterSearchCanSave`; M6 via `topicKey`; M8 to M10 in Task 9; M11 as "no later than tomorrow (UTC)"; M12 as the two imports and the corrected `brain-eval.mjs` anchors). No fix moved between tasks except the Clear-button route test, which lives in Task 4 beside the other route tests.
