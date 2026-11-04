@@ -43,6 +43,13 @@ export function AddAgent({ api, info, projects, projectId, lastFolder, onCancel,
   const [folder, setFolder] = useState(lastFolder);
   const [access, setAccess] = useState<"suggest" | "read">("suggest");
   const [preview, setPreview] = useState<Preview | null>(null);
+  const ignoreKey = preview?.ignore.lines.join("\n");
+  useEffect(() => {
+    if (copied === null) return;
+    const t = setTimeout(() => setCopied(null), 2500);
+    return () => clearTimeout(t);
+  }, [copied]);
+  useEffect(() => setCopied(null), [ignoreKey]);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const id = (s: string) => `cx-${info.client}-${s}`;

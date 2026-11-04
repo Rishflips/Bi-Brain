@@ -289,4 +289,20 @@ describe("agent routes", () => {
     // Cursor's rule file carries no machine path and a team may want it committed: only the server file is listed.
     expect(svc.preview(owner, { client: "cursor", project_id: "inbox", folder }).ignore.lines).toEqual([".cursor/mcp.json"]);
   });
+
+  it("counts the files as listed only when git would really ignore them", () => {
+    const { svc, folder } = setup();
+    const listed = (text: string) => {
+      writeFileSync(join(folder, ".gitignore"), text);
+      return svc.preview(owner, { client: "claude-code", project_id: "inbox", folder }).ignore.listed;
+    };
+    expect(listed("# .mcp.json\n.claude/settings.local.json\n")).toBe(false);
+    expect(listed(".mcp.json\r\n.claude/settings.local.json\r\n")).toBe(true);
+    expect(listed("/.mcp.json\n/.claude/settings.local.json\n")).toBe(true);
+    expect(listed(".mcp.json   \n.claude/settings.local.json  \n")).toBe(true);
+    expect(listed(" .mcp.json\n.claude/settings.local.json\n")).toBe(false);
+    expect(listed(".mcp.json\n.claude/settings.local.json\n!.mcp.json\n")).toBe(false);
+    expect(listed(".mcp.json\n.claude/settings.local.json\n!/.mcp.json\n")).toBe(false);
+    expect(listed("!.mcp.json\n.mcp.json\n.claude/settings.local.json\n")).toBe(true);
+  });
 });

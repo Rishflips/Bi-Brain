@@ -123,8 +123,15 @@ export function agentConnect(brain: Brain, config: AgentConnectConfig) {
       const path = join(real, ".gitignore");
       const st = lstatSync(path);
       if (st.isFile() && !st.isSymbolicLink() && st.size <= 256 * 1024) {
-        const present = new Set(readFileSync(path, "utf8").split(/\r?\n/u).map((l) => l.trim().replace(/^\//u, "")));
-        listed = lines.every((l) => present.has(l));
+        // Later lines win, as in git: a negation after a match un-lists it. Leading spaces count; trailing spaces do not.
+        const state = new Map<string, boolean>();
+        for (const raw of readFileSync(path, "utf8").split(/\r?\n/u)) {
+          const line = raw.replace(/ +$/u, "");
+          if (line === "" || line.startsWith("#")) continue;
+          const negated = line.startsWith("!");
+          state.set((negated ? line.slice(1) : line).replace(/^\//u, ""), !negated);
+        }
+        listed = lines.every((l) => state.get(l) === true);
       }
     } catch {
       listed = false;
