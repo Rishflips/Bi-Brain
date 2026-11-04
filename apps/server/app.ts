@@ -29,13 +29,17 @@ const CORRELATION_COOKIE = "brain_login";
 const SESSION_COOKIE = "brain_session";
 const CORRELATION_MAX_AGE_SECONDS = Math.ceil(OIDC_CORRELATION_TTL_MS / 1000);
 
-/** Only the unnormalized path of a request URL, so encoded tricks cannot match. */
-// API paths a person may open directly in a browser tab.
+// API paths a person may open directly in a browser tab. Both are read-only
+// health checks: liveness is public, readiness still needs the owner session.
 const NAVIGABLE_API_PATHS = new Set([
   "/api/v1/health/live",
   "/api/v1/health/ready",
 ]);
+// The gate stores its retry key with this prefix inside the shared 200-character
+// bound, so the route accepts keys up to the remainder.
+const GATE_KEY_PREFIX = "propose:";
 
+/** Only the unnormalized path of a request URL, so encoded tricks cannot match. */
 function requestPath(url: string): string {
   const end = url.search(/[?#]/);
   return end === -1 ? url : url.slice(0, end);
@@ -299,6 +303,29 @@ export async function createApp(
     if (ownsLocalBrain) localBrain?.store.close();
   });
   app.addHook("onRequest", async (req, reply) => {
+    reply
+      .header("X-Content-Type-Options", "nosniff")
+      .header("Referrer-Policy", "no-referrer")
+      .header("Cache-Control", "no-store")
+      .header("X-Frame-Options", "DENY")
+      .header(
+        "Content-Security-Policy",
+        "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; object-src 'none'; form-action 'self'",
+      );
+    if (deployment.secure)
+      reply.header("Strict-Transport-Security", "max-age=31536000");
+    // The gates below compare the raw path. The router matches the path after
+    // decodeURI, so a path that decodeURI would change is refused here and the
+    // two always agree. Encoded reserved characters stay encoded in both.
+    const rawPath = requestPath(req.url);
+    let routedPath: string | undefined;
+    try {
+      routedPath = decodeURI(rawPath);
+    } catch {
+      routedPath = undefined;
+    }
+    if (routedPath !== rawPath)
+      throw new BrainError("INVALID_INPUT", "Request path not allowed.", 400);
     const host = req.headers.host ?? "";
     if (!deployment.allowsHost(host, req.url))
       throw new BrainError("FORBIDDEN", "Host not allowed.", 403);
@@ -313,22 +340,11 @@ export async function createApp(
           : "Origin not allowed.",
         403,
       );
-    reply
-      .header("X-Content-Type-Options", "nosniff")
-      .header("Referrer-Policy", "no-referrer")
-      .header("Cache-Control", "no-store")
-      .header("X-Frame-Options", "DENY")
-      .header(
-        "Content-Security-Policy",
-        "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; object-src 'none'; form-action 'self'",
-      );
-    if (deployment.secure)
-      reply.header("Strict-Transport-Security", "max-age=31536000");
     // The API answers page fetches and agent calls, never a page of its own: a
     // top-level navigation to it is refused. The health checks stay openable.
     if (
       req.url.startsWith("/api/v1/") &&
-      !NAVIGABLE_API_PATHS.has(requestPath(req.url)) &&
+      !NAVIGABLE_API_PATHS.has(rawPath) &&
       req.headers["sec-fetch-mode"] === "navigate"
     )
       throw new BrainError("FORBIDDEN", "Open BiBrain from its own page.", 403);
@@ -670,8 +686,8 @@ export async function createApp(
   });
   const params = (req: FastifyRequest) =>
     z.object({ id: z.string().max(100) }).parse(req.params).id;
-  const key = (req: FastifyRequest) =>
-    z.string().max(200).optional().parse(req.headers["idempotency-key"]);
+  const key = (req: FastifyRequest, max = 200) =>
+    z.string().max(max).optional().parse(req.headers["idempotency-key"]);
   const expected = (input: unknown) =>
     z.object({ expected_version: z.number().int().positive() }).parse(input)
       .expected_version;
@@ -899,7 +915,11 @@ export async function createApp(
   });
   app.get("/api/v1/connections", (req) => req.brain.connections(req.principal));
   app.post("/api/v1/proposals/gate", (req) =>
-    req.brain.propose(req.principal, req.body, key(req)),
+    req.brain.propose(
+      req.principal,
+      req.body,
+      key(req, 200 - GATE_KEY_PREFIX.length),
+    ),
   );
   app.post("/api/v1/proposals/gate/:id/review", (req) =>
     req.brain.reviewGate(req.principal, params(req), req.body),
@@ -1055,7 +1075,11 @@ export async function createApp(
   app.post("/api/v1/agent/recall-push", (req) => req.brain.recallPush(req.principal, req.body));
   app.get("/api/v1/recall/log", (req) => req.brain.recallLog(req.principal));
   app.post("/api/v1/agent/propose", (req) =>
-    req.brain.propose(req.principal, req.body, key(req)),
+    req.brain.propose(
+      req.principal,
+      req.body,
+      key(req, 200 - GATE_KEY_PREFIX.length),
+    ),
   );
   app.post("/api/v1/agent/note", (req) =>
     req.brain.agentNote(req.principal, req.body, key(req)),
