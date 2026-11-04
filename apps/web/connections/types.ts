@@ -8,7 +8,7 @@ export type Grant = {
   revoked_at: string | null;
   last_verified_at: string | null;
   status: "Connected" | "Not connected" | "Needs attention" | "Revoked";
-  client: AgentClient | "other";
+  client: AgentClient | "hermes" | "other";
   client_name: string;
   folder: string | null;
   files: WrittenFile[];

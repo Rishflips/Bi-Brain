@@ -1,6 +1,7 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
+import { AGENT_CONTRACT } from "../../packages/domain/agents.ts";
 import { agentApiUrl } from "./api-url.ts";
 import {
   SERVER_INSTRUCTIONS,
@@ -207,6 +208,7 @@ server.registerResource(
           tools: [...allowed],
           projects: capabilities.projects ?? [],
           surface: "v2",
+          contract: AGENT_CONTRACT,
           binding: "manual until a client adapter is verified",
           private_sources: "owner only",
         }),

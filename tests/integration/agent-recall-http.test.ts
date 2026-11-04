@@ -28,7 +28,7 @@ describe("agent HTTP v2", () => {
   it("lists the v2 tools with the readable projects, and only two tools for a read-only grant", async () => {
     const { f, get } = await setup();
     const caps = (await get("/api/v1/agent/capabilities")).json();
-    expect(caps).toEqual({ operations: ["read"], tools: ["brain_recall", "brain_open"], projects: [{ id: f.ids["project:northstar"], title: "Northstar" }], surface: "v2" });
+    expect(caps).toEqual({ operations: ["read"], tools: ["brain_recall", "brain_open"], projects: [{ id: f.ids["project:northstar"], title: "Northstar" }], surface: "v2", contract: "bibrain-agent/1" });
     const full = f.brain.createGrant(owner, { projects: ["inbox"], operations: ["read", "propose_memory", "forget"], expires_at: "2027-01-01T00:00:00.000Z" });
     expect((await get("/api/v1/agent/capabilities", full.token)).json().tools).toEqual(["brain_recall", "brain_open", "brain_note", "brain_propose", "brain_intent", "brain_link", "brain_forget"]);
     expect(JSON.stringify(caps)).not.toMatch(/brain\./);
