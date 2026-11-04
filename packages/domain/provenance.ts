@@ -5,6 +5,8 @@ export type WrittenBy = { agent: string; reviewed: boolean };
 
 export const isAgentOrigin = (origin: string) => origin.startsWith("agent:");
 export const grantOfOrigin = (origin: string) => (isAgentOrigin(origin) ? origin.slice("agent:".length) : null);
+/** The origin an agent-written original keeps when it is restored from an export: still agent-written, tied to no local grant. */
+export const RESTORED_AGENT_ORIGIN = "agent:";
 
 export function writtenByLabel(w: WrittenBy): string {
   return `From ${w.agent} · ${w.reviewed ? "reviewed" : "not yet reviewed"}`;

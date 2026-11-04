@@ -39,7 +39,7 @@ import {
 } from "../storage/spend.ts";
 import { safeAdd } from "./spend.ts";
 import { agentDisplayName } from "./agents.ts";
-import { REVIEWED_KEY, grantOfOrigin, type WrittenBy } from "./provenance.ts";
+import { RESTORED_AGENT_ORIGIN, REVIEWED_KEY, grantOfOrigin, isAgentOrigin, isUnreviewedAgent, type WrittenBy } from "./provenance.ts";
 import type { ManagedSpendView } from "./managed-spend.ts";
 import {
   advisorySourceBodyHash,
@@ -206,6 +206,12 @@ export class Brain {
     const client = this.store.get<{ client: string | null }>("SELECT client FROM grants WHERE id=?", grantId)?.client;
     return { agent: agentDisplayName(client), reviewed: this.sourceReviewedAt(source.id) !== null };
   }
+  /** True when the original with this id was written by an agent and the owner has not reviewed it. */
+  private unreviewedAgentSource(sourceId: string): boolean {
+    const row = this.store.get<{ id: string; origin: string }>("SELECT id,origin FROM sources WHERE id=?", sourceId);
+    const by = row ? this.writtenBy(row) : undefined;
+    return by !== undefined && !by.reviewed;
+  }
   /** Records the owner's review of an agent-written original. The first time stands; a second call changes nothing. */
   private reviewSource(sourceId: string) {
     const row = this.store.get<{ origin: string }>("SELECT origin FROM sources WHERE id=? AND state!='deleted'", sourceId);
@@ -216,6 +222,7 @@ export class Brain {
     this.owner(p);
     const s = this.source(p, z.string().min(1).max(100).parse(id));
     if (grantOfOrigin(s.origin) === null) throw new BrainError("INVALID_INPUT", "This original was not written by an agent.", 400);
+    if (s.state !== "active") throw new BrainError("SOURCE_WITHDRAWN", "This source is withdrawn.", 409);
     return this.store.transaction(() => {
       this.reviewSource(s.id);
       return { source_id: s.id, reviewed_at: this.sourceReviewedAt(s.id)! };
@@ -3589,6 +3596,8 @@ export class Brain {
           ...judged.demoted.map((c) => ({ kind: c.row.kind, id: c.row.ref_id, title: c.row.kind === "fact" ? c.row.text : c.row.prefix.split(" · ")[0], reason: "judged not relevant" })),
           ...internal.result.near_misses,
         ]
+          // A near miss names its item by title, so an unreviewed agent-written original is never one (its title is agent-chosen text).
+          .filter((n) => !(n.kind === "original" && this.unreviewedAgentSource(n.id)))
           .filter((n) => !hits.some((h) => h.kind === n.kind && h.id === n.id) && !seen.has(`${n.kind}:${n.id}`) && !!seen.add(`${n.kind}:${n.id}`))
           .slice(0, NEAR_MISSES_MAX);
     return { ...internal.result, status, hits, near_misses: near, next_step: status === "no_match" ? NO_MATCH_NEXT_STEP : FOUND_NEXT_STEP };
@@ -3951,7 +3960,8 @@ ${q}`);
     const { kept, spill } = dedupe(authorized.map((a) => a.hit));
     const hits = kept.slice(0, v.limit);
     const statusOut = deterministicStatus(signals);
-    const nearPool = [...kept.slice(v.limit), ...spill];
+    // A near miss names its item by title, so an unreviewed agent-written original is never one (its title is agent-chosen text).
+    const nearPool = [...kept.slice(v.limit), ...spill].filter((h) => !isUnreviewedAgent(h));
     const near_misses = statusOut === "found" ? [] : nearPool.slice(0, NEAR_MISSES_MAX).map((h) => ({
       kind: h.kind, id: h.id, title: h.kind === "fact" ? h.text : h.title,
       reason: `matched ${fts.terms.filter((t) => questionWordsOf(h).has(t)).length} of ${fts.terms.length} terms`,
@@ -4145,11 +4155,14 @@ ${q}`);
       const by = this.writtenBy(s);
       return by !== undefined && !by.reviewed;
     };
-    const citesUnreviewed = (item: { evidence?: { source_id: string }[] }) =>
-      (item.evidence ?? []).some((e) => {
-        const row = this.store.get<{ id: string; origin: string }>("SELECT id,origin FROM sources WHERE id=?", e.source_id);
-        return row !== undefined && unreviewed(row);
-      });
+    const citesUnreviewed = (item: { evidence?: { source_id: string }[] }) => (item.evidence ?? []).some((e) => this.unreviewedAgentSource(e.source_id));
+    // A model-written brief's unknowns cite no evidence. When its inputs include an unreviewed agent-written original they are withheld
+    // from an agent and labelled for the owner. The owner's own edited brief and the fixed extractive text are not affected.
+    const unknownsFromUnreviewed =
+      brief !== undefined &&
+      brief.data.author !== "user" &&
+      brief.data.provider !== "extractive" &&
+      ((brief.data.source_versions ?? []) as { id: string }[]).some((sv) => this.unreviewedAgentSource(sv.id));
     const candidates = brief?.data.items
       ? brief.data.items.filter((item: { evidence?: { source_id: string }[] }) => p.kind === "owner" || !citesUnreviewed(item))
       : sources
@@ -4192,7 +4205,7 @@ ${q}`);
       }
     }
     const unknowns: string[] = [];
-    for (const unknown of brief?.data.unknowns ?? []) {
+    for (const unknown of unknownsFromUnreviewed && p.kind !== "owner" ? [] : (brief?.data.unknowns ?? [])) {
       const size = Array.from(unknown).length;
       if (size <= remaining) {
         unknowns.push(unknown);
@@ -4206,6 +4219,7 @@ ${q}`);
       items,
       goals,
       unknowns,
+      ...(unknownsFromUnreviewed && p.kind === "owner" && unknowns.length ? { unknowns_epistemic_status: "agent_unreviewed" } : {}),
       omitted_items: candidates.length - items.length,
       omitted_sources: brief?.data.omitted_sources ?? 0,
       insufficient_context: !items.length,
@@ -4413,9 +4427,12 @@ ${q}`);
           s.version,
           s.state,
           s.visibility,
-          "import",
+          // An agent-written original stays agent-written, unreviewed and tied to no local grant; everything else is the owner's import.
+          isAgentOrigin(s.origin) ? RESTORED_AGENT_ORIGIN : "import",
           s.captured_at,
         );
+        // Review state is local and never restored: a source new to this brain starts unreviewed.
+        if (!parent) this.store.run("DELETE FROM settings WHERE key=?", REVIEWED_KEY(s.id));
         this.store.run(
           "INSERT OR IGNORE INTO source_versions VALUES(?,?,?,?,?)",
           s.id,

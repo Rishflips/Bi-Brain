@@ -63,6 +63,10 @@ describe("provenance of agent-written originals", () => {
     expect(b.recallCore(agent, { query: "queue SQLite leases" }).hits[0]).toMatchObject({ kind: "fact" });
     b.reviewGate(owner, queue.target.id, { action: "undo", expected_version: kept.gate_version });
     expect(b.sourceReviewedAt(r.source_id)).toBeNull();
+    // A Fix (keeping the card again in the owner's own words) is not a review of the note either.
+    const again = b.brief(owner).items.find((c) => c.title.startsWith("queue"))!;
+    b.reviewGate(owner, again.target.id, { action: "accept", expected_version: again.target.version, value: "SQLite with leases, thirty seconds each." });
+    expect(b.sourceReviewedAt(r.source_id)).toBeNull();
   });
 
   it("an owner edit of the body, Mark as reviewed, or saving the same text reviews the note; a move, a title-only edit or an owner note do not; a forgotten note loses its mark", () => {
@@ -94,6 +98,10 @@ describe("provenance of agent-written originals", () => {
     expect(b.sourceReviewedAt(e.source_id)).toBe("2026-11-03T09:00:00.000Z");
     b.removeSource(owner, c.source_id, 2, true);
     expect(s.get("SELECT value FROM settings WHERE key=?", REVIEWED_KEY(c.source_id))).toBeUndefined();
+    // Withdrawing (not purging) also drops the mark, and a withdrawn note cannot be marked.
+    b.removeSource(owner, a.source_id, b.source(owner, a.source_id).version, false);
+    expect(b.sourceReviewedAt(a.source_id)).toBeNull();
+    expect(() => b.markSourceReviewed(owner, a.source_id)).toThrow(/withdrawn/i);
   });
 
   it("the continuation brief leaves unreviewed agent sources out for an agent and labels them for the owner", () => {
@@ -122,6 +130,67 @@ describe("provenance of agent-written originals", () => {
     expect(JSON.stringify(b.context(agent, "inbox"))).not.toContain("EGRET_CANARY");
     expect(JSON.stringify(b.context(agent, "inbox"))).toContain("owner line");
     expect(JSON.stringify(b.context(owner, "inbox"))).toContain("EGRET_CANARY");
+  });
+
+  it("a restored export keeps an agent note agent-written and unreviewed, and an owner capture an import", () => {
+    const { b, agent } = setup();
+    const theirs = b.agentNote(agent, { project_id: "inbox", open_questions: ["Which plover lease length?"] });
+    const mine = b.capture(owner, { title: "Mine", body: "The owner's own plover WREN_CANARY note." }) as { source_id: string };
+    b.markSourceReviewed(owner, theirs.source_id);
+    const exported = b.export(owner);
+    const t = setup();
+    const preview = t.b.preview(owner, exported);
+    expect(preview.conflicts).toEqual([]);
+    t.b.applyImport(owner, preview.id);
+    // Review state is local: the restored note starts unreviewed and is tied to no grant of this brain.
+    expect(t.b.sourceReviewedAt(theirs.source_id)).toBeNull();
+    expect(t.b.writtenBy(t.b.source(owner, theirs.source_id))).toEqual({ agent: "A connected agent", reviewed: false });
+    const hits = t.b.recallCore(owner, { query: "plover lease length" }).hits;
+    expect(hits.find((h) => h.id === theirs.source_id)).toMatchObject({ kind: "original", written_by: { agent: "A connected agent", reviewed: false } });
+    expect(t.b.source(owner, mine.source_id).origin).toBe("import");
+    expect(t.b.sourceView(owner, mine.source_id)).not.toHaveProperty("written_by");
+    // Still withheld from an agent's continuation brief until the owner reviews it.
+    const forAgent = JSON.stringify(t.b.context(t.agent, "inbox"));
+    expect(forAgent).toContain("WREN_CANARY");
+    expect(forAgent).not.toContain("plover lease length");
+    t.b.markSourceReviewed(owner, theirs.source_id);
+    expect(JSON.stringify(t.b.context(t.agent, "inbox"))).toContain("plover lease length");
+  });
+
+  it("a near miss never names an unreviewed agent-written original", () => {
+    const { b, agent } = setup();
+    const theirs = b.agentNote(agent, { project_id: "inbox", open_questions: ["Is the plover lease right?"] });
+    b.capture(owner, { title: "Mine", body: "The plover migration note." });
+    const other = b.capture(owner, { title: "Mine two", body: "The plover rollout note." }) as { source_id: string };
+    for (const who of [owner, agent]) {
+      const r = b.recallCore(who, { query: "plover", limit: 1 });
+      expect(r.near_misses.map((n) => n.id)).toContain(other.source_id);
+      expect(r.near_misses.map((n) => n.id)).not.toContain(theirs.source_id);
+    }
+    b.markSourceReviewed(owner, theirs.source_id);
+    expect(b.recallCore(agent, { query: "plover", limit: 1 }).near_misses.map((n) => n.id)).toContain(theirs.source_id);
+  });
+
+  it("a model-written brief's unknowns are withheld from an agent and labelled for the owner while an input is an unreviewed agent note", () => {
+    const { b, agent } = setup();
+    const theirs = b.agentNote(agent, { project_id: "inbox", open_questions: ["Is the SWIFT lease right?"] });
+    const plant = (id: string, extra: Record<string, unknown>) =>
+      b.store.run(
+        "INSERT INTO entities VALUES(?,?,?,?,?,?)",
+        id, "inbox", "brief", 1,
+        JSON.stringify({ status: "current", items: [{ text: "owner line", epistemic_status: "supported", evidence: [] }], unknowns: ["Whether the SANDPIPER_CANARY retry holds."], source_versions: [{ id: theirs.source_id, version: 1 }], ...extra }),
+        "2026-11-03T09:00:00.000Z",
+      );
+    plant("brief-unknowns-test", { provider: "openai" });
+    const forAgent = b.context(agent, "inbox") as { unknowns: string[] };
+    expect(forAgent.unknowns).toEqual([]);
+    expect(JSON.stringify(forAgent)).toContain("owner line");
+    const forOwner = b.context(owner, "inbox") as { unknowns: string[]; unknowns_epistemic_status?: string };
+    expect(forOwner.unknowns).toEqual(["Whether the SANDPIPER_CANARY retry holds."]);
+    expect(forOwner.unknowns_epistemic_status).toBe("agent_unreviewed");
+    b.markSourceReviewed(owner, theirs.source_id);
+    expect((b.context(agent, "inbox") as { unknowns: string[] }).unknowns).toEqual(["Whether the SANDPIPER_CANARY retry holds."]);
+    expect(b.context(owner, "inbox")).not.toHaveProperty("unknowns_epistemic_status");
   });
 
   it("deletes expired owner sessions when a new one is issued", () => {
