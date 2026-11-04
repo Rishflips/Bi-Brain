@@ -3634,18 +3634,28 @@ export class Brain {
     // deterministic one (none, or pointer for an exact entity), so meaning alone can never make a push louder.
     const judge = internal.ranked.some(fromBm25) ? await this.judgeForPush(p, internal) : { signals: null, hits: internal.result.hits, judged: false };
     let level = pushLevel(internal.signals, judge.signals);
-    const hits = filterSeen(judge.hits, v.seen);
+    // Unreviewed agent-written originals the agent may see: another agent's notes, never the owner's evidence (spec A1, R2).
+    const blocked = new Set(internal.authorized.filter(isUnreviewedAgent).map((h) => h.id));
+    const isBlocked = (c: Candidate) => c.row.kind === "original" && blocked.has(c.row.ref_id);
+    // A judge that read such a note may lift the push to a pointer at most; anything louder must come from the words alone.
+    if (judge.judged && level === "full" && pushLevel(internal.signals, null) !== "full" && internal.ranked.slice(0, JUDGE_CANDIDATES_MAX).some(isBlocked)) level = "pointer";
+    const seen = filterSeen(judge.hits, v.seen);
+    // An unreviewed agent-written original never rides in a full push.
+    const hits = seen.filter((h) => !isUnreviewedAgent(h));
     // When the judge's order leaves a hit found by meaning alone on top, the level is capped at the words level.
     if (hits.length && internal.denseOnly.has(hitKey(hits[0]))) level = quieter(level, pushLevel(internal.signals, null));
-    // Everything the agent already holds from this session is not sent again. When that removed hits, the level is re-read on what is left:
-    // `full` only while the best remaining hit is itself a strong match, `pointer` for an exact entity match or a remaining related hit, else quiet.
+    // Everything the agent already holds from this session, and every unreviewed agent note, is left out. When that removed hits, the level is re-read
+    // on what is left: `full` only while the best remaining hit is itself a strong match, `pointer` for an exact entity match or a remaining related hit, else quiet.
     if (level === "full" && hits.length < judge.hits.length) {
       const terms = internal.signals.terms;
-      if (!hits.length || !hitIsStrong(terms, hits[0])) level = internal.signals.exactEntity || hits.some((h) => hitIsRelated(terms, h)) ? "pointer" : "none";
+      if (!hits.length || !hitIsStrong(terms, hits[0])) level = internal.signals.exactEntity || seen.some((h) => hitIsRelated(terms, h)) ? "pointer" : "none";
     }
     // A judge may rate a candidate relevant that did not survive into the hits; a full push with nothing to show is never sent.
     if (level === "full" && !hits.length) level = internal.signals.exactEntity ? "pointer" : "none";
-    const names = internal.signals.topNames.length ? internal.signals.topNames : internal.entityNames;
+    // Names for the pointer and the digest: the top three candidates exactly as deterministicSignals builds topNames (from the same list), except that
+    // an unreviewed agent original is skipped first: its title is agent-chosen text and never a name here. With no such original this is plan 5's list.
+    const top = [...new Set(internal.namesRanked.filter((c) => !isBlocked(c)).slice(0, 3).map((c) => (c.row.kind === "fact" ? c.row.prefix.split(" · ").at(-1)! : c.row.prefix.split(" · ")[0])))];
+    const names = top.length ? top : internal.entityNames;
     let text = "";
     let used: RecallHit[] = [];
     if (level === "full") {
@@ -3683,18 +3693,26 @@ export class Brain {
       .sort((a, b) => (order.get(a.key) ?? 1e9 + a.i) - (order.get(b.key) ?? 1e9 + b.i))
       .map((k) => k.h);
   }
-  /** Counts and three recent titles by SQL (no bodies, no claim verification): the digest is a map of the brain, not evidence. Only what an agent may see: project-visible originals and facts the recall index marks project-visible. */
+  /** Counts and three recent titles by SQL (no bodies, no claim verification): the digest is a map of the brain, not evidence. Only what an agent may see: project-visible originals and facts the recall index marks project-visible. Agent-written originals the owner has not reviewed are counted and labelled. */
   private digestFor(scope: { id: string; title: string }[], names: string[]): string {
     if (!scope.length) return "";
     const ids = scope.map((s) => s.id);
     const marks = ids.map(() => "?").join(",");
     const facts = Number(this.store.get<{ n: number }>(`SELECT count(DISTINCT ref_id) AS n FROM recall_chunks WHERE kind='fact' AND status='current' AND visibility='project' AND project_id IN (${marks})`, ...ids)?.n ?? 0);
     const originals = Number(this.store.get<{ n: number }>(`SELECT count(*) AS n FROM sources WHERE state='active' AND visibility='project' AND project_id IN (${marks})`, ...ids)?.n ?? 0);
-    const recent = this.store.all<{ title: string; at: string }>(
-      `SELECT v.title AS title, s.captured_at AS at FROM sources s JOIN source_versions v ON v.source_id=s.id AND v.version=s.version WHERE s.state='active' AND s.visibility='project' AND s.project_id IN (${marks}) ORDER BY s.captured_at DESC, s.rowid DESC LIMIT 3`,
-      ...ids,
+    const agentUnreviewed = Number(
+      this.store.get<{ n: number }>(
+        `SELECT count(*) AS n FROM sources s WHERE s.state='active' AND s.visibility='project' AND s.project_id IN (${marks}) AND s.origin LIKE 'agent:%' AND NOT EXISTS (SELECT 1 FROM settings k WHERE k.key='source_reviewed:'||s.id)`,
+        ...ids,
+      )?.n ?? 0,
     );
-    return renderDigest({ projects: scope, facts, originals, recent, names });
+    // The three most recent titles an agent may be shown: an unreviewed agent-written original's title is agent-chosen text and is left out (it is still in the count above).
+    const recent = this.store
+      .all<{ title: string; at: string }>(
+        `SELECT v.title AS title, s.captured_at AS at FROM sources s JOIN source_versions v ON v.source_id=s.id AND v.version=s.version WHERE s.state='active' AND s.visibility='project' AND s.project_id IN (${marks}) AND (s.origin NOT LIKE 'agent:%' OR EXISTS (SELECT 1 FROM settings k WHERE k.key='source_reviewed:'||s.id)) ORDER BY s.captured_at DESC, s.rowid DESC LIMIT 3`,
+        ...ids,
+      );
+    return renderDigest({ projects: scope, facts, originals, recent, names, agent_unreviewed: agentUnreviewed });
   }
   /** What was pushed to agents and when: levels, counts and latency, plus the judge's answers and the top cosine when those ran. Never a prompt, an id or a passage. */
   recallLog(p: Principal) {
@@ -3901,7 +3919,7 @@ ${q}`);
     // confirms an item the principal cannot see. Only claims whose name could match are loaded.
     const termSet = new Set(fts.terms);
     const entityNames = ids.length ? this.visibleEntityNames(p, scope, termSet, visibilities) : [];
-    if (!fts.match) return { result: empty("no_match", 0), ranked: [] as Candidate[], authorized: [] as RecallHit[], signals: deterministicSignals([], [], entityNames), entityNames, scope, dense: false, denseOnly: new Set<string>(), denseTop: null as number | null };
+    if (!fts.match) return { result: empty("no_match", 0), ranked: [] as Candidate[], authorized: [] as RecallHit[], signals: deterministicSignals([], [], entityNames), namesRanked: [] as Candidate[], entityNames, scope, dense: false, denseOnly: new Set<string>(), denseTop: null as number | null };
     const status = v.history ? "any" : "current";
     const search = (match: string, kind: "fact" | "original") => searchRecallChunks(this.store, { match, kind, projects: ids, visibilities, status, limit: CANDIDATES_PER_LIST });
     const lists: RecallLists = {
@@ -3950,10 +3968,13 @@ ${q}`);
     // The words reading (R2): status, strength and push level come from the authorized word candidates in the order and with the rows
     // words alone give them, so Better search on is never louder (nor quieter) than off. Meaning still adds hits, orders them and counts.
     let signals = deterministicSignals(fts.terms, ranked, entityNames);
+    // The list `signals.topNames` is built from, so the push can rebuild those names without an unreviewed agent original.
+    let namesRanked = ranked;
     if (lists.dense!.length) {
       const byWords = new Set(ranked.filter(fromBm25).map((c) => c.key));
       const wordRanked = fuse({ facts: lists.facts, originals: lists.originals, phrase: lists.phrase }, now).filter((c) => byWords.has(c.key));
       signals = { ...deterministicSignals(fts.terms, wordRanked, entityNames), candidates: ranked.length };
+      namesRanked = wordRanked;
     }
     // Hits found by meaning alone, so the push can cap a judged level they would lead (never part of the result).
     const denseOnly = new Set(authorized.filter((a) => !fromBm25(a.candidate)).map((a) => hitKey(a.hit)));
@@ -3969,7 +3990,7 @@ ${q}`);
     const result: RecallResult = { status: statusOut, as_of: now.toISOString(), searched: { ...base, candidates: ranked.length }, hits, near_misses, next_step: statusOut === "no_match" ? NO_MATCH_NEXT_STEP : FOUND_NEXT_STEP };
     // The highest cosine among the meaning candidates, three decimals, for the content-free recall log; null when none passed the floor.
     const denseTop = lists.dense!.length ? Number(Math.max(...lists.dense!.map((r) => r.score)).toFixed(3)) : null;
-    return { result, ranked, authorized: authorized.map((a) => a.hit), signals, entityNames, scope, dense: dense !== null, denseOnly, denseTop };
+    return { result, ranked, authorized: authorized.map((a) => a.hit), signals, namesRanked, entityNames, scope, dense: dense !== null, denseOnly, denseTop };
   }
   /** One item by id for an agent: the full original (any version it may see) or the full fact with its history. */
   agentOpen(p: Principal, input: unknown) {

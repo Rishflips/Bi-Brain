@@ -263,4 +263,38 @@ describe("POST /api/v1/agent/recall-push", () => {
     f.brain.revoke(owner, f.ids["grant:northstar-read"]);
     expect((await push({ prompt: "what color did we pick for the launch", session_id: session })).statusCode).toBe(401);
   });
+  it("never puts an unreviewed agent-written original in a full push, counts and labels it in the digest, and pushes it once the owner reviewed it", async () => {
+    const { f, push, session } = await setup();
+    const writer = f.brain.createGrant(owner, { projects: [f.ids["project:northstar"]], operations: ["read", "propose_memory"], expires_at: "2027-01-01T00:00:00.000Z", client: "codex" });
+    const writerP = f.brain.authenticateAgent(writer.token);
+    // An agent-chosen title and body, both distinctive: neither may reach another agent through the push until reviewed.
+    const r = f.brain.propose(writerP, { project_id: f.ids["project:northstar"], title: "Zephyr cadence memo WREN_TITLE", text: "Decided: zephyr cadence: the zephyr cadence is fortnightly", type: "decision", entity: "zephyr cadence", field: { aspect: "statement", value: "the zephyr cadence is fortnightly" } });
+    // Only the agent note mentions zephyr: by words alone it would be a strong hit.
+    const quiet = (await push({ prompt: "what is the zephyr cadence we settled on", session_id: session, first_prompt: true, seen: [] })).json();
+    expect(quiet.level).toBe("pointer");
+    expect(quiet.text).not.toContain("fortnightly");
+    expect(quiet.text).not.toContain("WREN_TITLE");
+    expect(quiet.hit_ids).toEqual([]);
+    expect(quiet.digest).toBe(true);
+    expect(quiet.text).toContain("1 of them written by agents and not yet reviewed");
+    expect(quiet.text).not.toContain("Recent: Zephyr");
+    // The same hit through brain_recall is returned, labelled.
+    const recalled = f.brain.recallCore(f.agent, { query: "zephyr cadence" });
+    expect(recalled.hits[0]).toMatchObject({ id: r.raw_id, written_by: { agent: "Codex", reviewed: false } });
+    // The owner keeps the derived card: the fact is the owner's, the note is still unreviewed and still never named.
+    const card = f.brain.brief(owner).items.find((c) => c.title.startsWith("zephyr"))!;
+    f.brain.reviewGate(owner, card.target.id, { action: "accept", expected_version: card.target.version });
+    const afterKeep = (await push({ prompt: "what is the zephyr cadence we settled on", session_id: "c".repeat(64), first_prompt: true, seen: [] })).json();
+
+    expect(afterKeep.level).toBe("full");
+    expect(afterKeep.text).toContain("(fact ");
+    expect(afterKeep.text).not.toContain("WREN_TITLE");
+    expect(afterKeep.text).toContain("1 of them written by agents and not yet reviewed");
+    // The owner reviews the note itself: it pushes like any original.
+    f.brain.markSourceReviewed(owner, r.raw_id);
+    const loud = (await push({ prompt: "what is the zephyr cadence we settled on", session_id: "d".repeat(64), first_prompt: true, seen: ["0".repeat(64)] })).json();
+    expect(loud.level).toBe("full");
+    expect(loud.text).not.toContain("not yet reviewed");
+    expect(loud.text).toContain("Recent: Zephyr cadence memo WREN_TITLE (2026-10-25)");
+  });
 });
