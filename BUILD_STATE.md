@@ -31,7 +31,24 @@ What changed:
 - **Hermes plugin and Connections.** `integrations/hermes/bibrain` (Python, standard library only) recalls on `pre_llm_call` and leaves a note on `post_llm_call`. Connections gains Hermes Agent and Another agent under Set up by hand. `client` accepts `hermes`.
 - **Copy and docs.** Copy that named one harness where any agent would do now says "your coding agents". The Connect any agent guide holds the contract, per-harness snippets and an honest compatibility matrix.
 
-Verified in this worktree (Windows, Node 24.19.0): TBD counts from Task 8.
+Verified in this worktree on 2026-11-05 (Windows, Node 24.19.0), all in one sequential run:
+
+- `npm run typecheck`, `npm run lint`, `npm run build`: all exit 0.
+- `npm audit --audit-level=high`: exit 0. The two moderate advisories are unchanged (`glob` and `minimatch`, which need a breaking change).
+- `CI=true npx vitest run --reporter=dot --maxWorkers=2`: 194 files, 2,040 passed, 8 skipped, 0 failed (1,067 s). The Hermes plugin tests ran under Python and were not skipped.
+- `npm run brain-eval`: 25/25 passed. The plan-5 dense-off snapshot is byte-identical.
+- `npx playwright test --workers=1`: 111 passed, 0 failed (4.6 minutes). By project: main 69, today-v2 20, connections 9, system1 6, today-v2-bar 4, empty-brain 3.
+- Code and tests: 28 files changed, 1,611 lines added and 245 removed.
+- Reviews:
+  - The pre-flight scan and its re-check found and fixed 3 Blocker and 6 Important problems before any code was written.
+  - Every task had its own review; Opus reviewed the HTTP and transport tasks.
+  - Fable's final review: ready, with 0 Critical and 0 Important findings.
+
+Known limits:
+
+- The Hermes plugin has been tested only against a fake Hermes context, never a running Hermes. The HTTP MCP endpoint has been tested only in-process, never with a real remote client. Both need an owner run.
+- Whether Hermes expands `${BRAIN_AGENT_TOKEN}` inside `headers` is not verified. The guide gives a fallback.
+- Recall and note log rows record the client name the agent sends; the labels the owner sees use the grant's stored client. Parked, because changing it would touch rows the recall snapshot pins.
 
 Known limits:
 - No native Hermes run. The plugin was tested against a fake Hermes context and a fake server only.
