@@ -115,6 +115,8 @@ export async function createApp(
     billing?: DodoBillingService;
     /** One-step agent setup. Tests override the folders and paths it looks at. */
     agents?: Partial<AgentConnectConfig>;
+    /** Tests only: a small global limit so the buckets can be observed. */
+    rateLimitMax?: number;
   } = {},
 ) {
   const managed = options.managed;
@@ -175,11 +177,18 @@ export async function createApp(
   const app = Fastify({
     bodyLimit: 4 * 1048576,
     logger: false,
+    // Behind the configured TLS proxy, exactly one hop is trusted for the client address, so the limiter
+    // keys on the client and not on the proxy. The Host and Origin checks below read the raw headers.
+    // Locally nothing is trusted and the key stays the loopback address, as before.
+    // A function, not the number 1: this Fastify treats a numeric hop count as "trust nothing". Only the
+    // immediate peer (hop 0, the proxy) is trusted, so the key is the address that proxy appended.
+    ...(deployment.secure ? { trustProxy: (_address: string, hop: number) => hop === 0 } : {}),
   });
   await app.register(cookie);
   // The active local UI polls several authenticated views; keep the global
   // abuse guard above that normal traffic while pairing retains its tight cap.
-  await app.register(rateLimit, { max: 1000, timeWindow: 60000 });
+  // The key is the client address only: a cookie or a bearer nobody has verified must never open a bucket.
+  await app.register(rateLimit, { max: options.rateLimitMax ?? 1000, timeWindow: 60000 });
   let pairSecret: string | undefined;
   if (!managed) {
     const secretFile = resolve(dirname(localBrain!.store.path), "owner-secret");

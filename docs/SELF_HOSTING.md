@@ -30,7 +30,7 @@ docker compose --env-file deploy/.env -f deploy/compose.yaml exec brain cat /app
 
 Open `https://your.actual.hostname` and pair with that code. Do not send the code to a chat, commit it, pass it in URLs, or include it in verification screenshots. Treat it as the owner's sign-in credential. Sessions expire after seven days and use Secure, HttpOnly, SameSite Strict cookies with CSRF checks. The API accepts only the configured HTTPS Host/Origin; forwarded headers do not grant access. Native clients without Origin still require a scoped bearer grant.
 
-Caddy obtains and renews certificates using persistent `caddy-data`/`caddy-config` volumes. Preserve the public Host when substituting another trusted TLS proxy. Set `BRAIN_PUBLIC_ORIGIN` to the exact HTTPS origin; keep the app listener inaccessible outside the proxy. Do not serve the remote app over plaintext or disable TLS validation. Native `npm start` binds loopback; `BRAIN_CONTAINER=1` is the explicit container bind setting.
+Caddy obtains and renews certificates using persistent `caddy-data`/`caddy-config` volumes. Preserve the public Host when substituting another trusted TLS proxy. The app trusts exactly one proxy hop for the client address (`X-Forwarded-For`), so the request limiter counts each client separately; put no second proxy in front without adjusting that. Set `BRAIN_PUBLIC_ORIGIN` to the exact HTTPS origin; keep the app listener inaccessible outside the proxy. Do not serve the remote app over plaintext or disable TLS validation. Native `npm start` binds loopback; `BRAIN_CONTAINER=1` is the explicit container bind setting.
 
 ## Acceptance before owner data
 
