@@ -4227,24 +4227,30 @@ ${q}`);
     this.access(p, project);
     maxTokens = z.number().int().min(64).max(3000).parse(maxTokens);
     const sources = this.sources(p, project);
-    const brief = this.entities(p, "brief").find(
+    const stored = this.entities(p, "brief").find(
       (e) => e.project_id === project && e.data.status === "current",
     );
-    // An agent never receives another agent's unreviewed original as context, directly or as a brief item's evidence; the owner sees it labelled.
+    // An agent never receives another agent's unreviewed original as context, directly or through a brief item derived from it; the owner sees it labelled.
     const unreviewed = (s: { id: string; origin: string }) => {
       const by = this.writtenBy(s);
       return by !== undefined && !by.reviewed;
     };
     const citesUnreviewed = (item: { evidence?: { source_id: string }[] }) => (item.evidence ?? []).some((e) => this.unreviewedAgentSource(e.source_id));
-    // A model-written brief's unknowns cite no evidence. When its inputs include an unreviewed agent-written original they are withheld
-    // from an agent and labelled for the owner. The owner's own edited brief and the fixed extractive text are not affected.
-    const unknownsFromUnreviewed =
-      brief !== undefined &&
-      brief.data.author !== "user" &&
-      brief.data.provider !== "extractive" &&
-      ((brief.data.source_versions ?? []) as { id: string }[]).some((sv) => this.unreviewedAgentSource(sv.id));
+    // A model-written brief whose inputs include an unreviewed agent-written original: any of its texts may derive from that original,
+    // with or without evidence. The owner's own edited brief and the fixed extractive text are not model-written.
+    const fromUnreviewed =
+      stored !== undefined &&
+      stored.data.author !== "user" &&
+      stored.data.provider !== "extractive" &&
+      ((stored.data.source_versions ?? []) as { id: string }[]).some((sv) => this.unreviewedAgentSource(sv.id));
+    // Such a brief is not handed to an agent at all; the agent gets the excerpt list below, which leaves unreviewed agent originals out.
+    const brief = fromUnreviewed && p.kind !== "owner" ? undefined : stored;
     const candidates = brief?.data.items
-      ? brief.data.items.filter((item: { evidence?: { source_id: string }[] }) => p.kind === "owner" || !citesUnreviewed(item))
+      ? (brief.data.items as any[]).flatMap((item) => {
+          const derived = citesUnreviewed(item) || (fromUnreviewed && !(item.evidence ?? []).length);
+          if (!derived) return [item];
+          return p.kind === "owner" ? [{ ...item, epistemic_status: "agent_unreviewed" }] : [];
+        })
       : sources
           .filter((s) => p.kind === "owner" || !unreviewed(s))
           .map((s) => {
@@ -4285,7 +4291,7 @@ ${q}`);
       }
     }
     const unknowns: string[] = [];
-    for (const unknown of unknownsFromUnreviewed && p.kind !== "owner" ? [] : (brief?.data.unknowns ?? [])) {
+    for (const unknown of brief?.data.unknowns ?? []) {
       const size = Array.from(unknown).length;
       if (size <= remaining) {
         unknowns.push(unknown);
@@ -4299,7 +4305,7 @@ ${q}`);
       items,
       goals,
       unknowns,
-      ...(unknownsFromUnreviewed && p.kind === "owner" && unknowns.length ? { unknowns_epistemic_status: "agent_unreviewed" } : {}),
+      ...(fromUnreviewed && p.kind === "owner" && unknowns.length ? { unknowns_epistemic_status: "agent_unreviewed" } : {}),
       omitted_items: candidates.length - items.length,
       omitted_sources: brief?.data.omitted_sources ?? 0,
       insufficient_context: !items.length,

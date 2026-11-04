@@ -225,6 +225,7 @@ async function hookEnd() {
     const origin = loopbackApi(api);
     const statePath = hookStatePath(String(flags.data), String(flags.connection));
     const state = readHookState(statePath);
+    // A client that sends no session id shares one bucket (and its per-session note cap) across those turns.
     const sessionHash = sha256(event.session_id);
     const messageHash = sha256(text);
     const notes = state.sessions[sessionHash]?.notes ?? [];

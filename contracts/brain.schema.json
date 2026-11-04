@@ -202,6 +202,11 @@
             {
               "type": "string",
               "pattern": "^import:[^\u0000-\u001f\u007f]{1,120}$"
+            },
+            {
+              "description": "Written by an agent: the grant id on export, empty after a restore. Restored as agent-written and unreviewed.",
+              "type": "string",
+              "pattern": "^agent:[^\u0000-\u001f\u007f]{0,192}$"
             }
           ]
         }

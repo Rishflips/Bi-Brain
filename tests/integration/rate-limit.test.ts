@@ -59,4 +59,16 @@ describe("rate limiting", () => {
     expect(codes.slice(0, 10).every((c) => c === 401)).toBe(true);
     expect(codes.slice(10)).toEqual([429, 429]);
   });
+
+  it("a refused request carries the same fixed security headers as every other response", async () => {
+    const a = await app();
+    const host = { host: "127.0.0.1:4317" };
+    let last;
+    for (let i = 0; i < 11; i++) last = await a.inject({ method: "POST", url: "/api/v1/session/pair", headers: host, remoteAddress: "127.0.0.1", payload: { secret: "wrong" } });
+    expect(last!.statusCode).toBe(429);
+    expect(last!.headers["content-security-policy"]).toContain("frame-ancestors 'none'");
+    expect(last!.headers["x-frame-options"]).toBe("DENY");
+    expect(last!.headers["x-content-type-options"]).toBe("nosniff");
+    expect(last!.headers["cache-control"]).toBe("no-store");
+  });
 });

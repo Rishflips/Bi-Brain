@@ -185,13 +185,55 @@ describe("provenance of agent-written originals", () => {
     plant("brief-unknowns-test", { provider: "openai" });
     const forAgent = b.context(agent, "inbox") as { unknowns: string[] };
     expect(forAgent.unknowns).toEqual([]);
-    expect(JSON.stringify(forAgent)).toContain("owner line");
+    // The whole model-written brief is withheld from the agent, its evidence-free items included.
+    expect(JSON.stringify(forAgent)).not.toContain("owner line");
     const forOwner = b.context(owner, "inbox") as { unknowns: string[]; unknowns_epistemic_status?: string };
     expect(forOwner.unknowns).toEqual(["Whether the SANDPIPER_CANARY retry holds."]);
     expect(forOwner.unknowns_epistemic_status).toBe("agent_unreviewed");
     b.markSourceReviewed(owner, theirs.source_id);
     expect((b.context(agent, "inbox") as { unknowns: string[] }).unknowns).toEqual(["Whether the SANDPIPER_CANARY retry holds."]);
     expect(b.context(owner, "inbox")).not.toHaveProperty("unknowns_epistemic_status");
+  });
+
+  it("a model-written brief built from an unreviewed agent note: an agent gets the excerpts instead, and the owner sees derived items labelled", () => {
+    const { b, agent } = setup();
+    const theirs = b.agentNote(agent, { project_id: "inbox", open_questions: ["Is the PIPIT_CANARY lease right?"] });
+    const mine = b.capture(owner, { title: "Mine", body: "The owner's own LINNET_CANARY note." }) as { source_id: string };
+    const body = b.source(owner, theirs.source_id).body;
+    const quote = "Open question: Is the PIPIT_CANARY lease right?";
+    const start = Array.from(body.slice(0, body.indexOf(quote))).length;
+    const ownerQuote = "The owner's own LINNET_CANARY note.";
+    b.store.run(
+      "INSERT INTO entities VALUES(?,?,?,?,?,?)",
+      "brief-derived-test", "inbox", "brief", 1,
+      JSON.stringify({
+        status: "current",
+        provider: "openai",
+        items: [
+          { text: "Cites the agent note: PIPIT_CANARY", epistemic_status: "user_assertion", evidence: [{ source_id: theirs.source_id, source_version: 1, start, end: start + Array.from(quote).length, quote }] },
+          { text: "Paraphrase without evidence: GREBE_CANARY", epistemic_status: "hypothesis", evidence: [] },
+          { text: "Cites the owner: LINNET_CANARY", epistemic_status: "supported", evidence: [{ source_id: mine.source_id, source_version: 1, start: 0, end: Array.from(ownerQuote).length, quote: ownerQuote }] },
+        ],
+        unknowns: [],
+        source_versions: [{ id: theirs.source_id, version: 1 }, { id: mine.source_id, version: 1 }],
+      }),
+      "2026-11-03T09:00:00.000Z",
+    );
+    const forAgent = JSON.stringify(b.context(agent, "inbox"));
+    expect(forAgent).not.toContain("PIPIT_CANARY");
+    expect(forAgent).not.toContain("GREBE_CANARY");
+    expect(forAgent).not.toContain("Cites the owner");
+    expect(forAgent).toContain("The owner's own LINNET_CANARY note.");
+    const forOwner = b.context(owner, "inbox") as { items: { text: string; epistemic_status: string }[] };
+    const status = (needle: string) => forOwner.items.find((i) => i.text.includes(needle))!.epistemic_status;
+    expect(status("PIPIT_CANARY")).toBe("agent_unreviewed");
+    expect(status("GREBE_CANARY")).toBe("agent_unreviewed");
+    expect(status("Cites the owner")).toBe("supported");
+    b.markSourceReviewed(owner, theirs.source_id);
+    const reviewed = JSON.stringify(b.context(agent, "inbox"));
+    expect(reviewed).toContain("PIPIT_CANARY");
+    expect(reviewed).toContain("GREBE_CANARY");
+    expect((b.context(owner, "inbox") as { items: { epistemic_status: string }[] }).items.map((i) => i.epistemic_status)).not.toContain("agent_unreviewed");
   });
 
   it("deletes expired owner sessions when a new one is issued", () => {

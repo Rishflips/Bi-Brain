@@ -305,7 +305,7 @@ export async function createApp(
   app.addHook("onClose", async () => {
     if (ownsLocalBrain) localBrain?.store.close();
   });
-  app.addHook("onRequest", async (req, reply) => {
+  const securityHeaders = (reply: FastifyReply) => {
     reply
       .header("X-Content-Type-Options", "nosniff")
       .header("Referrer-Policy", "no-referrer")
@@ -317,6 +317,14 @@ export async function createApp(
       );
     if (deployment.secure)
       reply.header("Strict-Transport-Security", "max-age=31536000");
+  };
+  // The limiter answers before the hook below runs, so its 429 gets the same fixed headers here.
+  app.addHook("onSend", async (_req, reply, payload) => {
+    if (reply.statusCode === 429) securityHeaders(reply);
+    return payload;
+  });
+  app.addHook("onRequest", async (req, reply) => {
+    securityHeaders(reply);
     // The gates below compare the raw path; the router matches it after
     // decodeURI. Every fixed path the gates compare is made only of unreserved
     // characters and "/", so refusing escapes of exactly those characters (and
