@@ -1,3 +1,5 @@
+import { useState } from "react";
+
 export type AgentClient = "codex" | "claude-code" | "hermes" | "other";
 
 export function clientLabel(client: AgentClient): string {
@@ -86,6 +88,7 @@ export function AgentSetupGuide({
   busy,
   onCopyToken,
   onCopySetup,
+  onCopyText,
   onDone,
 }: {
   client: AgentClient;
@@ -94,10 +97,17 @@ export function AgentSetupGuide({
   busy: boolean;
   onCopyToken: () => void;
   onCopySetup: () => void;
+  onCopyText: (text: string) => Promise<boolean>;
   onDone: () => void;
 }) {
   const clientName = clientLabel(client);
   const local = client === "codex" || client === "claude-code";
+  const [copyNote, setCopyNote] = useState("");
+  const copyHermes = async (text: string, what: string) => {
+    const ok = await onCopyText(text);
+    setCopyNote(ok ? `${what} copied.` : "Copying did not work. Select the text above and copy it by hand.");
+  };
+  const hermes = client === "hermes" ? hermesSnippet(apiUrl) : null;
   return (
     <div className="connection-setup" data-ui="agent-setup-guide">
       <div className="connection-created" role="status">
@@ -121,21 +131,21 @@ export function AgentSetupGuide({
             </button>
           </div>
         </li>
-        {client === "hermes" ? (
+        {hermes ? (
           <>
             <li>
               <div>
                 <span className="step-label">On the Hermes server, put two lines in ~/.hermes/.env</span>
                 <p>Hermes usually runs on a server next to a self-hosted BiBrain, so the address is your BiBrain's HTTPS domain, not this computer.</p>
-                <pre data-testid="hermes-env">{hermesSnippet(apiUrl).env}</pre>
-                <button type="button" onClick={() => void navigator.clipboard.writeText(hermesSnippet(apiUrl).env)} disabled={busy}>Copy the two lines</button>
+                <pre data-testid="hermes-env">{hermes.env}</pre>
+                <button type="button" onClick={() => void copyHermes(hermes.env, "The two lines")} disabled={busy}>Copy the two lines</button>
               </div>
             </li>
             <li>
               <div>
                 <span className="step-label">Add BiBrain's tools to ~/.hermes/config.yaml</span>
-                <pre data-testid="hermes-config">{hermesSnippet(apiUrl).yaml}</pre>
-                <button type="button" onClick={() => void navigator.clipboard.writeText(hermesSnippet(apiUrl).yaml)} disabled={busy}>Copy the config</button>
+                <pre data-testid="hermes-config">{hermes.yaml}</pre>
+                <button type="button" onClick={() => void copyHermes(hermes.yaml, "The config")} disabled={busy}>Copy the config</button>
               </div>
             </li>
             <li>
@@ -146,6 +156,7 @@ export function AgentSetupGuide({
             </li>
           </>
         ) : null}
+        {hermes && copyNote ? <li><p role="status" className="muted">{copyNote}</p></li> : null}
         {client === "other" ? (
           <li>
             <div>

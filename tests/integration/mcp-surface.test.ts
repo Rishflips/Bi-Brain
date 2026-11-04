@@ -29,4 +29,10 @@ describe("MCP surface v2", () => {
     const body = JSON.parse(capabilitiesResource({ tools: ["brain_recall"], projects: [] }, "stdio").contents[0].text);
     expect(body).toEqual({ tools: ["brain_recall"], projects: [], surface: "v2", contract: "bibrain-agent/1", transport: "stdio", binding: "manual until a client adapter is verified", private_sources: "owner only" });
   });
+  it("names no model, vendor or harness anywhere an agent reads", async () => {
+    const { PUSH_FOOTER, PUSH_HEADER, renderPointer } = await import("../../packages/domain/recall-push.ts");
+    const { CURSOR_RULE } = await import("../../packages/domain/agents.ts");
+    const texts = [SERVER_INSTRUCTIONS, ...Object.values(TOOL_DESCRIPTIONS), PUSH_HEADER("2026-11-05"), PUSH_FOOTER, renderPointer(["Northstar"]), CURSOR_RULE];
+    for (const t of texts) expect(t).not.toMatch(/(Claude|Codex|Cursor|Hermes|GPT|OpenAI|Anthropic|Gemini|Llama|Nous)/);
+  });
 });

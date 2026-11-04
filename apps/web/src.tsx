@@ -2868,6 +2868,14 @@ function App() {
                         );
                     })
                   }
+                  onCopyText={async (text) => {
+                    try {
+                      await navigator.clipboard.writeText(text);
+                      return true;
+                    } catch {
+                      return false;
+                    }
+                  }}
                   onDone={close}
                 />
               ) : (

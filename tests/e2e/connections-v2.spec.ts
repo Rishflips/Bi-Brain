@@ -161,6 +161,13 @@ test("Hermes is set up by hand: the steps name the HTTPS domain, the snippets ca
   const key = (await dialog.getByTestId("agent-connection-key").textContent())!;
   expect(key).toMatch(/^[0-9a-f]{64}$/);
   for (const id of ["hermes-config", "hermes-env"]) expect(await dialog.getByTestId(id).textContent()).not.toContain(key);
+  // The Hermes copy buttons answer like the others: a notice when it works, a plain message when it does not.
+  await page.evaluate(() => { Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText: async () => undefined } }); });
+  await dialog.getByRole("button", { name: "Copy the two lines" }).click();
+  await expect(dialog.getByText("The two lines copied.")).toBeVisible();
+  await page.evaluate(() => { Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText: async () => { throw new Error("denied"); } } }); });
+  await dialog.getByRole("button", { name: "Copy the config" }).click();
+  await expect(dialog.getByText("Copying did not work. Select the text above and copy it by hand.")).toBeVisible();
   await dialog.getByRole("button", { name: "Done" }).click();
   // The new connection lands under Any other agent, waiting for its first call, and the server names it Hermes.
   await expect(other).toContainText("Waiting for its first call");

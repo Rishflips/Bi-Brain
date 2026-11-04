@@ -87,6 +87,8 @@ Agents read through one tool, `brain_recall`, which returns ranked, cited hits o
 
 The tile says **Connected** after the agent's first call. The access key stays in BiBrain's data folder on your computer and is never written into your project. Agents can read their project and suggest; they cannot accept their own suggestions.
 
+Any other agent, including Hermes Agent and a remote MCP client, connects by hand through one contract, bibrain-agent/1: the tools over MCP (local or at /api/v1/agent/mcp), two small HTTP calls for recall before a turn and a note after it, or the same two as bibrain recall and bibrain note on this computer. See [Connect any agent](docs/CONNECT_ANY_AGENT.md).
+
 Details: [Connect a native agent](docs/NATIVE_CLIENT_SETUP.md).
 
 ## Optional sorting help
@@ -155,6 +157,7 @@ BiBrain is a working **single-owner local app**. This table is the honest state 
 | --- | --- |
 | Local app: Today, Your brain, Connections, Settings | Works end to end; verified in CI on Ubuntu and locally on Windows with 2,007 Vitest tests and 110 Playwright browser tests (macOS not yet tested) |
 | One-step agent connections with recall on every prompt | Verified in real Claude Code and Codex runs on Windows (`npm run proof:recall`, hook on and off); Cursor not yet run natively |
+| Any other agent (Hermes, remote MCP, command hooks) | One documented contract; the Hermes plugin and the HTTP MCP endpoint are tested against the documented contracts with fakes, not yet run natively |
 | Sorting help with Clef | One live check through Ollama Cloud validated 3 of 3 answers; one threshold moved on that evidence, and `npm run calibrate` shows how your own answers fall around the rest |
 | Better search with embeddings | Built and gated against a fake embedder; a live run is owner-run (`npm run proof:search`) |
 | Self-hosting on your own server | Supported: [Self-hosting](docs/SELF_HOSTING.md) and `deploy/compose.yaml` |
