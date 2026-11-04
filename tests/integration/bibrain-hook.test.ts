@@ -7,7 +7,7 @@ import { spawn } from "node:child_process";
 import { detectSecrets } from "../../packages/storage/secrets.ts";
 import { createApp } from "../../apps/server/app.ts";
 import { buildFixture, owner } from "../eval/recall-fixture.ts";
-import { hookOutput, hookSkipReason, hookStatePath, looksLikeSecret, loopbackApi, noteHookState, parseArgs, parseHookStdin, readHookState, sha256 } from "../../apps/cli/lib.mjs";
+import { adapterEnv, hookOutput, hookSkipReason, hookStatePath, looksLikeSecret, loopbackApi, noteHookState, parseArgs, parseHookStdin, readHookState, sha256 } from "../../apps/cli/lib.mjs";
 
 const cli = resolve("apps/cli/bibrain.mjs");
 const ID = "1b4e28ba-2fa1-41d2-883f-0016d3cca427";
@@ -62,6 +62,18 @@ const ok = (level: string, text: string, hit_ids: string[] = [], digest = false)
 };
 
 describe("hook helpers", () => {
+  it("starts the adapter with an allowlisted environment: paths and locale in, every secret out", () => {
+    const env = {
+      PATH: "/usr/bin", Path: "C:\Windows", HOME: "/home/ana", USERPROFILE: "C:\Users\ana", TEMP: "C:\tmp", SYSTEMROOT: "C:\Windows", APPDATA: "C:\Users\ana\AppData\Roaming", LANG: "en_US.UTF-8",
+      BRAIN_OWNER_SECRET: "owner", BRAIN_DECISION_API_KEY: "decision", OLLAMA_API_KEY: "ollama", BRAIN_DODO_API_KEY: "dodo", BRAIN_DODO_WEBHOOK_SECRET: "whs", BRAIN_OIDC_CLIENT_SECRET: "oidc", BRAIN_EMBED_API_KEY: "embed", NODE_OPTIONS: "--inspect", BRAIN_DB: "data/x.sqlite", BRAIN_PORT: "4317",
+      HTTPS_PROXY: "http://user:proxypass@proxy.example:3128", NO_PROXY: "localhost",
+    };
+    const out = adapterEnv(env, "http://127.0.0.1:4317", "k".repeat(64));
+    expect(Object.keys(out).sort()).toEqual(["APPDATA", "BRAIN_AGENT_TOKEN", "BRAIN_API_URL", "HOME", "LANG", "PATH", "Path", "SYSTEMROOT", "TEMP", "USERPROFILE"]);
+    expect(out.BRAIN_API_URL).toBe("http://127.0.0.1:4317");
+    expect(out.BRAIN_AGENT_TOKEN).toBe("k".repeat(64));
+    for (const v of ["owner", "decision", "ollama", "dodo", "whs", "oidc", "embed", "--inspect", "proxypass"]) expect(JSON.stringify(out)).not.toContain(v);
+  });
   it("parses positionals, skips short, slash, bang, hash and secret prompts, and mirrors detectSecrets", () => {
     expect(parseArgs(["hook", "claude-code", "--connection", ID, "--data", "/d"])).toEqual({ command: "hook", flags: { connection: ID, data: "/d" }, positional: ["claude-code"] });
     expect(hookSkipReason("hi there")).toBe("short");

@@ -130,3 +130,15 @@ export function writeHookState(path, state) {
 export function hookOutput(text) {
   return JSON.stringify({ hookSpecificOutput: { hookEventName: "UserPromptSubmit", additionalContext: text } });
 }
+
+/** What the agent adapter is allowed to inherit: locating programs, temp and home folders, locale and certificates. Compared case-insensitively, since Windows spells PATH as Path. No proxy variables: they can carry credentials, and the adapter only talks to loopback. */
+const ADAPTER_ENV = new Set(["PATH", "HOME", "USERPROFILE", "HOMEDRIVE", "HOMEPATH", "SYSTEMROOT", "WINDIR", "TEMP", "TMP", "TMPDIR", "APPDATA", "LOCALAPPDATA", "COMSPEC", "PATHEXT", "LANG", "LC_ALL", "NODE_EXTRA_CA_CERTS", "SSL_CERT_FILE"]);
+
+/** The adapter's environment: the allowlist above plus its own two variables. Provider, billing, sign-in and owner secrets never reach it. */
+export function adapterEnv(env, api, key) {
+  const out = {};
+  for (const [name, value] of Object.entries(env)) if (typeof value === "string" && ADAPTER_ENV.has(name.toUpperCase())) out[name] = value;
+  out.BRAIN_API_URL = api;
+  out.BRAIN_AGENT_TOKEN = key;
+  return out;
+}

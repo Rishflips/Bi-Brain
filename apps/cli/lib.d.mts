@@ -16,6 +16,7 @@ export function firstCodePoints(text: string, n: number): string;
 export function parseHookStdin(raw: string): { prompt: string; session_id: string } | null;
 export function hookSkipReason(prompt: string): "short" | "command" | "secret" | null;
 export function loopbackApi(api: unknown): string;
+export function adapterEnv(env: NodeJS.ProcessEnv, api: string, key: string): Record<string, string>;
 export function hookStatePath(dataDir: string, connectionId: string): string;
 export function readHookState(path: string): HookState;
 export function noteHookState(state: HookState, sessionHash: string, ids: string[], now: number): HookState;

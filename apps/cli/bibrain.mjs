@@ -4,7 +4,7 @@ import { appendFileSync, existsSync, readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawn, spawnSync } from "node:child_process";
-import { HOOK_BUDGET_MS, HOOK_CLIENTS, HOOK_PROMPT_MAX, HOOK_STDIN_MS, browserCommand, dataDirFor, firstCodePoints, hookOutput, hookSkipReason, hookStatePath, keyFilePath, loopbackApi, noteHookState, parseArgs, parseHookStdin, readHookState, sha256, writeHookState } from "./lib.mjs";
+import { HOOK_BUDGET_MS, HOOK_CLIENTS, HOOK_PROMPT_MAX, HOOK_STDIN_MS, adapterEnv, browserCommand, dataDirFor, firstCodePoints, hookOutput, hookSkipReason, hookStatePath, keyFilePath, loopbackApi, noteHookState, parseArgs, parseHookStdin, readHookState, sha256, writeHookState } from "./lib.mjs";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..");
 // Read the same .env the server reads, so the port, data folder and installation
@@ -133,10 +133,7 @@ function connect() {
     fail("This BiBrain connection file is damaged. Add the agent again from Connections in BiBrain.");
   }
   if (typeof api !== "string" || typeof key !== "string") fail("This BiBrain connection file is damaged. Add the agent again from Connections in BiBrain.");
-  const env = { ...process.env };
-  delete env.BRAIN_OWNER_SECRET;
-  env.BRAIN_AGENT_TOKEN = key;
-  env.BRAIN_API_URL = api;
+  const env = adapterEnv(process.env, api, key);
   const adapter = spawn(process.execPath, [join(root, "node_modules", "tsx", "dist", "cli.mjs"), join(root, "apps", "mcp", "main.ts")], {
     cwd: root,
     stdio: "inherit",
