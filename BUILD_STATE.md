@@ -1,6 +1,6 @@
 # Build state
 
-Updated: 2026-11-02
+Updated: 2026-11-04
 
 This page holds the current, verified state of BiBrain. Each section below
 records one shipped plan of the 2026 reframe, with the commands that ran and
@@ -20,6 +20,59 @@ their real counts. The full delivery log from before the reframe is preserved in
 | Licence | AGPL-3.0-only for the app, Apache-2.0 for the agent connector |
 | Hosted edition and payments | Paused; the Dodo adapter, the money ledger and the managed runtime are kept but not deployed, and no real payment has been processed. The Paddle code was removed in plan 6 (2026-10-28) |
 | Next plans | Owner-run: `npm run calibrate` once the brain has real answers and pushes, `npm run proof:search`, `scripts/native-client-proof.ts`; the next reframe plan is the owner's choice |
+
+## 2026-11-04 — Plan 8: security hardening and the safe write-back loop (branch reframe/safe-write-back)
+
+Spec: `docs/superpowers/specs/2026-11-03-safe-write-back-design.md`. Plan: `docs/superpowers/plans/2026-11-03-safe-write-back.md`. Parked items: `docs/superpowers/plans/2026-11-03-safe-write-back-followups.md`.
+
+**Part A: security.** This part follows an independent audit, which found nothing critical or high.
+- **What agents write is labelled.** Anything a connected agent writes (proposals, session notes) is stored as agent-written. Until the owner marks that note as reviewed (one explicit action, owner-only):
+  - it is labelled on every owner screen (Today, Your brain, search, Ask, the source view);
+  - it cannot raise a recall push above `pointer`;
+  - it is kept out of the Recall help judge and the agents' brief;
+  - its titles never reach another agent unlabelled.
+
+  Restore brings it back unreviewed.
+- **Self-host rate limiting.** It is keyed on the client IP behind exactly one trusted proxy hop, and only when `BRAIN_PUBLIC_ORIGIN` is set. Local mode is unchanged.
+- **HTTP rules.**
+  - Side-effecting `/api` navigations are refused.
+  - Paths with escapes that could disguise a route are refused.
+  - Security headers are sent in every mode.
+  - The Idempotency-Key is bounded.
+  - Development origins are allowed outside production only.
+- **`bibrain connect`** passes the agent adapter an allow-listed environment only.
+- **After Add,** Connections shows the `.gitignore` lines for the new agent files, with a negation-aware "already listed" check.
+
+**Part B: the safe write-back loop.**
+- **End-of-turn hook.** Add now also writes a Stop hook (`bibrain hook-end`, 5-second timeout) for Claude Code and Codex. When an agent finishes, the hook:
+  - sends only the reply's marker lines (Decided, Open question, Next step; the last 10 of each kind);
+  - skips code blocks and anything secret-looking;
+  - never blocks the agent's turn.
+
+  The server stores the note as an unreviewed agent-written suggestion. Codex asks the owner to approve the hook in `/hooks`.
+- **"Bring in what you already have."** On an empty Today, the owner can pick a folder. BiBrain then:
+  - previews only `CLAUDE.md`, `AGENTS.md` and Cursor rules files;
+  - imports them only after Confirm;
+  - shows them as "Imported from <file>".
+
+Verified in this worktree on 2026-11-04 (Windows, Node 24.19.0), all in one sequential run:
+
+- `npm run typecheck`, `npm run lint`, `npm run build`: all exit 0.
+- `npm audit --audit-level=high`: exit 0. Two moderate advisories remain (`glob` and `minimatch` via `@fastify/static` and ESLint), and both need a breaking change.
+- `npx vitest run --reporter=dot --maxWorkers=2`: 190 files, 2,007 passed, 8 skipped, 0 failed (1,169 s).
+- `npm run brain-eval`: 25/25 passed. The plan-5 dense-off snapshot is byte-identical.
+- `npx playwright test --workers=1`: 110 passed, 0 failed (5.0m). By project: main 69, today-v2 20, connections 8, system1 6, today-v2-bar 4, empty-brain 3.
+- Code and tests: 50 files changed, 2,275 lines added and 150 removed.
+- Reviews:
+  - A pre-flight scan found and fixed 2 Blockers and 13 Important defects in the plan, and a re-check fixed 3 more.
+  - Every task was reviewed, on Opus for the security tasks.
+  - Fable's final review found 0 Critical and 2 Important issues (agent brief items in `/api/v1/context`). Both were fixed and re-reviewed.
+
+Known limits:
+
+- The end-of-turn hook has not been run in a real Claude Code or Codex session; it is tested against the documented hook contract only. That needs an owner run.
+- The paid model-brief path must exclude unreviewed agent notes from its inputs before it is turned back on (see the follow-ups).
+- Git log import and a wider secret scanner are separate plans.
 
 ## 2026-11-01 — Plan 7: sweep and calibrate (branch reframe/sweep-calibrate)
 

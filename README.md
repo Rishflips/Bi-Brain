@@ -149,11 +149,11 @@ Details and the live check: [Providers](docs/PROVIDERS.md) (`npm run proof:searc
 
 ## Status
 
-BiBrain is a working **single-owner local app**. This table is the honest state as of 2026-11-02. The verified details and the commands that ran are in [BUILD_STATE.md](BUILD_STATE.md).
+BiBrain is a working **single-owner local app**. This table is the honest state as of 2026-11-04. The verified details and the commands that ran are in [BUILD_STATE.md](BUILD_STATE.md).
 
 | Area | State |
 | --- | --- |
-| Local app: Today, Your brain, Connections, Settings | Works end to end; verified in CI on Ubuntu and locally on Windows with 1,953 Vitest tests and 107 Playwright browser tests (macOS not yet tested) |
+| Local app: Today, Your brain, Connections, Settings | Works end to end; verified in CI on Ubuntu and locally on Windows with 2,007 Vitest tests and 110 Playwright browser tests (macOS not yet tested) |
 | One-step agent connections with recall on every prompt | Verified in real Claude Code and Codex runs on Windows (`npm run proof:recall`, hook on and off); Cursor not yet run natively |
 | Sorting help with Clef | One live check through Ollama Cloud validated 3 of 3 answers; one threshold moved on that evidence, and `npm run calibrate` shows how your own answers fall around the rest |
 | Better search with embeddings | Built and gated against a fake embedder; a live run is owner-run (`npm run proof:search`) |

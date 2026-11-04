@@ -14,3 +14,15 @@ Recorded while executing `docs/superpowers/plans/2026-11-03-safe-write-back.md`.
 
 - **Git log import.** The browser cannot run git, and the server must not run commands on an owner-supplied path from a page request. A `bibrain import-git` CLI command is a separate plan.
 - **Empty-brain pointer on the first prompt.** The push says only what is recorded. A pointer on an empty brain would be an imperative aimed at the agent, which the push never carries.
+
+## From the final review
+
+- **Model-brief inputs, required before the paid model-brief path is turned back on.**
+  - Today, agents receive source excerpts whenever any input to the model brief is an unreviewed agent note.
+  - Before that path is re-enabled, the worker must build the brief from sources that exclude unreviewed agent originals, the same pattern as the judge (`apps/worker/engine.ts` around line 335, plus the signature recomputations).
+  - Local V1 briefs are extractive and are not affected.
+- **Smaller items.**
+  - Agent notes among the top six hits can still trim a judged `full`.
+  - An extra database read happens for each evidence item.
+  - With no vault configured, a secret file returns a 503 partway through an apply.
+  - Some UI wording minors from the final review remain.
