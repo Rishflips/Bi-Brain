@@ -30,7 +30,7 @@ export const evidenceSchema = z
 export const itemSchema = z
   .object({
     text: z.string().min(1).max(10000),
-    epistemic_status: z.enum(["supported", "user_assertion", "hypothesis"]),
+    epistemic_status: z.enum(["supported", "user_assertion", "hypothesis", "agent_unreviewed"]),
     evidence: z.array(evidenceSchema).max(20),
   })
   .strict();

@@ -39,6 +39,7 @@ import {
 } from "../storage/spend.ts";
 import { safeAdd } from "./spend.ts";
 import { agentDisplayName } from "./agents.ts";
+import { REVIEWED_KEY, grantOfOrigin, type WrittenBy } from "./provenance.ts";
 import type { ManagedSpendView } from "./managed-spend.ts";
 import {
   advisorySourceBodyHash,
@@ -194,6 +195,38 @@ export class Brain {
       ? { kind: "owner" }
       : { kind: "owner", tenantId: this.tenantId };
   }
+  /** When the owner reviewed an agent-written original, or null. Owner-captured originals are never marked. */
+  sourceReviewedAt(sourceId: string): string | null {
+    return this.store.setting<string | null>(REVIEWED_KEY(sourceId), null);
+  }
+  /** Who wrote an original, for agent-written ones only; undefined for the owner's own captures and imports. */
+  writtenBy(source: { id: string; origin: string }): WrittenBy | undefined {
+    const grantId = grantOfOrigin(source.origin);
+    if (grantId === null) return undefined;
+    const client = this.store.get<{ client: string | null }>("SELECT client FROM grants WHERE id=?", grantId)?.client;
+    return { agent: agentDisplayName(client), reviewed: this.sourceReviewedAt(source.id) !== null };
+  }
+  /** Records the owner's review of an agent-written original. The first time stands; a second call changes nothing. */
+  private reviewSource(sourceId: string) {
+    const row = this.store.get<{ origin: string }>("SELECT origin FROM sources WHERE id=? AND state!='deleted'", sourceId);
+    if (!row || grantOfOrigin(row.origin) === null) return;
+    if (this.sourceReviewedAt(sourceId) === null) this.store.set(REVIEWED_KEY(sourceId), this.now());
+  }
+  markSourceReviewed(p: Principal, id: string) {
+    this.owner(p);
+    const s = this.source(p, z.string().min(1).max(100).parse(id));
+    if (grantOfOrigin(s.origin) === null) throw new BrainError("INVALID_INPUT", "This original was not written by an agent.", 400);
+    return this.store.transaction(() => {
+      this.reviewSource(s.id);
+      return { source_id: s.id, reviewed_at: this.sourceReviewedAt(s.id)! };
+    });
+  }
+  /** An original with its provenance beside it, for the page and for brain_open. */
+  sourceView(p: Principal, id: string, version?: number): Source & { written_by?: WrittenBy } {
+    const s = this.source(p, id, version);
+    const by = this.writtenBy(s);
+    return by ? { ...s, written_by: by } : s;
+  }
   /**
    * Every authorization entry point re-checks that the principal is bound to
    * this exact brain. A local principal never authorizes a managed brain, a
@@ -272,6 +305,7 @@ export class Brain {
   issueSession() {
     const token = randomBytes(32).toString("hex"),
       csrf = randomBytes(24).toString("hex");
+    this.store.run("DELETE FROM sessions WHERE expires_at<=?", this.now());
     this.store.run(
       "INSERT INTO sessions VALUES(?,?,?)",
       hash(token),
@@ -635,7 +669,10 @@ export class Brain {
           v.visibility,
           v.body,
         );
-        if (old && !v.separate) return { source_id: old.id, duplicate: true };
+        if (old && !v.separate) {
+          if (p.kind === "owner") this.reviewSource(old.id);
+          return { source_id: old.id, duplicate: true };
+        }
         const id = randomUUID();
         const scan = this.store.vault?.capture(
           id,
@@ -1099,7 +1136,13 @@ export class Brain {
       })
       .strict()
       .parse(input);
-    return this.store.transaction(() => this.editSourceTx(p, id, v));
+    return this.store.transaction(() => {
+      const before = this.source(p, id).body;
+      const result = this.editSourceTx(p, id, v);
+      // Rewriting the text is the owner's review of an agent note; a rename or a move is not.
+      if (v.body !== before) this.reviewSource(id);
+      return result;
+    });
   }
   /** The edit itself. The caller holds the open transaction. */
   private editSourceTx(
@@ -1190,6 +1233,7 @@ export class Brain {
         );
         this.store.run("DELETE FROM source_fts WHERE source_id=?", id);
         purgeRef(this.store, "original", id);
+        this.store.run("DELETE FROM settings WHERE key=?", REVIEWED_KEY(id));
         this.invalidate(s.project_id);
         if (purge) {
           const copiedBodies = this.store
@@ -3877,7 +3921,8 @@ ${q}`);
           if (s.version !== r.ref_version || s.state !== "active") continue;
           const quote = Array.from(s.body).slice(r.start, r.end).join("");
           if (quote !== r.text) continue;
-          authorized.push({ candidate, hit: { kind: "original", id: s.id, version: s.version, project, title: s.title, quote, start: r.start, end: r.end, captured_at: s.captured_at, freshness: "current", why: [...whyFor(fts.terms, `${s.title} ${quote}`), ...denseWhy(candidate)], score: candidate.fused } });
+          const by = this.writtenBy(s);
+          authorized.push({ candidate, hit: { kind: "original", id: s.id, version: s.version, project, title: s.title, quote, start: r.start, end: r.end, captured_at: s.captured_at, freshness: "current", why: [...whyFor(fts.terms, `${s.title} ${quote}`), ...denseWhy(candidate)], score: candidate.fused, ...(by ? { written_by: by } : {}) } });
         } else {
           // Only this candidate is loaded and verified. A claim without evidence is a hypothesis and is never presented as a fact to anyone.
           const c = this.visibleClaim(p, r.project_id, r.ref_id, v.history);
@@ -3931,6 +3976,10 @@ ${q}`);
     const defaultVersion = entityRow?.kind === "claim" && entityRow.status !== "current" ? entityRow.version : undefined;
     const raw = this.agentGet(p, project, v.id, v.version ?? defaultVersion);
     let item: { kind: string; item: unknown } = raw;
+    if (raw.kind === "source") {
+      const by = this.writtenBy(raw.item as Source);
+      if (by) item = { kind: "source", item: { ...(raw.item as Source), written_by: by } };
+    }
     if (raw.kind === "claim") {
       const claim = raw.item as Entity;
       // Freshness is the claim's state now, whichever version was asked for.
@@ -4091,15 +4140,28 @@ ${q}`);
     const brief = this.entities(p, "brief").find(
       (e) => e.project_id === project && e.data.status === "current",
     );
-    const candidates =
-      brief?.data.items ??
-      sources.map((s) => ({
-        text: excerpt(s).quote,
-        evidence: [excerpt(s)],
-        epistemic_status: s.origin.startsWith("agent:")
-          ? "user_assertion"
-          : "supported",
-      }));
+    // An agent never receives another agent's unreviewed original as context, directly or as a brief item's evidence; the owner sees it labelled.
+    const unreviewed = (s: { id: string; origin: string }) => {
+      const by = this.writtenBy(s);
+      return by !== undefined && !by.reviewed;
+    };
+    const citesUnreviewed = (item: { evidence?: { source_id: string }[] }) =>
+      (item.evidence ?? []).some((e) => {
+        const row = this.store.get<{ id: string; origin: string }>("SELECT id,origin FROM sources WHERE id=?", e.source_id);
+        return row !== undefined && unreviewed(row);
+      });
+    const candidates = brief?.data.items
+      ? brief.data.items.filter((item: { evidence?: { source_id: string }[] }) => p.kind === "owner" || !citesUnreviewed(item))
+      : sources
+          .filter((s) => p.kind === "owner" || !unreviewed(s))
+          .map((s) => {
+            const by = this.writtenBy(s);
+            return {
+              text: excerpt(s).quote,
+              evidence: [excerpt(s)],
+              epistemic_status: by ? (by.reviewed ? "user_assertion" : "agent_unreviewed") : "supported",
+            };
+          });
     let remaining = maxTokens * 3;
     const goals = this.entities(this.ownerPrincipal(), "goal")
       .filter((g) => g.project_id === project && g.data.status === "active")

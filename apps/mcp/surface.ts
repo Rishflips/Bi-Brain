@@ -40,6 +40,7 @@ const factHit = z.object({
 const originalHit = z.object({
   kind: z.literal("original"), id: z.string(), version: z.number(), project: projectRef, title: z.string(), quote: z.string(), start: z.number(), end: z.number(),
   captured_at: z.string(), freshness: z.literal("current"), why: z.array(z.string()), score: z.number(),
+  written_by: z.object({ agent: z.string(), reviewed: z.boolean() }).optional(),
 });
 export const recallOutputShape = {
   status: z.enum(["found", "partial", "no_match"]),
