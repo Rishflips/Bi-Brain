@@ -18,7 +18,7 @@ type Props = {
 };
 
 const from = (origin: string) =>
-  origin === "manual" ? "Saved by you" : origin.startsWith("agent:") ? "From an agent" : "Imported";
+  origin === "manual" ? "Saved by you" : origin.startsWith("agent:") ? "From an agent" : origin.startsWith("import:") && origin.length > 7 ? `Imported from ${origin.slice(7)}` : "Imported";
 
 function historyNote(h: FactHistoryEntry, first: boolean) {
   if (h.status !== "current") return "No longer current";

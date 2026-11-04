@@ -41,6 +41,36 @@ test("a new brain shows three ways to start and no fake activity", async ({
   ).toBeVisible();
 });
 
+test("bring in: only instruction files are sent to be previewed, and Cancel saves nothing", async ({ page }) => {
+  await pair(page);
+  const repo = mkdtempSync(join(tmpdir(), "bibrain-repo-"));
+  writeFileSync(join(repo, "AGENTS.md"), "Prefer small commits.");
+  writeFileSync(join(repo, "README.md"), "README_MUST_NOT_BE_SENT");
+  writeFileSync(join(repo, ".env"), "SECRET_MUST_NOT_BE_SENT=1");
+  const bodies: string[] = [];
+  let applied = 0;
+  await page.route("**/import-adapters/**", (route) => {
+    const url = route.request().url();
+    if (url.endsWith("/preview")) bodies.push(route.request().postData() ?? "");
+    if (url.endsWith("/apply")) applied += 1;
+    return route.continue();
+  });
+  await page.getByLabel("Choose a project folder").setInputFiles(repo);
+  const dialog = page.getByRole("dialog", { name: "Review import" });
+  await expect(dialog).toContainText("1 agent instruction files ready");
+  expect(bodies).toHaveLength(1);
+  const sent = JSON.parse(bodies[0]);
+  expect(sent.kind).toBe("context");
+  expect(sent.entries.map((e: { path: string }) => e.path)).toEqual(["AGENTS.md"]);
+  expect(bodies[0]).not.toContain("README_MUST_NOT_BE_SENT");
+  expect(bodies[0]).not.toContain("SECRET_MUST_NOT_BE_SENT");
+  expect(applied).toBe(0);
+  await dialog.getByRole("button", { name: /cancel|close/i }).first().click();
+  await expect(dialog).toBeHidden();
+  expect(applied).toBe(0);
+  await expect(page.getByRole("heading", { name: "Welcome to BiBrain." })).toBeVisible();
+});
+
 test("bring in what you already have: only instruction files are read, shown first, then saved as your originals", async ({ page }) => {
   await pair(page);
   const repo = mkdtempSync(join(tmpdir(), "bibrain-repo-"));
@@ -65,6 +95,6 @@ test("bring in what you already have: only instruction files are read, shown fir
   await dialog.getByRole("button", { name: "Save selected items" }).click();
   await expect(page.getByRole("heading", { name: "Good to see you." })).toBeVisible();
   await page.getByRole("button", { name: "Your brain", exact: true }).click();
-  await expect(page.getByText("Imported").first()).toBeVisible();
+  await expect(page.getByText("Imported from CLAUDE.md")).toBeVisible();
   await expect(page.getByRole("button", { name: "CLAUDE.md" })).toBeVisible();
 });

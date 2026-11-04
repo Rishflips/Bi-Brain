@@ -36,6 +36,7 @@ export type Original = {
   title: string;
   captured_at: string;
   from: "you" | "agent" | "import";
+  file?: string;
   private: boolean;
   written_by?: { agent: string; reviewed: boolean };
 };

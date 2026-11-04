@@ -32,6 +32,8 @@ export type OriginalView = {
   title: string;
   captured_at: string;
   from: "you" | "agent" | "import";
+  /** For an original brought in from an instruction file: that file, as picked (for example CLAUDE.md). */
+  file?: string;
   private: boolean;
   written_by?: WrittenBy;
 };
@@ -57,6 +59,11 @@ export type ProjectViewInput = {
   decisionHistory: Entity[];
   writtenBy: (s: Source) => WrittenBy | undefined;
 };
+
+/** The instruction file an import came from, when the import recorded it. */
+export function importFile(origin: string): string | undefined {
+  return origin.startsWith("import:") ? origin.slice(7) || undefined : undefined;
+}
 
 export function originFrom(origin: string): OriginalView["from"] {
   if (origin === "manual") return "you";
@@ -107,6 +114,7 @@ export function buildProjectView(input: ProjectViewInput, now: Date): ProjectVie
       title: s.title,
       captured_at: s.captured_at,
       from: originFrom(s.origin),
+      ...(importFile(s.origin) ? { file: importFile(s.origin) } : {}),
       private: s.visibility === "private",
       ...(written_by ? { written_by } : {}),
       };

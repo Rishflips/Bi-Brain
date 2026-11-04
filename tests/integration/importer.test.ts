@@ -150,7 +150,7 @@ it("the context kind keeps only agent instruction files, on the page's rule and 
     expect(r.imported).toBe(2);
     const saved = b.sources(owner, "inbox");
     // Owner-imported, not "saved by you": a cloned repository's file was written by someone else.
-    expect(saved.map((x) => [x.title, x.origin]).sort()).toEqual([[".cursor/rules/style.mdc", "import"], ["CLAUDE.md", "import"]]);
+    expect(saved.map((x) => [x.title, x.origin]).sort()).toEqual([[".cursor/rules/style.mdc", "import:.cursor/rules/style.mdc"], ["CLAUDE.md", "import:CLAUDE.md"]]);
     expect(saved.find((x) => x.title === "CLAUDE.md")!.body).toBe("# Northstar\nRun the tests before every commit.");
     expect(b.writtenBy(saved[0])).toBeUndefined();
     expect(b.brainProject(owner, "inbox").originals.map((o) => o.from)).toEqual(["import", "import"]);
