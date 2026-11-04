@@ -23,6 +23,7 @@ import type { DodoBillingService } from "../../packages/runtime/dodo-billing.ts"
 import { registerBillingRoutes } from "./billing-routes.ts";
 import { systemOneCapability } from "./system-one-capability.ts";
 import { agentConnect, LOCAL_ONLY_REASON, type AgentConnectConfig } from "./agent-connect.ts";
+import { mcpHttpRoute } from "./mcp-http.ts";
 
 const LOGIN_PATH = "/auth/login";
 const CORRELATION_COOKIE = "brain_login";
@@ -1055,6 +1056,7 @@ export async function createApp(
     return agents.connect(req.principal, req.body);
   });
   app.post("/api/v1/agent/verify", (req) => req.brain.verify(req.principal));
+  mcpHttpRoute(app);
   app.get("/api/v1/agent/capabilities", (req) =>
     req.brain.agentCapabilities(req.principal),
   );
