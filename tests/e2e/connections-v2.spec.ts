@@ -31,6 +31,8 @@ test("Codex is found, added to a folder in one step, connected by its first call
   await codex.getByText("See the file BiBrain will add").click();
   const preview = codex.getByTestId("agent-file");
   await expect(preview).toContainText("[mcp_servers.bibrain]");
+  await expect(codex.getByText("Keep these out of shared version control")).toBeVisible();
+  await expect(codex.getByTestId("agent-ignore")).toHaveText(".codex/config.toml\n.codex/hooks.json");
   await expect(codex.getByText("This runs BiBrain's recall on every prompt. It pre-approves nothing; Codex asks you to trust it once.")).toBeVisible();
   const contents = (await preview.textContent())!;
   expect(contents).not.toMatch(/[0-9a-f]{64}/);

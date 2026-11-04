@@ -18,4 +18,4 @@ export type AgentInfo = { client: AgentClient; name: string; found: boolean; fil
 export type AgentsStatus = { available: boolean; reason: string | null; clients: AgentInfo[] };
 export type WrittenFile = { path: string; role: "server" | "hook" | "rule"; state: "written" | "exists"; contents: string };
 export type PreviewFile = { path: string; role: WrittenFile["role"]; contents: string; exists: boolean };
-export type Preview = { connection_id: string; file: string; contents: string; exists: boolean; files: PreviewFile[] };
+export type Preview = { connection_id: string; file: string; contents: string; exists: boolean; files: PreviewFile[]; ignore: { lines: string[]; listed: boolean } };

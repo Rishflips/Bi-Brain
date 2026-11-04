@@ -13,7 +13,32 @@ type Props = {
   onAdded: () => Promise<void>;
 };
 
+/** Writes the lines to the clipboard; never reads it. Falls back to a hidden selection where the clipboard API is unavailable. */
+async function copyLines(lines: string[]): Promise<boolean> {
+  const text = lines.join("\n") + "\n";
+  try {
+    await navigator.clipboard.writeText(text);
+    return true;
+  } catch {
+    const box = document.createElement("textarea");
+    box.value = text;
+    box.setAttribute("readonly", "");
+    box.style.position = "fixed";
+    box.style.opacity = "0";
+    document.body.appendChild(box);
+    box.select();
+    try {
+      return document.execCommand("copy");
+    } catch {
+      return false;
+    } finally {
+      box.remove();
+    }
+  }
+}
+
 export function AddAgent({ api, info, projects, projectId, lastFolder, onCancel, onAdded }: Props) {
+  const [copied, setCopied] = useState<boolean | null>(null);
   const [project, setProject] = useState(projectId);
   const [folder, setFolder] = useState(lastFolder);
   const [access, setAccess] = useState<"suggest" | "read">("suggest");
@@ -125,7 +150,18 @@ export function AddAgent({ api, info, projects, projectId, lastFolder, onCancel,
                 </pre>
               </div>
             ))}
-            <p className="tv-faint">The access key stays in BiBrain on this computer, never in this file. An existing file is never changed. This file points at BiBrain on this computer, so keep it out of shared version control.</p>
+            <p className="tv-faint">The access key stays in BiBrain on this computer, never in this file. An existing file is never changed.</p>
+            <p className="tv-faint">
+              {preview.ignore.listed ? "Already in this folder's .gitignore." : "Keep these out of shared version control: add these lines to the folder's .gitignore."}
+            </p>
+            {!preview.ignore.listed && (
+              <div>
+                <pre className="cx-file" data-testid="agent-ignore">{preview.ignore.lines.join("\n")}</pre>
+                <button type="button" className="tv-btn tv-ghost tv-sm" onClick={() => void copyLines(preview.ignore.lines).then(setCopied)}>
+                  {copied === true ? "Copied" : copied === false ? "Copy failed. Select the lines above." : "Copy"}
+                </button>
+              </div>
+            )}
             {preview.files.length > 1 && (
               <p className="tv-faint">{secondFileHelper(info.client)}</p>
             )}
