@@ -190,11 +190,19 @@
           ]
         },
         "origin": {
-          "enum": [
-            "manual",
-            "import",
-            "agent",
-            "connector"
+          "anyOf": [
+            {
+              "enum": [
+                "manual",
+                "import",
+                "agent",
+                "connector"
+              ]
+            },
+            {
+              "type": "string",
+              "pattern": "^import:[^\u0000-\u001f\u007f]{1,120}$"
+            }
           ]
         }
       },

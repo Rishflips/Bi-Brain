@@ -39,7 +39,7 @@ import {
 } from "../storage/spend.ts";
 import { safeAdd } from "./spend.ts";
 import { agentDisplayName } from "./agents.ts";
-import { RESTORED_AGENT_ORIGIN, REVIEWED_KEY, grantOfOrigin, isAgentOrigin, isUnreviewedAgent, type WrittenBy } from "./provenance.ts";
+import { RESTORED_AGENT_ORIGIN, REVIEWED_KEY, grantOfOrigin, importOrigin, isAgentOrigin, isUnreviewedAgent, restoredImportOrigin, type WrittenBy } from "./provenance.ts";
 import type { ManagedSpendView } from "./managed-spend.ts";
 import {
   advisorySourceBodyHash,
@@ -301,7 +301,7 @@ export class Brain {
         project_id: preview.project_id,
         title: item.title,
         body: item.body,
-      }, undefined, false, preview.kind === "context" ? `import:${item.path}` : undefined),
+      }, undefined, false, preview.kind === "context" ? importOrigin(item.path) : undefined),
     }));
     return {
       imported: results.filter((r: any) => !r.duplicate).length,
@@ -654,7 +654,7 @@ export class Brain {
     );
     return result;
   }
-  capture(p: Principal, input: unknown, key?: string, fromGate = false, origin?: `import${string}`) {
+  capture(p: Principal, input: unknown, key?: string, fromGate = false, origin?: string) {
     if (p.kind === "agent" && !fromGate)
       throw new BrainError(
         "FORBIDDEN",
@@ -4508,7 +4508,7 @@ ${q}`);
           s.state,
           s.visibility,
           // An agent-written original stays agent-written, unreviewed and tied to no local grant; everything else is the owner's import.
-          isAgentOrigin(s.origin) ? RESTORED_AGENT_ORIGIN : "import",
+          isAgentOrigin(s.origin) ? RESTORED_AGENT_ORIGIN : restoredImportOrigin(s.origin),
           s.captured_at,
         );
         // Review state is local and never restored: a source new to this brain starts unreviewed.

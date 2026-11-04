@@ -4,6 +4,7 @@ import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Brain } from "../../packages/domain/service.ts";
+import { canonical, hash } from "../../packages/domain/logic.ts";
 import { parseImport } from "../../packages/importers/local.ts";
 import { discoverFolder } from "../../packages/importers/folder.ts";
 import { isContextFile } from "../../packages/importers/context.ts";
@@ -240,5 +241,45 @@ it("a secret-looking context file is quarantined on apply, private, with its tex
   } finally {
     s.close();
     rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+it("a long instruction-file path keeps a bounded origin that survives export and restore; bad origins fall back", () => {
+  const s = new Storage(":memory:");
+  const t = new Storage(":memory:");
+  try {
+    const b = new Brain(s);
+    const long = `${["a", "b", "c"].map((c) => c.repeat(47)).join("/")}/${"d".repeat(200 - 3 * 48 - 10)}/CLAUDE.md`;
+    expect(long.length).toBe(200);
+    const selection = { kind: "context", project_id: "inbox", entries: [{ path: long, content: "Keep commits small." }, { path: "AGENTS.md", content: "Be kind." }] };
+    const r = b.applyLocalImport(owner, selection, b.previewLocalImport(owner, selection).checkpoint);
+    expect(r.imported).toBe(2);
+    const origins = b.sources(owner, "inbox").map((x) => x.origin);
+    const longOrigin = origins.find((o) => o !== "import:AGENTS.md")!;
+    expect(longOrigin.startsWith("import:")).toBe(true);
+    expect(longOrigin.length).toBeLessThanOrEqual(200);
+    const exported = b.export(owner);
+    const target = new Brain(t);
+    const preview = target.preview(owner, exported);
+    expect(preview.conflicts).toEqual([]);
+    target.applyImport(owner, preview.id);
+    expect(target.sources(owner, "inbox").map((x) => x.origin).sort()).toEqual([...origins].sort());
+    expect(target.brainProject(owner, "inbox").originals.map((o) => o.file).sort()).toEqual(origins.map((o) => o.slice(7)).sort());
+    // A malformed or oversized import label, or an agent one, never survives as a label.
+    const forged = JSON.parse(JSON.stringify(exported));
+    forged.payload.sources[0].origin = "import:bad\u0001name";
+    forged.payload.sources[1].origin = `import:${"z".repeat(150)}`;
+    forged.checksum = hash(canonical(forged.payload));
+    const u = new Storage(":memory:");
+    try {
+      const fresh = new Brain(u);
+      fresh.applyImport(owner, fresh.preview(owner, forged).id);
+      expect(fresh.sources(owner, "inbox").map((x) => x.origin)).toEqual(["import", "import"]);
+    } finally {
+      u.close();
+    }
+  } finally {
+    s.close();
+    t.close();
   }
 });
