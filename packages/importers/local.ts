@@ -40,7 +40,15 @@ export function parseImport(value: unknown) {
   const warnings: string[] = [];
   const paths = new Set<string>();
   for (const entry of input.entries) {
-    const path = safeImportPath(entry.path);
+    let path: string;
+    try {
+      path = safeImportPath(entry.path);
+    } catch (e) {
+      // A context file with a bad path is its own outcome; the rest of the batch still imports.
+      if (input.kind !== "context") throw e;
+      warnings.push(`${entry.path.slice(0, 80)}: path outside the chosen folder, skipped`);
+      continue;
+    }
     if (paths.has(path))
       throw new BrainError("INVALID_INPUT", "Duplicate import path.");
     paths.add(path);

@@ -7,6 +7,7 @@ import { Brain } from "../../packages/domain/service.ts";
 import { parseImport } from "../../packages/importers/local.ts";
 import { discoverFolder } from "../../packages/importers/folder.ts";
 import { isContextFile } from "../../packages/importers/context.ts";
+import { createApp } from "../../apps/server/app.ts";
 const owner = { kind: "owner" } as const;
 it("folder and chat adapters preview, checkpoint, deduplicate and propagate deletion", () => {
   const s = new Storage(":memory:");
@@ -176,5 +177,68 @@ it("the context kind skips one oversize file with a warning and imports the rest
     expect(() => b.previewLocalImport(owner, { kind: "folder", project_id: "inbox", entries: [{ path: "a.md", content: big }] })).toThrow(/4 MiB batch limit|per-file/);
   } finally {
     s.close();
+  }
+});
+
+it("an agent token cannot preview or apply a context import", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "ctx-import-"));
+  const s = new Storage(join(dir, "brain.sqlite"), { vault: join(dir, "vault") });
+  try {
+    const b = new Brain(s, () => new Date("2026-11-03T09:00:00Z"));
+    const g = b.createGrant(owner, { projects: ["inbox"], operations: ["read", "propose_memory"], expires_at: "2026-12-03T09:00:00.000Z", client: "claude-code" });
+    const app = await createApp(b, { pairSecret: "test-code", static: false });
+    const selection = { kind: "context", project_id: "inbox", entries: [{ path: "CLAUDE.md", content: "agents must not import this" }] };
+    const headers = { host: "127.0.0.1:4317", authorization: `Bearer ${g.token}` };
+    expect((await app.inject({ method: "POST", url: "/api/v1/import-adapters/preview", headers, payload: selection })).statusCode).toBe(403);
+    expect((await app.inject({ method: "POST", url: "/api/v1/import-adapters/apply", headers, payload: { checkpoint: "x", selection } })).statusCode).toBe(403);
+    expect(b.sources(owner, "inbox")).toEqual([]);
+    await app.close();
+  } finally {
+    s.close();
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+it("the context kind refuses a traversal or absolute path as that file's own outcome and imports the rest", () => {
+  const s = new Storage(":memory:");
+  try {
+    const b = new Brain(s);
+    const selection = {
+      kind: "context",
+      project_id: "inbox",
+      entries: [
+        { path: "../x/CLAUDE.md", content: "escapes" },
+        { path: "/etc/AGENTS.md", content: "absolute" },
+        { path: "C:\Users\me\CLAUDE.md", content: "drive" },
+        { path: "CLAUDE.md", content: "kept" },
+      ],
+    };
+    const preview = b.previewLocalImport(owner, selection);
+    expect(preview.items.map((i) => i.title)).toEqual(["CLAUDE.md"]);
+    expect(preview.warnings).toHaveLength(3);
+    expect(b.applyLocalImport(owner, selection, preview.checkpoint).imported).toBe(1);
+    // A plain folder import still refuses the whole batch for the same path.
+    expect(() => b.previewLocalImport(owner, { kind: "folder", project_id: "inbox", entries: [{ path: "../a.md", content: "x" }] })).toThrow();
+  } finally {
+    s.close();
+  }
+});
+
+it("a secret-looking context file is quarantined on apply, private, with its text kept out of the brain", () => {
+  const dir = mkdtempSync(join(tmpdir(), "ctx-import-"));
+  const s = new Storage(join(dir, "brain.sqlite"), { vault: join(dir, "vault") });
+  try {
+    const b = new Brain(s);
+    const selection = { kind: "context", project_id: "inbox", entries: [{ path: "CLAUDE.md", content: "Deploy with key: sk-proj-abcdefghijklmnopqrstuvwxyz123456" }, { path: "AGENTS.md", content: "Run the tests." }] };
+    const r = b.applyLocalImport(owner, selection, b.previewLocalImport(owner, selection).checkpoint);
+    expect(r.imported).toBe(2);
+    const saved = b.sources(owner, "inbox");
+    expect(JSON.stringify(saved)).not.toContain("sk-proj");
+    const q = saved.find((x) => x.title === "Quarantined source")!;
+    expect(q.visibility).toBe("private");
+    expect(saved.find((x) => x.title === "AGENTS.md")!.body).toBe("Run the tests.");
+  } finally {
+    s.close();
+    rmSync(dir, { recursive: true, force: true });
   }
 });
