@@ -139,4 +139,61 @@ describe("Brain.sessionNote", () => {
     expect(String(push.text ?? "")).not.toContain("KESTREL_CANARY");
     expect(String(push.text ?? "")).not.toContain("fortnightly");
   });
+
+  it("skips marker-looking lines inside a fenced code block", () => {
+    const fence = "`".repeat(3);
+    const quoted = ["Here is the file I read:", fence, "Decided: quoted topic: from a file", "Open question: quoted?", fence, "Open question: is this mine?"].join("\n");
+    expect(parseSessionNote(quoted)).toEqual({ decisions: [], open_questions: ["is this mine?"] });
+    expect(parseSessionNote([`${fence}ts`, "Decided: a: b", fence].join("\n"))).toBeNull();
+  });
+
+  it("files the same session's different text as a new note, counted toward the session's limit", () => {
+    const { b, agent } = setup();
+    const first = b.sessionNote(agent, { session_id: session, client: "codex", text: "Open question: first?" });
+    const second = b.sessionNote(agent, { session_id: session, client: "codex", text: "Open question: second?" });
+    expect(first).toMatchObject({ saved: true, duplicate: false });
+    expect(second).toMatchObject({ saved: true, duplicate: false });
+    expect((second as any).source_id).not.toBe((first as any).source_id);
+    expect(b.sources(owner, "inbox")).toHaveLength(2);
+    expect(b.connections(owner)[0].writeback.notes).toBe(2);
+  });
+
+  it("stores a secret split by bold markers only as the private quarantined source capture keeps, and reports it as a secret", () => {
+    const { b, agent } = setup();
+    // The raw text passes the scan; the cleaned marker line joins the secret, and capture quarantines it.
+    const text = "Decided: deploy: sk-proj-abcdef**ghijklmnopqrstuvwxyz123456";
+    expect(b.sessionNote(agent, { session_id: session, client: "codex", text })).toEqual({ saved: false, reason: "secret" });
+    const kept = b.sources(owner);
+    expect(kept).toHaveLength(1);
+    expect(JSON.stringify(kept)).not.toContain("ghijklmnop");
+    expect(b.brief(owner).items).toEqual([]);
+    expect(b.recallCore(agent, { query: "deploy" }).hits).toEqual([]);
+    expect(b.connections(owner)[0].writeback.notes).toBe(0);
+  });
+
+  it("refuses a revoked or an expired grant in the domain and over HTTP", async () => {
+    const { b, agent, grant } = setup();
+    const app = await createApp(b, { pairSecret: "test-code", static: false });
+    cleanup.push(() => app.close());
+    const body = { session_id: session, client: "codex", text: "Open question: x?" };
+    const post = (token: string) => app.inject({ method: "POST", url: "/api/v1/agent/session-note", headers: { host: "127.0.0.1:4317", authorization: `Bearer ${token}` }, payload: body });
+    b.revoke(owner, grant.id);
+    expect(() => b.sessionNote(agent, body)).toThrow("Access expired or was revoked.");
+    expect((await post(grant.token)).statusCode).toBe(401);
+    const later = b.createGrant(owner, { projects: ["inbox"], operations: ["read", "propose_memory"], expires_at: "2026-12-03T09:00:00.000Z", client: "codex" });
+    const laterAgent = b.authenticateAgent(later.token);
+    b.store.run("UPDATE grants SET expires_at=? WHERE id=?", "2026-11-01T00:00:00.000Z", later.id);
+    expect(() => b.sessionNote(laterAgent, body)).toThrow("Access expired or was revoked.");
+    expect((await post(later.token)).statusCode).toBe(401);
+    expect(b.sources(owner)).toEqual([]);
+  });
+
+  it("limits the route to 60 posts a minute", async () => {
+    const { b, grant } = setup();
+    const app = await createApp(b, { pairSecret: "test-code", static: false });
+    cleanup.push(() => app.close());
+    const post = () => app.inject({ method: "POST", url: "/api/v1/agent/session-note", headers: { host: "127.0.0.1:4317", authorization: `Bearer ${grant.token}` }, payload: { session_id: session, client: "codex", text: "All done." } });
+    for (let i = 0; i < 60; i++) expect((await post()).statusCode).toBe(200);
+    expect((await post()).statusCode).toBe(429);
+  });
 });

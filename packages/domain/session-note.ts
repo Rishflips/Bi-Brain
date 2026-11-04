@@ -36,12 +36,19 @@ const fits = (s: string) => s.length > 0 && Array.from(s).length <= SESSION_LINE
 /**
  * Marker lines only: "Decided: <topic>: <decision>", "Open question: ..." (also Question, Unclear, Still unclear) and "Next step: ...".
  * The topic ends at the first colon followed by whitespace, so a URL in the decision stays whole. A Decided line without a topic is left out,
- * and so is any line over SESSION_LINE_MAX. Free text is never copied. Null unless at least one decision or question qualifies: a next step
+ * and so is any line over SESSION_LINE_MAX or inside a ``` fence. Free text is never copied. Null unless at least one decision or question qualifies: a next step
  * alone is ordinary prose in an agent reply.
  */
 export function parseSessionNote(text: string): ParsedSessionNote | null {
   const out: ParsedSessionNote = { decisions: [], open_questions: [] };
+  // Lines inside a ``` fence are quoted code or output, not the agent's own markers: they are skipped.
+  let fenced = false;
   for (const raw of text.split(/\r?\n/u)) {
+    if (/^\s*```/u.test(raw)) {
+      fenced = !fenced;
+      continue;
+    }
+    if (fenced) continue;
     const line = clean(raw);
     const decided = /^decided\s*:\s*(.+)$/iu.exec(line);
     if (decided) {
