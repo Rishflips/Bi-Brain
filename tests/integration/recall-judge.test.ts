@@ -193,31 +193,48 @@ describe("the judge fast lane", () => {
     expect(t.calls.n).toBe(before);
     expect(t.store.all("SELECT id FROM jobs WHERE kind='recall_judge'")).toHaveLength(1);
   });
-  it("never lets a judge that read an unreviewed agent-written note raise a push above pointer, and judges normally once the owner reviewed it", async () => {
+  it("keeps an unreviewed agent-written note out of the judge, lets owner-backed hits reach full beside it, and never lets the note alone make a push full", async () => {
     const t = judged();
     const northstar = t.fx.ids["project:northstar"];
     const writer = t.brain.createGrant(owner, { projects: [northstar], operations: ["read", "propose_memory"], expires_at: "2027-01-01T00:00:00.000Z", client: "codex" });
-    const r = t.brain.propose(t.brain.authenticateAgent(writer.token), { project_id: northstar, title: "Palette memo", text: "Marco reviewed three palettes and preferred the warm one.", type: "decision", entity: "warm palette", field: { aspect: "statement", value: "preferred for the launch" } });
+    const writerP = t.brain.authenticateAgent(writer.token);
+    const r = t.brain.propose(writerP, { project_id: northstar, title: "Palette memo WREN_TITLE", text: "Marco reviewed three palettes and preferred the warm one, WREN_BODY.", type: "decision", entity: "warm palette", field: { aspect: "statement", value: "preferred for the launch" } });
     const prompt = "Marco reviewed three palettes, which warm one";
+    // The note matches the prompt by words: it is a recall hit, labelled.
+    expect(t.brain.recallCore(t.agent, { query: prompt }).hits.some((h) => h.kind === "original" && h.id === r.raw_id && h.written_by?.reviewed === false)).toBe(true);
     // By words alone the push is not full: the owner's Marco fact leads, and the agent note and the owner's own review are a close pair.
     t.brain.setRecallHelp(owner, { enabled: false });
     expect((await t.brain.recallPush(t.agent, { prompt, session_id: "e".repeat(64), first_prompt: false, seen: [] })).level).toBe("pointer");
     t.brain.setRecallHelp(owner, { enabled: true });
-    // The fake judge rates the leading fact not relevant and everything else, the agent note included, relevant and answering.
-    // Uncapped, that leaves the owner's own review on top, strong by itself, and the push would be full on the judge's word.
+    // 1. The judge is asked, but never shown the note: neither its title nor its body is in the state it receives.
+    // 2. The fake judge rates the leading fact not relevant and the rest relevant and answering: the owner's own review leads and the push is full on the judge's word.
     t.setBehave((b) => clefAnswer(b, { ownerWorld: 0.95, rel: (i) => (i === 1 ? 0 : 0.95), answered: "answered" }));
-    const capped = await t.withWorker(() => t.brain.recallPush(t.agent, { prompt, session_id: "e".repeat(64), first_prompt: false, seen: [] }));
-    expect(t.calls.bodies.at(-1).state).toContain("Marco reviewed three palettes and preferred the warm one");
-    expect(t.brain.recallLog(owner).rows.at(-1)).toMatchObject({ judged: true, level: "pointer" });
-    expect(capped.level).toBe("pointer");
-    expect(capped.text).not.toContain("Palette memo");
-    expect(capped.hit_ids).toEqual([]);
-    // Once the owner reviewed the note it is the owner's evidence: the same judge answer now makes a full push that cites it.
+    const judgedPush = await t.withWorker(() => t.brain.recallPush(t.agent, { prompt, session_id: "e".repeat(64), first_prompt: false, seen: [] }));
+    expect(t.calls.n).toBe(1);
+    const state: string = t.calls.bodies[0].state;
+    expect(state).toContain("Marco reviewed three palettes. He preferred the warm one");
+    expect(state).not.toContain("WREN_TITLE");
+    expect(state).not.toContain("WREN_BODY");
+    expect(t.brain.recallLog(owner).rows.at(-1)).toMatchObject({ judged: true, level: "full" });
+    expect(judgedPush.level).toBe("full");
+    expect(judgedPush.hit_ids).toContain(t.fx.ids["src:palette-review"]);
+    expect(judgedPush.hit_ids).not.toContain(r.raw_id);
+    expect(judgedPush.text).not.toContain("WREN");
+    // 3. A note that is the only match: the judge has nothing to rate and is not asked; the push is at most a pointer and never names the note.
+    const lone = t.brain.propose(writerP, { project_id: northstar, title: "Zephyr memo WREN_TITLE", text: "Decided: zephyr cadence: the zephyr cadence is fortnightly WREN_BODY", type: "decision", entity: "zephyr cadence", field: { aspect: "statement", value: "fortnightly" } });
+    const alone = await t.withWorker(() => t.brain.recallPush(t.agent, { prompt: "zephyr cadence fortnightly", session_id: "f".repeat(64), first_prompt: false, seen: [] }));
+    expect(t.calls.n).toBe(1);
+    expect(alone.level).toBe("pointer");
+    expect(alone.hit_ids).toEqual([]);
+    expect(alone.text).not.toContain("WREN");
+    expect(alone.text).toContain("Northstar");
+    // Once the owner reviewed the first note it is the owner's evidence: it is judged like any original and a full push cites it.
     t.brain.markSourceReviewed(owner, r.raw_id);
-    t.cache.clear();
     const loud = await t.withWorker(() => t.brain.recallPush(t.agent, { prompt, session_id: "e".repeat(64), first_prompt: false, seen: [] }));
+    expect(t.calls.bodies.at(-1).state).toContain("WREN_BODY");
     expect(loud.level).toBe("full");
     expect(loud.hit_ids).toContain(r.raw_id);
+    expect(lone.raw_id).not.toBe(r.raw_id);
   });
   it("answers deterministically with no job row when consent is off, the worker is stale, the caps are (nearly) gone, the count cap is hit, zero candidates, or the prompt looks like a secret", async () => {
     // dailyCap 1: one micro-dollar left is under JUDGE_MIN_REMAINING_MICRO_USD, so no job is queued and nobody waits 900 ms.

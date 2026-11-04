@@ -3637,8 +3637,7 @@ export class Brain {
     // Unreviewed agent-written originals the agent may see: another agent's notes, never the owner's evidence (spec A1, R2).
     const blocked = new Set(internal.authorized.filter(isUnreviewedAgent).map((h) => h.id));
     const isBlocked = (c: Candidate) => c.row.kind === "original" && blocked.has(c.row.ref_id);
-    // A judge that read such a note may lift the push to a pointer at most; anything louder must come from the words alone.
-    if (judge.judged && level === "full" && pushLevel(internal.signals, null) !== "full" && internal.ranked.slice(0, JUDGE_CANDIDATES_MAX).some(isBlocked)) level = "pointer";
+    // Such notes never reach the judge (judgeRankedOnce leaves them out), so a judged level rests on the owner's candidates alone.
     const seen = filterSeen(judge.hits, v.seen);
     // An unreviewed agent-written original never rides in a full push.
     const hits = seen.filter((h) => !isUnreviewedAgent(h));
@@ -3655,7 +3654,8 @@ export class Brain {
     // Names for the pointer and the digest: the top three candidates exactly as deterministicSignals builds topNames (from the same list), except that
     // an unreviewed agent original is skipped first: its title is agent-chosen text and never a name here. With no such original this is plan 5's list.
     const top = [...new Set(internal.namesRanked.filter((c) => !isBlocked(c)).slice(0, 3).map((c) => (c.row.kind === "fact" ? c.row.prefix.split(" · ").at(-1)! : c.row.prefix.split(" · ")[0])))];
-    const names = top.length ? top : internal.entityNames;
+    // When only an unreviewed note matched, there is no name to give: the pointer names the projects searched, as the digest does.
+    const names = top.length ? top : internal.entityNames.length ? internal.entityNames : blocked.size ? internal.scope.map((s) => s.title) : [];
     let text = "";
     let used: RecallHit[] = [];
     if (level === "full") {
@@ -3857,7 +3857,12 @@ ${q}`);
   }
   private async judgeRankedOnce(internal: ReturnType<Brain["recallInternal"]>, request: string, none: { signals: null; ranked: Candidate[]; demoted: Candidate[] }): Promise<{ signals: JudgeSignals | null; ranked: Candidate[]; demoted: Candidate[] }> {
     if (!this.recallJudgeAllowed().ok) return none;
-    const top = internal.ranked.slice(0, JUDGE_CANDIDATES_MAX);
+    // An unreviewed agent-written original is another agent's note, not the owner's evidence: it never enters the judge's prompt, so its text can
+    // never steer a rating. It keeps its place after the judged candidates. With no such original this is plan 5's candidate list.
+    const blocked = new Set(internal.authorized.filter(isUnreviewedAgent).map((h) => h.id));
+    const judgeable = internal.ranked.filter((c) => !(c.row.kind === "original" && blocked.has(c.row.ref_id)));
+    const top = judgeable.slice(0, JUDGE_CANDIDATES_MAX);
+    if (!top.length) return none;
     // Agents only ever see project-visible rows; the filter states the rule again for the judge.
     if (top.some((c) => c.row.visibility !== "project")) return none;
     const titles = new Map(internal.scope.map((s) => [s.id, s.title]));
@@ -3877,7 +3882,8 @@ ${q}`);
     const named = new Set(internal.entityNames.map((n) => questionWords(n).join(" ")));
     const pinned = new Set(top.filter((c) => c.row.kind === "fact" && named.has(questionWords(entityFromPrefix(c.row.prefix, titles.get(c.row.project_id) ?? "")).join(" "))).map((c) => c.key));
     const applied = applyJudge(top, signals, pinned);
-    return { signals, ranked: [...applied.kept, ...internal.ranked.slice(JUDGE_CANDIDATES_MAX)], demoted: applied.demoted };
+    const judgedKeys = new Set(top.map((c) => c.key));
+    return { signals, ranked: [...applied.kept, ...internal.ranked.filter((c) => !judgedKeys.has(c.key))], demoted: applied.demoted };
   }
   /** Entity names of current facts this principal may see whose every word is in `terms`; at most the matching claims are loaded. */
   private visibleEntityNames(p: Principal, scope: { id: string; title: string }[], terms: Set<string>, visibilities: RecallVisibility[]): string[] {

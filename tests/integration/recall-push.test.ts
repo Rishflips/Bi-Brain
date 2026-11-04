@@ -285,7 +285,6 @@ describe("POST /api/v1/agent/recall-push", () => {
     const card = f.brain.brief(owner).items.find((c) => c.title.startsWith("zephyr"))!;
     f.brain.reviewGate(owner, card.target.id, { action: "accept", expected_version: card.target.version });
     const afterKeep = (await push({ prompt: "what is the zephyr cadence we settled on", session_id: "c".repeat(64), first_prompt: true, seen: [] })).json();
-
     expect(afterKeep.level).toBe("full");
     expect(afterKeep.text).toContain("(fact ");
     expect(afterKeep.text).not.toContain("WREN_TITLE");
