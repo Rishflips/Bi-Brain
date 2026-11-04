@@ -51,6 +51,16 @@ The hook never blocks a prompt. It has a total budget of 1,500 ms (stdin read ca
 
 Claude Code's tile reads "Recall on every prompt: on after your next prompt" until the first push is recorded, because the folder trust prompt, a changed-settings review or the shell may still stop the hook. Codex loads project hooks only after the folder's `.codex/` layer is trusted and the hook is trusted in `/hooks`; until the first push is recorded the Connections tile reads "Recall on every prompt: on after Codex trusts the hook". The format was confirmed on the official Codex hooks documentation (`CODEX_HOOKS_CONFIRMED` in `packages/domain/agents.ts`). Existing files are never changed: if `.claude/settings.local.json`, `.codex/hooks.json` or `.cursor/rules/bibrain.mdc` already exists, the tile shows the exact snippet to add. Claude Code's file pre-approves only `mcp__bibrain__brain_recall` and `mcp__bibrain__brain_open`; no write tool is ever pre-approved.
 
+## Session notes (write-back hook)
+
+Both hooks live in the same file. For Claude Code (`.claude/settings.local.json`) and Codex (`.codex/hooks.json`) the one-step Add writes a `Stop` command hook (`bibrain hook-end <client>`) beside the `UserPromptSubmit` one, with the same short `timeout` of 5 seconds (the field is in seconds in both clients; the default is 600). Claude Code: `Stop` input carries `stop_hook_active` and `last_assistant_message` (https://code.claude.com/docs/en/hooks, "Stop input"). Codex: the hooks page lists 14 events, and `Stop` carries the same two fields and "expects JSON on `stdout`" (https://learn.chatgpt.com/codex/hooks). `SessionEnd` is not used: it has no message and only a 1.5 s (Claude Code) or 1 s budget. Cursor has no hooks and keeps its rule; session notes are by hand there.
+
+What the hook sends: only the marker lines of the reply that just ended (`Decided:`, `Open question:`, `Next step:`), up to 4,000 code points, to the BiBrain on the same computer (`POST /api/v1/agent/session-note`, loopback only), within a 2,500 ms budget. It prints `{}` on stdout and always exits 0. Its state file keeps hashes only, and at most 12 notes per session. Standard input is read for at most 200 ms, so a very large reply that arrives slowly ends quietly with nothing sent.
+
+What the server keeps: the marker lines only, as an unreviewed agent note the owner can review in Your brain. Decisions arrive as suggestions, never as accepted facts.
+
+Connections says it in plain words: "Session notes: on after your next session" (Claude Code) or "on after Codex trusts the hook" (Codex needs a one-time trust in `/hooks`), then "Session notes: N saved · last {date}". A file written before session notes existed has no `Stop` entry, so the tile reads "Session notes: add the Stop entry yourself" with a Copy button for the exact entry, built from that file's own prompt-hook command. BiBrain never edits the file for it.
+
 ## Promise levels
 
 1. Portable brief: works through reviewed copy/download without native integration.

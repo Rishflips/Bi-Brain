@@ -1,8 +1,8 @@
-import { useState } from "react";
+import { Fragment, useState } from "react";
 import { friendlyError } from "../today/BriefCard.tsx";
 import { shortDate } from "../brain/format.ts";
-import { secondFileLabel } from "./second-file.ts";
-import type { Api, Grant } from "./types.ts";
+import { secondFileLabel, stopEntryFor, writebackLabel } from "./second-file.ts";
+import type { AgentClient, Api, Grant } from "./types.ts";
 
 type Props = {
   api: Api;
@@ -52,18 +52,32 @@ export function ConnectionList({ api, grants, projects, hint = "", onChanged }: 
                 {g.files
                   .filter((f) => f.role !== "server")
                   .map((f) => (
-                    <p key={f.path} className="tv-faint cx-second">
-                      {secondFileLabel(g, f)}
-                      {f.state === "exists" && (
-                        <>
-                          {" "}
-                          <button type="button" className="tv-btn tv-ghost tv-sm" onClick={() => void navigator.clipboard.writeText(f.contents)}>
-                            Copy
-                          </button>
-                          <span> {g.client === "claude-code" ? "Paste it into the file, or run /hooks in Claude Code." : "Paste it into the file."}</span>
-                        </>
-                      )}
-                    </p>
+                    <Fragment key={f.path}>
+                      <p className="tv-faint cx-second">
+                        {secondFileLabel(g, f)}
+                        {f.state === "exists" && (
+                          <>
+                            {" "}
+                            <button type="button" className="tv-btn tv-ghost tv-sm" onClick={() => void navigator.clipboard.writeText(f.contents)}>
+                              Copy
+                            </button>
+                            <span> {g.client === "claude-code" ? "Paste it into the file, or run /hooks in Claude Code." : "Paste it into the file."}</span>
+                          </>
+                        )}
+                      </p>
+                      <p className="tv-faint cx-second">
+                        {writebackLabel(g, f)}
+                        {stopEntryFor(g.client as AgentClient, f.contents) && (
+                          <>
+                            {" "}
+                            <button type="button" className="tv-btn tv-ghost tv-sm" onClick={() => void navigator.clipboard.writeText(stopEntryFor(g.client as AgentClient, f.contents)!)}>
+                              Copy
+                            </button>
+                            <span> {g.client === "claude-code" ? "Paste it into the hooks section of the file, or run /hooks in Claude Code." : "Paste it into the hooks section of the file."}</span>
+                          </>
+                        )}
+                      </p>
+                    </Fragment>
                   ))}
                 {g.status !== "Connected" && g.folder && hint && <p className="tv-faint">{hint}</p>}
               </div>

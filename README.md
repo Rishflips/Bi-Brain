@@ -39,7 +39,7 @@ You save a note once, or your coding agents write one when they finish work. BiB
   - **Status:** shows "Connected" only after the agent's first real call.
   - **Revoke:** ends access immediately.
   - **Any other agent:** gets a copied handoff, or setup by hand.
-- **Agent write-back.** Connected agents leave a short session note when they finish: decisions, open questions and the next step. Their decisions arrive as suggestions, never as accepted facts.
+- **Agent write-back.** Connected agents leave a short session note when they finish: decisions, open questions and the next step. Their decisions arrive as suggestions, never as accepted facts. With the hook written by Add, a reply that ends with `Decided:`, `Open question:` and `Next step:` lines becomes that note on its own.
 - **Sorting help (optional).** A small decision model, Clef, through Ollama or Cloudflare, looks at each new note:
   - it can suggest **"File in Northstar?"**;
   - it can rank a low-value card lower;

@@ -195,6 +195,15 @@ for Cursor). For Codex it reads "Recall on every prompt: on after Codex trusts
 the hook" until the first push, because Codex runs a project hook only after the
 person trusts it in `/hooks`.
 
+A second line reads "Session notes: …". It says "on after your next session" for
+Claude Code and "on after Codex trusts the hook" for Codex (a one-time trust in
+`/hooks`), then "Session notes: N saved · last {date}" once one is saved; "add the
+hook yourself" when the hook file already existed; and "by hand (Cursor has no
+end-of-turn hook)" for Cursor. A connection added before session notes existed
+shows "Session notes: add the Stop entry yourself" with Copy, which copies the
+entry built from that file's own recall command. BiBrain never edits the file
+for it.
+
 **Connected.** The status becomes "Connected · last used {date}" only after the
 agent's first real authenticated call.
 

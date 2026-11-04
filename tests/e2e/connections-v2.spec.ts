@@ -128,8 +128,10 @@ test("Claude Code gets the server file and the prompt hook, and an existing hook
   await expect(claude.getByText("The second file turns on recall on every prompt. Only two read-only tools are pre-approved; nothing in it can write.")).toBeVisible();
   await claude.getByRole("button", { name: "Add to Claude Code", exact: true }).last().click();
   await expect(claude).toContainText("Recall on every prompt: on after your next prompt");
+  await expect(claude).toContainText("Session notes: on after your next session");
   const hook = readFileSync(join(folder, ".claude", "settings.local.json"), "utf8");
   expect(hook).toContain('"timeout": 5');
+  expect(hook).toContain('"Stop"');
   expect(hook).not.toMatch(/[0-9a-f]{64}/);
   const second = mkdtempSync(join(tmpdir(), "bibrain-proj-"));
   mkdirSync(join(second, ".claude"));

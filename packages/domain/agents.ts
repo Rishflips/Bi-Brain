@@ -58,6 +58,7 @@ export function configContents(client: AgentClient, launch: LaunchSpec): string 
  * True only after the implementer confirmed `.codex/hooks.json` (UserPromptSubmit command hooks with
  * hookSpecificOutput.additionalContext) on the official Codex hooks documentation.
  * Confirmed 2026-10-26 at https://developers.openai.com/codex/hooks (redirects to https://learn.chatgpt.com/docs/hooks).
+ * The Stop event (fields stop_hook_active and last_assistant_message, JSON required on stdout) was confirmed on 2026-11-03 at https://learn.chatgpt.com/codex/hooks.
  */
 export const CODEX_HOOKS_CONFIRMED = true;
 export const PREAPPROVED_TOOLS = ["mcp__bibrain__brain_recall", "mcp__bibrain__brain_open"] as const;
@@ -78,11 +79,11 @@ export const forwardSlashes = (path: string) => path.replace(/\\/g, "/");
  * Only the arguments (the CLI path and the data directory) are double-quoted; the connection id is a UUID and needs none.
  * This form is designed to parse the same way in Git Bash, PowerShell and cmd.exe. It has not been observed running in any of them, including Claude Code's and Codex's own shell: the owner-run recall proof decides.
  */
-export function hookCommand(client: "claude-code" | "codex", launch: LaunchSpec): string {
+export function hookCommand(client: "claude-code" | "codex", launch: LaunchSpec, kind: "hook" | "hook-end" = "hook"): string {
   const q = (s: string) => `"${forwardSlashes(s)}"`;
   const exe = forwardSlashes(launch.node);
   const first = /[\s"'`$&|;<>()^!*?[\]{}~#%]/u.test(exe) ? "node" : exe;
-  return `${first} ${q(launch.cli)} hook ${client} --connection ${launch.connectionId} --data ${q(launch.dataDir)}`;
+  return `${first} ${q(launch.cli)} ${kind} ${client} --connection ${launch.connectionId} --data ${q(launch.dataDir)}`;
 }
 export const CURSOR_RULE = [
   "---",
@@ -97,14 +98,18 @@ export function secondFileContents(client: AgentClient, launch: LaunchSpec): str
   const target = SECOND_FILES[client];
   if (!target) return null;
   if (client === "cursor") return CURSOR_RULE;
-  const hooks = { UserPromptSubmit: [{ hooks: [{ type: "command", command: hookCommand(client, launch), timeout: 5 }] }] };
+  const command = (kind: "hook" | "hook-end") => ({ hooks: [{ type: "command", command: hookCommand(client, launch, kind), timeout: 5 }] });
+  // UserPromptSubmit: recall on every prompt. Stop: a session note from the marker lines of the reply that just ended
+  // (Claude Code: https://code.claude.com/docs/en/hooks "Stop"; Codex: https://learn.chatgpt.com/codex/hooks "Stop"; both carry last_assistant_message).
+  // timeout is in seconds in both clients (the default is 600), so 5 is enough for one local POST.
+  const hooks = { UserPromptSubmit: [command("hook")], Stop: [command("hook-end")] };
   return JSON.stringify(client === "claude-code" ? { permissions: { allow: [...PREAPPROVED_TOOLS] }, hooks } : { hooks }, null, 2) + "\n";
 }
 
 /** What to do after the file is written, in the agent's own words. */
 export const AGENT_HINTS: Record<AgentClient, string> = {
-  codex: "Open Codex in this folder. If Codex asks, trust the folder and allow BiBrain. Keep the new files out of shared version control.",
-  "claude-code": "Open Claude Code in this folder and approve BiBrain when it asks. Keep the new files out of shared version control.",
+  codex: "Open Codex in this folder. If Codex asks, trust the folder and allow BiBrain. Keep the new files out of shared version control. To get a session note, end a reply with lines like \"Decided: <topic>: <decision>\", \"Open question: …\" and \"Next step: …\".",
+  "claude-code": "Open Claude Code in this folder and approve BiBrain when it asks. Keep the new files out of shared version control. To get a session note, end a reply with lines like \"Decided: <topic>: <decision>\", \"Open question: …\" and \"Next step: …\".",
   cursor: "Open this folder in Cursor. If BiBrain is listed as off in Cursor's settings, turn it on. Keep the new files out of shared version control.",
 };
 

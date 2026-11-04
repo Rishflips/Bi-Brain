@@ -118,8 +118,13 @@ describe("second files", () => {
     const parsed = JSON.parse(text);
     expect(parsed).toEqual({
       permissions: { allow: ["mcp__bibrain__brain_recall", "mcp__bibrain__brain_open"] },
-      hooks: { UserPromptSubmit: [{ hooks: [{ type: "command", command: hookCommand("claude-code", launch), timeout: 5 }] }] },
+      hooks: {
+        UserPromptSubmit: [{ hooks: [{ type: "command", command: hookCommand("claude-code", launch), timeout: 5 }] }],
+        Stop: [{ hooks: [{ type: "command", command: hookCommand("claude-code", launch, "hook-end"), timeout: 5 }] }],
+      },
     });
+    expect(hookCommand("claude-code", launch, "hook-end")).toContain(" hook-end claude-code ");
+    expect(text).not.toContain("SessionEnd");
     expect(PREAPPROVED_TOOLS).toEqual(["mcp__bibrain__brain_recall", "mcp__bibrain__brain_open"]);
     expect(text).not.toContain("SessionStart");
     expect(text).not.toMatch(/brain_note|brain_propose|brain_forget|brain_link|brain_intent/);
@@ -134,6 +139,7 @@ describe("second files", () => {
     if (CODEX_HOOKS_CONFIRMED) {
       expect(secondFileTarget("codex")).toEqual({ dir: ".codex", file: [".codex", "hooks.json"], role: "hook" });
       expect(JSON.parse(secondFileContents("codex", launch)!).hooks.UserPromptSubmit[0].hooks[0].command).toContain(" hook codex ");
+      expect(JSON.parse(secondFileContents("codex", launch)!).hooks.Stop[0].hooks[0].command).toContain(" hook-end codex ");
       expect(agentHint("codex")).toContain("If Codex asks about hooks, allow BiBrain's.");
     } else {
       expect(secondFileTarget("codex")).toBeNull();
