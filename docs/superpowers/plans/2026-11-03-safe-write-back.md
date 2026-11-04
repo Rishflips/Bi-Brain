@@ -168,6 +168,18 @@ describe("provenance of agent-written originals", () => {
     expect(forOwner.items.find((i) => i.text.includes("HERON_CANARY"))!.epistemic_status).toBe("agent_unreviewed");
     b.markSourceReviewed(owner, theirs.source_id);
     expect(JSON.stringify(b.context(agent, "inbox"))).toContain("HERON_CANARY");
+    // The same rule once a derived brief exists: an item whose evidence cites an unreviewed agent note is left out for an agent.
+    const again = b.agentNote(agent, { project_id: "inbox", open_questions: ["Is the EGRET_CANARY retry right?"] });
+    const quote = "Open question: Is the EGRET_CANARY retry right?";
+    b.store.run(
+      "INSERT INTO entities VALUES(?,?,?,?,?,?)",
+      "brief-ctx-test", "inbox", "brief", 1,
+      JSON.stringify({ status: "current", items: [{ text: quote, epistemic_status: "user_assertion", evidence: [{ source_id: again.source_id, source_version: 1, start: 0, end: Array.from(quote).length, quote }] }, { text: "owner line", epistemic_status: "supported", evidence: [] }], unknowns: [] }),
+      "2026-11-03T09:00:00.000Z",
+    );
+    expect(JSON.stringify(b.context(agent, "inbox"))).not.toContain("EGRET_CANARY");
+    expect(JSON.stringify(b.context(agent, "inbox"))).toContain("owner line");
+    expect(JSON.stringify(b.context(owner, "inbox"))).toContain("EGRET_CANARY");
   });
 
   it("deletes expired owner sessions when a new one is issued", () => {
@@ -357,7 +369,7 @@ In `context`, replace the `sources.map(...)` fallback so an agent never receives
         });
 ```
 
-and, where a current `brief` supplies the items, filter them the same way for an agent principal: drop any item whose `evidence` cites a source for which `this.writtenBy(source)` is unreviewed (look the source up with `this.store.get("SELECT id,origin FROM sources WHERE id=?", e.source_id)`). Check `packages/contracts/index.ts` `itemSchema.epistemic_status`: it is an enum of `supported | user_assertion | hypothesis`; add `agent_unreviewed` to it (the enum is only ever validated on worker output, and the worker never produces this value).
+and, where a current `brief` supplies the items, filter them the same way for an agent principal: drop any item whose `evidence` cites a source for which `this.writtenBy(source)` is unreviewed (look the source up with `this.store.get("SELECT id,origin FROM sources WHERE id=?", e.source_id)`); the owner keeps every item. The test above plants a brief row directly to pin this path (check the `entities` column order against `packages/storage/index.ts:62` before relying on the positional `INSERT`). Check `packages/contracts/index.ts` `itemSchema.epistemic_status`: it is an enum of `supported | user_assertion | hypothesis`; add `agent_unreviewed` to it (the enum is only ever validated on worker output, and the worker never produces this value).
 
 - [ ] **Step 6: Run the tests**
 
@@ -467,12 +479,14 @@ In `packages/domain/service.ts`, add `isUnreviewedAgent` to the provenance impor
 Then replace the line `const names = internal.signals.topNames.length ? internal.signals.topNames : internal.entityNames;` with:
 
 ```ts
-    // Names for the pointer and the digest: fact entities, and the titles of the hits that remain. An unreviewed agent note's title is agent-chosen text and never a name here.
-    const safeNames = [...internal.entityNames, ...hits.filter((h): h is Extract<RecallHit, { kind: "original" }> => h.kind === "original").map((h) => h.title)];
-    const names = safeNames.length ? safeNames : internal.scope.map((s) => s.title);
+    // Names for the pointer and the digest: the top three ranked candidates exactly as deterministicSignals builds topNames, except that an
+    // unreviewed agent original is skipped first: its title is agent-chosen text and never a name here. With no such original this is plan 5's list.
+    const blocked = new Set(internal.authorized.filter(isUnreviewedAgent).map((h) => h.id));
+    const top = [...new Set(internal.ranked.filter((c) => !(c.row.kind === "original" && blocked.has(c.row.ref_id))).slice(0, 3).map((c) => (c.row.kind === "fact" ? c.row.prefix.split(" · ").at(-1)! : c.row.prefix.split(" · ")[0])))];
+    const names = top.length ? top : internal.entityNames;
 ```
 
-(`internal.signals.topNames` is built in `deterministicSignals` from candidate prefixes, which include an original's title; it is no longer used for the push text. `brain_recall` is unchanged.)
+(`deterministicSignals` in `recall.ts:210` builds `topNames` as `ranked.slice(0, 3)` mapped the same way; the committed snapshot holds pointer texts such as "Launch color, Launch notes, Launch party caterer" that come from it, so the mapping and the order must stay exactly this. `brain_recall` is unchanged.)
 
 Replace `digestFor` with:
 
@@ -550,7 +564,7 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 - Modify: `packages/domain/project-view.ts:28-35,58-61,95-106` (`OriginalView`, `ProjectViewInput`), `packages/domain/service.ts` `brainProject` (search `buildProjectView(`)
 - Modify: `apps/server/app.ts:688-694` (`GET /api/v1/sources/:id`), add `POST /api/v1/sources/:id/reviewed`
 - Modify: `apps/web/brain/types.ts:33-40`, `apps/web/brain/Originals.tsx:5-9,45-49`, `apps/web/brain/SourceView.tsx:18-19,81-86`
-- Modify: `docs/API.md` (two rows), `docs/UX.md` "Your brain" section (one sentence)
+- Modify: `docs/API.md` (two rows), `docs/UX.md` "Your brain" section (one sentence), `playwright.config.ts:32,47` (the new spec joins the `connections` project)
 - Test: `tests/integration/your-brain-pure.test.ts` (append), `tests/integration/provenance.test.ts` (append one HTTP test), `tests/e2e/provenance.spec.ts` (new)
 
 **Interfaces:**
@@ -609,7 +623,7 @@ Append to `tests/integration/provenance.test.ts` (import `createApp` from `../..
   });
 ```
 
-Create `tests/e2e/provenance.spec.ts` (runs in the `main` project; the `testIgnore` pattern in `playwright.config.ts` does not match it). The connection is made through the signed-in page's one-step Add, exactly as `connections-v2.spec.ts` does, and the agent key is read from the server's own `data/agent-keys` folder; no owner API call needs a CSRF token:
+Create `tests/e2e/provenance.spec.ts` and run it in the `connections` Playwright project, whose server has a fake home folder holding only `.codex` (`BRAIN_AGENT_HOME`, `BRAIN_AGENT_PATH: ""`), so "Add to Codex" never depends on what is installed on the machine. In `playwright.config.ts` change the `main` project's `testIgnore` to `/(today-v2(-empty|-bar)?|connections-v2|provenance|system-one|better-search)\.spec\.ts/` and the `connections` project's `testMatch` to `/(connections-v2|provenance)\.spec\.ts/`. The connection is made through the signed-in page's one-step Add, exactly as `connections-v2.spec.ts` does, and the agent key is read from the server's own `data/agent-keys` folder; no owner API call needs a CSRF token:
 
 ```ts
 import { expect, test, type Page } from "@playwright/test";
@@ -716,13 +730,13 @@ In `apps/web/src.tsx`, where `<SourceView` is rendered, pass `onReviewed={() => 
 
 - [ ] **Step 7: Run the tests, then the one browser journey**
 
-Run: `npx vitest run tests/integration/your-brain-pure.test.ts tests/integration/provenance.test.ts tests/integration/brain-project.test.ts && npm run typecheck && npm run lint && npm run build && npx playwright test tests/e2e/provenance.spec.ts --workers=1 && git restore docs/screenshots`
-Expected: PASS.
+Run: `npx vitest run tests/integration/your-brain-pure.test.ts tests/integration/provenance.test.ts tests/integration/brain-project.test.ts && npm run typecheck && npm run lint && npm run build && npx playwright test --project connections --workers=1 && git restore docs/screenshots`
+Expected: PASS (the `connections` project now runs `connections-v2.spec.ts` and `provenance.spec.ts`).
 
 - [ ] **Step 8: Commit**
 
 ```bash
-git add packages/domain/project-view.ts packages/domain/service.ts apps/server/app.ts apps/web/brain/types.ts apps/web/brain/Originals.tsx apps/web/brain/SourceView.tsx apps/web/src.tsx docs/API.md docs/UX.md tests/integration/your-brain-pure.test.ts tests/integration/provenance.test.ts tests/e2e/provenance.spec.ts
+git add packages/domain/project-view.ts packages/domain/service.ts apps/server/app.ts apps/web/brain/types.ts apps/web/brain/Originals.tsx apps/web/brain/SourceView.tsx apps/web/src.tsx docs/API.md docs/UX.md playwright.config.ts tests/integration/your-brain-pure.test.ts tests/integration/provenance.test.ts tests/e2e/provenance.spec.ts
 git commit -m "feat(your-brain): originals say which agent wrote them and whether they were reviewed
 
 Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>"
@@ -1745,7 +1759,7 @@ In `apps/cli/lib.d.mts` change `HookState` to:
 export type HookState = { sessions: Record<string, { first_seen: number; last_seen: number; hashes: string[]; digested?: boolean; notes?: string[] }> };
 ```
 
-and declare `HOOK_END_BUDGET_MS`, `HOOK_END_TEXT_MAX`, `HOOK_END_PER_SESSION`, `hasMarkerLine(text: string): boolean`, `markerLines(text: string): string | null`, `parseStopStdin(raw: string): { session_id: string; message: string; active: boolean } | null`, `noteSessionEnd(state: HookState, sessionHash: string, messageHash: string, now: number): HookState`, `hookEndOutput(): string`.
+change the `noteHookState` declaration to its real five parameters, `noteHookState(state: HookState, sessionHash: string, ids: string[], now: number, digested?: boolean): HookState` (the JS already takes `digested`; the test passes it), and declare `HOOK_END_BUDGET_MS`, `HOOK_END_TEXT_MAX`, `HOOK_END_PER_SESSION`, `hasMarkerLine(text: string): boolean`, `markerLines(text: string): string | null`, `parseStopStdin(raw: string): { session_id: string; message: string; active: boolean } | null`, `noteSessionEnd(state: HookState, sessionHash: string, messageHash: string, now: number): HookState`, `hookEndOutput(): string`.
 
 - [ ] **Step 4: The command**
 
@@ -1938,7 +1952,7 @@ export function writebackLabel(grant: Pick<Grant, "client" | "writeback">, file:
 }
 ```
 
-In `ConnectionList.tsx`, inside the `.map((f) => ...)` of non-server files, add a second paragraph after the existing one (wrap the two in a fragment keyed by `f.path`); when `stopEntryFor(g.client as AgentClient, f.contents)` is a string, it gets the same Copy button and paste hint the "exists" state already shows:
+In `ConnectionList.tsx`, import `stopEntryFor, writebackLabel` from `./second-file.ts` and the `AgentClient` type from `./types.ts`; inside the `.map((f) => ...)` of non-server files, add a second paragraph after the existing one (wrap the two in a fragment keyed by `f.path`); when `stopEntryFor(g.client as AgentClient, f.contents)` is a string, it gets the same Copy button and paste hint the "exists" state already shows:
 
 ```tsx
                     <p className="tv-faint cx-second">
@@ -1956,7 +1970,7 @@ In `ConnectionList.tsx`, inside the `.map((f) => ...)` of non-server files, add 
 ```
 
 Docs:
-- `docs/AGENT_INTEGRATION.md`: add a "## Session notes (write-back hook)" section after "Recall push" that states: both hooks live in the same file; the `Stop` event for Claude Code (cite `https://code.claude.com/docs/en/hooks`, "Stop input": `stop_hook_active`, `last_assistant_message`) and Codex (cite `https://learn.chatgpt.com/codex/hooks`: 14 events, `Stop` with the same two fields, "expects JSON on `stdout`"); `SessionEnd` not used (no message, 1.5 s / 1 s budgets); Cursor has no hooks and keeps the rule; what the hook sends (first 4,000 code points, loopback only, 2,500 ms budget, `{}` on stdout, exit 0 always, hashes only in state, 12 per session); what the server keeps (marker lines only), and the Connections wording.
+- `docs/AGENT_INTEGRATION.md`: add a "## Session notes (write-back hook)" section after "Recall push" that states: both hooks live in the same file; the `Stop` event for Claude Code (cite `https://code.claude.com/docs/en/hooks`, "Stop input": `stop_hook_active`, `last_assistant_message`) and Codex (cite `https://learn.chatgpt.com/codex/hooks`: 14 events, `Stop` with the same two fields, "expects JSON on `stdout`"); `SessionEnd` not used (no message, 1.5 s / 1 s budgets); Cursor has no hooks and keeps the rule; what the hook sends (the marker lines only, up to 4,000 code points, loopback only, 2,500 ms budget, `{}` on stdout, exit 0 always, hashes only in state, 12 per session; stdin is read for at most 200 ms, so a very large reply that arrives slowly ends quietly with nothing sent); what the server keeps (marker lines only), and the Connections wording.
 - `docs/UX.md` Connections "Waiting" paragraph: add the "Session notes: …" lines as in `writebackLabel`, including that a connection added before session notes existed shows "Session notes: add the Stop entry yourself" with Copy, and that BiBrain never edits the file for it.
 - `docs/API.md`: add `| POST /agent/session-note | session_id (hash), client, text (4,000 chars) | Agent grant with \`propose_memory\`: marker lines become a session note (\`{saved, source_id, suggestions, open_questions, duplicate}\`) or \`{saved: false, reason}\`; one content-free log row |` and `| GET /connections | ... | adds \`writeback: {notes, last_at}\` |`.
 - `README.md` line 42: append "With the hook written by Add, a reply that ends with `Decided:`, `Open question:` and `Next step:` lines becomes that note on its own."
@@ -2150,7 +2164,7 @@ Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>"
 
 **Interfaces:**
 - Consumes: `isContextFile` (Task 12), `previewAdapter(kind, list)` in `src.tsx`.
-- Produces: `TodayProps.onBringIn: (files: FileList) => Promise<void>`.
+- Produces: `TodayProps.onBringIn: (files: File[]) => Promise<void>`.
 
 - [ ] **Step 1: Write the failing test**
 
