@@ -217,7 +217,29 @@ describe("provenance of agent-written originals", () => {
     expect(view.originals[0]).toMatchObject({ written_by: { agent: "Codex", reviewed: true } });
     // An agent cannot review on the owner's behalf: an unknown key is refused, and a real agent token is forbidden.
     expect((await app.inject({ method: "POST", url: `/api/v1/sources/${a.source_id}/reviewed`, headers: { host: "127.0.0.1:4317", authorization: `Bearer ${"f".repeat(64)}` }, payload: {} })).statusCode).toBe(401);
+    // Repeating the review changes nothing; a call without the page's CSRF header is refused.
+    const again = await app.inject({ method: "POST", url: `/api/v1/sources/${a.source_id}/reviewed`, headers, payload: {} });
+    expect(again.json()).toEqual(marked.json());
+    const { "x-brain-csrf": _omit, ...noCsrf } = headers;
+    expect((await app.inject({ method: "POST", url: `/api/v1/sources/${a.source_id}/reviewed`, headers: noCsrf, payload: {} })).statusCode).toBe(403);
     const asAgent = await app.inject({ method: "POST", url: `/api/v1/sources/${a.source_id}/reviewed`, headers: { host: "127.0.0.1:4317", authorization: `Bearer ${grant.token}` }, payload: {} });
     expect(asAgent.statusCode).toBe(403);
+  });
+
+  it("search, Ask and the Today evidence carry the agent label before and after review", async () => {
+    const { b, agent } = setup();
+    const a = b.agentNote(agent, note);
+    const label = { agent: "Codex", reviewed: false };
+    const search = await b.searchBrain(owner, { q: "lease recovery" });
+    expect(search.originals.find((o) => o.id === a.source_id)).toMatchObject({ written_by: label });
+    const asked = await b.ask(owner, { q: "Wire the lease recovery test" });
+    expect(asked.hits.find((h) => h.id === a.source_id && h.type === "original")).toMatchObject({ written_by: label });
+    const mine = b.capture(owner, { title: "Plain", body: "A plain owner note about lease recovery." }) as { source_id: string };
+    expect((await b.searchBrain(owner, { q: "plain owner note" })).originals.find((o) => o.id === mine.source_id)).not.toHaveProperty("written_by");
+    const cited = b.brief(owner).items.flatMap((item) => item.evidence).filter((e) => e.source_id === a.source_id);
+    expect(cited.length).toBeGreaterThan(0);
+    for (const e of cited) expect(e.written_by).toEqual(label);
+    b.markSourceReviewed(owner, a.source_id);
+    expect((await b.searchBrain(owner, { q: "lease recovery" })).originals.find((o) => o.id === a.source_id)).toMatchObject({ written_by: { agent: "Codex", reviewed: true } });
   });
 });

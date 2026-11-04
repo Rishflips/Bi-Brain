@@ -59,7 +59,7 @@ export type FactHistoryEntry = {
 };
 export type SearchResults = {
   facts: { id: string; project_id: string; text: string; evidence: Omit<FactEvidence, "source_title">[] }[];
-  originals: { id: string; project_id: string; version: number; title: string; snippet: string }[];
+  originals: { id: string; project_id: string; version: number; title: string; snippet: string; written_by?: { agent: string; reviewed: boolean } }[];
 };
 export type Done = (message: string, undo?: () => Promise<void>) => Promise<void>;
 export type GoalActions = {

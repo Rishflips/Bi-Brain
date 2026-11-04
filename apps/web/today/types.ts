@@ -13,6 +13,7 @@ export type BriefEvidence = {
   source_id: string;
   source_version: number;
   quote: string;
+  written_by?: { agent: string; reviewed: boolean };
 };
 export type BriefItem = {
   signature: string;
@@ -57,6 +58,7 @@ export type AskHit =
       title: string;
       snippet: string;
       source_version: number;
+      written_by?: { agent: string; reviewed: boolean };
     };
 export type TodayProps = {
   api: Api;

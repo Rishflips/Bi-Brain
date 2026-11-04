@@ -26,6 +26,15 @@ test("an agent note shows who wrote it and that it is not yet reviewed, until th
   const { key } = JSON.parse(readFileSync(join("data", "agent-keys", `${id}.json`), "utf8"));
   const note = await page.request.post("/api/v1/agent/note", { headers: { Authorization: `Bearer ${key}` }, data: { project_id: "inbox", open_questions: ["Which lease length is right for the provenance journey?"] } });
   expect(note.ok()).toBe(true);
+  // Search and Ask carry the same label as the original itself.
+  await page.getByRole("button", { name: "Your brain", exact: true }).click();
+  await page.getByPlaceholder("Search facts and originals").fill("lease length");
+  await expect(page.getByRole("button", { name: /Session note from Codex/ }).getByText(/From Codex · not yet reviewed/)).toBeVisible();
+  await page.getByRole("button", { name: "Today", exact: true }).click();
+  const bar = page.getByLabel(/save to your brain|ask your brain/i);
+  await bar.fill("Which lease length is right?");
+  await page.keyboard.press("Enter");
+  await expect(page.getByText("From Codex · not yet reviewed").first()).toBeVisible();
   await page.getByRole("button", { name: "Your brain", exact: true }).click();
   await expect(page.getByText("From Codex · not yet reviewed").first()).toBeVisible();
   await page.getByRole("button", { name: "Session note from Codex" }).first().click();

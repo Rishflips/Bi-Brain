@@ -206,6 +206,11 @@ export class Brain {
     const client = this.store.get<{ client: string | null }>("SELECT client FROM grants WHERE id=?", grantId)?.client;
     return { agent: agentDisplayName(client), reviewed: this.sourceReviewedAt(source.id) !== null };
   }
+  /** The same label by original id, for owner surfaces that only hold an id. */
+  private writtenById(sourceId: string): WrittenBy | undefined {
+    const row = this.store.get<{ id: string; origin: string }>("SELECT id,origin FROM sources WHERE id=?", sourceId);
+    return row ? this.writtenBy(row) : undefined;
+  }
   /** True when the original with this id was written by an agent and the owner has not reviewed it. */
   private unreviewedAgentSource(sourceId: string): boolean {
     const row = this.store.get<{ id: string; origin: string }>("SELECT id,origin FROM sources WHERE id=?", sourceId);
@@ -4675,7 +4680,17 @@ ${q}`);
   }
   brief(p: Principal) {
     this.owner(p);
-    return buildBrief(this.briefInput(p), this.clock());
+    const brief = buildBrief(this.briefInput(p), this.clock());
+    return {
+      ...brief,
+      items: brief.items.map((item) => ({
+        ...item,
+        evidence: item.evidence.map((e) => {
+          const by = this.writtenById(e.source_id);
+          return by ? { ...e, written_by: by } : e;
+        }),
+      })),
+    };
   }
   /** Today only looks at watched projects. */
   briefInput(p: Principal): BriefInput {
@@ -5164,7 +5179,14 @@ ${q}`);
     const literal = () => {
       const projects = this.projects(p) as { id: string }[];
       const claims = projects.flatMap((project) => this.currentClaims(p, project.id));
-      return findInBrain(v.q, claims, this.sources(p), SEARCH_LIMIT);
+      const found = findInBrain(v.q, claims, this.sources(p), SEARCH_LIMIT);
+      return {
+        ...found,
+        originals: found.originals.map((o) => {
+          const by = this.writtenById(o.id);
+          return by ? { ...o, written_by: by } : o;
+        }),
+      };
     };
     // With a vector, meaning can find a note whatever the query's short words; without one, words under three characters never
     // become FTS terms and the literal search is the only one that can see them (unchanged from plan 5).
@@ -5184,7 +5206,7 @@ ${q}`);
         const claim = this.entity(p, f.id);
         return { id: f.id, project_id: f.project.id, text: f.text, evidence: (claim.data.evidence as Evidence[]).map((e) => ({ source_id: e.source_id, source_version: e.source_version, start: e.start, end: e.end, quote: e.quote })) };
       }),
-      originals: originals.map((o) => ({ id: o.id, project_id: o.project.id, version: o.version, title: o.title, snippet: snippetFor(o.quote, o.title, v.q) })),
+      originals: originals.map((o) => ({ id: o.id, project_id: o.project.id, version: o.version, title: o.title, snippet: snippetFor(o.quote, o.title, v.q), ...(o.written_by ? { written_by: o.written_by } : {}) })),
     };
   }
   async ask(p: Principal, input: unknown) {
@@ -5203,7 +5225,7 @@ ${q}`);
       .map((h) =>
         h.kind === "fact"
           ? { type: "fact", id: h.id, project_id: h.project.id, text: h.text, evidence: h.evidence.map((e) => ({ source_id: e.source_id, source_version: e.source_version, quote: e.quote })) }
-          : { type: "original", id: h.id, project_id: h.project.id, title: h.title, snippet: snippetFor(h.quote, h.title, v.q), source_version: h.version },
+          : { type: "original", id: h.id, project_id: h.project.id, title: h.title, snippet: snippetFor(h.quote, h.title, v.q), source_version: h.version, ...(h.written_by ? { written_by: h.written_by } : {}) },
       );
     return { question: v.q, hits, answered: hits.length > 0 };
   }

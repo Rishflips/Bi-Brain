@@ -99,15 +99,18 @@ export function buildProjectView(input: ProjectViewInput, now: Date): ProjectVie
   const originals = input.sources
     .filter((s) => s.state === "active")
     .sort((a, b) => b.captured_at.localeCompare(a.captured_at))
-    .map((s): OriginalView => ({
+    .map((s): OriginalView => {
+      const written_by = input.writtenBy(s);
+      return {
       id: s.id,
       version: s.version,
       title: s.title,
       captured_at: s.captured_at,
       from: originFrom(s.origin),
       private: s.visibility === "private",
-      ...(input.writtenBy(s) ? { written_by: input.writtenBy(s) } : {}),
-    }));
+      ...(written_by ? { written_by } : {}),
+      };
+    });
   return {
     project: input.project,
     facts,

@@ -216,6 +216,11 @@ export function BriefCard({
               onClick={() => onOpenSource(e.source_id, { quote: e.quote })}
             >
               <q>{e.quote}</q>
+              {e.written_by && (
+                <span className="tv-faint">
+                  From {e.written_by.agent} · {e.written_by.reviewed ? "reviewed" : "not yet reviewed"}
+                </span>
+              )}
               <span className="tv-faint">Open the original</span>
             </button>
           ))}
