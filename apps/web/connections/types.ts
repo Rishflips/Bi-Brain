@@ -12,6 +12,7 @@ export type Grant = {
   client_name: string;
   folder: string | null;
   files: WrittenFile[];
+  writeback: { notes: number; last_at: string | null };
   recall: { pushes: number; last_push_at: string | null; last_level: "full" | "pointer" | "none" | null };
 };
 export type AgentInfo = { client: AgentClient; name: string; found: boolean; file: string; hint: string };

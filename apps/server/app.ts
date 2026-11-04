@@ -1079,6 +1079,8 @@ export async function createApp(
     return req.brain.agentOpen(req.principal, v);
   });
   app.post("/api/v1/agent/recall-push", (req) => req.brain.recallPush(req.principal, req.body));
+  // A session-end hook posts at most once per reply; the per-route bucket bounds a runaway loop beyond the per-session cap.
+  app.post("/api/v1/agent/session-note", { config: { rateLimit: { max: 60, timeWindow: 60000 } } }, (req) => req.brain.sessionNote(req.principal, req.body));
   app.get("/api/v1/recall/log", (req) => req.brain.recallLog(req.principal));
   app.post("/api/v1/agent/propose", (req) =>
     req.brain.propose(

@@ -100,6 +100,7 @@ import {
   type RecallHit,
   type RecallResult,
 } from "./recall.ts";
+import { SESSION_NOTES_PER_SESSION, SESSION_NOTE_LOG_MAX, parseSessionNote, sessionNoteSchema } from "./session-note.ts";
 import { RECALL_LOG_MAX, PUSH_HITS_MAX, filterSeen, fitFull, hitIsRelated, hitIsStrong, pushLevel, recallPushSchema, renderDigest, renderPointer, type JudgeSignals, type PushLevel } from "./recall-push.ts";
 import {
   attemptReferencesSource,
@@ -989,6 +990,51 @@ export class Brain {
       this.writeAgentNote(p, v, name, lines, decisionLines, key),
     );
   }
+  /** The session hook's write-back: marker lines from the agent's last reply become an ordinary agent note (unreviewed, cards on Today). Quiet otherwise. */
+  sessionNote(p: Principal, input: unknown) {
+    if (p.kind !== "agent") throw new BrainError("FORBIDDEN", "Use an agent token.", 403);
+    const v = sessionNoteSchema.parse(input);
+    const grant = this.grant(p)!;
+    // Every connection Add creates reads one project; a wider grant has no project to file the note in (spec R12).
+    if (grant.projects.length !== 1) throw new BrainError("INVALID_INPUT", "This connection reads more than one project; session notes need exactly one.", 400);
+    const project = grant.projects[0];
+    this.access(p, project, "propose_memory");
+    const started = Date.now();
+    type Row = { at: string; grant_id: string; client: string; saved: boolean; reason?: "secret" | "nothing" | "limit"; suggestions: number; latency_ms: number };
+    const log = (row: Omit<Row, "at" | "grant_id" | "client" | "latency_ms">) => {
+      const at = this.now();
+      const rows = this.store.setting<Row[]>("session_note_log", []);
+      rows.push({ at, grant_id: p.grant_id, client: v.client, latency_ms: Date.now() - started, ...row });
+      this.store.set("session_note_log", rows.slice(-SESSION_NOTE_LOG_MAX));
+      if (row.saved) {
+        const counter = this.store.setting<{ notes: number; last_at: string | null }>(`session_notes:${p.grant_id}`, { notes: 0, last_at: null });
+        this.store.set(`session_notes:${p.grant_id}`, { notes: counter.notes + 1, last_at: at });
+      }
+    };
+    const quiet = (reason: "secret" | "nothing" | "limit") => {
+      log({ saved: false, reason, suggestions: 0 });
+      return { saved: false as const, reason };
+    };
+    if (detectSecrets(v.text).length) return quiet("secret");
+    const parsed = parseSessionNote(v.text);
+    if (!parsed) return quiet("nothing");
+    const key = `session:${v.session_id}:${hash(v.text)}`;
+    const repeat = this.store.get("SELECT 1 FROM idempotency WHERE principal=? AND operation=? AND key=?", p.grant_id, `agent_note:${project}`, key);
+    if (!repeat) {
+      const saved = Number(this.store.get<{ n: number }>("SELECT count(*) AS n FROM idempotency WHERE principal=? AND operation=? AND key LIKE ?", p.grant_id, `agent_note:${project}`, `session:${v.session_id}:%`)?.n ?? 0);
+      if (saved >= SESSION_NOTES_PER_SESSION) return quiet("limit");
+    }
+    const r = this.agentNote(p, { project_id: project, ...parsed }, key) as { source_id: string; suggestions: number; open_questions: number; quarantined: boolean; duplicate?: boolean };
+    if (r.quarantined) return quiet("secret");
+    // A note already in the brain (same body from another session) is not a new note: nothing is counted.
+    if (!repeat && r.duplicate !== true) log({ saved: true, suggestions: r.suggestions });
+    return { saved: true as const, source_id: r.source_id, suggestions: r.suggestions, open_questions: r.open_questions, duplicate: r.duplicate === true };
+  }
+  /** What the session hook did and when: counts and reasons, never text or ids. At most 200 rows; the per-connection counters never fall off. */
+  sessionNoteLog(p: Principal) {
+    this.owner(p);
+    return { rows: this.store.setting<{ at: string; grant_id: string; client: string; saved: boolean; reason?: string; suggestions: number; latency_ms: number }[]>("session_note_log", []) };
+  }
   private writeAgentNote(
     p: Extract<Principal, { kind: "agent" }>,
     v: {
@@ -1018,6 +1064,7 @@ export class Brain {
         suggestions: 0,
         open_questions: captured.quarantined ? 0 : v.open_questions.length,
         quarantined: !!captured.quarantined,
+        duplicate: !!captured.duplicate,
       };
     const owner = this.ownerPrincipal();
     const source = this.source(owner, captured.source_id);
@@ -2526,6 +2573,7 @@ export class Brain {
             : g.last_verified_at
               ? "Connected"
               : "Not connected",
+        writeback: this.store.setting<{ notes: number; last_at: string | null }>(`session_notes:${g.id}`, { notes: 0, last_at: null }),
         recall: (() => {
           const rows = this.store.setting<{ at: string; grant_id: string; level: PushLevel }[]>("recall_log", []).filter((r) => r.grant_id === g.id);
           return { pushes: rows.length, last_push_at: rows.at(-1)?.at ?? null, last_level: rows.at(-1)?.level ?? null };
