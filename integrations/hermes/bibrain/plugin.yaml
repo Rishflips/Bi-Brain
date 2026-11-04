@@ -1,0 +1,13 @@
+# Keys as the Hermes plugins guide documents them (manifest reference): name, version, description, requires_env (name, description, url, secret), provides_hooks.
+name: bibrain
+version: 1.0.0
+description: Recall from the owner's BiBrain before each turn and leave a session note after it. Speaks the bibrain-agent/1 contract.
+requires_env:
+  - name: BRAIN_AGENT_TOKEN
+    description: The connection key BiBrain shows once under Connections. Keep it in .env, never in config.yaml.
+    secret: true
+  - name: BRAIN_API_URL
+    description: Your BiBrain's HTTPS address, for example https://brain.example.com (or http://127.0.0.1:4317 on the same computer).
+provides_hooks:
+  - pre_llm_call
+  - post_llm_call
