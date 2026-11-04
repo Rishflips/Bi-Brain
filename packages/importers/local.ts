@@ -1,9 +1,10 @@
 import { createHash } from "node:crypto";
 import { z } from "zod";
 import { BrainError } from "../domain/logic.ts";
+import { CONTEXT_FILE_MAX_BYTES, CONTEXT_FILE_MAX_CHARS, isContextFile } from "./context.ts";
 export const importInput = z
   .object({
-    kind: z.enum(["folder", "chat"]),
+    kind: z.enum(["folder", "chat", "context"]),
     project_id: z.string().min(1).max(100),
     entries: z
       .array(
@@ -44,6 +45,21 @@ export function parseImport(value: unknown) {
       throw new BrainError("INVALID_INPUT", "Duplicate import path.");
     paths.add(path);
     const size = Buffer.byteLength(entry.content, "utf8");
+    if (input.kind === "context") {
+      // Each instruction file gets its own outcome: one big file never stops the rest.
+      if (!isContextFile(path)) {
+        warnings.push(`${path}: not an agent instruction file, skipped`);
+        continue;
+      }
+      if (size > CONTEXT_FILE_MAX_BYTES) {
+        warnings.push(`${path}: larger than 1 MiB, skipped`);
+        continue;
+      }
+      if (Array.from(entry.content).length > CONTEXT_FILE_MAX_CHARS) {
+        warnings.push(`${path}: longer than 100,000 characters, skipped`);
+        continue;
+      }
+    }
     totalBytes += size;
     if (size > 1048576 || totalBytes > 4 * 1048576)
       throw new BrainError(
@@ -51,8 +67,8 @@ export function parseImport(value: unknown) {
         "Import exceeds the per-file or 4 MiB batch limit.",
         413,
       );
-    if (input.kind === "folder") {
-      if (!/\.(txt|md)$/i.test(path)) {
+    if (input.kind === "folder" || input.kind === "context") {
+      if (input.kind === "folder" && !/\.(txt|md)$/i.test(path)) {
         warnings.push(`${path}: unsupported attachment skipped`);
         continue;
       }

@@ -301,7 +301,7 @@ export class Brain {
         project_id: preview.project_id,
         title: item.title,
         body: item.body,
-      }),
+      }, undefined, false, preview.kind === "context" ? "import" : undefined),
     }));
     return {
       imported: results.filter((r: any) => !r.duplicate).length,
@@ -654,7 +654,7 @@ export class Brain {
     );
     return result;
   }
-  capture(p: Principal, input: unknown, key?: string, fromGate = false) {
+  capture(p: Principal, input: unknown, key?: string, fromGate = false, origin?: "import") {
     if (p.kind === "agent" && !fromGate)
       throw new BrainError(
         "FORBIDDEN",
@@ -715,7 +715,7 @@ export class Brain {
           1,
           "active",
           v.visibility,
-          p.kind === "owner" ? "manual" : `agent:${p.grant_id}`,
+          origin ?? (p.kind === "owner" ? "manual" : `agent:${p.grant_id}`),
           this.now(),
         );
         this.store.run(
