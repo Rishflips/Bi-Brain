@@ -58,7 +58,7 @@ export type RecallLogRow = {
 export type S1Answer = { id: string; type: "choice"; choice: string; confidence: number } | { id: string; type: "noul"; probability: number };
 export type S1AnswerRow = { answers: S1Answer[] };
 export type S1FeedbackRow = { question: string; choice: string | number; confidence: number; action: string };
-export type CalibrationInput = { recall_log: RecallLogRow[]; s1_answers: S1AnswerRow[]; s1_feedback: S1FeedbackRow[]; embedded: { model: string; rows: number }[]; meaning_lead?: MeaningLead | null };
+export type CalibrationInput = { recall_log: RecallLogRow[]; s1_answers: S1AnswerRow[]; s1_feedback: S1FeedbackRow[]; embedded: { model: string; rows: number }[]; meaning_lead?: MeaningLead | null; today?: string; model_key?: string | null };
 
 export type Histogram = { n: number; bins: number[] };
 export type KeptBuckets = { kept: number[]; dropped: number[] };
@@ -86,6 +86,7 @@ export type CalibrationReport = {
     dense_near_floor: number;
     embedded: { model: string; rows: number }[];
     meaning_lead: MeaningLead | null;
+    meaning_lead_apply: MeaningLeadApply | null;
   };
   suggestions: Suggestion[];
   gaps: string[];
@@ -178,6 +179,9 @@ const round2 = (x: number) => Number(x.toFixed(2));
 const percentile = (sorted: number[], p: number) => sorted[Math.min(sorted.length - 1, Math.floor(p * sorted.length))];
 const LEAD = "search.meaning_lead";
 export const LEAD_MAX = 0.99;
+/** Folds one wanted hit into the lowest wanted cosine. A hit absent from the candidate scan is a miss below the floor, never skipped, so the lowest is never overstated. */
+export const foldLowestWanted = (lowest: number, score: number | undefined, floor: number): number => Math.min(lowest, score ?? round2(floor - 0.01));
+export type MeaningLeadApply = { threshold: number; sample: number; source: "calibrate"; measured_at: string; model: string | null };
 /**
  * From npm run proof:search. The safe side of the line rests on the no-answer queries alone, so the sample is the negative count and
  * 20 negatives are required whatever the positive count: 0.05 above the loudest no-answer cosine, never under the floor, never over
@@ -283,7 +287,9 @@ export function calibrationReport(input: CalibrationInput): CalibrationReport {
   const floor = value("search.dense_floor.bge-m3");
   const dense_near_floor = denseTop.filter((v) => v >= floor && v < floor + 0.05).length;
   const meaning_lead = input.meaning_lead ?? null;
-  suggestions.push(meaningLeadFromLog(input.recall_log, floor, meaning_lead?.threshold ?? null));
+  const leadSuggestion = meaningLeadFromLog(input.recall_log, floor, meaning_lead?.threshold ?? null);
+  suggestions.push(leadSuggestion);
+  const meaning_lead_apply: MeaningLeadApply | null = leadSuggestion.suggested !== null && leadSuggestion.sample >= MIN_SAMPLE && input.today ? { threshold: leadSuggestion.suggested, sample: leadSuggestion.sample, source: "calibrate", measured_at: input.today, model: input.model_key ?? null } : null;
   gaps.push("The log does not record whether a push was right, so the meaning-lead suggestion from it is weaker evidence than npm run proof:search, which measures the search service on known texts; rows written after a line was applied are never used, so the suggestion cannot feed on its own effect.");
   if (judgedWithout) gaps.push(`${judgedWithout} judged push${judgedWithout === 1 ? "" : "es"} carr${judgedWithout === 1 ? "ies" : "y"} no judge answers (recorded before this version); counted under judged only.`);
   if (denseWithout) gaps.push(`${denseWithout} push${denseWithout === 1 ? "" : "es"} used Better search with no passage over the floor, or before the top cosine was recorded; counted under dense only.`);
@@ -293,7 +299,7 @@ export function calibrationReport(input: CalibrationInput): CalibrationReport {
   return {
     thresholds: [...THRESHOLDS],
     sorting: { answers: input.s1_answers.length, noul: nouls, kind: safeBag(kind), decisions, review_near_line, feedback: safeBag(feedback) },
-    recall: { pushes: input.recall_log.length, by_client: safeBag(by_client), candidates, hits: safeBag(hits), judged, judge_answered: safeBag(judge_answered), judge_owner_world: histogram(ownerWorld), dense, dense_top: histogram(denseTop), dense_near_floor, embedded: input.embedded, meaning_lead },
+    recall: { pushes: input.recall_log.length, by_client: safeBag(by_client), candidates, hits: safeBag(hits), judged, judge_answered: safeBag(judge_answered), judge_owner_world: histogram(ownerWorld), dense, dense_top: histogram(denseTop), dense_near_floor, embedded: input.embedded, meaning_lead, meaning_lead_apply },
     suggestions,
     gaps,
   };
@@ -339,6 +345,12 @@ export function renderCalibration(r: CalibrationReport): string {
   lines.push(lead ? `  Meaning matches can lead: ${lead.threshold}, applied ${lead.applied_at.slice(0, 10)} from ${lead.source} (${lead.sample} queries measured ${lead.measured_at}, model ${lead.key}).` : "  Meaning matches can lead: not set (a match found by meaning alone never leads a push).");
   lines.push("", "Suggestions (each is a suggestion only)");
   for (const s of r.suggestions) lines.push(`- ${s.threshold} = ${s.current ?? "unset"}: ${s.suggested === null ? "hold." : `consider ${s.suggested}.`} ${s.reason} ${HOLD}`);
+  const apply = r.recall.meaning_lead_apply;
+  if (apply) {
+    lines.push(`To apply the meaning-lead value (nothing here applies it): Settings → Better search → Meaning matches can lead, or PATCH /api/v1/preferences/meaning-lead with {"threshold": ${apply.threshold}, "sample": ${apply.sample}, "source": "${apply.source}", "measured_at": "${apply.measured_at}"}.`);
+    lines.push(`  sample ${apply.sample} counts pushes in the recall log that were led by a meaning match, written while no line was applied (quiet and full together); source ${apply.source}; measured ${apply.measured_at}; current search model ${apply.model ?? "unknown (Better search is off)"}.`);
+    lines.push("  The log rows carry no search-model key: rows written before a change of search model may not match the current one. Run npm run proof:search for stronger evidence.");
+  }
   lines.push("Each is weaker evidence than npm run proof:search when it comes from the log alone; apply a value only in Settings → Better search → Meaning matches can lead (or PATCH /api/v1/preferences/meaning-lead); nothing here applies it.");
   lines.push("", "What this report cannot see");
   for (const g of r.gaps) lines.push(`- ${g}`);

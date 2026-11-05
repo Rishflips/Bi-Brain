@@ -19,7 +19,7 @@ import { join, sep } from "node:path";
 import { embedFromEnv } from "../packages/providers/embed-env.ts";
 import { prepareEmbed } from "../packages/providers/embed.ts";
 import { BETTER_SEARCH, BETTER_SEARCH_STATUS, EMBED_VISIBILITIES, denseFloor, embedText, type QueryVector } from "../packages/domain/better-search.ts";
-import { suggestMeaningLead } from "../packages/domain/calibration.ts";
+import { foldLowestWanted, suggestMeaningLead } from "../packages/domain/calibration.ts";
 import { CANDIDATES_PER_LIST } from "../packages/domain/recall.ts";
 import { VectorCache, pendingEmbedRows, writeEmbeddings } from "../packages/storage/recall-vectors.ts";
 import { buildFixture, owner } from "../tests/eval/recall-fixture.ts";
@@ -138,7 +138,7 @@ async function run(): Promise<number> {
         positiveIds.add(c.id);
         const scan = cache.search(fx.store, { ...scope, limit: CANDIDATES_PER_LIST });
         const wantedScore = scan.find((m) => want.includes(m.ref_id))?.score;
-        if (wantedScore !== undefined) lowestWanted = Math.min(lowestWanted, wantedScore);
+        if (want.length) lowestWanted = foldLowestWanted(lowestWanted, wantedScore, denseFloor(key));
         console.log(`  ${c.id}: words ${okWords ? "hit" : "miss"}, dense ${okDense ? "hit" : "miss"} (wanted cosine ${wantedScore === undefined ? "none" : wantedScore.toFixed(2)})`);
         if (okWords) words += 1;
         if (okDense) dense += 1;

@@ -9,12 +9,12 @@ import { LATEST_MIGRATION, Storage } from "../../packages/storage/index.ts";
 import { Brain } from "../../packages/domain/service.ts";
 import type { Principal } from "../../packages/contracts/index.ts";
 import type { AskResult } from "../../packages/providers/system-one-ask.ts";
-import { BINS, MIN_SAMPLE, THRESHOLDS, calibrationReport, histogram, meaningLeadFromLog, renderCalibration, suggestMeaningLead, type CalibrationInput, type RecallLogRow, type S1AnswerRow } from "../../packages/domain/calibration.ts";
+import { BINS, MIN_SAMPLE, THRESHOLDS, calibrationReport, foldLowestWanted, histogram, meaningLeadFromLog, renderCalibration, suggestMeaningLead, type CalibrationInput, type RecallLogRow, type S1AnswerRow } from "../../packages/domain/calibration.ts";
 import { S1_THRESHOLDS } from "../../packages/domain/system-one.ts";
 import { PUSH_THRESHOLDS } from "../../packages/domain/recall-push.ts";
 import { JUDGE_THRESHOLDS } from "../../packages/domain/recall-judge.ts";
 import { DENSE_FLOORS, DENSE_WEIGHT } from "../../packages/domain/better-search.ts";
-import type { MeaningLead } from "../../packages/domain/better-search.ts";
+import { meaningLeadInputSchema, type MeaningLead } from "../../packages/domain/better-search.ts";
 import { buildFixture } from "../eval/recall-fixture.ts";
 import { embedFixture } from "../eval/dense-fixture.ts";
 import { DURABLE_LOW } from "../../packages/storage/recall-index.ts";
@@ -466,5 +466,29 @@ describe("meaning-lead suggestions", () => {
     expect(unset).toContain("Meaning matches can lead: not set (a match found by meaning alone never leads a push).");
     expect(unset).toMatch(/search\.meaning_lead = unset: hold\./u);
     expect(calibrationReport(empty).recall.meaning_lead).toBeNull();
+  });
+  it("prints everything the route needs for the log suggestion, and it passes the route's validation", () => {
+    const none = Array.from({ length: 25 }, (_, i) => row({ dense: true, lead_cos: 0.46 + (i % 10) * 0.01, level: "none" }));
+    const full = Array.from({ length: 25 }, (_, i) => row({ dense: true, lead_cos: 0.7 + (i % 10) * 0.01, level: "full" }));
+    const report = calibrationReport({ ...empty, recall_log: [...none, ...full], today: "2026-11-08", model_key: "ollama:bge-m3:none" });
+    const apply = report.recall.meaning_lead_apply!;
+    expect(apply).toMatchObject({ source: "calibrate", sample: 50, measured_at: "2026-11-08", model: "ollama:bge-m3:none" });
+    const { model: _model, ...body } = apply;
+    expect(meaningLeadInputSchema.safeParse(body).success).toBe(true);
+    const text = renderCalibration(report);
+    expect(text).toContain(`PATCH /api/v1/preferences/meaning-lead with {"threshold": ${apply.threshold}, "sample": 50, "source": "calibrate", "measured_at": "2026-11-08"}`);
+    expect(text).toContain("current search model ollama:bge-m3:none");
+    expect(text).toContain("rows written before a change of search model may not match");
+    // Under 20 of each, nothing is printed to apply.
+    const thin = calibrationReport({ ...empty, recall_log: [...none.slice(0, 19), ...full], today: "2026-11-08" });
+    expect(thin.recall.meaning_lead_apply).toBeNull();
+    expect(renderCalibration(thin)).not.toContain("To apply the meaning-lead value");
+  });
+  it("counts a wanted hit missing from the scan as below the floor, so it cannot hide an unsafe line", () => {
+    const lowest = foldLowestWanted(foldLowestWanted(1, 0.8, 0.45), undefined, 0.45);
+    expect(lowest).toBeLessThan(0.45);
+    const s = suggestMeaningLead({ highestNegative: 0.5, lowestWanted: lowest, floor: 0.45, negatives: 30, positives: 37 });
+    expect(s.suggested).toBeNull();
+    expect(s.reason).toMatch(/no safe value/u);
   });
 });

@@ -51,10 +51,12 @@ function main(): number {
     const s1_feedback: S1FeedbackRow[] = entities("s1_feedback").map((f) => ({ question: f?.question, choice: f?.choice, confidence: f?.confidence, action: f?.action }));
     const recall_log = setting<RecallLogRow[]>("recall_log", []);
     const meaning_lead = setting<MeaningLead | null>("meaning_lead", null);
+    const searchSetting = setting<{ mode?: string; key?: string } | null>("better_search", null);
+    const model_key = searchSetting && searchSetting.mode !== "off" && typeof searchSetting.key === "string" ? searchSetting.key : null;
     const embedded = table("recall_chunks")
       ? (db.prepare("SELECT embedding_model AS model, count(*) AS rows FROM recall_chunks WHERE embedding IS NOT NULL GROUP BY embedding_model").all() as { model: string | null; rows: number }[]).map((e) => ({ model: String(e.model ?? "unknown"), rows: Number(e.rows) }))
       : [];
-    const input: CalibrationInput = { recall_log: Array.isArray(recall_log) ? recall_log : [], s1_answers, s1_feedback, embedded, meaning_lead };
+    const input: CalibrationInput = { recall_log: Array.isArray(recall_log) ? recall_log : [], s1_answers, s1_feedback, embedded, meaning_lead, today: new Date().toISOString().slice(0, 10), model_key };
     const report = calibrationReport(input);
     console.log(asJson ? JSON.stringify(report, null, 2) : renderCalibration(report));
     return 0;
