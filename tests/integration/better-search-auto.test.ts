@@ -7,7 +7,7 @@ import { Brain } from "../../packages/domain/service.ts";
 import { createApp } from "../../apps/server/app.ts";
 import { publishBetterSearchStatus } from "../../apps/worker/embed.ts";
 import { BETTER_SEARCH, EMBED_VISIBILITIES, modelKey } from "../../packages/domain/better-search.ts";
-import { pendingEmbedRows, writeEmbeddings } from "../../packages/storage/recall-vectors.ts";
+import { countEmbedRows, pendingEmbedRows, writeEmbeddings } from "../../packages/storage/recall-vectors.ts";
 import { FAKE_EMBED_DIM, FAKE_EMBED_MODEL, fakeEmbed } from "../helpers/fake-embed.mjs";
 import type { Principal } from "../../packages/contracts/index.ts";
 
@@ -85,5 +85,73 @@ describe("automatic Better search", () => {
     expect((await req("GET", "/api/v1/preferences/better-search", undefined, headers)).json()).toMatchObject({ mode: "off", automatic: false, detected: true });
     const token = brain.createGrant(owner, { projects: ["inbox"], operations: ["read"], expires_at: "2027-01-01T00:00:00.000Z" }).token;
     expect((await req("GET", "/api/v1/preferences/better-search", undefined, { authorization: `Bearer ${token}` })).statusCode).toBe(403);
+  });
+});
+
+describe("automatic Better search across detection changes", () => {
+  const OTHER_MODEL = "synthetic-other-embed";
+  const OTHER_KEY = modelKey("ollama", OTHER_MODEL);
+  const publish = (brain: Brain, model: string, detected: boolean) =>
+    publishBetterSearchStatus(brain, { configured: true, provider: "ollama", model, key: modelKey("ollama", model), label: "ollama", detected, probe: detected ? "found" : "no_model" });
+  const embedAll = (store: Storage, key: string) => {
+    const rows = pendingEmbedRows(store, key, EMBED_VISIBILITIES.ollama, 64);
+    store.transaction(() => writeEmbeddings(store, key, FAKE_EMBED_DIM, rows.map((r) => ({ ...r, vector: Float32Array.from(fakeEmbed(r.text)) }))));
+    return rows.length;
+  };
+
+  it("follows detected, lost and found again without writing a choice, keeping and reusing the vectors under the same key", () => {
+    const { store, brain } = brainWith({ detected: true });
+    brain.capture(owner, { title: "Morning rhythm", body: "The crew sync is at 9 every morning.", visibility: "project", separate: true });
+    expect(embedAll(store, KEY)).toBeGreaterThan(0);
+    const embedded = countEmbedRows(store, KEY, EMBED_VISIBILITIES.ollama).embedded;
+    expect(embedded).toBeGreaterThan(0);
+
+    // Lost: a worker start without Ollama publishes an unconfigured status.
+    publishBetterSearchStatus(brain, { configured: false, reason: "Ollama is not running on this computer.", probe: "no_ollama" });
+    expect(brain.betterSearchSetting()).toEqual({ mode: "off", key: null, consented_at: null });
+    expect(brain.betterSearchAllowed().on).toBe(false);
+    expect(brain.betterSearch(owner)).toMatchObject({ mode: "off", automatic: false, detected: null, probe: "no_ollama", effective: false });
+    expect(store.setting(BETTER_SEARCH, null)).toBeNull();
+    expect(countEmbedRows(store, KEY, EMBED_VISIBILITIES.ollama).embedded).toBe(embedded);
+
+    // Found again with the same model: automatic again, and nothing needs preparing twice.
+    publish(brain, FAKE_EMBED_MODEL, true);
+    expect(brain.betterSearchSetting()).toEqual({ mode: "ollama", key: KEY, consented_at: null, automatic: true });
+    expect(brain.betterSearchAllowed()).toMatchObject({ on: true, reason: "ready" });
+    expect(store.setting(BETTER_SEARCH, null)).toBeNull();
+    expect(brain.betterSearch(owner)).toMatchObject({ automatic: true, detected: true, counts: { embedded, pending: 0 } });
+    expect(pendingEmbedRows(store, KEY, EMBED_VISIBILITIES.ollama, 64)).toEqual([]);
+  });
+
+  it("moves the automatic key with the worker's model and re-embeds instead of reusing vectors made by the old model", () => {
+    const { store, brain } = brainWith({ detected: true });
+    brain.capture(owner, { title: "Morning rhythm", body: "The crew sync is at 9 every morning.", visibility: "project", separate: true });
+    const prepared = embedAll(store, KEY);
+    expect(prepared).toBeGreaterThan(0);
+
+    publish(brain, OTHER_MODEL, true);
+    expect(brain.betterSearchSetting()).toEqual({ mode: "ollama", key: OTHER_KEY, consented_at: null, automatic: true });
+    expect(store.setting(BETTER_SEARCH, null)).toBeNull();
+    expect(brain.betterSearch(owner)).toMatchObject({ key: OTHER_KEY, counts: { embedded: 0, pending: prepared } });
+    expect(pendingEmbedRows(store, OTHER_KEY, EMBED_VISIBILITIES.ollama, 64)).toHaveLength(prepared);
+    embedAll(store, OTHER_KEY);
+    expect(countEmbedRows(store, OTHER_KEY, EMBED_VISIBILITIES.ollama)).toMatchObject({ embedded: prepared, pending: 0 });
+  });
+
+  it("reads off, not automatic, when nothing is stored and the worker found no Ollama", () => {
+    const { store, brain } = brainWith(null);
+    publishBetterSearchStatus(brain, { configured: false, reason: "Ollama is not running on this computer.", probe: "no_ollama" });
+    store.set("worker_heartbeat", brain.now());
+    expect(brain.betterSearchSetting()).toEqual({ mode: "off", key: null, consented_at: null });
+    expect(brain.betterSearch(owner)).toMatchObject({ mode: "off", automatic: false, detected: null, probe: "no_ollama", effective: false });
+    expect(store.setting(BETTER_SEARCH, null)).toBeNull();
+  });
+
+  it("is never automatic on a managed brain, even with a detected Ollama status", () => {
+    const { store } = brainWith({ detected: true });
+    const managed = new Brain(store, () => new Date(), "synthetic-tenant");
+    expect(managed.betterSearchSetting()).toEqual({ mode: "off", key: null, consented_at: null });
+    expect(managed.betterSearchAllowed()).toMatchObject({ on: false, reason: "Better search runs on the local app only." });
+    expect(store.setting(BETTER_SEARCH, null)).toBeNull();
   });
 });
