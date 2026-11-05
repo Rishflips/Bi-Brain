@@ -18,6 +18,7 @@ import {
   normalize,
   type BetterSearchStatus,
   type EmbedProvider,
+  type ProbeOutcome,
 } from "../../packages/domain/better-search.ts";
 import { pendingEmbedRows, writeEmbeddings, type VectorWrite } from "../../packages/storage/recall-vectors.ts";
 import { EmbedError, INPUT_REFUSED_STATUSES, prepareEmbed, type EmbedConfig, type EmbedResult, type PreparedEmbed } from "../../packages/providers/embed.ts";
@@ -32,7 +33,7 @@ export type EmbedClient = { config: EmbedConfig; fetcher?: typeof fetch };
  */
 export function publishBetterSearchStatus(
   brain: Brain,
-  from: { configured: true; provider: EmbedProvider; model: string; key: string; label: string } | { configured: false; reason: string },
+  from: { configured: true; provider: EmbedProvider; model: string; key: string; label: string; detected?: boolean; probe?: ProbeOutcome } | { configured: false; reason: string; probe?: ProbeOutcome },
 ) {
   const previous = brain.store.setting<BetterSearchStatus | null>(BETTER_SEARCH_STATUS, null);
   const same = from.configured && previous?.configured === true && previous.key === from.key;

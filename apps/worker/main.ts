@@ -36,7 +36,8 @@ import {
 import { loadConfig } from "../server/config.ts";
 import { Worker } from "./engine.ts";
 import { publishSystemOneStatus } from "./system-one.ts";
-import { embedFromEnv } from "../../packages/providers/embed-env.ts";
+import { embedSetup, shouldReprobe } from "../../packages/providers/embed-env.ts";
+import { startReprobe } from "./embed-reprobe.ts";
 import { publishBetterSearchStatus } from "./embed.ts";
 import { startJudgeLoop } from "./recall-judge.ts";
 import { startEmbedLoop } from "./recall-embed.ts";
@@ -499,14 +500,18 @@ if (config.mode === "managed") {
       ? { configured: true, label: sorting.label }
       : { configured: false, reason: sorting.reason },
   );
-  // Better search is read from the worker's environment only; the published status carries the model key and a label, never a credential.
-  const embed = embedFromEnv(process.env);
-  publishBetterSearchStatus(
-    brain,
-    embed.config
-      ? { configured: true, provider: embed.config.provider, model: embed.config.model, key: embed.key, label: embed.label }
-      : { configured: false, reason: embed.reason },
-  );
+  // Better search is read from the worker's environment only; with nothing set, a loopback Ollama is probed for the search model, once now
+  // and every 10 minutes while nothing was found. The published status carries the model key, a label and the probe's outcome, never a
+  // credential or anything from the probe's reply.
+  const embed = await embedSetup(process.env);
+  const publishEmbed = (setup: typeof embed) =>
+    publishBetterSearchStatus(
+      brain,
+      setup.config
+        ? { configured: true, provider: setup.config.provider, model: setup.config.model, key: setup.key, label: setup.label, detected: setup.detected, probe: setup.probe }
+        : { configured: false, reason: setup.reason, probe: setup.probe },
+    );
+  publishEmbed(embed);
   const worker = new Worker(
     brain,
     undefined,
@@ -526,8 +531,19 @@ if (config.mode === "managed") {
       })
     : null;
   // The query fast lane runs only here, beside the batch job, so the key and the endpoint never leave this process.
-  const embedLane = embed.config
-    ? startEmbedLoop({ brain, ledger: new LocalDispatchAccounting(storage, brain.clock), client: { config: embed.config }, owner: brain.ownerPrincipal(), workerId: worker.id })
+  const lane = (config: NonNullable<typeof embed.config>) =>
+    startEmbedLoop({ brain, ledger: new LocalDispatchAccounting(storage, brain.clock), client: { config }, owner: brain.ownerPrincipal(), workerId: worker.id });
+  let embedLane = embed.config ? lane(embed.config) : null;
+  // A later detection: publish it, hand the engine its client, and start the query lane. Nothing else changes; the owner's stored choice still wins.
+  const reprobe = shouldReprobe(process.env, embed)
+    ? startReprobe({
+        env: process.env,
+        onFound: (setup) => {
+          publishEmbed(setup);
+          worker.setEmbed({ config: setup.config });
+          embedLane ??= lane(setup.config);
+        },
+      })
     : null;
   let running = true;
   const stop = () => {
@@ -545,6 +561,7 @@ if (config.mode === "managed") {
     }
   }
   await judge?.stop();
+  reprobe?.stop();
   await embedLane?.stop();
   storage.close();
 }

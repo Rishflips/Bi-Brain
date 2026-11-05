@@ -69,7 +69,7 @@ export class Worker {
     /** Local sorting help. Null (the default) means it is not configured. */
     private readonly systemOne: SystemOneClient | null = null,
     /** Better search. Null (the default) means it is not configured on this computer. */
-    private readonly embed: EmbedClient | null = null,
+    private embed: EmbedClient | null = null,
   ) {
     if (brain.tenantId !== undefined) {
       // A tenant-bound brain must never fall back to local money. Without an
@@ -103,6 +103,10 @@ export class Worker {
       this.decisionAccounting = decisionAccounting;
       this.decisionProvider = decisionProvider;
     }
+  }
+  /** A late detection (the 10-minute re-probe found Ollama): the engine's batch job and self-heal check use the new client from the next tick. */
+  setEmbed(client: EmbedClient | null) {
+    this.embed = client;
   }
   /**
    * The owner principal for this worker's brain, derived per call rather than

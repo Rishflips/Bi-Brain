@@ -19,6 +19,7 @@ import { join, sep } from "node:path";
 import { embedFromEnv } from "../packages/providers/embed-env.ts";
 import { prepareEmbed } from "../packages/providers/embed.ts";
 import { BETTER_SEARCH, BETTER_SEARCH_STATUS, EMBED_VISIBILITIES, denseFloor, embedText, type QueryVector } from "../packages/domain/better-search.ts";
+import { foldLowestWanted, proofNegativeSets, suggestMeaningLead } from "../packages/domain/calibration.ts";
 import { CANDIDATES_PER_LIST } from "../packages/domain/recall.ts";
 import { VectorCache, pendingEmbedRows, writeEmbeddings } from "../packages/storage/recall-vectors.ts";
 import { buildFixture, owner } from "../tests/eval/recall-fixture.ts";
@@ -92,6 +93,12 @@ async function run(): Promise<number> {
       names: golden.cases.filter((c) => c.tags.includes("names")),
       negative: golden.cases.filter((c) => c.tags.includes("negative")),
     };
+    const extra = JSON.parse(readFileSync(join(process.cwd(), "tests/eval/recall-no-answer-v1.json"), "utf8")) as { queries: string[] };
+    // The extra no-answer queries feed only the threshold-suggestion scan; the PASS gate scores the golden set's own negatives, unchanged.
+    const negativeSets = proofNegativeSets(buckets.negative, extra.queries);
+    const scanOnly: Case[] = negativeSets.scanOnly.map((x) => ({ id: x.id, tags: ["negative", "extra"], principal: "owner" as const, query: x.query, expect: { must_include: [] as string[] } }));
+    const negativeIds = new Set<string>();
+    const positiveIds = new Set<string>();
     const cache = new VectorCache();
     const vectors = new Map<string, QueryVector>();
     const embedQuery = async (q: string): Promise<QueryVector> => {
@@ -108,6 +115,17 @@ async function run(): Promise<number> {
     const scores: Record<string, { words: number; dense: number }> = {};
     let lowestWanted = 1;
     let highestNegative = -1;
+    // Scan-only: nearest cosine for the suggestion, never a bucket score.
+    const scanExtra = async () => {
+      for (const c of scanOnly) {
+        const v = await embedQuery(c.query);
+        const scope = { vector: v.vector, key, dim, projects: fx.brain.recallCore(owner, { query: c.query, history: false, limit: 8 }, v).searched.projects.map((x) => x.id), visibilities: EMBED_VISIBILITIES[config.provider], status: "current" as const, floor: -1 };
+        negativeIds.add(c.id);
+        const scan = cache.search(fx.store, { ...scope, limit: 1 });
+        if (scan[0]) highestNegative = Math.max(highestNegative, scan[0].score);
+        console.log(`  ${c.id}: nearest cosine ${scan[0] ? scan[0].score.toFixed(2) : "none"} (suggestion scan only; not in the PASS gate)`);
+      }
+    };
     for (const [name, cases] of Object.entries(buckets)) {
       let words = 0;
       let dense = 0;
@@ -122,6 +140,7 @@ async function run(): Promise<number> {
         const okDense = want.every((id) => top5(withDense).includes(id));
         const scope = { vector: v.vector, key, dim, projects: withDense.searched.projects.map((x) => x.id), visibilities: EMBED_VISIBILITIES[config.provider], status: "current" as const, floor: -1 };
         if (name === "negative") {
+          negativeIds.add(c.id);
           const scan = cache.search(fx.store, { ...scope, limit: 1 });
           if (scan[0]) highestNegative = Math.max(highestNegative, scan[0].score);
           console.log(`  ${c.id}: ${withDense.status} (words: ${plain.status}; nearest cosine ${scan[0] ? scan[0].score.toFixed(2) : "none"})`);
@@ -129,9 +148,10 @@ async function run(): Promise<number> {
           if (plain.status === "no_match") words += 1;
           continue;
         }
+        positiveIds.add(c.id);
         const scan = cache.search(fx.store, { ...scope, limit: CANDIDATES_PER_LIST });
         const wantedScore = scan.find((m) => want.includes(m.ref_id))?.score;
-        if (wantedScore !== undefined) lowestWanted = Math.min(lowestWanted, wantedScore);
+        if (want.length) lowestWanted = foldLowestWanted(lowestWanted, wantedScore, denseFloor(key));
         console.log(`  ${c.id}: words ${okWords ? "hit" : "miss"}, dense ${okDense ? "hit" : "miss"} (wanted cosine ${wantedScore === undefined ? "none" : wantedScore.toFixed(2)})`);
         if (okWords) words += 1;
         if (okDense) dense += 1;
@@ -139,8 +159,16 @@ async function run(): Promise<number> {
       scores[name] = { words: words / cases.length, dense: dense / cases.length };
       console.log(`${name}: words ${scores[name].words.toFixed(2)}, dense ${scores[name].dense.toFixed(2)}`);
     }
+    await scanExtra();
     console.log(`\ncalls ${calls}, tokens ${tokens}${config.provider === "cloudflare" ? " (estimated unless reported)" : ""}, cost ${cost} micro-USD`);
     console.log(`lowest cosine of a wanted hit ${lowestWanted.toFixed(2)}; highest cosine of a no-answer query ${highestNegative.toFixed(2)}; floor ${denseFloor(key)}`);
+    const lead = suggestMeaningLead({ highestNegative, lowestWanted, floor: denseFloor(key), negatives: negativeIds.size, positives: positiveIds.size });
+    console.log(`
+Scanned ${negativeIds.size} no-answer queries (${golden.cases.filter((c) => c.tags.includes("negative")).length} from the golden set, ${extra.queries.length} from tests/eval/recall-no-answer-v1.json) and ${positiveIds.size} answered queries (distinct cases).`);
+    console.log("Meaning matches can lead (a suggestion only; nothing here applies it. Apply it yourself in Settings → Better search → Meaning matches can lead, or with PATCH /api/v1/preferences/meaning-lead and the threshold, sample, source proof:search and measured date below):");
+    console.log(lead.suggested === null ? `  no value suggested. ${lead.reason}` : `  threshold ${lead.suggested}  sample ${lead.sample} no-answer queries  source proof:search  measured ${new Date().toISOString().slice(0, 10)}  model ${key}
+  Why: ${lead.reason}`);
+    console.log("  This measures the real model on BiBrain's synthetic texts, not on your notes.");
     const pass = scores.paraphrase.dense >= 0.8 && scores["cross-language"].dense >= 0.8 && scores.lexical.dense >= scores.lexical.words && scores.names.dense >= scores.names.words && scores.negative.dense >= 0.85;
     console.log(pass ? "\nPASS" : "\nFAIL");
     return pass ? 0 : 1;

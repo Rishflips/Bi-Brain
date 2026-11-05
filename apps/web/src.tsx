@@ -23,7 +23,7 @@ import type { OpenSourceOptions } from "./today/types.ts";
 import "./brain/brain.css";
 import { ConnectionsView } from "./connections/ConnectionsView.tsx";
 import "./connections/connections.css";
-import { betterSearchCanSave, plainSearchProblem, plainSearchReason } from "./better-search-copy.ts";
+import { AUTOMATIC_NOTICE, DETECTED_HINT, betterSearchCanSave, meaningLeadLine, type MeaningLeadView, plainProbe, plainSearchProblem, plainSearchReason } from "./better-search-copy.ts";
 import {
   AgentClientPicker,
   AgentSetupGuide,
@@ -113,6 +113,9 @@ type BetterSearch = {
   failures: number;
   retry_at: string | null;
   paused_until: string | null;
+  automatic: boolean;
+  detected: boolean | null;
+  probe: "found" | "no_ollama" | "no_model" | "skipped" | null;
 };
 const BETTER_LABELS = { ollama: "Ollama on this computer", cloudflare: "Cloudflare" } as const;
 /** The one plain line Settings shows about better search. */
@@ -122,7 +125,8 @@ function betterSearchLine(b: BetterSearch): string {
   if (!b.effective) return `Words only right now: ${plainSearchReason(b.reason)}`;
   const label = b.status?.label ?? BETTER_LABELS[b.mode];
   const ready = `${b.counts.embedded} of ${b.counts.total} passages ready`;
-  return b.counts.pending > 0 ? `On · ${label} · ${ready}; preparing the rest in the background` : `On · ${label} · ${ready}`;
+  const on = b.automatic ? "On (this computer)" : "On";
+  return b.counts.pending > 0 ? `${on} · ${label} · ${ready}; preparing the rest in the background` : `${on} · ${label} · ${ready}`;
 }
 /**
  * Monotonic auth generation. It advances whenever the browser session is
@@ -358,6 +362,9 @@ function App() {
   // Better search is also its own consent, with its own routes.
   const [better, setBetter] = useState<BetterSearch | null>(null);
   const [betterChoice, setBetterChoice] = useState<BetterSearch["mode"]>("off");
+  const [lead, setLead] = useState<MeaningLeadView | null>(null);
+  const [leadError, setLeadError] = useState("");
+  const [leadForm, setLeadForm] = useState({ threshold: "", sample: "", source: "proof:search", measured_at: "" });
   const betterTouched = useRef(false);
   const [consentOverride, setConsentOverride] = useState<boolean | null>(null);
   // An INDEPENDENT override for the separate decision-stage consent. It is never
@@ -513,6 +520,9 @@ function App() {
     setSavedRecallHelp(false);
     recallConsentTouched.current = false;
     setBetter(null);
+    setLead(null);
+    setLeadError("");
+    setLeadForm({ threshold: "", sample: "", source: "proof:search", measured_at: "" });
     setBetterChoice("off");
     betterTouched.current = false;
     setSavedPrefs(null);
@@ -654,6 +664,16 @@ function App() {
     // until a runtime response validates.
     void bootstrap();
   }, [bootstrap, retryNonce]);
+  useEffect(() => {
+    // The meaning-lead line changes only when the owner applies or clears it, so it is read when Settings opens,
+    // not on every 2.5-second refresh (which would add a request per poll per open page).
+    if (!paired || demo || nav !== "Settings") return;
+    let live = true;
+    void api<MeaningLeadView>("/preferences/meaning-lead")
+      .then((view) => { if (live) setLead(view); })
+      .catch(() => { if (live) setLead(null); });
+    return () => { live = false; };
+  }, [paired, demo, nav]);
   useEffect(() => {
     if (!paired || demo) return;
     const timer = setInterval(() => {
@@ -1501,6 +1521,9 @@ function App() {
                   <h2>Better search</h2>
                   <p>Find notes by what they mean, not only by the words you used, in any language you write in.</p>
                   <p className="status" role="status">{betterSearchLine(better)}</p>
+                  {better.automatic ? <p className="muted">{AUTOMATIC_NOTICE}</p> : null}
+                  {better.mode === "off" && better.detected === true ? <p className="muted">{DETECTED_HINT}</p> : null}
+                  {better.mode === "off" && plainProbe(better.probe) ? <p className="muted">Last check: {plainProbe(better.probe)}</p> : null}
                   {better.status?.last_error ? <p className="muted">Last problem: {plainSearchProblem(better.status.last_error)}</p> : null}
                   <form
                     onSubmit={(e) => {
@@ -1510,6 +1533,7 @@ function App() {
                           const saved = await api<{ mode: BetterSearch["mode"] }>("/preferences/better-search", { mode: betterChoice }, "PATCH");
                           const now = await api<BetterSearch>("/preferences/better-search");
                           setBetter(now);
+                          setLead(await api<MeaningLeadView>("/preferences/meaning-lead").catch(() => null));
                           setBetterChoice(saved.mode);
                           betterTouched.current = false;
                           setNotice(saved.mode === "off" ? "Better search is off." : "Better search saved. Your notes are being prepared in the background.");
@@ -1545,6 +1569,46 @@ function App() {
                     </div>
                     <small className="muted">Changing this choice later clears what was prepared and starts again.</small>
                   </form>
+                  {lead ? (
+                    <section aria-labelledby="meaning-lead-heading">
+                      <h3 id="meaning-lead-heading">Meaning matches can lead</h3>
+                      <p className="status" data-testid="meaning-lead-line" aria-live="polite">{meaningLeadLine(lead)}</p>
+                      {lead.reason !== "Turn Better search on first." && lead.reason !== "Better search is not running right now." ? (
+                        <form
+                          onSubmit={(e) => {
+                            e.preventDefault();
+                            void act(async () => {
+                              setLeadError("");
+                              try {
+                                await api("/preferences/meaning-lead", { threshold: Number(leadForm.threshold), sample: Number(leadForm.sample), source: leadForm.source, measured_at: leadForm.measured_at }, "PATCH");
+                              } catch (error) {
+                                setLeadError(error instanceof Error ? error.message : "That value could not be applied.");
+                                return;
+                              }
+                              setLead(await api<MeaningLeadView>("/preferences/meaning-lead"));
+                              setLeadForm({ threshold: "", sample: "", source: "proof:search", measured_at: "" });
+                              setNotice("Meaning matches can now lead a push at the value you entered.");
+                            });
+                          }}
+                        >
+                          <label>Score (from the tool's suggestion) <input type="number" step="0.01" min="0" max="0.99" required value={leadForm.threshold} onChange={(e) => setLeadForm({ ...leadForm, threshold: e.target.value })} /></label>
+                          <label>{leadForm.source === "calibrate" ? "Pushes measured" : "Queries measured"} <input type="number" step="1" min="20" required value={leadForm.sample} onChange={(e) => setLeadForm({ ...leadForm, sample: e.target.value })} /></label>
+                          <label>Measured by <select value={leadForm.source} onChange={(e) => setLeadForm({ ...leadForm, source: e.target.value })}><option value="proof:search">npm run proof:search</option><option value="calibrate">npm run calibrate</option></select></label>
+                          <label>Measured on <input type="date" required value={leadForm.measured_at} onChange={(e) => setLeadForm({ ...leadForm, measured_at: e.target.value })} /></label>
+                          {leadError ? <p className="status" role="alert" data-testid="meaning-lead-error">{leadError}</p> : null}
+                          <div className="actions">
+                            <button type="submit" disabled={busy}>Apply this value</button>
+                          </div>
+                          <small className="muted">Nothing is applied by itself. Enter the value a measurement printed, with its sample size and date.</small>
+                        </form>
+                      ) : null}
+                      {lead.lead ? (
+                        <div className="actions">
+                          <button type="button" disabled={busy} onClick={() => void act(async () => { setLeadError(""); await api("/preferences/meaning-lead", {}, "DELETE"); setLead(await api<MeaningLeadView>("/preferences/meaning-lead")); setLeadForm({ threshold: "", sample: "", source: "proof:search", measured_at: "" }); setNotice("Meaning matches no longer lead a push."); })}>Clear this value</button>
+                        </div>
+                      ) : null}
+                    </section>
+                  ) : null}
                 </article>
               ) : null}
               {prefs && savedPrefs && (sorting || sortingUnavailable) && runtime?.mode !== "managed" ? (

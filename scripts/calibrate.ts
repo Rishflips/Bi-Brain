@@ -12,8 +12,9 @@
 import { existsSync } from "node:fs";
 import { resolve } from "node:path";
 import { DatabaseSync } from "node:sqlite";
+import type { MeaningLead } from "../packages/domain/better-search.ts";
 import { LATEST_MIGRATION } from "../packages/storage/index.ts";
-import { calibrationReport, renderCalibration, type CalibrationInput, type RecallLogRow, type S1AnswerRow, type S1FeedbackRow } from "../packages/domain/calibration.ts";
+import { calibrationReport, effectiveSearchModelKey, renderCalibration, type CalibrationInput, type RecallLogRow, type S1AnswerRow, type S1FeedbackRow } from "../packages/domain/calibration.ts";
 
 const args = process.argv.slice(2);
 const dbFlag = args.indexOf("--db");
@@ -49,10 +50,14 @@ function main(): number {
     const s1_answers: S1AnswerRow[] = entities("s1_answer").map((a) => ({ answers: Array.isArray(a?.answers) ? a.answers : [] }));
     const s1_feedback: S1FeedbackRow[] = entities("s1_feedback").map((f) => ({ question: f?.question, choice: f?.choice, confidence: f?.confidence, action: f?.action }));
     const recall_log = setting<RecallLogRow[]>("recall_log", []);
+    const meaning_lead = setting<MeaningLead | null>("meaning_lead", null);
+    const searchSetting = setting<{ mode?: string; key?: string } | null>("better_search", null);
+    // A stored choice wins (Off names no model); with none, the key the worker published when it found Ollama (Better search on by itself).
+    const model_key = effectiveSearchModelKey(searchSetting, setting<{ configured?: boolean; provider?: string; detected?: boolean; key?: string } | null>("better_search_status", null));
     const embedded = table("recall_chunks")
       ? (db.prepare("SELECT embedding_model AS model, count(*) AS rows FROM recall_chunks WHERE embedding IS NOT NULL GROUP BY embedding_model").all() as { model: string | null; rows: number }[]).map((e) => ({ model: String(e.model ?? "unknown"), rows: Number(e.rows) }))
       : [];
-    const input: CalibrationInput = { recall_log: Array.isArray(recall_log) ? recall_log : [], s1_answers, s1_feedback, embedded };
+    const input: CalibrationInput = { recall_log: Array.isArray(recall_log) ? recall_log : [], s1_answers, s1_feedback, embedded, meaning_lead, today: new Date().toISOString().slice(0, 10), model_key };
     const report = calibrationReport(input);
     console.log(asJson ? JSON.stringify(report, null, 2) : renderCalibration(report));
     return 0;

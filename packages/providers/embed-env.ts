@@ -1,5 +1,6 @@
-import { CLOUDFLARE_EMBED_MODEL, CLOUDFLARE_EMBED_PRICE, OLLAMA_EMBED_ENDPOINT, OLLAMA_EMBED_MODEL, PROVIDER_LABELS, modelKey } from "../domain/better-search.ts";
+import { CLOUDFLARE_EMBED_MODEL, CLOUDFLARE_EMBED_PRICE, OLLAMA_EMBED_ENDPOINT, OLLAMA_EMBED_MODEL, PROVIDER_LABELS, EMBED_OFF_BY_SETUP, PROBE_REASONS, modelKey, type ProbeOutcome } from "../domain/better-search.ts";
 import { resolveEmbedConfig, type EmbedConfig } from "./embed.ts";
+import { detectOllamaModel } from "./ollama-detect.ts";
 
 const LOOPBACK_HOSTS = ["127.0.0.1", "localhost", "[::1]"];
 const MODEL = /^[A-Za-z0-9@][A-Za-z0-9_.:/-]{0,79}$/u;
@@ -50,4 +51,29 @@ export function embedFromEnv(env: Record<string, string | undefined>): { config:
     return off(error instanceof Error ? error.message : "Better search is set up incorrectly.");
   }
   return { config, label: PROVIDER_LABELS[provider], key: modelKey(provider, model) };
+}
+
+export type EmbedSetup = { config: EmbedConfig; label: string; key: string; detected: boolean; probe: ProbeOutcome } | { config: null; reason: string; probe: ProbeOutcome };
+
+/**
+ * The worker's startup setup. `off` skips everything. Nothing set means: look for Ollama with the search model on loopback and,
+ * if it is there, set up exactly as `BRAIN_EMBED_PROVIDER=ollama` would. An explicit Ollama setup is kept whatever the probe finds,
+ * marked `detected` only when the model is listed; Cloudflare is never probed and never detected.
+ */
+export async function embedSetup(env: Record<string, string | undefined>, probe: typeof detectOllamaModel = detectOllamaModel): Promise<EmbedSetup> {
+  const provider = (env.BRAIN_EMBED_PROVIDER ?? "").trim();
+  if (provider === "off") return { config: null, reason: EMBED_OFF_BY_SETUP, probe: "skipped" };
+  const base = embedFromEnv(provider ? env : { ...env, BRAIN_EMBED_PROVIDER: "ollama" });
+  if (!base.config) return { ...base, probe: "skipped" };
+  if (base.config.provider !== "ollama") return { ...base, detected: false, probe: "skipped" };
+  const result = await probe({ endpoint: base.config.endpoint, model: base.config.model });
+  if (result.found) return { ...base, detected: true, probe: "found" };
+  if (provider) return { ...base, detected: false, probe: result.outcome };
+  return { config: null, reason: PROBE_REASONS[result.outcome], probe: result.outcome };
+}
+
+/** Whether the worker should look again later: only with nothing set and a probe that found no Ollama or no model. Never for off, an explicit provider, an invalid setup, or found. */
+export function shouldReprobe(env: Record<string, string | undefined>, setup: EmbedSetup): boolean {
+  if ((env.BRAIN_EMBED_PROVIDER ?? "").trim()) return false;
+  return setup.config === null && (setup.probe === "no_ollama" || setup.probe === "no_model");
 }

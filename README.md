@@ -46,7 +46,7 @@ You save a note once, or your coding agents write one when they finish work. BiB
   - it can wake a review you already planned.
 
   It only suggests, and it stays within the daily limits you set.
-- **Better search (optional).** Designed to find notes by meaning, including across languages such as English and Tamil, with Ollama on your computer or Cloudflare. Live quality is not yet measured (the owner-run `npm run proof:search` measures it). Off by default.
+- **Better search (optional).** Designed to find notes by meaning, including across languages such as English and Tamil, with Ollama on your computer or Cloudflare. Live quality is not yet measured (the owner-run `npm run proof:search` measures it). On by itself when Ollama with the search model is found on your computer; never with Cloudflare unless you choose it.
 - **Watch.** Turn a project off and it goes quiet on Today, while everything stays in Your brain.
 
 ![Asking the bar a question; the answer quotes the saved original (synthetic sample)](docs/screenshots/today-v2-ask.png)
@@ -122,12 +122,12 @@ A few details:
 
 ## Optional better search
 
-Better search finds a note by what it means, not only by the words you used. It is off by default and everything works without it.
+Better search finds a note by what it means, not only by the words you used. When Ollama with `bge-m3` is on your computer, BiBrain turns it on for you and says so in Settings; one switch turns it off. Everything works without it. Nothing has been calibrated on real data yet: a meaning match never leads a push to an agent until you apply a measured score yourself (Settings, Better search, Meaning matches can lead).
 
-1. Pick one and add its lines to `.env` (git-ignored). Ollama needs Ollama installed and `ollama pull bge-m3` run once; nothing leaves your computer.
+1. For Ollama, install it and run `ollama pull bge-m3` once; BiBrain finds it by itself and nothing leaves your computer. The `.env` lines below (git-ignored) are needed only for Cloudflare or a different model.
 
    ```bash
-   # On this computer (Ollama)
+   # On this computer (Ollama), only to pin it or use another model
    BRAIN_EMBED_PROVIDER=ollama
 
    # or Cloudflare Workers AI (shares the two lines with sorting help)
@@ -136,7 +136,7 @@ Better search finds a note by what it means, not only by the words you used. It 
    BRAIN_DECISION_API_KEY=your-workers-ai-token
    ```
 
-2. Restart BiBrain, then choose it in **Settings → Better search**. The Cloudflare choice says what is sent (notes, searches and the questions connected agents ask; never private notes), what it costs and that it counts against your daily limit.
+2. Restart BiBrain. With Ollama it is already on once the model is found (the probe runs when the background worker starts and every 10 minutes while nothing is found). For Cloudflare, or to turn it off, use **Settings → Better search**. The Cloudflare choice says what is sent (notes, searches and the questions connected agents ask; never private notes), what it costs and that it counts against your daily limit.
 
 Details and the live check: [Providers](docs/PROVIDERS.md) (`npm run proof:search`, owner-run).
 
@@ -151,15 +151,15 @@ Details and the live check: [Providers](docs/PROVIDERS.md) (`npm run proof:searc
 
 ## Status
 
-BiBrain is a working **single-owner local app**. This table is the honest state as of 2026-11-05. The verified details and the commands that ran are in [BUILD_STATE.md](BUILD_STATE.md).
+BiBrain is a working **single-owner local app**. This table is the honest state as of 2026-11-06. The verified details and the commands that ran are in [BUILD_STATE.md](BUILD_STATE.md).
 
 | Area | State |
 | --- | --- |
-| Local app: Today, Your brain, Connections, Settings | Works end to end; verified in CI on Ubuntu and locally on Windows with 2,040 Vitest tests and 111 Playwright browser tests (macOS not yet tested) |
+| Local app: Today, Your brain, Connections, Settings | Works end to end; verified in CI on Ubuntu and locally on Windows with 2,121 Vitest tests and 111 Playwright browser tests (macOS not yet tested) |
 | One-step agent connections with recall on every prompt | Verified in real Claude Code and Codex runs on Windows (`npm run proof:recall`, hook on and off); Cursor not yet run natively |
 | Any other agent (Hermes, remote MCP, command hooks) | One documented contract; the Hermes plugin and the HTTP MCP endpoint are tested against the documented contracts with fakes, not yet run natively |
 | Sorting help with Clef | One live check through Ollama Cloud validated 3 of 3 answers; one threshold moved on that evidence, and `npm run calibrate` shows how your own answers fall around the rest |
-| Better search with embeddings | Built and gated against a fake embedder; a live run is owner-run (`npm run proof:search`) |
+| Better search with embeddings | Built and gated against a fake embedder; on by itself with a local Ollama; a live run and the meaning-lead score are owner-run (`npm run proof:search`) |
 | Self-hosting on your own server | Supported: [Self-hosting](docs/SELF_HOSTING.md) and `deploy/compose.yaml` |
 | Hosted edition and payments | Paused; the code is kept but not deployed |
 

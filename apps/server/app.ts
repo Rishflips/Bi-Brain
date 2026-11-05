@@ -896,6 +896,10 @@ export async function createApp(
   // Better search is its own consent beside the preferences; the domain refuses a provider the worker has not published and clears vectors on any change.
   app.get("/api/v1/preferences/better-search", (req) => req.brain.betterSearch(req.principal));
   app.patch("/api/v1/preferences/better-search", (req) => req.brain.setBetterSearch(req.principal, req.body));
+  // Meaning matches can lead: an owner-applied line with its provenance, bound to the search model it was measured for. Never set by a tool or an agent.
+  app.get("/api/v1/preferences/meaning-lead", (req) => req.brain.meaningLead(req.principal));
+  app.patch("/api/v1/preferences/meaning-lead", (req) => req.brain.setMeaningLead(req.principal, req.body));
+  app.delete("/api/v1/preferences/meaning-lead", (req) => req.brain.clearMeaningLead(req.principal));
   app.patch("/api/v1/preferences/background", (req) => {
     // A managed account cannot switch paid processing on unless this deployment's
     // operator policy is configured and a fresh worker lease exists. An explicit

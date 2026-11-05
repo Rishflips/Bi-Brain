@@ -87,7 +87,8 @@ describe.skipIf(!py)("Hermes plugin", () => {
     expect(r.out.stdlib_only).toBe(true);
     expect(r.out.imports).toContain("urllib.request");
     // Only the manifest keys the Hermes plugins guide documents: name, version, description, requires_env (name, description, url, secret), provides_hooks.
-    const manifest = readFileSync(resolve(plugin, "plugin.yaml"), "utf8");
+    // Normalise line endings so the check holds on any checkout.
+    const manifest = readFileSync(resolve(plugin, "plugin.yaml"), "utf8").replace(/\r\n/g, "\n");
     expect(manifest).toContain("name: bibrain");
     expect(manifest).toMatch(/requires_env:\s*\n\s*- name: BRAIN_AGENT_TOKEN\s*\n(?:\s+\w+: .*\n)*?\s+secret: true/);
     expect(manifest).toMatch(/- name: BRAIN_API_URL/);

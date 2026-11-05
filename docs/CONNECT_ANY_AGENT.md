@@ -91,7 +91,7 @@ Rules for the caller:
 - **Hash the session id yourself.** Send `sha256(session id)` as lowercase hex. The server never sees the raw id.
 - **Cut the prompt to 500 code points.** A longer prompt is refused.
 - **Send marker lines only.** Keep the lines that start with `Decided: <topic>: <decision>`, `Open question: …` (also `Question:`, `Unclear:`, `Still unclear:`) and `Next step: …`. Skip fenced code blocks. The last 10 decisions, the last 10 questions and the last next step are enough. Send nothing unless a decision or a question is present.
-- **Skip what should not travel.** Do not send prompts shorter than 12 characters, slash, bang or hash commands, or anything that looks like a secret.
+- **Skip what should not travel.** Do not send prompts shorter than 12 characters, except the continuation phrases the hook sends (`continue`, `go on`, `keep going`, `carry on`, `proceed`, `next`, `resume`, `where were we`, `what did we decide`, `recap` and the rest of the list in `apps/cli/lib.mjs`), slash, bang or hash commands, or anything that looks like a secret.
 - **Keep the budgets.** Wait at most 1,500 ms for recall and 2,500 ms for a note. Enforce this yourself, including DNS. Do not follow redirects.
 - **Never block the turn.** On a timeout, an error or an odd reply, carry on with nothing.
 

@@ -1,3 +1,4 @@
+import { z } from "zod";
 import type { RecallVisibility } from "../storage/recall-index.ts";
 
 export type EmbedProvider = "ollama" | "cloudflare";
@@ -38,10 +39,17 @@ export const OLLAMA_EMBED_ENDPOINT = "http://127.0.0.1:11434/api/embed";
 /** $0.012 per million tokens, as integer micro-USD per million tokens. */
 export const CLOUDFLARE_EMBED_PRICE = { version: "cf-bge-m3-2026-10-27", input_micro_usd_per_million: 12_000 } as const;
 export const PROVIDER_LABELS: Record<EmbedProvider, string> = { ollama: "Ollama on this computer", cloudflare: "Cloudflare" };
+/** What the worker's startup probe of a loopback Ollama found. Key-free, like everything else on the status. */
+export type ProbeOutcome = "found" | "no_ollama" | "no_model" | "skipped";
+export const EMBED_OFF_BY_SETUP = "Better search is turned off by this computer's setup.";
+export const PROBE_REASONS: Record<"no_ollama" | "no_model", string> = {
+  no_ollama: "Ollama was not found on this computer when BiBrain started.",
+  no_model: "Ollama is running on this computer, but its search model is not pulled.",
+};
 /** What each provider may embed. Cloudflare never receives private sources, owner-only facts or quarantined notes (visibility private). */
 export const EMBED_VISIBILITIES: Record<EmbedProvider, RecallVisibility[]> = { ollama: ["project", "private", "owner"], cloudflare: ["project"] };
 
-export type BetterSearchSetting = { mode: BetterSearchMode; key: string | null; consented_at: string | null };
+export type BetterSearchSetting = { mode: BetterSearchMode; key: string | null; consented_at: string | null; /** True only for the reading of an absent row: on because the worker found Ollama with the model on this computer. Never stored. */ automatic?: boolean };
 export const BETTER_SEARCH_OFF: BetterSearchSetting = { mode: "off", key: null, consented_at: null };
 export type BetterSearchStatus = {
   configured: boolean;
@@ -59,6 +67,9 @@ export type BetterSearchStatus = {
   retry_at?: string;
   /** Set after three consecutive failures: nothing is embedded until it passes. */
   paused_until?: string;
+  /** The startup probe of a loopback Ollama: whether the configured model was listed, and what the probe saw. Absent before this version. */
+  detected?: boolean;
+  probe?: ProbeOutcome;
 };
 export type QueryVector = { vector: Float32Array; key: string; dim: number };
 
@@ -137,3 +148,21 @@ export function betterSearchEffective(setting: BetterSearchSetting, status: Bett
   if (!workerRunning) return { on: false, reason: "BiBrain's background worker is not running." };
   return { on: true, reason: "ready" };
 }
+
+/** The owner-applied "meaning matches can lead" line (plan 10). Unset by default; set only by the owner from a measured suggestion; bound to the model key it was measured for. */
+export const MEANING_LEAD = "meaning_lead";
+export const MEANING_LEAD_MIN_SAMPLE = 20;
+export const MEANING_LEAD_MAX = 0.99;
+/** Settings' line under "Meaning matches can lead" when Better search was on by itself and has stopped. */
+export const MEANING_LEAD_NOT_RUNNING = "Better search is not running right now.";
+export const MEANING_LEAD_SOURCES = ["proof:search", "calibrate"] as const;
+export type MeaningLeadSource = (typeof MEANING_LEAD_SOURCES)[number];
+export type MeaningLead = { threshold: number; key: string; sample: number; source: MeaningLeadSource; measured_at: string; applied_at: string };
+export const meaningLeadInputSchema = z
+  .object({
+    threshold: z.number().finite(),
+    sample: z.number().int().min(MEANING_LEAD_MIN_SAMPLE),
+    source: z.enum(MEANING_LEAD_SOURCES),
+    measured_at: z.string().regex(/^\d{4}-\d{2}-\d{2}$/u),
+  })
+  .strict();

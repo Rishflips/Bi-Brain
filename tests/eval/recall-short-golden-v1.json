@@ -1,0 +1,32 @@
+{
+  "version": 1,
+  "note": "Short, continuation, acknowledgement and decision-shaped prompts, run through recallPush as session sequences, with Better search off and with the fake embedder on. A failing case is a finding to report, never a reason to widen a list or lower a line.",
+  "cases": [
+    { "id": "short-01", "tags": ["short", "continuation", "first"], "session": "s1", "steps": [
+      { "prompt": "continue", "first_prompt": true, "expect": { "level": "pointer", "digest": true, "text_includes": "The owner's brain (bibrain) covers Northstar", "hit_ids": [], "log": { "intent": "continuation", "topic": "digest" } } } ] },
+    { "id": "short-02", "tags": ["short", "continuation", "no-repeat"], "session": "s2", "steps": [
+      { "prompt": "what did we pick for the caterer", "first_prompt": true, "expect": { "level": "full", "hit_includes": ["fact:caterer"], "log": { "intent": "decision" } } },
+      { "prompt": "continue", "first_prompt": false, "seen_previous": true, "expect": { "level_in": ["none", "pointer"], "hit_excludes": ["fact:caterer"], "log": { "intent": "continuation", "topic": "session" } } } ] },
+    { "id": "short-03", "tags": ["short", "continuation", "no-repeat"], "session": "s3", "steps": [
+      { "prompt": "when does the beta open", "first_prompt": true, "expect": { "level": "full", "hit_includes": ["fact:beta-opens"] } },
+      { "prompt": "what did we decide", "first_prompt": false, "seen_previous": true, "expect": { "level_in": ["none", "pointer"], "hit_excludes": ["fact:beta-opens"], "log": { "intent": "continuation", "topic": "session" } } } ] },
+    { "id": "short-04", "tags": ["short", "continuation", "no-topic"], "session": "s4", "steps": [
+      { "prompt": "how do I reverse a linked list in Python", "first_prompt": true, "expect": { "level": "none" } },
+      { "prompt": "continue", "first_prompt": false, "expect": { "level": "none", "text": "", "digest": false, "log": { "intent": "continuation", "topic": "none" } } } ] },
+    { "id": "short-05", "tags": ["short", "ack"], "session": "s5", "steps": [
+      { "prompt": "thanks", "first_prompt": true, "expect": { "level": "none", "text": "", "log": { "intent": "ack" } } },
+      { "prompt": "ok", "first_prompt": false, "expect": { "level": "none", "text": "", "log": { "intent": "ack" } } },
+      { "prompt": "Thanks a lot for that!", "first_prompt": false, "expect": { "level": "none", "text": "" } } ] },
+    { "id": "dec-01", "tags": ["short", "decision"], "session": "d1", "steps": [ { "prompt": "what did we pick for the caterer", "first_prompt": false, "expect": { "level": "full", "hit_includes": ["fact:caterer"], "log": { "intent": "decision" } } } ] },
+    { "id": "dec-02", "tags": ["short", "decision"], "session": "d2", "steps": [ { "prompt": "what did we agree for the beta", "first_prompt": false, "expect": { "level": "full", "hit_includes": ["fact:beta-opens"], "log": { "intent": "decision" } } } ] },
+    { "id": "dec-03", "tags": ["short", "decision"], "session": "d3", "steps": [ { "prompt": "what did we decide about Marco", "first_prompt": false, "expect": { "level": "full", "hit_includes": ["fact:marco-role"], "log": { "intent": "decision" } } } ] },
+    { "id": "dec-04", "tags": ["short", "decision"], "session": "d4", "steps": [ { "prompt": "did we choose a price", "first_prompt": false, "expect": { "level": "full", "hit_includes": ["fact:price"], "log": { "intent": "decision" } } } ] },
+    { "id": "dec-05", "tags": ["short", "decision", "nothing-recorded"], "session": "d5", "steps": [ { "prompt": "what did we decide for auth", "first_prompt": false, "expect": { "level": "none", "text": "", "hit_ids": [] } } ] },
+    { "id": "dec-06", "tags": ["short", "decision", "nothing-recorded"], "session": "d6", "steps": [ { "prompt": "which database did we pick", "first_prompt": false, "expect": { "level": "none", "text": "" } } ] },
+    { "id": "dec-07", "tags": ["short", "generic"], "session": "d7", "steps": [ { "prompt": "which sorting algorithm should we pick for this list", "first_prompt": true, "expect": { "level": "none", "text": "", "digest": false } } ] },
+    { "id": "dec-08", "tags": ["short", "passive"], "session": "d8", "steps": [ { "prompt": "what was decided about the beta", "first_prompt": false, "expect": { "level": "none", "text": "", "hit_ids": [] } } ] },
+    { "id": "lead-01", "tags": ["short", "paraphrase", "lead-unset"], "session": "l1", "steps": [ { "prompt": "the hue picked for the premiere", "first_prompt": false, "expect": { "level": "none", "text": "", "hit_excludes": ["fact:launch-color"] } } ] },
+    { "id": "lead-02", "tags": ["short", "paraphrase", "lead-set"], "session": "l2", "mode": "dense", "lead_threshold": 0.46, "steps": [ { "prompt": "the hue picked for the premiere", "first_prompt": false, "expect": { "level": "full", "hit_includes": ["fact:launch-color"] } } ] },
+    { "id": "lead-03", "tags": ["short", "paraphrase", "lead-above"], "session": "l3", "mode": "dense", "lead_threshold": 0.47, "steps": [ { "prompt": "the hue picked for the premiere", "first_prompt": false, "expect": { "level_in": ["none", "pointer"] } } ] }
+  ]
+}
