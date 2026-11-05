@@ -56,3 +56,12 @@ export function plainProbe(probe: string | null | undefined): string | null {
   if (probe === "no_model") return "Ollama is running on this computer, but its search model is not pulled. Run `ollama pull bge-m3`; BiBrain checks again every 10 minutes.";
   return null;
 }
+
+export type MeaningLeadView = { lead: { threshold: number; sample: number; source: string; measured_at: string; applied_at: string } | null; effective: number | null; reason: string };
+/** The one line under "Meaning matches can lead". The model key is never shown. */
+export function meaningLeadLine(m: MeaningLeadView): string {
+  if (m.reason === "Turn Better search on first.") return m.reason;
+  if (m.effective !== null && m.lead) return `Calibrated at ${m.lead.threshold}: a match found by meaning alone can lead a push when its score is ${m.lead.threshold} or higher. From ${m.lead.source}, ${m.lead.sample} queries measured on ${m.lead.measured_at}, applied ${m.lead.applied_at.slice(0, 10)}.`;
+  if (m.lead) return "Measured for another search model. Measure again. Until then a match found by meaning alone never leads a push.";
+  return "Not yet calibrated. A match found by meaning alone never leads a push to your agents. Run npm run proof:search or npm run calibrate for a suggested value, then enter it here.";
+}

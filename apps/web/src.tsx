@@ -23,7 +23,7 @@ import type { OpenSourceOptions } from "./today/types.ts";
 import "./brain/brain.css";
 import { ConnectionsView } from "./connections/ConnectionsView.tsx";
 import "./connections/connections.css";
-import { AUTOMATIC_NOTICE, DETECTED_HINT, betterSearchCanSave, plainProbe, plainSearchProblem, plainSearchReason } from "./better-search-copy.ts";
+import { AUTOMATIC_NOTICE, DETECTED_HINT, betterSearchCanSave, meaningLeadLine, type MeaningLeadView, plainProbe, plainSearchProblem, plainSearchReason } from "./better-search-copy.ts";
 import {
   AgentClientPicker,
   AgentSetupGuide,
@@ -362,6 +362,8 @@ function App() {
   // Better search is also its own consent, with its own routes.
   const [better, setBetter] = useState<BetterSearch | null>(null);
   const [betterChoice, setBetterChoice] = useState<BetterSearch["mode"]>("off");
+  const [lead, setLead] = useState<MeaningLeadView | null>(null);
+  const [leadForm, setLeadForm] = useState({ threshold: "", sample: "", source: "proof:search", measured_at: "" });
   const betterTouched = useRef(false);
   const [consentOverride, setConsentOverride] = useState<boolean | null>(null);
   // An INDEPENDENT override for the separate decision-stage consent. It is never
@@ -463,7 +465,7 @@ function App() {
   }, [dark]);
   const refresh = useCallback(async () => {
     const generation = authGeneration;
-    const [p, n, t, settings, g, paidPlan, sortingStatus, recall, betterStatus] = await Promise.all([
+    const [p, n, t, settings, g, paidPlan, sortingStatus, recall, betterStatus, leadStatus] = await Promise.all([
       api("/projects"),
       api("/search"),
       api("/today"),
@@ -476,6 +478,7 @@ function App() {
       api<{ enabled: boolean }>("/preferences/recall-help").catch(() => ({ enabled: false })),
       // A failed read hides the better-search card rather than failing the rest.
       api<BetterSearch>("/preferences/better-search").catch(() => null),
+      api<MeaningLeadView>("/preferences/meaning-lead").catch(() => null),
     ]);
     // A response that arrives after sign-out or an account change must not
     // restore the previous account's data.
@@ -492,6 +495,7 @@ function App() {
     if (!recallConsentTouched.current) setRecallHelp(recall.enabled === true);
     setSavedRecallHelp(recall.enabled === true);
     setBetter(betterStatus);
+    setLead(leadStatus);
     if (betterStatus && !betterTouched.current) setBetterChoice(betterStatus.mode);
   }, []);
   /**
@@ -517,6 +521,8 @@ function App() {
     setSavedRecallHelp(false);
     recallConsentTouched.current = false;
     setBetter(null);
+    setLead(null);
+    setLeadForm({ threshold: "", sample: "", source: "proof:search", measured_at: "" });
     setBetterChoice("off");
     betterTouched.current = false;
     setSavedPrefs(null);
@@ -1517,6 +1523,7 @@ function App() {
                           const saved = await api<{ mode: BetterSearch["mode"] }>("/preferences/better-search", { mode: betterChoice }, "PATCH");
                           const now = await api<BetterSearch>("/preferences/better-search");
                           setBetter(now);
+                          setLead(await api<MeaningLeadView>("/preferences/meaning-lead").catch(() => null));
                           setBetterChoice(saved.mode);
                           betterTouched.current = false;
                           setNotice(saved.mode === "off" ? "Better search is off." : "Better search saved. Your notes are being prepared in the background.");
@@ -1552,6 +1559,34 @@ function App() {
                     </div>
                     <small className="muted">Changing this choice later clears what was prepared and starts again.</small>
                   </form>
+                  {lead ? (
+                    <section aria-labelledby="meaning-lead-heading">
+                      <h3 id="meaning-lead-heading">Meaning matches can lead</h3>
+                      <p className="status" data-testid="meaning-lead-line" aria-live="polite">{meaningLeadLine(lead)}</p>
+                      {lead.reason !== "Turn Better search on first." ? (
+                        <form
+                          onSubmit={(e) => {
+                            e.preventDefault();
+                            void act(async () => {
+                              await api("/preferences/meaning-lead", { threshold: Number(leadForm.threshold), sample: Number(leadForm.sample), source: leadForm.source, measured_at: leadForm.measured_at }, "PATCH");
+                              setLead(await api<MeaningLeadView>("/preferences/meaning-lead"));
+                              setNotice("Meaning matches can now lead a push at the value you entered.");
+                            });
+                          }}
+                        >
+                          <label>Score (from the tool's suggestion) <input type="number" step="0.01" min="0" max="0.99" required value={leadForm.threshold} onChange={(e) => setLeadForm({ ...leadForm, threshold: e.target.value })} /></label>
+                          <label>Queries measured <input type="number" step="1" min="20" required value={leadForm.sample} onChange={(e) => setLeadForm({ ...leadForm, sample: e.target.value })} /></label>
+                          <label>Measured by <select value={leadForm.source} onChange={(e) => setLeadForm({ ...leadForm, source: e.target.value })}><option value="proof:search">npm run proof:search</option><option value="calibrate">npm run calibrate</option></select></label>
+                          <label>Measured on <input type="date" required value={leadForm.measured_at} onChange={(e) => setLeadForm({ ...leadForm, measured_at: e.target.value })} /></label>
+                          <div className="actions">
+                            <button type="submit" disabled={busy}>Apply this value</button>
+                            {lead.lead ? <button type="button" disabled={busy} onClick={() => void act(async () => { await api("/preferences/meaning-lead", {}, "DELETE"); setLead(await api<MeaningLeadView>("/preferences/meaning-lead")); setNotice("Meaning matches no longer lead a push."); })}>Clear</button> : null}
+                          </div>
+                          <small className="muted">Nothing is applied by itself. Enter the value a measurement printed, with its sample size and date.</small>
+                        </form>
+                      ) : null}
+                    </section>
+                  ) : null}
                 </article>
               ) : null}
               {prefs && savedPrefs && (sorting || sortingUnavailable) && runtime?.mode !== "managed" ? (

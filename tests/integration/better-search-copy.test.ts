@@ -2,7 +2,7 @@ import { describe, expect, it, afterEach } from "vitest";
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { AUTOMATIC_NOTICE, DETECTED_HINT, betterSearchCanSave, plainProbe, plainSearchProblem, plainSearchReason } from "../../apps/web/better-search-copy.ts";
+import { AUTOMATIC_NOTICE, DETECTED_HINT, betterSearchCanSave, meaningLeadLine, plainProbe, plainSearchProblem, plainSearchReason } from "../../apps/web/better-search-copy.ts";
 import { Storage } from "../../packages/storage/index.ts";
 import { Brain } from "../../packages/domain/service.ts";
 import { BETTER_SEARCH_PAUSED, EMBED_OFF_BY_SETUP, PROBE_REASONS, modelKey } from "../../packages/domain/better-search.ts";
@@ -179,5 +179,16 @@ describe("automatic Better search copy", () => {
     expect(betterSearchCanSave({ mode: "ollama", key: status.key, status, automatic: true }, "ollama")).toBe(true);
     expect(betterSearchCanSave({ mode: "ollama", key: status.key, status, automatic: false }, "ollama")).toBe(false);
     expect(betterSearchCanSave({ mode: "ollama", key: status.key, status, automatic: true }, "off")).toBe(true);
+  });
+});
+
+describe("meaning-lead copy", () => {
+  const lead = { threshold: 0.63, key: "ollama:bge-m3:none", sample: 54, source: "proof:search" as const, measured_at: "2026-11-06", applied_at: "2026-11-07T09:12:00.000Z" };
+  it("says plainly whether a meaning match may lead, and why not", () => {
+    expect(meaningLeadLine({ lead: null, effective: null, reason: "Not yet calibrated." })).toBe("Not yet calibrated. A match found by meaning alone never leads a push to your agents. Run npm run proof:search or npm run calibrate for a suggested value, then enter it here.");
+    expect(meaningLeadLine({ lead, effective: 0.63, reason: "ready" })).toBe("Calibrated at 0.63: a match found by meaning alone can lead a push when its score is 0.63 or higher. From proof:search, 54 queries measured on 2026-11-06, applied 2026-11-07.");
+    expect(meaningLeadLine({ lead, effective: null, reason: "Measured for another search model. Measure again." })).toBe("Measured for another search model. Measure again. Until then a match found by meaning alone never leads a push.");
+    expect(meaningLeadLine({ lead: null, effective: null, reason: "Turn Better search on first." })).toBe("Turn Better search on first.");
+    for (const s of [meaningLeadLine({ lead, effective: 0.63, reason: "ready" }), meaningLeadLine({ lead: null, effective: null, reason: "Not yet calibrated." })]) expect(s).not.toMatch(/bge|ollama|BRAIN_|token|mcp/i);
   });
 });
