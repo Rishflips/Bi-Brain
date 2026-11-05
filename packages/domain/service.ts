@@ -3757,7 +3757,7 @@ export class Brain {
     const internal = this.recallInternal(p, { query: v.prompt, history: false, limit: PUSH_HITS_MAX }, dense);
     const candidates = internal.result.searched.candidates;
     // The push level is term-based (R2). With no candidate found by words the judge is not asked at all: the level is the
-    // deterministic one (none, or pointer for an exact entity), so meaning alone can never make a push louder.
+    // deterministic one (none, or pointer for an exact entity), so meaning alone can never make a push louder (until the owner applies a meaning-lead line, below).
     const judge = internal.ranked.some(fromBm25) ? await this.judgeForPush(p, internal) : { signals: null, hits: internal.result.hits, judged: false };
     let level = pushLevel(internal.signals, judge.signals);
     // Unreviewed agent-written originals the agent may see: another agent's notes, never the owner's evidence (spec A1, R2).

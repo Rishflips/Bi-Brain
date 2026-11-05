@@ -4,6 +4,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createApp } from "../../apps/server/app.ts";
+import { Brain } from "../../packages/domain/service.ts";
 import { publishBetterSearchStatus } from "../../apps/worker/embed.ts";
 import { MEANING_LEAD, MEANING_LEAD_MIN_SAMPLE, modelKey, type MeaningLead, type QueryVector } from "../../packages/domain/better-search.ts";
 import { meaningLead } from "../../packages/domain/recall-push.ts";
@@ -161,6 +162,13 @@ describe("the meaning-lead rule", () => {
     expect(set.statusCode).toBe(200);
     expect(set.json()).toMatchObject({ threshold: 0.6, key: modelKey("ollama", FAKE_EMBED_MODEL), sample: 20, source: "proof:search", measured_at: "2026-10-25", applied_at: "2026-10-25T09:00:00.000Z" });
     expect((await req("GET", "/api/v1/preferences/meaning-lead", undefined, headers)).json()).toMatchObject({ effective: 0.6, reason: "ready" });
+    // Clearing is an owner action too: an agent token and a cookie without the CSRF header are both refused, and the line stays.
+    const stored = fx.store.setting<MeaningLead | null>(MEANING_LEAD, null);
+    expect(stored).toMatchObject({ threshold: 0.6 });
+    expect((await req("DELETE", "/api/v1/preferences/meaning-lead", undefined, { authorization: `Bearer ${fx.agentToken}` })).statusCode).toBe(403);
+    expect(fx.store.setting<MeaningLead | null>(MEANING_LEAD, null)).toEqual(stored);
+    expect((await req("DELETE", "/api/v1/preferences/meaning-lead", undefined, { cookie: headers.cookie })).statusCode).toBe(403);
+    expect(fx.store.setting<MeaningLead | null>(MEANING_LEAD, null)).toEqual(stored);
     // The worker's model changes: the line is kept but never leads, and Settings says to measure again.
     publishBetterSearchStatus(fx.brain, { configured: true, provider: "ollama", model: "other-model", key: modelKey("ollama", "other-model"), label: "Ollama on this computer", detected: true, probe: "found" });
     fx.store.set("worker_heartbeat", fx.brain.now());
@@ -173,5 +181,45 @@ describe("the meaning-lead rule", () => {
     fx.brain.setBetterSearch(owner, { mode: "off" });
     expect((await req("PATCH", "/api/v1/preferences/meaning-lead", good, headers)).statusCode).toBe(409);
     expect((await req("GET", "/api/v1/preferences/meaning-lead", undefined, headers)).json()).toMatchObject({ effective: null, reason: "Turn Better search on first." });
+  });
+  it("renders a dense-only neighbour exactly at the line and leaves out one just below it", async () => {
+    const { fx, dense: vec } = dense();
+    const PROMPT = "the squad huddle";
+    const { cos, others } = leaderCosine(fx, vec, PROMPT);
+    const weaker = others.filter((o) => o.denseOnly && o.cos !== null && o.cos < cos);
+    expect(weaker.length, "the fixture must give the leader a weaker dense-only neighbour").toBeGreaterThan(0);
+    const w = weaker.reduce((a, b) => (b.cos! > a.cos! ? b : a));
+    // Every passage of that item is found by meaning alone at or under its cosine, so the item is in the push exactly when its best passage reaches the line.
+    expect(others.filter((o) => o.id === w.id).every((o) => o.denseOnly && o.cos !== null && o.cos <= w.cos!)).toBe(true);
+    // The stored line is two decimals and rarely equals a raw cosine, so the threshold the push reads is pinned to the neighbour's own cosine.
+    const line = vi.spyOn(fx.brain, "meaningLeadThreshold").mockReturnValue(w.cos!);
+    const at = await push(fx, PROMPT, "1".repeat(64));
+    expect(at.level).toBe("full");
+    expect(at.hit_ids[0]).toBe(fx.ids["src:standup"]);
+    expect(at.hit_ids, "a neighbour exactly at the line is rendered").toContain(w.id);
+    expect(lastLog(fx)).toMatchObject({ lead: true, lead_at: w.cos });
+    const above = w.cos! + 1e-9;
+    expect(above).toBeLessThanOrEqual(cos);
+    line.mockReturnValue(above);
+    const below = await push(fx, PROMPT, "2".repeat(64));
+    expect(below.level).toBe("full");
+    expect(below.hit_ids[0]).toBe(fx.ids["src:standup"]);
+    expect(below.hit_ids, "a neighbour just below the line is left out").not.toContain(w.id);
+  });
+  it("refuses the line on a managed brain even when Better search reads as on", () => {
+    const { fx } = dense();
+    const managed = new Brain(fx.store, () => new Date("2026-10-25T09:00:00.000Z"), "synthetic-tenant");
+    // Bypass the Better search check so only the managed-brain guard can refuse.
+    vi.spyOn(managed, "betterSearchAllowed").mockReturnValue({ ...fx.brain.betterSearchAllowed(), on: true });
+    expect(managed.betterSearchAllowed().setting.key).toBe(modelKey("ollama", FAKE_EMBED_MODEL));
+    const good = { threshold: 0.6, sample: 20, source: "proof:search", measured_at: "2026-10-25" };
+    let err: unknown;
+    try {
+      managed.setMeaningLead(managed.ownerPrincipal(), good);
+    } catch (e) {
+      err = e;
+    }
+    expect(err).toMatchObject({ code: "BUDGET_BLOCKED", status: 409, message: "Better search runs on the local app only." });
+    expect(fx.store.setting<MeaningLead | null>(MEANING_LEAD, null)).toBeNull();
   });
 });
