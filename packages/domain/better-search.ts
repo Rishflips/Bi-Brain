@@ -38,6 +38,13 @@ export const OLLAMA_EMBED_ENDPOINT = "http://127.0.0.1:11434/api/embed";
 /** $0.012 per million tokens, as integer micro-USD per million tokens. */
 export const CLOUDFLARE_EMBED_PRICE = { version: "cf-bge-m3-2026-10-27", input_micro_usd_per_million: 12_000 } as const;
 export const PROVIDER_LABELS: Record<EmbedProvider, string> = { ollama: "Ollama on this computer", cloudflare: "Cloudflare" };
+/** What the worker's startup probe of a loopback Ollama found. Key-free, like everything else on the status. */
+export type ProbeOutcome = "found" | "no_ollama" | "no_model" | "skipped";
+export const EMBED_OFF_BY_SETUP = "Better search is turned off by this computer's setup.";
+export const PROBE_REASONS: Record<"no_ollama" | "no_model", string> = {
+  no_ollama: "Ollama was not found on this computer when BiBrain started.",
+  no_model: "Ollama is running on this computer, but its search model is not pulled.",
+};
 /** What each provider may embed. Cloudflare never receives private sources, owner-only facts or quarantined notes (visibility private). */
 export const EMBED_VISIBILITIES: Record<EmbedProvider, RecallVisibility[]> = { ollama: ["project", "private", "owner"], cloudflare: ["project"] };
 
@@ -59,6 +66,9 @@ export type BetterSearchStatus = {
   retry_at?: string;
   /** Set after three consecutive failures: nothing is embedded until it passes. */
   paused_until?: string;
+  /** The startup probe of a loopback Ollama: whether the configured model was listed, and what the probe saw. Absent before this version. */
+  detected?: boolean;
+  probe?: ProbeOutcome;
 };
 export type QueryVector = { vector: Float32Array; key: string; dim: number };
 

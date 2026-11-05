@@ -120,6 +120,11 @@ if (process.env.BRAIN_FAKE_EMBED_PORT) {
     process.exit(1);
   }
   const server = createServer((req, res) => {
+    // Ollama's model listing: the plan 10 startup probe asks for it on loopback. The fake lists only its own model.
+    if (req.method === "GET" && req.url === "/api/tags") {
+      res.writeHead(200, { "Content-Type": "application/json" }).end(JSON.stringify({ models: [{ name: `${FAKE_EMBED_MODEL}:latest`, model: `${FAKE_EMBED_MODEL}:latest` }] }));
+      return;
+    }
     const ollama = req.method === "POST" && req.url === "/api/embed";
     const cloud = req.method === "POST" && /^\/client\/v4\/accounts\/[^/]+\/ai\/run\//u.test(req.url ?? "");
     if (!ollama && !cloud) {

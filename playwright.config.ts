@@ -65,6 +65,7 @@ export default defineConfig({
       reuseExistingServer: false,
       env: {
         BRAIN_PORT: String(port),
+        BRAIN_EMBED_PROVIDER: "off",
         BRAIN_DB: `data/e2e-${stamp}.sqlite`,
         BRAIN_OWNER_SECRET: "e2e-local-only",
       },
@@ -76,6 +77,7 @@ export default defineConfig({
       reuseExistingServer: false,
       env: {
         BRAIN_PORT: String(emptyPort),
+        BRAIN_EMBED_PROVIDER: "off",
         BRAIN_DB: `data/e2e-empty-${stamp}.sqlite`,
         BRAIN_OWNER_SECRET: "e2e-local-only",
       },
@@ -87,6 +89,7 @@ export default defineConfig({
       reuseExistingServer: false,
       env: {
         BRAIN_PORT: String(todayPort),
+        BRAIN_EMBED_PROVIDER: "off",
         BRAIN_DB: `data/e2e-today-${stamp}.sqlite`,
         BRAIN_OWNER_SECRET: "e2e-local-only",
       },
@@ -98,6 +101,7 @@ export default defineConfig({
       reuseExistingServer: false,
       env: {
         BRAIN_PORT: String(barPort),
+        BRAIN_EMBED_PROVIDER: "off",
         BRAIN_DB: `data/e2e-bar-${stamp}.sqlite`,
         BRAIN_OWNER_SECRET: "e2e-local-only",
       },
@@ -109,6 +113,7 @@ export default defineConfig({
       reuseExistingServer: false,
       env: {
         BRAIN_PORT: String(connectionsPort),
+        BRAIN_EMBED_PROVIDER: "off",
         BRAIN_DB: `data/e2e-connections-${stamp}.sqlite`,
         BRAIN_OWNER_SECRET: "e2e-local-only",
         BRAIN_AGENT_HOME: agentHome,
@@ -123,6 +128,7 @@ export default defineConfig({
       env: { BRAIN_FAKE_CLEF_PORT: String(clefPort) },
       timeout: 30000,
     },
+    // Listed before the sorting server and awaited on its port, so the worker's startup probe finds it listening; an explicit ollama setup re-probes only at start.
     {
       command: "node tests/helpers/fake-embed.mjs",
       port: embedPort,

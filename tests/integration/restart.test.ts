@@ -26,6 +26,7 @@ it("actual API and separate worker restart preserves browser session, arbitrary 
         BRAIN_DB: join(dir, "brain.sqlite"),
         BRAIN_OWNER_SECRET: "restart-test-only",
         BRAIN_PORT: String(port),
+        BRAIN_EMBED_PROVIDER: "off",
       },
       stdio: ["ignore", "pipe", "pipe", "ipc"],
       windowsHide: true,
