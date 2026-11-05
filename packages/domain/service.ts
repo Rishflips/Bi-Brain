@@ -61,15 +61,22 @@ import {
   EMBED_RESULT_KEY,
   EMBED_STATE_KEY,
   EMBED_VISIBILITIES,
+  MEANING_LEAD,
+  MEANING_LEAD_MAX,
+  MEANING_LEAD_SOURCES,
   QUERY_EMBED_DEADLINE_MS,
   QUERY_EMBED_POLL_MS,
   betterSearchEffective,
   denseFloor,
+  meaningLeadInputSchema,
   vectorFromBase64,
   type BetterSearchSetting,
   type BetterSearchStatus,
+  type MeaningLead,
+  type MeaningLeadSource,
   type QueryVector,
 } from "./better-search.ts";
+import type { RecallLogRow } from "./calibration.ts";
 import { JUDGE_CANDIDATES_MAX, JUDGE_DAILY_COUNT_CAP, JUDGE_DEADLINE_MS, JUDGE_MIN_REMAINING_MICRO_USD, JUDGE_POLL_MS, JUDGE_RESULT_KEY, JUDGE_STATE_KEY, applyJudge, buildJudgeQuestions, buildJudgeState, judgeSignals, judgedStatus } from "./recall-judge.ts";
 import { buildBrief, gateFitsBrief, type BriefInput, type BriefJob } from "./brief.ts";
 import { buildProjectView } from "./project-view.ts";
@@ -101,7 +108,7 @@ import {
   type RecallResult,
 } from "./recall.ts";
 import { SESSION_NOTES_PER_SESSION, SESSION_NOTE_LOG_MAX, parseSessionNote, sessionNoteSchema } from "./session-note.ts";
-import { RECALL_LOG_MAX, PUSH_HITS_MAX, filterSeen, fitFull, hitIsRelated, hitIsStrong, pushLevel, recallPushSchema, renderDigest, renderPointer, type JudgeSignals, type PushLevel } from "./recall-push.ts";
+import { RECALL_LOG_MAX, PUSH_HITS_MAX, filterSeen, fitFull, hitIsRelated, hitIsStrong, meaningLead, pushLevel, recallPushSchema, renderDigest, renderPointer, type JudgeSignals, type PushLevel } from "./recall-push.ts";
 import {
   attemptReferencesSource,
   claimDecisionAttempt,
@@ -2148,6 +2155,54 @@ export class Brain {
     const retryAt = allowed.status?.retry_at;
     return !(retryAt && Date.parse(retryAt) > this.clock().getTime());
   }
+  /** The stored "meaning matches can lead" line with its provenance, or null. Shape-checked on read; a malformed row reads as unset. */
+  meaningLeadSetting(): MeaningLead | null {
+    const raw = this.store.setting<Partial<MeaningLead> | null>(MEANING_LEAD, null);
+    if (!raw || typeof raw !== "object" || typeof raw.threshold !== "number" || !Number.isFinite(raw.threshold) || typeof raw.key !== "string" || typeof raw.sample !== "number") return null;
+    if (!MEANING_LEAD_SOURCES.includes(raw.source as MeaningLeadSource) || typeof raw.measured_at !== "string" || typeof raw.applied_at !== "string") return null;
+    return { threshold: raw.threshold, key: raw.key, sample: raw.sample, source: raw.source as MeaningLeadSource, measured_at: raw.measured_at, applied_at: raw.applied_at };
+  }
+  /** The threshold a push may use right now: only while Better search is effective and the line was measured for the current model key. */
+  meaningLeadThreshold(): number | null {
+    const lead = this.meaningLeadSetting();
+    if (!lead) return null;
+    const allowed = this.betterSearchAllowed();
+    return allowed.on && allowed.setting.key === lead.key ? lead.threshold : null;
+  }
+  /** What the Settings line reads: the stored line, whether it applies now, and one plain reason when it does not. */
+  meaningLead(p: Principal): { lead: MeaningLead | null; effective: number | null; reason: string } {
+    this.owner(p);
+    const lead = this.meaningLeadSetting();
+    const allowed = this.betterSearchAllowed();
+    if (!allowed.on) return { lead, effective: null, reason: "Turn Better search on first." };
+    if (!lead) return { lead: null, effective: null, reason: "Not yet calibrated." };
+    if (lead.key !== allowed.setting.key) return { lead, effective: null, reason: "Measured for another search model. Measure again." };
+    return { lead, effective: lead.threshold, reason: "ready" };
+  }
+  /** The one owner action that sets the line. The key and the applied time come from the server, never from the caller. */
+  setMeaningLead(p: Principal, input: unknown): MeaningLead {
+    this.owner(p);
+    const v = meaningLeadInputSchema.parse(input);
+    if (this.tenantId !== undefined) throw new BrainError("BUDGET_BLOCKED", "Better search runs on the local app only.", 409);
+    const allowed = this.betterSearchAllowed();
+    if (!allowed.on || !allowed.setting.key) throw new BrainError("BUDGET_BLOCKED", "Turn Better search on first.", 409);
+    const key = allowed.setting.key;
+    const floor = denseFloor(key);
+    const threshold = Number(v.threshold.toFixed(2));
+    if (threshold < floor || threshold > MEANING_LEAD_MAX) throw new BrainError("INVALID_INPUT", `The value must be between ${floor} (the floor for this search model) and ${MEANING_LEAD_MAX}.`, 400);
+    // A real calendar date (2026-02-30 parses, so it is checked against its own round trip) no later than tomorrow in UTC, for an owner ahead of UTC.
+    const parsed = Date.parse(`${v.measured_at}T00:00:00.000Z`);
+    const latest = new Date(this.clock().getTime() + 86_400_000).toISOString().slice(0, 10);
+    if (Number.isNaN(parsed) || new Date(parsed).toISOString().slice(0, 10) !== v.measured_at || v.measured_at > latest) throw new BrainError("INVALID_INPUT", "The measured date must be a real date no later than tomorrow (UTC).", 400);
+    const lead: MeaningLead = { threshold, key, sample: v.sample, source: v.source, measured_at: v.measured_at, applied_at: this.now() };
+    this.store.set(MEANING_LEAD, lead);
+    return lead;
+  }
+  clearMeaningLead(p: Principal): { lead: null } {
+    this.owner(p);
+    this.store.run("DELETE FROM settings WHERE key=?", MEANING_LEAD);
+    return { lead: null };
+  }
   /** Every index write path calls this: a batch is queued only while one may run; otherwise the self-heal check picks the rows up later. With Better search off it costs one settings read and writes nothing. */
   private queueEmbedIfOn() {
     if (this.betterSearchSetting().mode !== "off" && this.embedQueueOpen()) this.enqueueEmbedBatch();
@@ -3678,7 +3733,7 @@ export class Brain {
     const v = recallPushSchema.parse(input);
     const started = Date.now();
     const quiet = { level: "none" as PushLevel, text: "", hit_ids: [] as string[], digest: false };
-    const finish = (out: typeof quiet, extra: { candidates: number; judged: boolean; dense: boolean; dense_top?: number | null; judge?: JudgeSignals | null }) => {
+    const finish = (out: typeof quiet, extra: { candidates: number; judged: boolean; dense: boolean; dense_top?: number | null; judge?: JudgeSignals | null; lead?: boolean; lead_at?: number | null; lead_cos?: number | null }) => {
       // A push that reached the brain proves the connection works, exactly like /agent/verify.
       // `dense`, `dense_top` and `judge` are written only when that feature ran, so with Better search and Recall help off
       // the row is plan 5's, field for field (the dense-off snapshot pins this). Every value is a number or a level, never text.
@@ -3689,6 +3744,9 @@ export class Brain {
         at: this.now(), grant_id: p.grant_id, client: v.client, level: out.level, candidates: extra.candidates, hits: out.hit_ids.length, latency_ms: Date.now() - started, judged: extra.judged,
         ...(extra.dense ? { dense: true, ...(typeof extra.dense_top === "number" ? { dense_top: extra.dense_top } : {}) } : {}),
         ...(extra.judged && extra.judge ? { judge: { owner_world: round3(extra.judge.ownerWorld), general: round3(extra.judge.general), answered: extra.judge.answered } } : {}),
+        ...(typeof extra.lead_at === "number" ? { lead_at: extra.lead_at } : {}),
+        ...(typeof extra.lead_cos === "number" ? { lead_cos: Number(extra.lead_cos.toFixed(3)) } : {}),
+        ...(extra.lead ? { lead: true } : {}),
       });
       this.store.set("recall_log", log.slice(-RECALL_LOG_MAX));
       return out;
@@ -3708,7 +3766,7 @@ export class Brain {
     // Such notes never reach the judge (judgeRankedOnce leaves them out), so a judged level rests on the owner's candidates alone.
     const seen = filterSeen(judge.hits, v.seen);
     // An unreviewed agent-written original never rides in a full push.
-    const hits = seen.filter((h) => !isUnreviewedAgent(h));
+    let hits = seen.filter((h) => !isUnreviewedAgent(h));
     // When the judge's order leaves a hit found by meaning alone on top, the level is capped at the words level.
     if (hits.length && internal.denseOnly.has(hitKey(hits[0]))) level = quieter(level, pushLevel(internal.signals, null));
     // Everything the agent already holds from this session, and every unreviewed agent note, is left out. When that removed hits, the level is re-read
@@ -3717,6 +3775,18 @@ export class Brain {
       const terms = internal.signals.terms;
       if (!hits.length || !hitIsStrong(terms, hits[0])) level = internal.signals.exactEntity || seen.some((h) => hitIsRelated(terms, h)) ? "pointer" : "none";
     }
+    // Meaning matches can lead (plan 10): only with the owner-applied line, only for the hit that leads, after every rule above. R5.
+    let led = false;
+    const leadLine = this.meaningLeadThreshold();
+    // The leader's cosine when it was found by meaning alone: logged so calibrate can compare the log to the line it measures (never the list's top cosine).
+    const leadCos = hits.length && internal.denseOnly.has(hitKey(hits[0])) ? (internal.denseScores.get(hitKey(hits[0])) ?? null) : null;
+    if (leadLine !== null && level !== "full" && hits.length) {
+      const raised = meaningLead(level, { denseOnly: internal.denseOnly.has(hitKey(hits[0])), cosine: leadCos, unreviewed: isUnreviewedAgent(hits[0]) }, leadLine);
+      led = raised !== level;
+      level = raised;
+    }
+    // A led push renders the leader, every hit found by words, and only those meaning-only hits that also reach the line (R13).
+    if (led) hits = hits.filter((h, i) => i === 0 || !internal.denseOnly.has(hitKey(h)) || (internal.denseScores.get(hitKey(h)) ?? -1) >= leadLine!);
     // A judge may rate a candidate relevant that did not survive into the hits; a full push with nothing to show is never sent.
     if (level === "full" && !hits.length) level = internal.signals.exactEntity ? "pointer" : "none";
     // Names for the pointer and the digest: the top three candidates exactly as deterministicSignals builds topNames (from the same list), except that
@@ -3741,8 +3811,8 @@ export class Brain {
         text = level === "pointer" && d.includes(text) ? d : `${d}\n\n${text}`;
       }
     }
-    if (text && detectSecrets(text).length) return finish(quiet, { candidates, judged: judge.judged, dense: internal.dense, dense_top: internal.denseTop, judge: judge.signals });
-    return finish({ level, text, hit_ids: used.map((h) => h.id), digest }, { candidates, judged: judge.judged, dense: internal.dense, dense_top: internal.denseTop, judge: judge.signals });
+    if (text && detectSecrets(text).length) return finish(quiet, { candidates, judged: judge.judged, dense: internal.dense, dense_top: internal.denseTop, judge: judge.signals, lead: false, lead_at: leadLine, lead_cos: leadCos });
+    return finish({ level, text, hit_ids: used.map((h) => h.id), digest }, { candidates, judged: judge.judged, dense: internal.dense, dense_top: internal.denseTop, judge: judge.signals, lead: led, lead_at: leadLine, lead_cos: leadCos });
   }
   /** The judge for a hook push: the same advisory application as `recall`; without a judge the deterministic hits stand. */
   protected async judgeForPush(p: Principal, internal: ReturnType<Brain["recallInternal"]>): Promise<{ signals: JudgeSignals | null; hits: RecallHit[]; judged: boolean }> {
@@ -3786,7 +3856,7 @@ export class Brain {
   recallLog(p: Principal) {
     this.owner(p);
     return {
-      rows: this.store.setting<{ at: string; grant_id: string; client: string; level: PushLevel; candidates: number; hits: number; latency_ms: number; judged: boolean; dense?: boolean; dense_top?: number; judge?: { owner_world: number; general: number; answered: "answered" | "partial" | "none" } }[]>("recall_log", []),
+      rows: this.store.setting<RecallLogRow[]>("recall_log", []),
     };
   }
   /** Whether a judge call may be queued right now. Every reason is a plain sentence; none is an error to the agent. */
@@ -3993,7 +4063,7 @@ ${q}`);
     // confirms an item the principal cannot see. Only claims whose name could match are loaded.
     const termSet = new Set(fts.terms);
     const entityNames = ids.length ? this.visibleEntityNames(p, scope, termSet, visibilities) : [];
-    if (!fts.match) return { result: empty("no_match", 0), ranked: [] as Candidate[], authorized: [] as RecallHit[], signals: deterministicSignals([], [], entityNames), namesRanked: [] as Candidate[], entityNames, scope, dense: false, denseOnly: new Set<string>(), denseTop: null as number | null };
+    if (!fts.match) return { result: empty("no_match", 0), ranked: [] as Candidate[], authorized: [] as RecallHit[], signals: deterministicSignals([], [], entityNames), namesRanked: [] as Candidate[], entityNames, scope, dense: false, denseOnly: new Set<string>(), denseScores: new Map<string, number>(), denseTop: null as number | null };
     const status = v.history ? "any" : "current";
     const search = (match: string, kind: "fact" | "original") => searchRecallChunks(this.store, { match, kind, projects: ids, visibilities, status, limit: CANDIDATES_PER_LIST });
     const lists: RecallLists = {
@@ -4013,6 +4083,8 @@ ${q}`);
     // With dense candidates present, a fact whose entity the query names exactly stays first; plan 5 ordering is untouched otherwise.
     let fused = fuse(lists, now);
     if (lists.dense!.length) fused = pinExact(fused, (c) => entityFromPrefix(c.row.prefix, titles.get(c.row.project_id) ?? ""), entityNames);
+    // The cosine of each hit found by meaning alone, keyed by hitKey: for a dense-only key `fuse` keeps the dense row, whose `score` is the cosine.
+    const denseScores = new Map<string, number>();
     for (const candidate of fused) {
       const r = candidate.row;
       const project = { id: r.project_id, title: titles.get(r.project_id) ?? "Project" };
@@ -4024,6 +4096,7 @@ ${q}`);
           if (quote !== r.text) continue;
           const by = this.writtenBy(s);
           authorized.push({ candidate, hit: { kind: "original", id: s.id, version: s.version, project, title: s.title, quote, start: r.start, end: r.end, captured_at: s.captured_at, freshness: "current", why: [...whyFor(fts.terms, `${s.title} ${quote}`), ...denseWhy(candidate)], score: candidate.fused, ...(by ? { written_by: by } : {}) } });
+          if (!fromBm25(candidate)) denseScores.set(hitKey(authorized[authorized.length - 1].hit), candidate.row.score);
         } else {
           // Only this candidate is loaded and verified. A claim without evidence is a hypothesis and is never presented as a fact to anyone.
           const c = this.visibleClaim(p, r.project_id, r.ref_id, v.history);
@@ -4032,6 +4105,7 @@ ${q}`);
           const replacedBy = this.supersededBy(p, r.project_id, c.id, v.history, supersessions);
           const fresh = factFreshness(c, confirmations, replacedBy, now);
           authorized.push({ candidate, hit: { kind: "fact", id: c.id, project, text: r.text, recorded_at: String(c.data.recorded_at ?? c.created_at), checked_at: fresh.checked_at, freshness: fresh.freshness, replaced_by: replacedBy, evidence: (c.data.evidence as Evidence[]).map((e) => ({ source_id: e.source_id, source_version: e.source_version, quote: e.quote })), why: [...whyFor(fts.terms, r.text), ...denseWhy(candidate)], score: candidate.fused } });
+          if (!fromBm25(candidate)) denseScores.set(hitKey(authorized[authorized.length - 1].hit), candidate.row.score);
         }
       } catch (e) {
         // An index row that outlived its item or its grant is dropped from every field. Anything else is a real fault and must surface.
@@ -4064,7 +4138,7 @@ ${q}`);
     const result: RecallResult = { status: statusOut, as_of: now.toISOString(), searched: { ...base, candidates: ranked.length }, hits, near_misses, next_step: statusOut === "no_match" ? NO_MATCH_NEXT_STEP : FOUND_NEXT_STEP };
     // The highest cosine among the meaning candidates, three decimals, for the content-free recall log; null when none passed the floor.
     const denseTop = lists.dense!.length ? Number(Math.max(...lists.dense!.map((r) => r.score)).toFixed(3)) : null;
-    return { result, ranked, authorized: authorized.map((a) => a.hit), signals, namesRanked, entityNames, scope, dense: dense !== null, denseOnly, denseTop };
+    return { result, ranked, authorized: authorized.map((a) => a.hit), signals, namesRanked, entityNames, scope, dense: dense !== null, denseOnly, denseScores, denseTop };
   }
   /** One item by id for an agent: the full original (any version it may see) or the full fact with its history. */
   agentOpen(p: Principal, input: unknown) {

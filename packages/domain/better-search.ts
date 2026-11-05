@@ -1,3 +1,4 @@
+import { z } from "zod";
 import type { RecallVisibility } from "../storage/recall-index.ts";
 
 export type EmbedProvider = "ollama" | "cloudflare";
@@ -147,3 +148,19 @@ export function betterSearchEffective(setting: BetterSearchSetting, status: Bett
   if (!workerRunning) return { on: false, reason: "BiBrain's background worker is not running." };
   return { on: true, reason: "ready" };
 }
+
+/** The owner-applied "meaning matches can lead" line (plan 10). Unset by default; set only by the owner from a measured suggestion; bound to the model key it was measured for. */
+export const MEANING_LEAD = "meaning_lead";
+export const MEANING_LEAD_MIN_SAMPLE = 20;
+export const MEANING_LEAD_MAX = 0.99;
+export const MEANING_LEAD_SOURCES = ["proof:search", "calibrate"] as const;
+export type MeaningLeadSource = (typeof MEANING_LEAD_SOURCES)[number];
+export type MeaningLead = { threshold: number; key: string; sample: number; source: MeaningLeadSource; measured_at: string; applied_at: string };
+export const meaningLeadInputSchema = z
+  .object({
+    threshold: z.number().finite(),
+    sample: z.number().int().min(MEANING_LEAD_MIN_SAMPLE),
+    source: z.enum(MEANING_LEAD_SOURCES),
+    measured_at: z.string().regex(/^\d{4}-\d{2}-\d{2}$/u),
+  })
+  .strict();

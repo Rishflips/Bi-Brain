@@ -49,6 +49,11 @@ export type RecallLogRow = {
   dense?: boolean;
   dense_top?: number;
   judge?: { owner_world: number; general: number; answered: "answered" | "partial" | "none" };
+  lead?: boolean;
+  lead_at?: number;
+  lead_cos?: number;
+  intent?: "ack" | "continuation" | "decision";
+  topic?: "session" | "digest" | "none";
 };
 export type S1Answer = { id: string; type: "choice"; choice: string; confidence: number } | { id: string; type: "noul"; probability: number };
 export type S1AnswerRow = { answers: S1Answer[] };

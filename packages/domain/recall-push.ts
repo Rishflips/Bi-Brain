@@ -121,3 +121,14 @@ export function hitIsRelated(terms: string[], hit: RecallHit): boolean {
   const own = new Set(questionWords(hit.kind === "fact" ? hit.text : hit.quote));
   return terms.filter((t) => own.has(t)).length >= Math.min(2, terms.length);
 }
+
+export type MeaningTop = { denseOnly: boolean; cosine: number | null; unreviewed: boolean };
+/**
+ * Meaning matches can lead (plan 10). Runs after every other rule on the hit that leads the push: with the owner-applied threshold set,
+ * a hit found by meaning alone whose cosine reaches it makes the push full. With no threshold, or a hit found by words, or an
+ * unreviewed agent note, or no cosine, the level is returned unchanged, so an unset line is exactly plan 5b's behaviour.
+ */
+export function meaningLead(level: PushLevel, top: MeaningTop | null, threshold: number | null): PushLevel {
+  if (threshold === null || level === "full" || !top || !top.denseOnly || top.unreviewed || top.cosine === null) return level;
+  return top.cosine >= threshold ? "full" : level;
+}
