@@ -13,12 +13,15 @@ export function startReprobe(opts: { env: Record<string, string | undefined>; pr
   const initial: EmbedSetup = { config: null, reason: "", probe: "no_ollama" };
   if (!shouldReprobe(opts.env, initial)) return { stop() {} };
   let busy = false;
+  let stopped = false;
   const timer = setInterval(async () => {
-    if (busy) return;
+    if (busy || stopped) return;
     busy = true;
     try {
       const setup = await embedSetup(opts.env, opts.probe ?? detectOllamaModel);
-      if (setup.config && setup.detected) {
+      // A probe already in flight when stop() ran must not act: the worker may be shutting down or its store closed.
+      if (!stopped && setup.config && setup.detected) {
+        stopped = true;
         clearInterval(timer);
         opts.onFound(setup as EmbedSetup & { config: NonNullable<EmbedSetup["config"]> });
       }
@@ -29,5 +32,10 @@ export function startReprobe(opts: { env: Record<string, string | undefined>; pr
     }
   }, opts.intervalMs ?? REPROBE_MS);
   timer.unref?.();
-  return { stop: () => clearInterval(timer) };
+  return {
+    stop: () => {
+      stopped = true;
+      clearInterval(timer);
+    },
+  };
 }

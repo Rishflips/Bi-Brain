@@ -158,11 +158,32 @@ describe("the 10-minute re-probe", () => {
       vi.useRealTimers();
     }
   });
+  it("ignores a probe that resolves after stop(): onFound is never called", async () => {
+    vi.useFakeTimers();
+    try {
+      let release!: () => void;
+      const gate = new Promise<void>((r) => (release = r));
+      const probe = (async () => {
+        await gate;
+        return { found: true as const, outcome: "found" as const };
+      }) as unknown as typeof detectOllamaModel;
+      let called = 0;
+      const loop = startReprobe({ env: {}, probe, onFound: () => void called++ });
+      await vi.advanceTimersByTimeAsync(REPROBE_MS);
+      loop.stop();
+      release();
+      await vi.advanceTimersByTimeAsync(REPROBE_MS * 2);
+      expect(called).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
   it("no Vitest file starts a real worker without BRAIN_EMBED_PROVIDER off (guard)", () => {
     const files = readdirSync("tests/integration").filter((f) => f.endsWith(".test.ts")).map((f) => `tests/integration/${f}`);
     for (const file of files) {
       const text = readFileSync(file, "utf8");
       // Only a file that actually starts a worker process counts: it names run.mjs or the worker entry AND spawns something. A file that merely reads run.mjs (recall-key-isolation) is not a worker.
+      // The managed-* worker tests are exempt: they run BRAIN_MODE=managed (or stop at a preload before any app code), and the embed setup sits only in the local-mode branch of apps/worker/main.ts.
       const spawnsWorker = /scripts\/run\.mjs|apps\/worker\/main\.ts/u.test(text) && /\bspawn(?:Sync)?\(/u.test(text) && !/managed/iu.test(file);
       if (spawnsWorker) expect(text, `${file} must set BRAIN_EMBED_PROVIDER: "off" (or inject a fake probe) on the worker it starts`).toMatch(/BRAIN_EMBED_PROVIDER:\s*"off"|fakeProbe|probe:/u);
     }
