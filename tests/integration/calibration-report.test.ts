@@ -9,11 +9,14 @@ import { LATEST_MIGRATION, Storage } from "../../packages/storage/index.ts";
 import { Brain } from "../../packages/domain/service.ts";
 import type { Principal } from "../../packages/contracts/index.ts";
 import type { AskResult } from "../../packages/providers/system-one-ask.ts";
-import { BINS, MIN_SAMPLE, THRESHOLDS, calibrationReport, histogram, renderCalibration, type CalibrationInput, type RecallLogRow, type S1AnswerRow } from "../../packages/domain/calibration.ts";
+import { BINS, MIN_SAMPLE, THRESHOLDS, calibrationReport, histogram, meaningLeadFromLog, renderCalibration, suggestMeaningLead, type CalibrationInput, type RecallLogRow, type S1AnswerRow } from "../../packages/domain/calibration.ts";
 import { S1_THRESHOLDS } from "../../packages/domain/system-one.ts";
 import { PUSH_THRESHOLDS } from "../../packages/domain/recall-push.ts";
 import { JUDGE_THRESHOLDS } from "../../packages/domain/recall-judge.ts";
 import { DENSE_FLOORS, DENSE_WEIGHT } from "../../packages/domain/better-search.ts";
+import type { MeaningLead } from "../../packages/domain/better-search.ts";
+import { buildFixture } from "../eval/recall-fixture.ts";
+import { embedFixture } from "../eval/dense-fixture.ts";
 import { DURABLE_LOW } from "../../packages/storage/recall-index.ts";
 
 const value = (id: string) => THRESHOLDS.find((t) => t.id === id)?.value;
@@ -283,10 +286,17 @@ const run = (args: string[], env: Record<string, string | undefined> = {}) => {
 describe("npm run calibrate", () => {
   it("prints the report from a synthetic brain, never a word of a note, and leaves the file byte-identical", () => {
     const { path, dir } = syntheticBrain();
+    const seeded = new Storage(path, { vault: join(dir, "vault") });
+    try {
+      seeded.set("meaning_lead", { threshold: 0.63, key: "ollama:bge-m3:none", sample: 54, source: "proof:search", measured_at: "2026-11-06", applied_at: "2026-11-07T09:12:00.000Z" } satisfies MeaningLead);
+    } finally {
+      seeded.close();
+    }
     const before = sha(path);
     const files = readdirSync(dir);
     const r = run(["--db", path]);
     expect(r.status).toBe(0);
+    expect(r.stdout).toContain("Meaning matches can lead: 0.63, applied 2026-11-07");
     expect(r.stdout).toContain("This report only reads your brain. It does not change your data or settings, and it sends nothing.");
     expect(r.stdout).toContain("Sorting help: 3 sorted notes");
     expect(r.stdout).toContain("decisions: 1; under recall.durable_low: 0; within 0.05 above it: 1");
@@ -399,4 +409,62 @@ describe("npm run calibrate", () => {
       expect(r.stderr).not.toContain("not a database");
     }
   }, 60_000);
+});
+
+describe("meaning-lead suggestions", () => {
+  it("from the proof: 0.05 above the loudest no-answer cosine, only with 20 negatives, only when every wanted hit still qualifies, never under the floor or over 0.99", () => {
+    expect(suggestMeaningLead({ highestNegative: 0.58, lowestWanted: 0.71, floor: 0.45, negatives: 30, positives: 37 })).toMatchObject({ threshold: "search.meaning_lead", current: null, suggested: Number((0.58 + 0.05).toFixed(2)), sample: 30 });
+    expect(suggestMeaningLead({ highestNegative: 0.3, lowestWanted: 0.71, floor: 0.45, negatives: 30, positives: 37 }).suggested).toBe(0.45);
+    expect(suggestMeaningLead({ highestNegative: 0.97, lowestWanted: 1, floor: 0.45, negatives: 30, positives: 37 }).suggested).toBe(0.99);
+    const overlap = suggestMeaningLead({ highestNegative: 0.7, lowestWanted: 0.71, floor: 0.45, negatives: 30, positives: 37 });
+    expect(overlap.suggested).toBeNull();
+    expect(overlap.reason).toMatch(/no safe value/u);
+    // The safe side rests on the negatives alone: 19 negatives is not enough however many positives there are.
+    expect(suggestMeaningLead({ highestNegative: 0.58, lowestWanted: 0.71, floor: 0.45, negatives: 19, positives: 100 })).toMatchObject({ suggested: null, sample: 19, reason: expect.stringMatching(/not enough evidence/u) });
+    expect(suggestMeaningLead({ highestNegative: -1, lowestWanted: 1, floor: 0.45, negatives: 0, positives: 37 })).toMatchObject({ suggested: null, reason: expect.stringMatching(/not enough evidence/u) });
+  });
+  it("from the log: the 90th percentile of the leader's cosine on quiet pushes plus 0.05, from plain-prompt rows written while no line was in force", () => {
+    const none = Array.from({ length: 25 }, (_, i) => row({ dense: true, dense_top: 0.9, lead_cos: 0.46 + (i % 10) * 0.01, level: "none" }));
+    const full = Array.from({ length: 25 }, (_, i) => row({ dense: true, dense_top: 0.9, lead_cos: 0.7 + (i % 10) * 0.01, level: "full" }));
+    // The expected value is computed from the rows, not rounded by eye.
+    const sortedNone = none.map((r) => r.lead_cos!).sort((a, b) => a - b);
+    const expected = Number((sortedNone[Math.floor(0.9 * sortedNone.length)] + 0.05).toFixed(2));
+    const skipped = [
+      row({ dense: true, lead_cos: 0.95, level: "none", lead_at: 0.6 }),
+      row({ dense: true, lead_cos: 0.95, level: "full", lead: true, lead_at: 0.6 }),
+      row({ dense: true, lead_cos: 0.95, level: "none", intent: "continuation", topic: "session" }),
+      row({ level: "none", intent: "ack" }),
+      row({ dense: true, dense_top: 0.95, level: "none" }),
+      row({ level: "pointer" }),
+    ];
+    const s = meaningLeadFromLog([...none, ...full, ...skipped], 0.45, null);
+    expect(s).toMatchObject({ threshold: "search.meaning_lead", current: null, suggested: expected, sample: 50 });
+    expect(meaningLeadFromLog([...none.slice(0, 19), ...full], 0.45, null)).toMatchObject({ suggested: null, reason: expect.stringMatching(/Not enough data yet/u) });
+    const overlapping = Array.from({ length: 25 }, (_, i) => row({ dense: true, lead_cos: 0.5 + (i % 10) * 0.01, level: "full" }));
+    expect(meaningLeadFromLog([...none, ...overlapping], 0.45, 0.6)).toMatchObject({ current: 0.6, suggested: null, reason: expect.stringMatching(/overlap/u) });
+  });
+  it("keeps a separate file of no-answer queries for the proof, all quiet by words and under the fake embedder", () => {
+    const file = JSON.parse(readFileSync("tests/eval/recall-no-answer-v1.json", "utf8")) as { queries: string[] };
+    expect(new Set(file.queries).size).toBeGreaterThanOrEqual(20);
+    const dir = mkdtempSync(join(tmpdir(), "no-answer-"));
+    cleanup.push(() => rmSync(dir, { recursive: true, force: true }));
+    const fx = buildFixture(join(dir, "brain.sqlite"));
+    cleanup.push(() => fx.store.close());
+    const { dense } = embedFixture(fx);
+    for (const q of file.queries) {
+      expect(fx.brain.recallCore(owner, { query: q }).status, q).toBe("no_match");
+      expect(fx.brain.recallCore(owner, { query: q }, dense(q)).status, `${q} (dense)`).not.toBe("found");
+    }
+  });
+  it("prints the applied line with its provenance, or not set, and lists the log suggestion as a suggestion only", () => {
+    const lead: MeaningLead = { threshold: 0.63, key: "ollama:bge-m3:none", sample: 54, source: "proof:search", measured_at: "2026-11-06", applied_at: "2026-11-07T09:12:00.000Z" };
+    const text = renderCalibration(calibrationReport({ ...empty, meaning_lead: lead }));
+    expect(text).toContain("Meaning matches can lead: 0.63, applied 2026-11-07 from proof:search (54 queries measured 2026-11-06, model ollama:bge-m3:none).");
+    expect(text).toMatch(/search\.meaning_lead = 0\.63: hold\. Not enough data yet/u);
+    expect(text).toContain("Each is weaker evidence than npm run proof:search");
+    const unset = renderCalibration(calibrationReport(empty));
+    expect(unset).toContain("Meaning matches can lead: not set (a match found by meaning alone never leads a push).");
+    expect(unset).toMatch(/search\.meaning_lead = unset: hold\./u);
+    expect(calibrationReport(empty).recall.meaning_lead).toBeNull();
+  });
 });

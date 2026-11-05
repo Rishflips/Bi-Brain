@@ -12,6 +12,7 @@
 import { existsSync } from "node:fs";
 import { resolve } from "node:path";
 import { DatabaseSync } from "node:sqlite";
+import type { MeaningLead } from "../packages/domain/better-search.ts";
 import { LATEST_MIGRATION } from "../packages/storage/index.ts";
 import { calibrationReport, renderCalibration, type CalibrationInput, type RecallLogRow, type S1AnswerRow, type S1FeedbackRow } from "../packages/domain/calibration.ts";
 
@@ -49,10 +50,11 @@ function main(): number {
     const s1_answers: S1AnswerRow[] = entities("s1_answer").map((a) => ({ answers: Array.isArray(a?.answers) ? a.answers : [] }));
     const s1_feedback: S1FeedbackRow[] = entities("s1_feedback").map((f) => ({ question: f?.question, choice: f?.choice, confidence: f?.confidence, action: f?.action }));
     const recall_log = setting<RecallLogRow[]>("recall_log", []);
+    const meaning_lead = setting<MeaningLead | null>("meaning_lead", null);
     const embedded = table("recall_chunks")
       ? (db.prepare("SELECT embedding_model AS model, count(*) AS rows FROM recall_chunks WHERE embedding IS NOT NULL GROUP BY embedding_model").all() as { model: string | null; rows: number }[]).map((e) => ({ model: String(e.model ?? "unknown"), rows: Number(e.rows) }))
       : [];
-    const input: CalibrationInput = { recall_log: Array.isArray(recall_log) ? recall_log : [], s1_answers, s1_feedback, embedded };
+    const input: CalibrationInput = { recall_log: Array.isArray(recall_log) ? recall_log : [], s1_answers, s1_feedback, embedded, meaning_lead };
     const report = calibrationReport(input);
     console.log(asJson ? JSON.stringify(report, null, 2) : renderCalibration(report));
     return 0;

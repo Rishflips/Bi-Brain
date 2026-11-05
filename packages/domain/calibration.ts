@@ -7,7 +7,7 @@
 import { S1_THRESHOLDS } from "./system-one.ts";
 import { PUSH_THRESHOLDS, RECALL_LOG_MAX, type PushLevel } from "./recall-push.ts";
 import { JUDGE_THRESHOLDS } from "./recall-judge.ts";
-import { DENSE_FLOORS, DENSE_WEIGHT } from "./better-search.ts";
+import { DENSE_FLOORS, DENSE_WEIGHT, type MeaningLead } from "./better-search.ts";
 import { DURABLE_HIGH, DURABLE_LOW, TOPIC_MIN_CONFIDENCE } from "../storage/recall-index.ts";
 
 export type Threshold = { id: string; value: number; where: string; meaning: string };
@@ -58,11 +58,11 @@ export type RecallLogRow = {
 export type S1Answer = { id: string; type: "choice"; choice: string; confidence: number } | { id: string; type: "noul"; probability: number };
 export type S1AnswerRow = { answers: S1Answer[] };
 export type S1FeedbackRow = { question: string; choice: string | number; confidence: number; action: string };
-export type CalibrationInput = { recall_log: RecallLogRow[]; s1_answers: S1AnswerRow[]; s1_feedback: S1FeedbackRow[]; embedded: { model: string; rows: number }[] };
+export type CalibrationInput = { recall_log: RecallLogRow[]; s1_answers: S1AnswerRow[]; s1_feedback: S1FeedbackRow[]; embedded: { model: string; rows: number }[]; meaning_lead?: MeaningLead | null };
 
 export type Histogram = { n: number; bins: number[] };
 export type KeptBuckets = { kept: number[]; dropped: number[] };
-export type Suggestion = { threshold: string; current: number; suggested: number | null; sample: number; reason: string };
+export type Suggestion = { threshold: string; current: number | null; suggested: number | null; sample: number; reason: string };
 export type CalibrationReport = {
   thresholds: Threshold[];
   sorting: {
@@ -85,6 +85,7 @@ export type CalibrationReport = {
     dense_top: Histogram;
     dense_near_floor: number;
     embedded: { model: string; rows: number }[];
+    meaning_lead: MeaningLead | null;
   };
   suggestions: Suggestion[];
   gaps: string[];
@@ -173,6 +174,41 @@ function fileSuggestion(fb: KeptBuckets | undefined, file: number): Suggestion {
   return { threshold, current: file, suggested: null, sample, reason: `${sum(fb.kept)} of ${sample} File in cards were kept; the line holds. ${note}` };
 }
 
+const round2 = (x: number) => Number(x.toFixed(2));
+const percentile = (sorted: number[], p: number) => sorted[Math.min(sorted.length - 1, Math.floor(p * sorted.length))];
+const LEAD = "search.meaning_lead";
+export const LEAD_MAX = 0.99;
+/**
+ * From npm run proof:search. The safe side of the line rests on the no-answer queries alone, so the sample is the negative count and
+ * 20 negatives are required whatever the positive count: 0.05 above the loudest no-answer cosine, never under the floor, never over
+ * 0.99 (the most Settings accepts), only while every wanted hit still reaches it.
+ */
+export function suggestMeaningLead(input: { highestNegative: number; lowestWanted: number; floor: number; negatives: number; positives: number }): Suggestion {
+  const sample = input.negatives;
+  if (sample < MIN_SAMPLE || !Number.isFinite(input.highestNegative) || input.highestNegative < 0) return { threshold: LEAD, current: null, suggested: null, sample, reason: `not enough evidence: ${sample} no-answer queries scanned (${input.positives} with an answer); ${MIN_SAMPLE} no-answer queries are needed, because they alone show how loud a wrong match can be.` };
+  const candidate = round2(Math.min(LEAD_MAX, Math.max(input.floor, input.highestNegative + 0.05)));
+  if (candidate > input.lowestWanted) return { threshold: LEAD, current: null, suggested: null, sample, reason: `no safe value: the highest no-answer cosine (${round2(input.highestNegative)}) plus 0.05 is above the lowest wanted hit (${round2(input.lowestWanted)}), so no line keeps every wanted hit while refusing every no-answer query (${sample} no-answer and ${input.positives} answered queries scanned).` };
+  return { threshold: LEAD, current: null, suggested: candidate, sample, reason: `The highest cosine of a no-answer query was ${round2(input.highestNegative)} over ${sample} no-answer queries; 0.05 above it (at least the floor ${input.floor}, at most ${LEAD_MAX}) every wanted hit (lowest ${round2(input.lowestWanted)}, ${input.positives} queries) still qualifies.` };
+}
+/**
+ * From the recall log: only rows written while no line was in force (no lead_at), for a plain prompt (no intent), where Better search ran
+ * and the leading hit was found by meaning alone (lead_cos). Split by level and compared on the leader's cosine, the number the line is
+ * applied to. No ground truth, and the quiet group holds the very prompts the line would serve: the report says both.
+ */
+export function meaningLeadFromLog(rows: RecallLogRow[], floor: number, current: number | null): Suggestion {
+  const usable = rows.filter((r) => r?.dense && typeof r.lead_cos === "number" && Number.isFinite(r.lead_cos) && r.lead_at === undefined && r.intent === undefined && !r.lead);
+  const cos = (level: PushLevel) => usable.filter((r) => r.level === level).map((r) => r.lead_cos as number).sort((a, b) => a - b);
+  const none = cos("none");
+  const full = cos("full");
+  const sample = none.length + full.length;
+  if (none.length < MIN_SAMPLE || full.length < MIN_SAMPLE) return { threshold: LEAD, current, suggested: null, sample, reason: `Not enough data yet (${none.length} quiet and ${full.length} full pushes led by a meaning match, written while no line was applied; ${MIN_SAMPLE} of each are needed).` };
+  const p90 = percentile(none, 0.9);
+  const candidate = round2(Math.min(LEAD_MAX, Math.max(floor, p90 + 0.05)));
+  const median = percentile(full, 0.5);
+  if (candidate >= median) return { threshold: LEAD, current, suggested: null, sample, reason: `The leader cosines of quiet and full pushes overlap (90th percentile of quiet ${round2(p90)}, median of full ${round2(median)}), so the log cannot separate them; the line holds.` };
+  return { threshold: LEAD, current, suggested: candidate, sample, reason: `9 in 10 pushes where words found nothing had a leading meaning match under ${round2(p90)}; 0.05 above it stays below the median full push (${round2(median)}). Quiet pushes include the paraphrases this line would serve, so this value is conservative.` };
+}
+
 export function calibrationReport(input: CalibrationInput): CalibrationReport {
   const gaps: string[] = [];
   // Sorting help: one answer per sorted note version; every number is a probability or a confidence, never a word.
@@ -246,6 +282,9 @@ export function calibrationReport(input: CalibrationInput): CalibrationReport {
   }
   const floor = value("search.dense_floor.bge-m3");
   const dense_near_floor = denseTop.filter((v) => v >= floor && v < floor + 0.05).length;
+  const meaning_lead = input.meaning_lead ?? null;
+  suggestions.push(meaningLeadFromLog(input.recall_log, floor, meaning_lead?.threshold ?? null));
+  gaps.push("The log does not record whether a push was right, so the meaning-lead suggestion from it is weaker evidence than npm run proof:search, which measures the search service on known texts; rows written after a line was applied are never used, so the suggestion cannot feed on its own effect.");
   if (judgedWithout) gaps.push(`${judgedWithout} judged push${judgedWithout === 1 ? "" : "es"} carr${judgedWithout === 1 ? "ies" : "y"} no judge answers (recorded before this version); counted under judged only.`);
   if (denseWithout) gaps.push(`${denseWithout} push${denseWithout === 1 ? "" : "es"} used Better search with no passage over the floor, or before the top cosine was recorded; counted under dense only.`);
   gaps.push("The cosine floor hides every passage under it, so this report sees only what passed. npm run proof:search prints the room around the floor.");
@@ -254,7 +293,7 @@ export function calibrationReport(input: CalibrationInput): CalibrationReport {
   return {
     thresholds: [...THRESHOLDS],
     sorting: { answers: input.s1_answers.length, noul: nouls, kind: safeBag(kind), decisions, review_near_line, feedback: safeBag(feedback) },
-    recall: { pushes: input.recall_log.length, by_client: safeBag(by_client), candidates, hits: safeBag(hits), judged, judge_answered: safeBag(judge_answered), judge_owner_world: histogram(ownerWorld), dense, dense_top: histogram(denseTop), dense_near_floor, embedded: input.embedded },
+    recall: { pushes: input.recall_log.length, by_client: safeBag(by_client), candidates, hits: safeBag(hits), judged, judge_answered: safeBag(judge_answered), judge_owner_world: histogram(ownerWorld), dense, dense_top: histogram(denseTop), dense_near_floor, embedded: input.embedded, meaning_lead },
     suggestions,
     gaps,
   };
@@ -296,8 +335,11 @@ export function renderCalibration(r: CalibrationReport): string {
   lines.push(`  with Better search: ${r.recall.dense}; near the floor (within 0.05 above it): ${r.recall.dense_near_floor}`);
   lines.push(...renderHistogram("  top cosine per push", r.recall.dense_top));
   lines.push(r.recall.embedded.length ? `  embedded passages: ${r.recall.embedded.map((e) => `${e.rows} (${e.model})`).join(", ")}` : "  embedded passages: none");
+  const lead = r.recall.meaning_lead;
+  lines.push(lead ? `  Meaning matches can lead: ${lead.threshold}, applied ${lead.applied_at.slice(0, 10)} from ${lead.source} (${lead.sample} queries measured ${lead.measured_at}, model ${lead.key}).` : "  Meaning matches can lead: not set (a match found by meaning alone never leads a push).");
   lines.push("", "Suggestions (each is a suggestion only)");
-  for (const s of r.suggestions) lines.push(`- ${s.threshold} = ${s.current}: ${s.suggested === null ? "hold." : `consider ${s.suggested}.`} ${s.reason} ${HOLD}`);
+  for (const s of r.suggestions) lines.push(`- ${s.threshold} = ${s.current ?? "unset"}: ${s.suggested === null ? "hold." : `consider ${s.suggested}.`} ${s.reason} ${HOLD}`);
+  lines.push("Each is weaker evidence than npm run proof:search when it comes from the log alone; apply a value only in Settings → Better search → Meaning matches can lead (or PATCH /api/v1/preferences/meaning-lead); nothing here applies it.");
   lines.push("", "What this report cannot see");
   for (const g of r.gaps) lines.push(`- ${g}`);
   return lines.join("\n");

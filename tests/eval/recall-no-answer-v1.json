@@ -1,0 +1,26 @@
+{
+  "version": 1,
+  "note": "No-answer queries scanned by npm run proof:search beside the golden set's negatives, so the meaning-lead suggestion rests on at least 20 of them. None is in the golden set; adding here never changes the dense-off snapshot.",
+  "queries": [
+    "how do I rotate an AWS access key",
+    "what is the capital of Mongolia",
+    "convert this CSV to parquet with pandas",
+    "why does my Docker layer cache keep missing",
+    "write a haiku about autumn rain",
+    "explain Kubernetes liveness and readiness probes",
+    "what is the airspeed of an unladen swallow",
+    "fix the null pointer exception in the Java servlet",
+    "how many calories are in a banana",
+    "how do I write a crontab line for 3am on Sundays",
+    "translate good evening into Portuguese",
+    "what does the borrow checker complain about here",
+    "recommend a podcast about Roman history",
+    "generate a strong password policy for the intranet",
+    "how do I undo the last git commit but keep the changes",
+    "what is the difference between a mutex and a semaphore",
+    "draft a polite out-of-office reply",
+    "explain how a bloom filter functions",
+    "what is the Sicilian defence in chess",
+    "what time zone is Perth in"
+  ]
+}
