@@ -22,6 +22,22 @@ async function search(page: Page, q: string) {
   await field.fill(q);
 }
 
+// Runs before the journey below: the journey stores a choice, and the automatic state exists only while none is stored.
+test("Better search fits a 320px dark screen", async ({ page }) => {
+  await page.setViewportSize({ width: 320, height: 800 });
+  await page.emulateMedia({ colorScheme: "dark" });
+  await open(page);
+  await page.getByRole("button", { name: "Settings & privacy" }).click();
+  await expect(card(page)).toBeVisible();
+  // The automatic state carries the longest copy: the status line and the notice.
+  await expect(card(page).getByRole("status")).toHaveText(/^On \(this computer\)/, { timeout: 20000 });
+  await expect(card(page).getByText("BiBrain found a search model running in Ollama on this computer")).toBeVisible();
+  const fits = await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth);
+  expect(fits).toBe(true);
+  const cardFits = await card(page).evaluate((el) => el.scrollWidth <= el.clientWidth + 1);
+  expect(cardFits).toBe(true);
+});
+
 test("Better search is on by itself with a local model, turns off on request, and comes back when chosen", async ({ page }) => {
   await open(page);
   await page.getByRole("button", { name: "Settings & privacy" }).click();
