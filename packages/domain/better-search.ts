@@ -153,6 +153,8 @@ export function betterSearchEffective(setting: BetterSearchSetting, status: Bett
 export const MEANING_LEAD = "meaning_lead";
 export const MEANING_LEAD_MIN_SAMPLE = 20;
 export const MEANING_LEAD_MAX = 0.99;
+/** Settings' line under "Meaning matches can lead" when Better search was on by itself and has stopped. */
+export const MEANING_LEAD_NOT_RUNNING = "Better search is not running right now.";
 export const MEANING_LEAD_SOURCES = ["proof:search", "calibrate"] as const;
 export type MeaningLeadSource = (typeof MEANING_LEAD_SOURCES)[number];
 export type MeaningLead = { threshold: number; key: string; sample: number; source: MeaningLeadSource; measured_at: string; applied_at: string };

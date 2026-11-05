@@ -56,6 +56,7 @@ import {
   BETTER_SEARCH_OFF,
   BETTER_SEARCH_PAUSED,
   BETTER_SEARCH_STATUS,
+  MEANING_LEAD_NOT_RUNNING,
   EMBED_DIM_MAX,
   EMBED_DIM_MIN,
   EMBED_RESULT_KEY,
@@ -2177,7 +2178,11 @@ export class Brain {
     this.owner(p);
     const lead = this.meaningLeadSetting();
     const allowed = this.betterSearchAllowed();
-    if (!allowed.on) return { lead, effective: null, reason: "Turn Better search on first." };
+    if (!allowed.on) {
+      // No stored choice and a search model was set up: Better search was on by itself and has stopped (Ollama not found at the last start, or the worker is not running). The owner turned nothing off.
+      const lapsed = this.store.setting<unknown>(BETTER_SEARCH, null) === null && allowed.status?.configured === true && allowed.status.provider === "ollama";
+      return { lead, effective: null, reason: lapsed ? MEANING_LEAD_NOT_RUNNING : "Turn Better search on first." };
+    }
     if (!lead) return { lead: null, effective: null, reason: "Not yet calibrated." };
     if (lead.key !== allowed.setting.key) return { lead, effective: null, reason: "Measured for another search model. Measure again." };
     return { lead, effective: lead.threshold, reason: "ready" };
@@ -2185,8 +2190,8 @@ export class Brain {
   /** The one owner action that sets the line. The key and the applied time come from the server, never from the caller. */
   setMeaningLead(p: Principal, input: unknown): MeaningLead {
     this.owner(p);
-    const v = meaningLeadInputSchema.parse(input);
     if (this.tenantId !== undefined) throw new BrainError("BUDGET_BLOCKED", "Better search runs on the local app only.", 409);
+    const v = meaningLeadInputSchema.parse(input);
     const allowed = this.betterSearchAllowed();
     if (!allowed.on || !allowed.setting.key) throw new BrainError("BUDGET_BLOCKED", "Turn Better search on first.", 409);
     const key = allowed.setting.key;
@@ -2203,6 +2208,7 @@ export class Brain {
   }
   clearMeaningLead(p: Principal): { lead: null } {
     this.owner(p);
+    if (this.tenantId !== undefined) throw new BrainError("BUDGET_BLOCKED", "Better search runs on the local app only.", 409);
     this.store.run("DELETE FROM settings WHERE key=?", MEANING_LEAD);
     return { lead: null };
   }

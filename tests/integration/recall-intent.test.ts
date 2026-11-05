@@ -42,6 +42,11 @@ describe("prompt intent", () => {
     expect(promptIntent("what did I decide about the caterer")).toEqual({ kind: "decision", topicTerms: ["caterer"] });
     expect(promptIntent("have I picked a venue")).toEqual({ kind: "decision", topicTerms: ["venue"] });
     expect(promptIntent("what did the two of us agree on the launch")).toEqual({ kind: "decision", topicTerms: ["launch"] });
+    // Filler that names nothing is not a topic word: these fall to a continuation.
+    for (const q of ["what have we decided so far", "what did we decide, again", "did I pick the right one", "why did we choose react over vue"]) expect(promptIntent(q).topicTerms, q).not.toEqual(expect.arrayContaining(["far"]));
+    expect(promptIntent("what have we decided so far")).toEqual({ kind: "continuation", topicTerms: [] });
+    expect(promptIntent("what did we decide, again")).toEqual({ kind: "continuation", topicTerms: [] });
+    expect(promptIntent("why did we choose react over vue")).toEqual({ kind: "decision", topicTerms: ["react", "vue"] });
     expect(promptIntent("did we decide yet")).toEqual({ kind: "continuation", topicTerms: [] });
     // The gap between subject and verb is at most two words, on both sides of the boundary.
     expect(promptIntent("did we finally actually decide on the venue")).toEqual({ kind: "decision", topicTerms: ["venue"] });

@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { AUTOMATIC_NOTICE, DETECTED_HINT, betterSearchCanSave, meaningLeadLine, plainProbe, plainSearchProblem, plainSearchReason } from "../../apps/web/better-search-copy.ts";
 import { Storage } from "../../packages/storage/index.ts";
 import { Brain } from "../../packages/domain/service.ts";
-import { BETTER_SEARCH_PAUSED, EMBED_OFF_BY_SETUP, PROBE_REASONS, modelKey } from "../../packages/domain/better-search.ts";
+import { MEANING_LEAD_NOT_RUNNING, BETTER_SEARCH_PAUSED, EMBED_OFF_BY_SETUP, PROBE_REASONS, modelKey } from "../../packages/domain/better-search.ts";
 import { embedFromEnv } from "../../packages/providers/embed-env.ts";
 import { publishBetterSearchStatus } from "../../apps/worker/embed.ts";
 import type { Principal } from "../../packages/contracts/index.ts";
@@ -190,6 +190,7 @@ describe("meaning-lead copy", () => {
     expect(meaningLeadLine({ lead: { ...lead, source: "calibrate" as never, sample: 31 }, effective: 0.63, reason: "ready" })).toBe("Calibrated at 0.63: a match found by meaning alone can lead a push when its score is 0.63 or higher. From calibrate, 31 pushes measured on 2026-11-06, applied 2026-11-07.");
     expect(meaningLeadLine({ lead, effective: null, reason: "Measured for another search model. Measure again." })).toBe("Measured for another search model. Measure again. Until then a match found by meaning alone never leads a push.");
     expect(meaningLeadLine({ lead: null, effective: null, reason: "Turn Better search on first." })).toBe("Turn Better search on first.");
+    expect(meaningLeadLine({ lead: null, effective: null, reason: MEANING_LEAD_NOT_RUNNING })).toBe("Better search is not running right now.");
     for (const s of [meaningLeadLine({ lead, effective: 0.63, reason: "ready" }), meaningLeadLine({ lead: null, effective: null, reason: "Not yet calibrated." })]) expect(s).not.toMatch(/bge|ollama|BRAIN_|token|mcp/i);
   });
 });

@@ -9,7 +9,7 @@ import { LATEST_MIGRATION, Storage } from "../../packages/storage/index.ts";
 import { Brain } from "../../packages/domain/service.ts";
 import type { Principal } from "../../packages/contracts/index.ts";
 import type { AskResult } from "../../packages/providers/system-one-ask.ts";
-import { BINS, MIN_SAMPLE, THRESHOLDS, calibrationReport, foldLowestWanted, histogram, meaningLeadFromLog, renderCalibration, suggestMeaningLead, type CalibrationInput, type RecallLogRow, type S1AnswerRow } from "../../packages/domain/calibration.ts";
+import { BINS, MIN_SAMPLE, THRESHOLDS, calibrationReport, effectiveSearchModelKey, foldLowestWanted, proofNegativeSets, histogram, meaningLeadFromLog, renderCalibration, suggestMeaningLead, type CalibrationInput, type RecallLogRow, type S1AnswerRow } from "../../packages/domain/calibration.ts";
 import { S1_THRESHOLDS } from "../../packages/domain/system-one.ts";
 import { PUSH_THRESHOLDS } from "../../packages/domain/recall-push.ts";
 import { JUDGE_THRESHOLDS } from "../../packages/domain/recall-judge.ts";
@@ -466,6 +466,31 @@ describe("meaning-lead suggestions", () => {
     expect(unset).toContain("Meaning matches can lead: not set (a match found by meaning alone never leads a push).");
     expect(unset).toMatch(/search\.meaning_lead = unset: hold\./u);
     expect(calibrationReport(empty).recall.meaning_lead).toBeNull();
+  });
+  it("names the search model Better search uses automatically, or by a stored choice, and not one that is off", () => {
+    const status = { configured: true, provider: "ollama", detected: true, key: "ollama:bge-m3:none" };
+    // Automatic: no stored row, the worker found Ollama.
+    expect(effectiveSearchModelKey(null, status)).toBe("ollama:bge-m3:none");
+    const text = renderCalibration(calibrationReport({ ...empty, recall_log: [...Array.from({ length: 25 }, () => row({ dense: true, lead_cos: 0.46, level: "none" })), ...Array.from({ length: 25 }, () => row({ dense: true, lead_cos: 0.7, level: "full" }))], today: "2026-11-08", model_key: effectiveSearchModelKey(null, status) }));
+    expect(text).toContain("current search model ollama:bge-m3:none");
+    expect(text).not.toContain("Better search is off");
+    // A stored choice wins; a stored Off and a lapsed or Cloudflare status name no model.
+    expect(effectiveSearchModelKey({ mode: "ollama", key: "ollama:other:none" }, status)).toBe("ollama:other:none");
+    expect(effectiveSearchModelKey({ mode: "off" }, status)).toBeNull();
+    expect(effectiveSearchModelKey(null, { ...status, detected: false })).toBeNull();
+    expect(effectiveSearchModelKey(null, { ...status, provider: "cloudflare" })).toBeNull();
+    expect(effectiveSearchModelKey(null, null)).toBeNull();
+  });
+  it("keeps the extra no-answer queries out of the proof's PASS gate: they only feed the suggestion scan", () => {
+    const golden = ["neg-1", "neg-2"];
+    const sets = proofNegativeSets(golden, ["a", "b", "c"]);
+    expect(sets.gate).toBe(golden);
+    expect(sets.gate).toEqual(["neg-1", "neg-2"]);
+    expect(sets.scanOnly).toEqual([{ id: "extra-neg-1", query: "a" }, { id: "extra-neg-2", query: "b" }, { id: "extra-neg-3", query: "c" }]);
+    // The script scores `buckets.negative` only and calls the extras through the scan loop.
+    const src = readFileSync("scripts/better-search-proof.ts", "utf8");
+    expect(src).not.toMatch(/buckets\.negative\.push/u);
+    expect(src).toMatch(/proofNegativeSets\(buckets\.negative, extra\.queries\)/u);
   });
   it("prints everything the route needs for the log suggestion, and it passes the route's validation", () => {
     const none = Array.from({ length: 25 }, (_, i) => row({ dense: true, lead_cos: 0.46 + (i % 10) * 0.01, level: "none" }));

@@ -185,7 +185,7 @@ describe("the 10-minute re-probe", () => {
       // Only a file that actually starts a worker process counts: it names run.mjs or the worker entry AND spawns something. A file that merely reads run.mjs (recall-key-isolation) is not a worker.
       // The managed-* worker tests are exempt: they run BRAIN_MODE=managed (or stop at a preload before any app code), and the embed setup sits only in the local-mode branch of apps/worker/main.ts.
       const spawnsWorker = /scripts\/run\.mjs|apps\/worker\/main\.ts/u.test(text) && /\bspawn(?:Sync)?\(/u.test(text) && !/managed/iu.test(file);
-      if (spawnsWorker) expect(text, `${file} must set BRAIN_EMBED_PROVIDER: "off" (or inject a fake probe) on the worker it starts`).toMatch(/BRAIN_EMBED_PROVIDER:\s*"off"|fakeProbe|probe:/u);
+      if (spawnsWorker) expect(text, `${file} must set BRAIN_EMBED_PROVIDER: "off" (or inject a fake probe) on the worker it starts`).toMatch(/BRAIN_EMBED_PROVIDER:\s*"off"|fakeProbe/u);
     }
     expect(readFileSync("playwright.config.ts", "utf8").match(/BRAIN_EMBED_PROVIDER: "off"/gu)).toHaveLength(5);
   });

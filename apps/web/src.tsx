@@ -1565,7 +1565,7 @@ function App() {
                     <section aria-labelledby="meaning-lead-heading">
                       <h3 id="meaning-lead-heading">Meaning matches can lead</h3>
                       <p className="status" data-testid="meaning-lead-line" aria-live="polite">{meaningLeadLine(lead)}</p>
-                      {lead.reason !== "Turn Better search on first." ? (
+                      {lead.reason !== "Turn Better search on first." && lead.reason !== "Better search is not running right now." ? (
                         <form
                           onSubmit={(e) => {
                             e.preventDefault();

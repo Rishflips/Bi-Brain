@@ -19,7 +19,7 @@ import { join, sep } from "node:path";
 import { embedFromEnv } from "../packages/providers/embed-env.ts";
 import { prepareEmbed } from "../packages/providers/embed.ts";
 import { BETTER_SEARCH, BETTER_SEARCH_STATUS, EMBED_VISIBILITIES, denseFloor, embedText, type QueryVector } from "../packages/domain/better-search.ts";
-import { foldLowestWanted, suggestMeaningLead } from "../packages/domain/calibration.ts";
+import { foldLowestWanted, proofNegativeSets, suggestMeaningLead } from "../packages/domain/calibration.ts";
 import { CANDIDATES_PER_LIST } from "../packages/domain/recall.ts";
 import { VectorCache, pendingEmbedRows, writeEmbeddings } from "../packages/storage/recall-vectors.ts";
 import { buildFixture, owner } from "../tests/eval/recall-fixture.ts";
@@ -94,7 +94,9 @@ async function run(): Promise<number> {
       negative: golden.cases.filter((c) => c.tags.includes("negative")),
     };
     const extra = JSON.parse(readFileSync(join(process.cwd(), "tests/eval/recall-no-answer-v1.json"), "utf8")) as { queries: string[] };
-    buckets.negative.push(...extra.queries.map((query, i) => ({ id: `extra-neg-${i + 1}`, tags: ["negative", "extra"], principal: "owner" as const, query, expect: { must_include: [] as string[] } })));
+    // The extra no-answer queries feed only the threshold-suggestion scan; the PASS gate scores the golden set's own negatives, unchanged.
+    const negativeSets = proofNegativeSets(buckets.negative, extra.queries);
+    const scanOnly: Case[] = negativeSets.scanOnly.map((x) => ({ id: x.id, tags: ["negative", "extra"], principal: "owner" as const, query: x.query, expect: { must_include: [] as string[] } }));
     const negativeIds = new Set<string>();
     const positiveIds = new Set<string>();
     const cache = new VectorCache();
@@ -113,6 +115,17 @@ async function run(): Promise<number> {
     const scores: Record<string, { words: number; dense: number }> = {};
     let lowestWanted = 1;
     let highestNegative = -1;
+    // Scan-only: nearest cosine for the suggestion, never a bucket score.
+    const scanExtra = async () => {
+      for (const c of scanOnly) {
+        const v = await embedQuery(c.query);
+        const scope = { vector: v.vector, key, dim, projects: fx.brain.recallCore(owner, { query: c.query, history: false, limit: 8 }, v).searched.projects.map((x) => x.id), visibilities: EMBED_VISIBILITIES[config.provider], status: "current" as const, floor: -1 };
+        negativeIds.add(c.id);
+        const scan = cache.search(fx.store, { ...scope, limit: 1 });
+        if (scan[0]) highestNegative = Math.max(highestNegative, scan[0].score);
+        console.log(`  ${c.id}: nearest cosine ${scan[0] ? scan[0].score.toFixed(2) : "none"} (suggestion scan only; not in the PASS gate)`);
+      }
+    };
     for (const [name, cases] of Object.entries(buckets)) {
       let words = 0;
       let dense = 0;
@@ -146,6 +159,7 @@ async function run(): Promise<number> {
       scores[name] = { words: words / cases.length, dense: dense / cases.length };
       console.log(`${name}: words ${scores[name].words.toFixed(2)}, dense ${scores[name].dense.toFixed(2)}`);
     }
+    await scanExtra();
     console.log(`\ncalls ${calls}, tokens ${tokens}${config.provider === "cloudflare" ? " (estimated unless reported)" : ""}, cost ${cost} micro-USD`);
     console.log(`lowest cosine of a wanted hit ${lowestWanted.toFixed(2)}; highest cosine of a no-answer query ${highestNegative.toFixed(2)}; floor ${denseFloor(key)}`);
     const lead = suggestMeaningLead({ highestNegative, lowestWanted, floor: denseFloor(key), negatives: negativeIds.size, positives: positiveIds.size });

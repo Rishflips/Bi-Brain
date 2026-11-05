@@ -17,7 +17,7 @@ export const ACK_PROMPTS: readonly string[] = ["thanks", "thank you", "ok", "oka
 export const DECISION_WORDS: ReadonlySet<string> = new Set([
   "decide", "decided", "decision", "pick", "picked", "choose", "chose", "chosen", "settle", "settled", "agree", "agreed", "been", "already",
   // Filler a decision question carries that names nothing, so never a topic word on its own.
-  "yet", "finally", "actually", "ultimately", "eventually", "both", "two",
+  "yet", "finally", "actually", "ultimately", "eventually", "both", "two", "far", "again", "right", "why", "over",
 ]);
 /** A first-person subject: we, I, or "(the two|both) of us". A passive ("what was chosen…", "what was settled in court") has none and stays plain. */
 const SUBJECT = String.raw`(?:we|i|(?:the\s+two|both)\s+of\s+us)`;

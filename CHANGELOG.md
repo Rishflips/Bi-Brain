@@ -4,6 +4,8 @@ All notable changes to BiBrain are recorded here. The format follows [Keep a Cha
 
 ## [Unreleased]
 
+Search by meaning is on by default when Ollama is found on this computer, and a meaning match can lead a push once you apply a measured score.
+
 Works with any agent, Hermes first.
 
 ### Added

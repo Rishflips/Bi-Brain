@@ -183,6 +183,20 @@ export const LEAD_MAX = 0.99;
 export const foldLowestWanted = (lowest: number, score: number | undefined, floor: number): number => Math.min(lowest, score ?? round2(floor - 0.01));
 export type MeaningLeadApply = { threshold: number; sample: number; source: "calibrate"; measured_at: string; model: string | null };
 /**
+ * The search model key the calibration report names: the stored choice when there is one (Off names none), and with no stored choice
+ * the key the worker published when it found Ollama (the automatic state). Anything else is unknown.
+ */
+export function effectiveSearchModelKey(stored: { mode?: string; key?: string } | null, status: { configured?: boolean; provider?: string; detected?: boolean; key?: string } | null): string | null {
+  if (stored) return stored.mode !== "off" && typeof stored.key === "string" ? stored.key : null;
+  return status && status.configured === true && status.provider === "ollama" && status.detected === true && typeof status.key === "string" ? status.key : null;
+}
+
+/** The proof's two no-answer sets: the golden negatives are the plan-5b PASS gate; the extra file feeds only the threshold-suggestion scan. */
+export function proofNegativeSets<T>(goldenNegatives: T[], extraQueries: string[]): { gate: T[]; scanOnly: { id: string; query: string }[] } {
+  return { gate: goldenNegatives, scanOnly: extraQueries.map((query, i) => ({ id: `extra-neg-${i + 1}`, query })) };
+}
+
+/**
  * From npm run proof:search. The safe side of the line rests on the no-answer queries alone, so the sample is the negative count and
  * 20 negatives are required whatever the positive count: 0.05 above the loudest no-answer cosine, never under the floor, never over
  * 0.99 (the most Settings accepts), only while every wanted hit still reaches it.
@@ -348,7 +362,7 @@ export function renderCalibration(r: CalibrationReport): string {
   const apply = r.recall.meaning_lead_apply;
   if (apply) {
     lines.push(`To apply the meaning-lead value (nothing here applies it): Settings → Better search → Meaning matches can lead, or PATCH /api/v1/preferences/meaning-lead with {"threshold": ${apply.threshold}, "sample": ${apply.sample}, "source": "${apply.source}", "measured_at": "${apply.measured_at}"}.`);
-    lines.push(`  sample ${apply.sample} counts pushes in the recall log that were led by a meaning match, written while no line was applied (quiet and full together); source ${apply.source}; measured ${apply.measured_at}; current search model ${apply.model ?? "unknown (Better search is off)"}.`);
+    lines.push(`  sample ${apply.sample} counts pushes in the recall log that were led by a meaning match, written while no line was applied (quiet and full together); source ${apply.source}; measured ${apply.measured_at}; current search model ${apply.model ?? "unknown (no search model is in use)"}.`);
     lines.push("  The log rows carry no search-model key: rows written before a change of search model may not match the current one. Run npm run proof:search for stronger evidence.");
   }
   lines.push("Each is weaker evidence than npm run proof:search when it comes from the log alone; apply a value only in Settings → Better search → Meaning matches can lead (or PATCH /api/v1/preferences/meaning-lead); nothing here applies it.");

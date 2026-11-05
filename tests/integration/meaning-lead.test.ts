@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { createApp } from "../../apps/server/app.ts";
 import { Brain } from "../../packages/domain/service.ts";
 import { publishBetterSearchStatus } from "../../apps/worker/embed.ts";
-import { MEANING_LEAD, MEANING_LEAD_MIN_SAMPLE, modelKey, type MeaningLead, type QueryVector } from "../../packages/domain/better-search.ts";
+import { MEANING_LEAD, MEANING_LEAD_MIN_SAMPLE, MEANING_LEAD_NOT_RUNNING, modelKey, type MeaningLead, type QueryVector } from "../../packages/domain/better-search.ts";
 import { meaningLead } from "../../packages/domain/recall-push.ts";
 import { MIN_SAMPLE } from "../../packages/domain/calibration.ts";
 import { buildFixture, owner, type Fixture } from "../eval/recall-fixture.ts";
@@ -221,5 +221,32 @@ describe("the meaning-lead rule", () => {
     }
     expect(err).toMatchObject({ code: "BUDGET_BLOCKED", status: 409, message: "Better search runs on the local app only." });
     expect(fx.store.setting<MeaningLead | null>(MEANING_LEAD, null)).toBeNull();
+  });
+  it("refuses to clear the line on a managed brain, with the same 409 as setting it", () => {
+    const { fx } = dense();
+    const managed = new Brain(fx.store, () => new Date("2026-10-25T09:00:00.000Z"), "synthetic-tenant");
+    let err: unknown;
+    try {
+      managed.clearMeaningLead(managed.ownerPrincipal());
+    } catch (e) {
+      err = e;
+    }
+    expect(err).toMatchObject({ code: "BUDGET_BLOCKED", status: 409, message: "Better search runs on the local app only." });
+    // A bad body on a managed brain is the same 409, not a 400.
+    let bad: unknown;
+    try {
+      managed.setMeaningLead(managed.ownerPrincipal(), { nonsense: true });
+    } catch (e) {
+      bad = e;
+    }
+    expect(bad).toMatchObject({ status: 409 });
+  });
+  it("says Better search is not running when the automatic state lapsed, and keeps the old line for a stored Off", () => {
+    const { fx } = dense();
+    fx.store.run("DELETE FROM settings WHERE key=?", "better_search");
+    publishBetterSearchStatus(fx.brain, { configured: true, provider: "ollama", model: FAKE_EMBED_MODEL, key: modelKey("ollama", FAKE_EMBED_MODEL), label: "Ollama on this computer", detected: false, probe: "no_ollama" });
+    expect(fx.brain.meaningLead(owner)).toMatchObject({ effective: null, reason: MEANING_LEAD_NOT_RUNNING });
+    fx.brain.setBetterSearch(owner, { mode: "off" });
+    expect(fx.brain.meaningLead(owner)).toMatchObject({ effective: null, reason: "Turn Better search on first." });
   });
 });
