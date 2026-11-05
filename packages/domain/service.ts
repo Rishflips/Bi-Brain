@@ -2044,11 +2044,22 @@ export class Brain {
     this.store.set("recall_help_enabled", v.enabled);
     return { enabled: v.enabled };
   }
-  /** The stored better-search choice. Its own setting, never a preference field: managed code round-trips `prefs()` into a strict schema. */
+  /** The stored better-search choice. Its own setting, never a preference field: managed code round-trips `prefs()` into a strict schema. With no row at all, the automatic reading applies. */
   betterSearchSetting(): BetterSearchSetting {
     const raw = this.store.setting<Partial<BetterSearchSetting> | null>(BETTER_SEARCH, null);
+    if (raw === null) return this.automaticBetterSearch();
     if (!raw || typeof raw !== "object" || (raw.mode !== "ollama" && raw.mode !== "cloudflare") || typeof raw.key !== "string") return { ...BETTER_SEARCH_OFF };
     return { mode: raw.mode, key: raw.key, consented_at: typeof raw.consented_at === "string" ? raw.consented_at : null };
+  }
+  /**
+   * With no stored choice, Better search is on when the worker found Ollama with the search model on this computer (the probe only ever
+   * reaches loopback, so nothing leaves it). Cloudflare is never automatic. A stored Off is the owner's choice and never reaches here.
+   */
+  private automaticBetterSearch(): BetterSearchSetting {
+    if (this.tenantId !== undefined) return { ...BETTER_SEARCH_OFF };
+    const status = this.store.setting<BetterSearchStatus | null>(BETTER_SEARCH_STATUS, null);
+    if (!status || status.configured !== true || status.provider !== "ollama" || status.detected !== true || typeof status.key !== "string") return { ...BETTER_SEARCH_OFF };
+    return { mode: "ollama", key: status.key, consented_at: null, automatic: true };
   }
   /** The one effectiveness read the server's query lane and the worker's loops share: consent, the worker's published setup, its heartbeat, the circuit breaker and, for Cloudflare, both limits. */
   betterSearchAllowed(): { on: boolean; reason: string; setting: BetterSearchSetting; status: BetterSearchStatus | null } {
@@ -2079,6 +2090,9 @@ export class Brain {
       mode: setting.mode,
       key: setting.key,
       consented_at: setting.consented_at,
+      automatic: setting.automatic === true,
+      detected: status?.detected ?? null,
+      probe: status?.probe ?? null,
       status: status
         ? { configured: status.configured, provider: status.provider ?? null, label: status.label ?? null, reason: status.reason ?? null, key: status.key ?? null, last_error: status.last_error ?? null, last_ok_at: status.last_ok_at ?? null }
         : null,

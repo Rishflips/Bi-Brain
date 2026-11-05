@@ -48,7 +48,7 @@ export const PROBE_REASONS: Record<"no_ollama" | "no_model", string> = {
 /** What each provider may embed. Cloudflare never receives private sources, owner-only facts or quarantined notes (visibility private). */
 export const EMBED_VISIBILITIES: Record<EmbedProvider, RecallVisibility[]> = { ollama: ["project", "private", "owner"], cloudflare: ["project"] };
 
-export type BetterSearchSetting = { mode: BetterSearchMode; key: string | null; consented_at: string | null };
+export type BetterSearchSetting = { mode: BetterSearchMode; key: string | null; consented_at: string | null; /** True only for the reading of an absent row: on because the worker found Ollama with the model on this computer. Never stored. */ automatic?: boolean };
 export const BETTER_SEARCH_OFF: BetterSearchSetting = { mode: "off", key: null, consented_at: null };
 export type BetterSearchStatus = {
   configured: boolean;
