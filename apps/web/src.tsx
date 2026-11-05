@@ -466,7 +466,7 @@ function App() {
   }, [dark]);
   const refresh = useCallback(async () => {
     const generation = authGeneration;
-    const [p, n, t, settings, g, paidPlan, sortingStatus, recall, betterStatus, leadStatus] = await Promise.all([
+    const [p, n, t, settings, g, paidPlan, sortingStatus, recall, betterStatus] = await Promise.all([
       api("/projects"),
       api("/search"),
       api("/today"),
@@ -479,7 +479,6 @@ function App() {
       api<{ enabled: boolean }>("/preferences/recall-help").catch(() => ({ enabled: false })),
       // A failed read hides the better-search card rather than failing the rest.
       api<BetterSearch>("/preferences/better-search").catch(() => null),
-      api<MeaningLeadView>("/preferences/meaning-lead").catch(() => null),
     ]);
     // A response that arrives after sign-out or an account change must not
     // restore the previous account's data.
@@ -496,7 +495,6 @@ function App() {
     if (!recallConsentTouched.current) setRecallHelp(recall.enabled === true);
     setSavedRecallHelp(recall.enabled === true);
     setBetter(betterStatus);
-    setLead(leadStatus);
     if (betterStatus && !betterTouched.current) setBetterChoice(betterStatus.mode);
   }, []);
   /**
@@ -666,6 +664,16 @@ function App() {
     // until a runtime response validates.
     void bootstrap();
   }, [bootstrap, retryNonce]);
+  useEffect(() => {
+    // The meaning-lead line changes only when the owner applies or clears it, so it is read when Settings opens,
+    // not on every 2.5-second refresh (which would add a request per poll per open page).
+    if (!paired || demo || nav !== "Settings") return;
+    let live = true;
+    void api<MeaningLeadView>("/preferences/meaning-lead")
+      .then((view) => { if (live) setLead(view); })
+      .catch(() => { if (live) setLead(null); });
+    return () => { live = false; };
+  }, [paired, demo, nav]);
   useEffect(() => {
     if (!paired || demo) return;
     const timer = setInterval(() => {
