@@ -1,5 +1,5 @@
 import { questionWords } from "./ask.ts";
-import { MAX_TERMS } from "./recall.ts";
+import { MAX_TERMS, type Candidate, type DeterministicSignals } from "./recall.ts";
 
 export const RECALL_SESSION_TOPICS = "recall_session_topics";
 export const SESSION_TOPIC_TTL_MS = 7_200_000;
@@ -9,23 +9,31 @@ export type PromptIntent = { kind: "ack" | "continuation" | "decision" | "plain"
 /** Closed lists, compared after normalisation. The CLI keeps a copy of CONTINUATION_PROMPTS in apps/cli/lib.mjs; a test keeps them equal. */
 export const CONTINUATION_PROMPTS: readonly string[] = [
   "continue", "go on", "keep going", "carry on", "proceed", "next", "resume", "pick up where we left off", "where were we", "where did we leave off",
-  "what were we doing", "what did we decide", "what was decided", "what did we agree", "what did we pick", "what did we choose", "remind me where we are",
+  "what were we doing", "what did we decide", "what did we agree", "what did we pick", "what did we choose", "remind me where we are",
   "recap", "summarise where we are", "summarize where we are", "and then", "go ahead with that", "do that", "continue from there",
 ];
 export const ACK_PROMPTS: readonly string[] = ["thanks", "thank you", "ok", "okay", "yes", "no", "sure", "great", "nice", "cool", "done", "lgtm", "good", "fine", "yep", "nope", "got it", "k", "ty", "thx", "perfect", "sounds good"];
 /** The words a decision question is read without (after questionWords' trailing-s strip). */
-export const DECISION_WORDS: ReadonlySet<string> = new Set(["decide", "decided", "decision", "pick", "picked", "choose", "chose", "chosen", "settle", "settled", "agree", "agreed", "been", "already"]);
+export const DECISION_WORDS: ReadonlySet<string> = new Set([
+  "decide", "decided", "decision", "pick", "picked", "choose", "chose", "chosen", "settle", "settled", "agree", "agreed", "been", "already",
+  // Filler a decision question carries that names nothing, so never a topic word on its own.
+  "yet", "finally", "actually", "ultimately", "eventually", "both", "two",
+]);
+/** A first-person subject: we, I, or "(the two|both) of us". A passive ("what was chosen…", "what was settled in court") has none and stays plain. */
+const SUBJECT = String.raw`(?:we|i|(?:the\s+two|both)\s+of\s+us)`;
+/** Not phrasal: "pick up", "pick it up", "pick the accent up", "pick off", "pick apart", "settle down" are not decisions. */
+const NO_PARTICLE = String.raw`(?!(?:\s+\S+){0,2}?\s+(?:up|out|off|apart|down)\b)`;
 /**
- * Three narrow shapes, all about what WE decided in the past: "did we (…) decide/pick/choose/settle/agree/go with" (not phrasal
- * "pick up/out/off/apart"), "have/had/were/was we (already) decided/agreed/settled/picked/chosen", and "what was/were/has been/have we
- * decided/chosen/picked/agreed/settled". Never "do", "does", "should", "can", "will", "I", "you", a bare "was it decided", or the noun
- * phrase "the decision on": those are how-tos, plans or statements, and stay plain. The unit test pins a list of ordinary prompts at zero false positives.
+ * Two narrow shapes, both about what a first-person subject decided in the past: "did we (at most two words) decide/pick/choose/agree/
+ * settle on/go with", and "have/had we|I, were we (already) decided/agreed/settled/picked/chosen". Never "do", "does", "should", "can",
+ * "will", "you", "the team", a passive with no subject ("what was decided", "what has been chosen"), a phrasal verb, a transitive
+ * "settle the invoice", or the noun phrase "the decision on": those are how-tos, plans, statements or other people's choices, and stay
+ * plain. The unit test pins a list of ordinary prompts at zero false positives.
  */
 const DECISION_INTENT = new RegExp(
   [
-    String.raw`\bdid\s+we\s+(?:\S+\s+){0,2}?(?:decide|pick|choose|settle|agree|go\s+with)\b(?!\s+(?:up|out|off|apart)\b)`,
-    String.raw`\b(?:have|had|were|was)\s+we\s+(?:already\s+)?(?:decided|agreed|settled|picked|chosen)\b`,
-    String.raw`\bwhat\s+(?:was|were|has\s+been|have\s+we)\s+(?:decided|chosen|picked|agreed|settled)\b(?!\s+(?:up|out|off|apart)\b)`,
+    String.raw`\bdid\s+${SUBJECT}\s+(?:\S+\s+){0,2}?(?:decide|pick|choose|agree|settle\s+(?:on|upon)|go\s+with)\b${NO_PARTICLE}`,
+    String.raw`\b(?:(?:have|had)\s+(?:we|i)|were\s+we)\s+(?:already\s+)?(?:decided|agreed|settled|picked|chosen)\b${NO_PARTICLE}`,
   ].join("|"),
   "iu",
 );
@@ -44,6 +52,16 @@ export function promptIntent(prompt: string): PromptIntent {
     return topic.length ? { kind: "decision", topicTerms: topic } : { kind: "continuation", topicTerms: [] };
   }
   return { kind: "plain", topicTerms: [] };
+}
+
+/**
+ * The decision reading's evidence rule: it reaches `full` exactly as any prompt does, by covering two topic words, or when its single
+ * topic word is in the name of the top fact's entity ("caterer" for "Launch party caterer"). One incidental shared word is at most a pointer.
+ */
+export function topicReadingEvidence(s: DeterministicSignals, top: Candidate | undefined): DeterministicSignals {
+  if (!s.strong || s.terms.length >= 2) return s;
+  const names = new Set(top?.row.kind === "fact" ? questionWords(top.row.prefix.split(" · ").at(-1) ?? "") : []);
+  return s.terms.length === 1 && names.has(s.terms[0]) ? s : { ...s, strong: false };
 }
 
 /** Per session hash: the content words of the last prompt that found something, and when. Never the prompt, an id or a passage. */

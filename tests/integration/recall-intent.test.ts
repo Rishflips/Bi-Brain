@@ -20,11 +20,12 @@ afterEach(async () => {
 describe("prompt intent", () => {
   it("sorts acknowledgements, continuations, decision questions and everything else", () => {
     for (const p of ["thanks", "Thanks!", "ok", "OK.", "yes", "lgtm", "got it", "sounds good", "  thank you  "]) expect(promptIntent(p).kind, p).toBe("ack");
-    for (const p of ["continue", "Continue.", "go on", "OK, continue", "please continue", "keep going…", "where were we?", "what did we decide", "What was decided?", "what did we pick", "recap", "and then"]) expect(promptIntent(p), p).toEqual({ kind: "continuation", topicTerms: [] });
+    // Every entry of the closed list, as typed and capitalised with a full stop.
+    for (const a of ACK_PROMPTS) for (const p of [a, `${a[0].toUpperCase()}${a.slice(1)}.`]) expect(promptIntent(p).kind, p).toBe("ack");
+    for (const p of ["continue", "Continue.", "go on", "OK, continue", "please continue", "keep going…", "where were we?", "what did we decide", "what did we decide on", "What did we decide?", "what did we pick", "recap", "and then"]) expect(promptIntent(p), p).toEqual({ kind: "continuation", topicTerms: [] });
     expect(promptIntent("what did we pick for the caterer")).toEqual({ kind: "decision", topicTerms: ["caterer"] });
     expect(promptIntent("what color did we pick for the launch")).toEqual({ kind: "decision", topicTerms: ["color", "launch"] });
     expect(promptIntent("What color did we settle on for the launch?")).toEqual({ kind: "decision", topicTerms: ["color", "launch"] });
-    expect(promptIntent("what was decided about Marco")).toEqual({ kind: "decision", topicTerms: ["marco"] });
     expect(promptIntent("did we choose a price")).toEqual({ kind: "decision", topicTerms: ["price"] });
     expect(promptIntent("what did we go with for auth?")).toEqual({ kind: "decision", topicTerms: ["auth"] });
     expect(promptIntent("What color did we settle on for the launch?")).toEqual({ kind: "decision", topicTerms: ["color", "launch"] });
@@ -32,9 +33,18 @@ describe("prompt intent", () => {
     expect(promptIntent("have we decided on a caterer")).toEqual({ kind: "decision", topicTerms: ["caterer"] });
     expect(promptIntent("were we agreed on the beta date")).toEqual({ kind: "decision", topicTerms: ["beta", "date"] });
     expect(promptIntent("what have we decided about the launch")).toEqual({ kind: "decision", topicTerms: ["launch"] });
-    expect(promptIntent("what has been decided on pricing")).toEqual({ kind: "decision", topicTerms: ["pricing"] });
     expect(promptIntent("had we already settled the caterer")).toEqual({ kind: "decision", topicTerms: ["caterer"] });
     expect(promptIntent("what have we decided")).toEqual({ kind: "continuation", topicTerms: [] });
+    // "I" and "us" are first-person subjects too; filler such as "yet" is never a topic word.
+    expect(promptIntent("what did I decide about the caterer")).toEqual({ kind: "decision", topicTerms: ["caterer"] });
+    expect(promptIntent("have I picked a venue")).toEqual({ kind: "decision", topicTerms: ["venue"] });
+    expect(promptIntent("what did the two of us agree on the launch")).toEqual({ kind: "decision", topicTerms: ["launch"] });
+    expect(promptIntent("did we decide yet")).toEqual({ kind: "continuation", topicTerms: [] });
+    // The gap between subject and verb is at most two words, on both sides of the boundary.
+    expect(promptIntent("did we finally actually decide on the venue")).toEqual({ kind: "decision", topicTerms: ["venue"] });
+    expect(promptIntent("did we ever really pick the venue")).toEqual({ kind: "decision", topicTerms: ["ever", "really", "venue"] });
+    expect(promptIntent("did we break it and then decide to revert").kind).toBe("plain");
+    expect(promptIntent("did we break the build then pick a fix").kind).toBe("plain");
     // Zero false positives on ordinary prompts: present-tense how-tos, "you"/"I", phrasal "pick up", noun phrases, and everything generic.
     for (const p of [
       "which hue was chosen for the release", "how did Northstar status change", "should we pick React", "write a function that picks the best route",
@@ -43,6 +53,17 @@ describe("prompt intent", () => {
       "did we pick up the dry cleaning", "did we pick out a venue yet", "the decision on pricing is pending, draft an email", "do we agree on the api shape",
       "can we decide this later", "will we choose a vendor next week", "we decided to use React, now add the router", "I picked the second option, continue the refactor",
       "did the team agree the schema", "was it decided", "what was the weather like when we picked the venue", "what was picked up by the linter",
+      // Passives with no first-person subject (ruling I-1: plain, so they fall back to ordinary recall).
+      "What was decided?", "what was decided about Marco", "what has been decided on pricing", "what is chosen by default",
+      // The reviewer's seven false positives.
+      "what was chosen as the default port in the config", "what was decided by the compiler here", "what were chosen as test fixtures", "what was settled in court",
+      "did we pick it up again", "did we pick the accent up", "did we settle the invoice with the vendor",
+      // Phrasal verbs, split or not: up, out, off, apart, down.
+      "did we pick it up in the plan", "did we pick off the low hanging fruit", "did we pick it apart", "did we pick the plan apart", "did we pick them both off",
+      "did we settle down", "have we picked out a venue", "had we already picked it up", "did we pick them out yet",
+      // Other everyday shapes from the review probe.
+      "fix the failing test", "decide later", "did we break the build", "did we go without the cache", "did we settle the vendor", "what was settled with the vendor",
+      "what was chosen as the design", "what was decided by the party", "was I picked for the team", "what is decided at runtime", "what has been picked as the default",
     ])
       expect(promptIntent(p).kind, p).toBe("plain");
     expect(normalizePrompt("  OK, Continue!!  ")).toBe("continue");
@@ -55,6 +76,7 @@ describe("prompt intent", () => {
     for (const p of CONTINUATION_PROMPTS) expect(isContinuationPrompt(p), p).toBe(true);
     for (const p of ["continue", "next", "go on", "recap"]) expect(hookSkipReason(p), p).toBeNull();
     for (const p of ["thanks", "ok", "yes", "short", "hi there", "/continue"]) expect(hookSkipReason(p), p).toBe("short");
+    for (const a of ACK_PROMPTS) expect(hookSkipReason(a), a).toBe("short");
     expect(hookSkipReason("/continue with the migration")).toBe("command");
   });
   it("keeps at most 20 live entries, 12 words each, for two hours, keyed by grant and session, and never answers for another key", () => {
@@ -116,6 +138,48 @@ describe("the push with intent", () => {
     expect(fx.store.setting<SessionTopics>(RECALL_SESSION_TOPICS, {})[topicKey((agent as { grant_id: string }).grant_id, "3".repeat(64))]).toBeUndefined();
     expect(await brain.recallPush(agent, { prompt: "thanks", session_id: s1, first_prompt: false, seen: [] })).toEqual({ level: "none", text: "", hit_ids: [], digest: false });
     expect(row(brain)).toMatchObject({ intent: "ack", candidates: 0 });
+  });
+  it("never lets a continuation refresh or overwrite its own session topic", async () => {
+    let at = new Date("2026-10-25T09:00:00.000Z");
+    const { fx, brain, agent } = fixture(() => at);
+    const s = "9".repeat(64);
+    const key = topicKey((agent as { grant_id: string }).grant_id, s);
+    const stored = () => fx.store.setting<SessionTopics>(RECALL_SESSION_TOPICS, {})[key];
+    await brain.recallPush(agent, { prompt: "when does the beta open", session_id: s, first_prompt: true, seen: [] });
+    const before = stored();
+    expect(before?.terms).toEqual(["beta", "open"]);
+    for (let i = 0; i < 3; i++) {
+      at = new Date(at.getTime() + 30 * 60_000);
+      await brain.recallPush(agent, { prompt: "continue", session_id: s, first_prompt: false, seen: [] });
+      expect(row(brain)).toMatchObject({ intent: "continuation", topic: "session" });
+      expect(stored()).toEqual(before);
+    }
+    // Repeated "continue" never extends the topic's two hours.
+    at = new Date(Date.parse(before!.at) + SESSION_TOPIC_TTL_MS);
+    await brain.recallPush(agent, { prompt: "continue", session_id: s, first_prompt: false, seen: [] });
+    expect(row(brain)).toMatchObject({ intent: "continuation", topic: "none" });
+  });
+  it("never pushes for any acknowledgement in the closed list", async () => {
+    const { brain, agent } = fixture(() => new Date("2026-10-25T09:00:00.000Z"));
+    for (const a of ACK_PROMPTS) {
+      expect(await brain.recallPush(agent, { prompt: a, session_id: "a".repeat(64), first_prompt: true, seen: [] }), a).toEqual({ level: "none", text: "", hit_ids: [], digest: false });
+      expect(row(brain), a).toMatchObject({ intent: "ack", candidates: 0, hits: 0 });
+    }
+  });
+  it("holds the decision reading to the evidence rule: one incidental shared word is never full", async () => {
+    const { brain, agent } = fixture(() => new Date("2026-10-25T09:00:00.000Z"));
+    for (const prompt of ["did we pick it up in the plan", "what was chosen as the design", "what was decided by the party", "did we pick the accent up", "did we settle the vendor", "what was settled with the vendor"]) {
+      const r = await brain.recallPush(agent, { prompt, session_id: "b".repeat(64), first_prompt: false, seen: [] });
+      expect(r.level, prompt).not.toBe("full");
+    }
+    // A real decision question whose one topic word is incidental (in a fact's text, not its name): the topic reading is a pointer, never full.
+    for (const prompt of ["have we decided the design", "did we decide on the vendor"]) {
+      const r = await brain.recallPush(agent, { prompt, session_id: "c".repeat(64), first_prompt: false, seen: [] });
+      expect(r.level, prompt).toBe("pointer");
+      expect(r.hit_ids, prompt).toEqual([]);
+    }
+    // One topic word that names the fact's entity is evidence, exactly as the one-word prompt "caterer" or "accent" is.
+    expect((await brain.recallPush(agent, { prompt: "did we choose the accent", session_id: "d".repeat(64), first_prompt: false, seen: [] })).level).toBe("full");
   });
   it("opens a session that starts with a continuation on the digest, as a pointer, and on nothing for an empty brain", async () => {
     const { brain, agent } = fixture(() => new Date("2026-10-25T09:00:00.000Z"));

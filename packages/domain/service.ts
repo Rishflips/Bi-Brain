@@ -110,7 +110,7 @@ import {
   type RecallResult,
 } from "./recall.ts";
 import { SESSION_NOTES_PER_SESSION, SESSION_NOTE_LOG_MAX, parseSessionNote, sessionNoteSchema } from "./session-note.ts";
-import { RECALL_SESSION_TOPICS, promptIntent, rememberTopic, topicFor, topicKey, type SessionTopics } from "./recall-intent.ts";
+import { RECALL_SESSION_TOPICS, promptIntent, rememberTopic, topicFor, topicKey, topicReadingEvidence, type SessionTopics } from "./recall-intent.ts";
 import { RECALL_LOG_MAX, PUSH_HITS_MAX, filterSeen, fitFull, hitIsRelated, hitIsStrong, meaningLead, pushLevel, recallPushSchema, renderDigest, renderPointer, type JudgeSignals, type PushLevel } from "./recall-push.ts";
 import {
   attemptReferencesSource,
@@ -3783,8 +3783,10 @@ export class Brain {
     const internal = this.recallInternal(p, { query, history: false, limit: PUSH_HITS_MAX }, dense, intent.kind === "decision" ? intent.topicTerms : undefined);
     const candidates = internal.result.searched.candidates;
     // A decision question is read with and without its decision words; the louder deterministic reading is the one every later step uses (R9). Never quieter.
-    const louderTopic = internal.topicSignals !== null && LEVEL_RANK[deterministicLevel(internal.topicSignals)] > LEVEL_RANK[deterministicLevel(internal.signals)];
-    const signals = louderTopic ? internal.topicSignals! : internal.signals;
+    // The topic reading is held to the same evidence rule as any prompt: one incidental shared word never makes it `full`.
+    const topicReading = internal.topicSignals && topicReadingEvidence(internal.topicSignals, internal.namesRanked[0]);
+    const louderTopic = topicReading !== null && LEVEL_RANK[deterministicLevel(topicReading)] > LEVEL_RANK[deterministicLevel(internal.signals)];
+    const signals = louderTopic ? topicReading! : internal.signals;
     // The push level is term-based (R2). With no candidate found by words the judge is not asked at all: the level is the
     // deterministic one (none, or pointer for an exact entity), so meaning alone can never make a push louder without the owner-applied line below.
     const judge = internal.ranked.some(fromBm25) ? await this.judgeForPush(p, internal) : { signals: null, hits: internal.result.hits, judged: false };
