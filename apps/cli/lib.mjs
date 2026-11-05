@@ -53,6 +53,18 @@ export const HOOK_PROMPT_MAX = 500;
 export const HOOK_SESSIONS = 20;
 export const HOOK_HASHES = 300;
 export const HOOK_CLIENTS = ["claude-code", "codex"];
+/** The same list and normalisation as packages/domain/recall-intent.ts; a test keeps them equal. These pass the 12-character floor. */
+export const CONTINUATION_PROMPTS = [
+  "continue", "go on", "keep going", "carry on", "proceed", "next", "resume", "pick up where we left off", "where were we", "where did we leave off",
+  "what were we doing", "what did we decide", "what was decided", "what did we agree", "what did we pick", "what did we choose", "remind me where we are",
+  "recap", "summarise where we are", "summarize where we are", "and then", "go ahead with that", "do that", "continue from there",
+];
+export function normalizePrompt(prompt) {
+  return prompt.toLocaleLowerCase().replace(/\s+/gu, " ").trim().replace(/^(?:ok(?:ay)?,?\s+|please\s+)/u, "").replace(/[\s.!?…,:;]+$/u, "").trim();
+}
+export function isContinuationPrompt(prompt) {
+  return CONTINUATION_PROMPTS.includes(normalizePrompt(prompt));
+}
 
 export const sha256 = (text) => createHash("sha256").update(text).digest("hex");
 
@@ -83,7 +95,7 @@ export function parseHookStdin(raw) {
 
 export function hookSkipReason(prompt) {
   const trimmed = prompt.trim();
-  if (Array.from(trimmed).length < HOOK_MIN_PROMPT) return "short";
+  if (Array.from(trimmed).length < HOOK_MIN_PROMPT && !isContinuationPrompt(trimmed)) return "short";
   if (/^[/!#]/u.test(trimmed)) return "command";
   if (looksLikeSecret(trimmed)) return "secret";
   return null;

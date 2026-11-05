@@ -92,6 +92,7 @@ import {
   buildFtsQuery,
   dedupe,
   denseWhy,
+  deterministicLevel,
   deterministicSignals,
   deterministicStatus,
   factFreshness,
@@ -101,6 +102,7 @@ import {
   recallInputSchema,
   whyFor,
   type Candidate,
+  type DeterministicSignals,
   type RecallLists,
   type FactHit as RecallFactHit,
   type OriginalHit as RecallOriginalHit,
@@ -108,6 +110,7 @@ import {
   type RecallResult,
 } from "./recall.ts";
 import { SESSION_NOTES_PER_SESSION, SESSION_NOTE_LOG_MAX, parseSessionNote, sessionNoteSchema } from "./session-note.ts";
+import { RECALL_SESSION_TOPICS, promptIntent, rememberTopic, topicFor, topicKey, type SessionTopics } from "./recall-intent.ts";
 import { RECALL_LOG_MAX, PUSH_HITS_MAX, filterSeen, fitFull, hitIsRelated, hitIsStrong, meaningLead, pushLevel, recallPushSchema, renderDigest, renderPointer, type JudgeSignals, type PushLevel } from "./recall-push.ts";
 import {
   attemptReferencesSource,
@@ -3733,10 +3736,11 @@ export class Brain {
     const v = recallPushSchema.parse(input);
     const started = Date.now();
     const quiet = { level: "none" as PushLevel, text: "", hit_ids: [] as string[], digest: false };
-    const finish = (out: typeof quiet, extra: { candidates: number; judged: boolean; dense: boolean; dense_top?: number | null; judge?: JudgeSignals | null; lead?: boolean; lead_at?: number | null; lead_cos?: number | null }) => {
+    type Extra = { candidates: number; judged: boolean; dense: boolean; dense_top?: number | null; judge?: JudgeSignals | null; intent?: "ack" | "continuation" | "decision"; topic?: "session" | "digest" | "none"; lead?: boolean; lead_at?: number | null; lead_cos?: number | null };
+    const finish = (out: typeof quiet, extra: Extra) => {
       // A push that reached the brain proves the connection works, exactly like /agent/verify.
-      // `dense`, `dense_top` and `judge` are written only when that feature ran, so with Better search and Recall help off
-      // the row is plan 5's, field for field (the dense-off snapshot pins this). Every value is a number or a level, never text.
+      // `dense`, `dense_top`, `judge`, `intent`, `topic` and `lead` are written only when that feature ran, so with everything off
+      // the row is plan 5's, field for field (the dense-off snapshot pins this). Every value is a number, a level or a fixed word, never text.
       this.store.run("UPDATE grants SET last_verified_at=? WHERE id=?", this.now(), p.grant_id);
       const round3 = (n: number) => Number(n.toFixed(3));
       const log = this.store.setting<unknown[]>("recall_log", []);
@@ -3744,6 +3748,8 @@ export class Brain {
         at: this.now(), grant_id: p.grant_id, client: v.client, level: out.level, candidates: extra.candidates, hits: out.hit_ids.length, latency_ms: Date.now() - started, judged: extra.judged,
         ...(extra.dense ? { dense: true, ...(typeof extra.dense_top === "number" ? { dense_top: extra.dense_top } : {}) } : {}),
         ...(extra.judged && extra.judge ? { judge: { owner_world: round3(extra.judge.ownerWorld), general: round3(extra.judge.general), answered: extra.judge.answered } } : {}),
+        ...(extra.intent ? { intent: extra.intent } : {}),
+        ...(extra.topic ? { topic: extra.topic } : {}),
         ...(typeof extra.lead_at === "number" ? { lead_at: extra.lead_at } : {}),
         ...(typeof extra.lead_cos === "number" ? { lead_cos: Number(extra.lead_cos.toFixed(3)) } : {}),
         ...(extra.lead ? { lead: true } : {}),
@@ -3752,14 +3758,37 @@ export class Brain {
       return out;
     };
     if (detectSecrets(v.prompt).length) return finish(quiet, { candidates: 0, judged: false, dense: false });
+    // Prompt intent (plan 10, R7 to R10): an acknowledgement never searches; a continuation reads this session's recent topic, then the digest, then nothing.
+    const intent = promptIntent(v.prompt);
+    if (intent.kind === "ack") return finish(quiet, { candidates: 0, judged: false, dense: false, intent: "ack" });
+    const now = this.clock();
+    const topics = this.store.setting<SessionTopics>(RECALL_SESSION_TOPICS, {});
+    let query = v.prompt;
+    let topic: "session" | "digest" | "none" | undefined;
+    if (intent.kind === "continuation") {
+      const terms = topicFor(topics, topicKey(p.grant_id!, v.session_id), now);
+      if (terms) {
+        query = terms.join(" ");
+        topic = "session";
+      } else if (v.first_prompt) {
+        // A session that opens with "continue" gets the map of the brain as a pointer, never evidence it did not ask for.
+        const scope = (this.projects(p) as { id: string; title: string }[]).map(({ id, title }) => ({ id, title }));
+        const d = scope.length ? this.digestFor(scope, scope.map((s) => s.title)) : "";
+        if (!d || detectSecrets(d).length) return finish(quiet, { candidates: 0, judged: false, dense: false, intent: "continuation", topic: "none" });
+        return finish({ level: "pointer", text: d, hit_ids: [], digest: true }, { candidates: 0, judged: false, dense: false, intent: "continuation", topic: "digest" });
+      } else return finish(quiet, { candidates: 0, judged: false, dense: false, intent: "continuation", topic: "none" });
+    }
     // The vector first (at most 400 ms), then the judge (at most 900 ms): the 1,500 ms hook budget holds.
-    const dense = await this.denseFor(p, v.prompt);
-    const internal = this.recallInternal(p, { query: v.prompt, history: false, limit: PUSH_HITS_MAX }, dense);
+    const dense = await this.denseFor(p, query);
+    const internal = this.recallInternal(p, { query, history: false, limit: PUSH_HITS_MAX }, dense, intent.kind === "decision" ? intent.topicTerms : undefined);
     const candidates = internal.result.searched.candidates;
+    // A decision question is read with and without its decision words; the louder deterministic reading is the one every later step uses (R9). Never quieter.
+    const louderTopic = internal.topicSignals !== null && LEVEL_RANK[deterministicLevel(internal.topicSignals)] > LEVEL_RANK[deterministicLevel(internal.signals)];
+    const signals = louderTopic ? internal.topicSignals! : internal.signals;
     // The push level is term-based (R2). With no candidate found by words the judge is not asked at all: the level is the
-    // deterministic one (none, or pointer for an exact entity), so meaning alone can never make a push louder (until the owner applies a meaning-lead line, below).
+    // deterministic one (none, or pointer for an exact entity), so meaning alone can never make a push louder without the owner-applied line below.
     const judge = internal.ranked.some(fromBm25) ? await this.judgeForPush(p, internal) : { signals: null, hits: internal.result.hits, judged: false };
-    let level = pushLevel(internal.signals, judge.signals);
+    let level = pushLevel(signals, judge.signals);
     // Unreviewed agent-written originals the agent may see: another agent's notes, never the owner's evidence (spec A1, R2).
     const blocked = new Set(internal.authorized.filter(isUnreviewedAgent).map((h) => h.id));
     const isBlocked = (c: Candidate) => c.row.kind === "original" && blocked.has(c.row.ref_id);
@@ -3768,12 +3797,12 @@ export class Brain {
     // An unreviewed agent-written original never rides in a full push.
     let hits = seen.filter((h) => !isUnreviewedAgent(h));
     // When the judge's order leaves a hit found by meaning alone on top, the level is capped at the words level.
-    if (hits.length && internal.denseOnly.has(hitKey(hits[0]))) level = quieter(level, pushLevel(internal.signals, null));
+    if (hits.length && internal.denseOnly.has(hitKey(hits[0]))) level = quieter(level, pushLevel(signals, null));
     // Everything the agent already holds from this session, and every unreviewed agent note, is left out. When that removed hits, the level is re-read
     // on what is left: `full` only while the best remaining hit is itself a strong match, `pointer` for an exact entity match or a remaining related hit, else quiet.
     if (level === "full" && hits.length < judge.hits.length) {
-      const terms = internal.signals.terms;
-      if (!hits.length || !hitIsStrong(terms, hits[0])) level = internal.signals.exactEntity || seen.some((h) => hitIsRelated(terms, h)) ? "pointer" : "none";
+      const terms = signals.terms;
+      if (!hits.length || !hitIsStrong(terms, hits[0])) level = signals.exactEntity || seen.some((h) => hitIsRelated(terms, h)) ? "pointer" : "none";
     }
     // Meaning matches can lead (plan 10): only with the owner-applied line, only for the hit that leads, after every rule above. R5.
     let led = false;
@@ -3788,7 +3817,7 @@ export class Brain {
     // A led push renders the leader, every hit found by words, and only those meaning-only hits that also reach the line (R13).
     if (led) hits = hits.filter((h, i) => i === 0 || !internal.denseOnly.has(hitKey(h)) || (internal.denseScores.get(hitKey(h)) ?? -1) >= leadLine!);
     // A judge may rate a candidate relevant that did not survive into the hits; a full push with nothing to show is never sent.
-    if (level === "full" && !hits.length) level = internal.signals.exactEntity ? "pointer" : "none";
+    if (level === "full" && !hits.length) level = signals.exactEntity ? "pointer" : "none";
     // Names for the pointer and the digest: the top three candidates exactly as deterministicSignals builds topNames (from the same list), except that
     // an unreviewed agent original is skipped first: its title is agent-chosen text and never a name here. With no such original this is plan 5's list.
     const top = [...new Set(internal.namesRanked.filter((c) => !isBlocked(c)).slice(0, 3).map((c) => (c.row.kind === "fact" ? c.row.prefix.split(" · ").at(-1)! : c.row.prefix.split(" · ")[0])))];
@@ -3811,8 +3840,16 @@ export class Brain {
         text = level === "pointer" && d.includes(text) ? d : `${d}\n\n${text}`;
       }
     }
-    if (text && detectSecrets(text).length) return finish(quiet, { candidates, judged: judge.judged, dense: internal.dense, dense_top: internal.denseTop, judge: judge.signals, lead: false, lead_at: leadLine, lead_cos: leadCos });
-    return finish({ level, text, hit_ids: used.map((h) => h.id), digest }, { candidates, judged: judge.judged, dense: internal.dense, dense_top: internal.denseTop, judge: judge.signals, lead: led, lead_at: leadLine, lead_cos: leadCos });
+    const extra: Extra = {
+      candidates, judged: judge.judged, dense: internal.dense, dense_top: internal.denseTop, judge: judge.signals,
+      ...(intent.kind === "continuation" ? { intent: "continuation" as const, topic } : louderTopic ? { intent: "decision" as const } : {}),
+      lead_at: leadLine, lead_cos: leadCos,
+      ...(led ? { lead: true } : {}),
+    };
+    if (text && detectSecrets(text).length) return finish(quiet, { ...extra, lead: false });
+    // Remember the topic of a prompt that found something, so "continue" in this session can mean it (R8). Content words only; a continuation never overwrites it.
+    if (level !== "none" && intent.kind !== "continuation") this.store.set(RECALL_SESSION_TOPICS, rememberTopic(topics, topicKey(p.grant_id!, v.session_id), intent.kind === "decision" ? intent.topicTerms : signals.terms, now));
+    return finish({ level, text, hit_ids: used.map((h) => h.id), digest }, extra);
   }
   /** The judge for a hook push: the same advisory application as `recall`; without a judge the deterministic hits stand. */
   protected async judgeForPush(p: Principal, internal: ReturnType<Brain["recallInternal"]>): Promise<{ signals: JudgeSignals | null; hits: RecallHit[]; judged: boolean }> {
@@ -4042,7 +4079,7 @@ ${q}`);
     }
     return [...names];
   }
-  recallInternal(p: Principal, v: { query: string; project_id?: string; history: boolean; limit: number }, dense: QueryVector | null = null) {
+  recallInternal(p: Principal, v: { query: string; project_id?: string; history: boolean; limit: number }, dense: QueryVector | null = null, levelTerms?: string[]) {
     const now = this.clock();
     const scope = (v.project_id
       ? [this.store.get<{ id: string; title: string }>("SELECT id,title FROM projects WHERE id=?", v.project_id)].filter((x): x is { id: string; title: string } => !!x)
@@ -4063,7 +4100,7 @@ ${q}`);
     // confirms an item the principal cannot see. Only claims whose name could match are loaded.
     const termSet = new Set(fts.terms);
     const entityNames = ids.length ? this.visibleEntityNames(p, scope, termSet, visibilities) : [];
-    if (!fts.match) return { result: empty("no_match", 0), ranked: [] as Candidate[], authorized: [] as RecallHit[], signals: deterministicSignals([], [], entityNames), namesRanked: [] as Candidate[], entityNames, scope, dense: false, denseOnly: new Set<string>(), denseScores: new Map<string, number>(), denseTop: null as number | null };
+    if (!fts.match) return { result: empty("no_match", 0), ranked: [] as Candidate[], authorized: [] as RecallHit[], signals: deterministicSignals([], [], entityNames), topicSignals: null as DeterministicSignals | null, namesRanked: [] as Candidate[], entityNames, scope, dense: false, denseOnly: new Set<string>(), denseScores: new Map<string, number>(), denseTop: null as number | null };
     const status = v.history ? "any" : "current";
     const search = (match: string, kind: "fact" | "original") => searchRecallChunks(this.store, { match, kind, projects: ids, visibilities, status, limit: CANDIDATES_PER_LIST });
     const lists: RecallLists = {
@@ -4116,12 +4153,15 @@ ${q}`);
     // The words reading (R2): status, strength and push level come from the authorized word candidates in the order and with the rows
     // words alone give them, so Better search on is never louder (nor quieter) than off. Meaning still adds hits, orders them and counts.
     let signals = deterministicSignals(fts.terms, ranked, entityNames);
+    // A decision question's second reading (plan 10): the same candidates, read over the topic words alone. Null unless asked for.
+    let topicSignals: DeterministicSignals | null = levelTerms ? deterministicSignals(levelTerms, ranked, entityNames) : null;
     // The list `signals.topNames` is built from, so the push can rebuild those names without an unreviewed agent original.
     let namesRanked = ranked;
     if (lists.dense!.length) {
       const byWords = new Set(ranked.filter(fromBm25).map((c) => c.key));
       const wordRanked = fuse({ facts: lists.facts, originals: lists.originals, phrase: lists.phrase }, now).filter((c) => byWords.has(c.key));
       signals = { ...deterministicSignals(fts.terms, wordRanked, entityNames), candidates: ranked.length };
+      topicSignals = levelTerms ? { ...deterministicSignals(levelTerms, wordRanked, entityNames), candidates: ranked.length } : null;
       namesRanked = wordRanked;
     }
     // Hits found by meaning alone, so the push can cap a judged level they would lead (never part of the result).
@@ -4138,7 +4178,7 @@ ${q}`);
     const result: RecallResult = { status: statusOut, as_of: now.toISOString(), searched: { ...base, candidates: ranked.length }, hits, near_misses, next_step: statusOut === "no_match" ? NO_MATCH_NEXT_STEP : FOUND_NEXT_STEP };
     // The highest cosine among the meaning candidates, three decimals, for the content-free recall log; null when none passed the floor.
     const denseTop = lists.dense!.length ? Number(Math.max(...lists.dense!.map((r) => r.score)).toFixed(3)) : null;
-    return { result, ranked, authorized: authorized.map((a) => a.hit), signals, namesRanked, entityNames, scope, dense: dense !== null, denseOnly, denseScores, denseTop };
+    return { result, ranked, authorized: authorized.map((a) => a.hit), signals, topicSignals, namesRanked, entityNames, scope, dense: dense !== null, denseOnly, denseScores, denseTop };
   }
   /** One item by id for an agent: the full original (any version it may see) or the full fact with its history. */
   agentOpen(p: Principal, input: unknown) {
