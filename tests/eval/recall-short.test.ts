@@ -11,18 +11,16 @@ import { MEANING_LEAD } from "../../packages/domain/better-search.ts";
 import { hashId } from "../../packages/domain/recall-push.ts";
 
 type Step = { prompt: string; first_prompt: boolean; seen_previous?: boolean; expect: { level?: string; level_in?: string[]; digest?: boolean; text?: string; text_includes?: string; hit_ids?: string[]; hit_includes?: string[]; hit_excludes?: string[]; log?: Record<string, string> } };
-type Case = { id: string; tags: string[]; session: string; mode?: "dense"; set_lead?: boolean; steps: Step[] };
+type Case = { id: string; tags: string[]; session: string; mode?: "dense"; lead_threshold?: number; steps: Step[] };
 const golden = JSON.parse(readFileSync(join(fileURLToPath(new URL(".", import.meta.url)), "recall-short-golden-v1.json"), "utf8")) as { cases: Case[] };
 const sha = (s: string) => createHash("sha256").update(s).digest("hex");
 let dir: string;
 const fixtures: Record<"off" | "dense", Fixture> = {} as never;
-let denseVec: ReturnType<typeof embedFixture>["dense"];
 beforeAll(() => {
   dir = mkdtempSync(join(tmpdir(), "recall-short-"));
   fixtures.off = buildFixture(join(dir, "off.sqlite"));
   fixtures.dense = buildFixture(join(dir, "dense.sqlite"));
   const { dense } = embedFixture(fixtures.dense);
-  denseVec = dense;
   vi.spyOn(fixtures.dense.brain, "queryVector").mockImplementation(async (_p, q) => dense(q));
 });
 afterAll(() => {
@@ -39,19 +37,14 @@ for (const mode of ["off", "dense"] as const) {
       expect(tagged("continuation")).toBeGreaterThanOrEqual(4);
       expect(tagged("ack")).toBe(1);
       expect(tagged("decision")).toBeGreaterThanOrEqual(6);
-      expect(tagged("paraphrase")).toBe(2);
+      expect(tagged("paraphrase")).toBe(3);
     });
     for (const c of golden.cases.filter((x) => !x.mode || x.mode === mode)) {
       it(`${c.id}: ${c.steps.map((s) => JSON.stringify(s.prompt)).join(" → ")}`, async () => {
         const fx = fixtures[mode];
-        if (c.set_lead) {
-          // The line is the leader's own cosine rounded down to two decimals, applied the way the owner applies it; it is cleared after the case.
-          const prompt = c.steps[0].prompt;
-          const internal = fx.brain.recallInternal(fx.agent, { query: prompt, history: false, limit: 6 }, denseVec(prompt));
-          const lead = internal.result.hits[0] as { kind: string; id: string; start?: number };
-          const cos = internal.denseScores.get(`${lead.kind}:${lead.id}:${lead.kind === "original" ? lead.start : ""}`);
-          if (cos === undefined) throw new Error(`${c.id}: the leader has no dense score`);
-          fx.brain.setMeaningLead(owner, { threshold: Math.max(0.45, Math.floor(cos * 100) / 100), sample: 54, source: "proof:search", measured_at: "2026-10-25" });
+        if (c.lead_threshold !== undefined) {
+          // A literal line, chosen between the dense floor (0.45) and the fake embedder's cosine for this paraphrase (about 0.468); cleared after the case.
+          fx.brain.setMeaningLead(owner, { threshold: c.lead_threshold, sample: 54, source: "proof:search", measured_at: "2026-10-25" });
         }
         try {
           const session = sha(`${mode}:${c.session}`);
@@ -76,7 +69,7 @@ for (const mode of ["off", "dense"] as const) {
             previous = out.hit_ids;
           }
         } finally {
-          if (c.set_lead) fx.store.set(MEANING_LEAD, null);
+          if (c.lead_threshold !== undefined) fx.store.set(MEANING_LEAD, null);
         }
       });
     }

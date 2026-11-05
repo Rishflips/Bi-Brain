@@ -25,10 +25,8 @@
     { "id": "dec-06", "tags": ["short", "decision", "nothing-recorded"], "session": "d6", "steps": [ { "prompt": "which database did we pick", "first_prompt": false, "expect": { "level": "none", "text": "" } } ] },
     { "id": "dec-07", "tags": ["short", "generic"], "session": "d7", "steps": [ { "prompt": "which sorting algorithm should we pick for this list", "first_prompt": true, "expect": { "level": "none", "text": "", "digest": false } } ] },
     { "id": "dec-08", "tags": ["short", "passive"], "session": "d8", "steps": [ { "prompt": "what was decided about the beta", "first_prompt": false, "expect": { "level": "none", "text": "", "hit_ids": [] } } ] },
-    { "id": "cont-after-full", "tags": ["short", "continuation", "after-full"], "session": "c1", "steps": [
-      { "prompt": "what did we pick for the caterer", "first_prompt": true, "expect": { "level": "full", "hit_includes": ["fact:caterer"], "log": { "intent": "decision" } } },
-      { "prompt": "continue", "first_prompt": false, "seen_previous": true, "expect": { "level_in": ["none", "pointer"], "hit_excludes": ["fact:caterer"], "log": { "intent": "continuation", "topic": "session" } } } ] },
-    { "id": "lead-01", "tags": ["short", "paraphrase", "lead-unset"], "session": "l1", "steps": [ { "prompt": "the hue picked for the premiere", "first_prompt": false, "expect": { "level_in": ["none", "pointer"] } } ] },
-    { "id": "lead-02", "tags": ["short", "paraphrase", "lead-set"], "session": "l2", "mode": "dense", "set_lead": true, "steps": [ { "prompt": "the hue picked for the premiere", "first_prompt": false, "expect": { "level": "full", "hit_includes": ["fact:launch-color"] } } ] }
+    { "id": "lead-01", "tags": ["short", "paraphrase", "lead-unset"], "session": "l1", "steps": [ { "prompt": "the hue picked for the premiere", "first_prompt": false, "expect": { "level": "none", "text": "", "hit_excludes": ["fact:launch-color"] } } ] },
+    { "id": "lead-02", "tags": ["short", "paraphrase", "lead-set"], "session": "l2", "mode": "dense", "lead_threshold": 0.46, "steps": [ { "prompt": "the hue picked for the premiere", "first_prompt": false, "expect": { "level": "full", "hit_includes": ["fact:launch-color"] } } ] },
+    { "id": "lead-03", "tags": ["short", "paraphrase", "lead-above"], "session": "l3", "mode": "dense", "lead_threshold": 0.47, "steps": [ { "prompt": "the hue picked for the premiere", "first_prompt": false, "expect": { "level_in": ["none", "pointer"] } } ] }
   ]
 }

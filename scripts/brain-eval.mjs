@@ -60,7 +60,7 @@ const report = {
     injected_pack_use: "local wrapper; no native client",
     forget_proof: "managed vault, SQLite projection, local backup",
     no_action_control: "unrelated intent produces no review prompt",
-    recall_gates: "recall@5 ≥ 0.90, MRR ≥ 0.75, no_match ≥ 0.85, replaced/stale/authorization/generic-level hard gates, p95 < 300 ms; with the fake embedder on: paraphrase and cross-language recall@5 ≥ 0.8, lexical and names never worse than words alone, no_match ≥ 0.85, zero leaks; short and paraphrase bucket (tests/eval/recall-short.test.ts): continuation reads the session topic, then the digest, then nothing; acknowledgements never push; first-person decision questions over recorded facts reach full while a passive stays plain; a meaning-only paraphrase stays at most a pointer while the lead line is unset and reaches full once the owner applies one; asserted in tests/eval/recall.test.ts",
+    recall_gates: "recall@5 ≥ 0.90, MRR ≥ 0.75, no_match ≥ 0.85, replaced/stale/authorization/generic-level hard gates, p95 < 300 ms; with the fake embedder on: paraphrase and cross-language recall@5 ≥ 0.8, lexical and names never worse than words alone, no_match ≥ 0.85, zero leaks; short and paraphrase bucket (tests/eval/recall-short.test.ts): continuation reads the session topic, then the digest, then nothing; acknowledgements never push; first-person decision questions over recorded facts reach full while a passive stays plain; a meaning-only paraphrase stays at most a pointer while the lead line is unset and reaches full once the owner applies one; asserted in tests/eval/recall.test.ts and tests/eval/recall-short.test.ts",
   },
 };
 writeFileSync(output, JSON.stringify(report, null, 2));
