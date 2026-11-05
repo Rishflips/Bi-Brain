@@ -50,15 +50,32 @@ test("Better search is on by itself with a local model, turns off on request, an
   // The card's own role="status" stays unique; the lead line is found by its test id. The measured date is yesterday on the test clock, so it passes the server's "no later than tomorrow (UTC)" check on any day the suite runs.
   const measuredOn = new Date(Date.now() - 86_400_000).toISOString().slice(0, 10);
   const leadLine = card(page).getByTestId("meaning-lead-line");
-  await expect(leadLine).toHaveText(/^Not yet calibrated\./);
-  await card(page).getByLabel("Score (from the tool's suggestion)").fill("0.6");
-  await card(page).getByLabel("Queries measured").fill("20");
-  await card(page).getByLabel("Measured on").fill(measuredOn);
-  await card(page).getByRole("button", { name: "Apply this value" }).click();
+  const today = new Date().toISOString().slice(0, 10);
+  const calibratedLine = `Calibrated at 0.6: a match found by meaning alone can lead a push when its score is 0.6 or higher. From proof:search, 20 queries measured on ${measuredOn}, applied ${today}.`;
+  const notCalibrated = "Not yet calibrated. A match found by meaning alone never leads a push to your agents. Run npm run proof:search or npm run calibrate for a suggested value, then enter it here.";
+  const fillLead = async (score: string) => {
+    await card(page).getByLabel("Score (from the tool's suggestion)").fill(score);
+    await card(page).getByLabel("Queries measured").fill("20");
+    await card(page).getByLabel("Measured on").fill(measuredOn);
+    await card(page).getByRole("button", { name: "Apply this value" }).click();
+  };
+  await expect(leadLine).toHaveText(notCalibrated);
+  // A value under the search model's floor is refused beside the form, in plain words, and nothing is stored.
+  await fillLead("0.01");
+  await expect(card(page).getByTestId("meaning-lead-error")).toHaveText(/^The value must be between \d\.\d+ \(the floor for this search model\) and 0\.99\.$/);
+  await expect(leadLine).toHaveText(notCalibrated);
+  await page.reload();
+  await page.getByRole("button", { name: "Settings & privacy" }).click();
+  await expect(leadLine).toHaveText(notCalibrated);
+  await fillLead("0.6");
   await expect(page.getByText("Meaning matches can now lead a push at the value you entered.")).toBeVisible();
-  await expect(leadLine).toHaveText(new RegExp(`^Calibrated at 0\.6: .* From proof:search, 20 queries measured on ${measuredOn}`));
-  await card(page).getByRole("button", { name: "Clear" }).click();
-  await expect(leadLine).toHaveText(/^Not yet calibrated\./);
+  await expect(leadLine).toHaveText(calibratedLine);
+  await expect(card(page).getByLabel("Score (from the tool's suggestion)")).toHaveValue("");
+  await expect(card(page).getByTestId("meaning-lead-error")).toHaveCount(0);
+  await card(page).getByRole("button", { name: "Clear this value" }).click();
+  await expect(leadLine).toHaveText(notCalibrated);
+  await fillLead("0.6");
+  await expect(leadLine).toHaveText(calibratedLine);
 
   await page.getByRole("button", { name: "Today", exact: true }).click();
   await page.getByLabel("Save to your brain").fill("The crew sync is at 9 every morning.");
@@ -75,6 +92,10 @@ test("Better search is on by itself with a local model, turns off on request, an
   await card(page).getByRole("button", { name: "Save better search" }).click();
   await expect(page.getByText("Better search is off.")).toBeVisible();
   await expect(card(page).getByRole("status")).toHaveText("Off. Search matches the words you used.");
+  await expect(leadLine).toHaveText("Turn Better search on first.");
+  // A stored value can always be removed, even while Better search is off.
+  await card(page).getByRole("button", { name: "Clear this value" }).click();
+  await expect(card(page).getByRole("button", { name: "Clear this value" })).toHaveCount(0);
   await expect(leadLine).toHaveText("Turn Better search on first.");
   await expect(card(page).getByText("A search model is running in Ollama on this computer. Choose On this computer to use it.")).toBeVisible();
   await page.reload();

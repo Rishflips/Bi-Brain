@@ -363,6 +363,7 @@ function App() {
   const [better, setBetter] = useState<BetterSearch | null>(null);
   const [betterChoice, setBetterChoice] = useState<BetterSearch["mode"]>("off");
   const [lead, setLead] = useState<MeaningLeadView | null>(null);
+  const [leadError, setLeadError] = useState("");
   const [leadForm, setLeadForm] = useState({ threshold: "", sample: "", source: "proof:search", measured_at: "" });
   const betterTouched = useRef(false);
   const [consentOverride, setConsentOverride] = useState<boolean | null>(null);
@@ -522,6 +523,7 @@ function App() {
     recallConsentTouched.current = false;
     setBetter(null);
     setLead(null);
+    setLeadError("");
     setLeadForm({ threshold: "", sample: "", source: "proof:search", measured_at: "" });
     setBetterChoice("off");
     betterTouched.current = false;
@@ -1568,22 +1570,34 @@ function App() {
                           onSubmit={(e) => {
                             e.preventDefault();
                             void act(async () => {
-                              await api("/preferences/meaning-lead", { threshold: Number(leadForm.threshold), sample: Number(leadForm.sample), source: leadForm.source, measured_at: leadForm.measured_at }, "PATCH");
+                              setLeadError("");
+                              try {
+                                await api("/preferences/meaning-lead", { threshold: Number(leadForm.threshold), sample: Number(leadForm.sample), source: leadForm.source, measured_at: leadForm.measured_at }, "PATCH");
+                              } catch (error) {
+                                setLeadError(error instanceof Error ? error.message : "That value could not be applied.");
+                                return;
+                              }
                               setLead(await api<MeaningLeadView>("/preferences/meaning-lead"));
+                              setLeadForm({ threshold: "", sample: "", source: "proof:search", measured_at: "" });
                               setNotice("Meaning matches can now lead a push at the value you entered.");
                             });
                           }}
                         >
                           <label>Score (from the tool's suggestion) <input type="number" step="0.01" min="0" max="0.99" required value={leadForm.threshold} onChange={(e) => setLeadForm({ ...leadForm, threshold: e.target.value })} /></label>
-                          <label>Queries measured <input type="number" step="1" min="20" required value={leadForm.sample} onChange={(e) => setLeadForm({ ...leadForm, sample: e.target.value })} /></label>
+                          <label>{leadForm.source === "calibrate" ? "Pushes measured" : "Queries measured"} <input type="number" step="1" min="20" required value={leadForm.sample} onChange={(e) => setLeadForm({ ...leadForm, sample: e.target.value })} /></label>
                           <label>Measured by <select value={leadForm.source} onChange={(e) => setLeadForm({ ...leadForm, source: e.target.value })}><option value="proof:search">npm run proof:search</option><option value="calibrate">npm run calibrate</option></select></label>
                           <label>Measured on <input type="date" required value={leadForm.measured_at} onChange={(e) => setLeadForm({ ...leadForm, measured_at: e.target.value })} /></label>
+                          {leadError ? <p className="status" role="alert" data-testid="meaning-lead-error">{leadError}</p> : null}
                           <div className="actions">
                             <button type="submit" disabled={busy}>Apply this value</button>
-                            {lead.lead ? <button type="button" disabled={busy} onClick={() => void act(async () => { await api("/preferences/meaning-lead", {}, "DELETE"); setLead(await api<MeaningLeadView>("/preferences/meaning-lead")); setNotice("Meaning matches no longer lead a push."); })}>Clear</button> : null}
                           </div>
                           <small className="muted">Nothing is applied by itself. Enter the value a measurement printed, with its sample size and date.</small>
                         </form>
+                      ) : null}
+                      {lead.lead ? (
+                        <div className="actions">
+                          <button type="button" disabled={busy} onClick={() => void act(async () => { setLeadError(""); await api("/preferences/meaning-lead", {}, "DELETE"); setLead(await api<MeaningLeadView>("/preferences/meaning-lead")); setLeadForm({ threshold: "", sample: "", source: "proof:search", measured_at: "" }); setNotice("Meaning matches no longer lead a push."); })}>Clear this value</button>
+                        </div>
                       ) : null}
                     </section>
                   ) : null}
