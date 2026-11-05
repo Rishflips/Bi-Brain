@@ -218,8 +218,9 @@ describe("the 10-minute re-probe", () => {
     const files = readdirSync("tests/integration").filter((f) => f.endsWith(".test.ts")).map((f) => `tests/integration/${f}`);
     for (const file of files) {
       const text = readFileSync(file, "utf8");
-      const spawnsWorker = /scripts\/run\.mjs|apps\/worker\/main\.ts/u.test(text) && !/BRAIN_MANAGED|managed/iu.test(file);
-      if (spawnsWorker) expect(text, `${file} must set BRAIN_EMBED_PROVIDER: "off" on the worker it starts`).toMatch(/BRAIN_EMBED_PROVIDER:\s*"off"/u);
+      // Only a file that actually starts a worker process counts: it names run.mjs or the worker entry AND spawns something. A file that merely reads run.mjs (recall-key-isolation) is not a worker.
+      const spawnsWorker = /scripts\/run\.mjs|apps\/worker\/main\.ts/u.test(text) && /\bspawn(?:Sync)?\(/u.test(text) && !/managed/iu.test(file);
+      if (spawnsWorker) expect(text, `${file} must set BRAIN_EMBED_PROVIDER: "off" (or inject a fake probe) on the worker it starts`).toMatch(/BRAIN_EMBED_PROVIDER:\s*"off"|fakeProbe|probe:/u);
     }
     expect(readFileSync("playwright.config.ts", "utf8").match(/BRAIN_EMBED_PROVIDER: "off"/gu)).toHaveLength(5);
   });
@@ -973,11 +974,12 @@ describe("the meaning-lead rule", () => {
     fx.brain.setMeaningLead(owner, { threshold: 0.45, sample: 20, source: "proof:search", measured_at: "2026-10-25" });
     const writer = fx.brain.createGrant(owner, { projects: [fx.ids["project:northstar"]], operations: ["read", "propose_memory"], expires_at: "2027-01-01T00:00:00.000Z", client: "codex" });
     const writerP = fx.brain.authenticateAgent(writer.token);
-    // Only this note holds the deploy/hotfix concepts (fake lexicon: deploy~deployment, patch~hotfix); no owner passage shares them, and no word of the prompt is in it.
+    // Only this note holds the deploy concept (fake lexicon: deploy~deployment); no owner passage shares it. The prompt is "the deploy" alone:
+    // "patch" would be found by words in the owner's Support note and lead instead, which is the plan 5 rule, not the one under test.
     const saved = fx.brain.sessionNote(writerP, { session_id: "9".repeat(64), client: "codex", text: "Decided: deployment hotfix: ship the hotfix before the deployment" }) as { saved: boolean; source_id: string };
     expect(saved.saved).toBe(true);
     embedFixture(fx);
-    const PROMPT = "patch the deploy";
+    const PROMPT = "the deploy";
     const internal = fx.brain.recallInternal(fx.agent, { query: PROMPT, history: false, limit: 6 }, vec(PROMPT));
     const denseOnly = internal.authorized.filter((h) => internal.denseOnly.has(keyOf(h)));
     expect(denseOnly.map((h) => h.id), "the agent note must be the only dense-only hit").toEqual([saved.source_id]);
@@ -990,7 +992,7 @@ describe("the meaning-lead rule", () => {
     expect(lastLog(fx)).not.toHaveProperty("lead");
     // The positive twin: once reviewed, the same note is the owner's evidence and the rule applies to it.
     fx.brain.markSourceReviewed(owner, saved.source_id);
-    const led = await push(fx, PROMPT, "g".repeat(64));
+    const led = await push(fx, PROMPT, "7".repeat(64));
     expect(led.level).toBe("full");
     expect(led.hit_ids).toEqual([saved.source_id]);
     expect(lastLog(fx)).toMatchObject({ lead: true });
@@ -1171,6 +1173,8 @@ In `recallPush`, after the block `if (level === "full" && hits.length < judge.hi
 
 Pass `lead: led, lead_at: leadLine, lead_cos: leadCos` in the final `finish(...)` call and `lead: false, lead_at: leadLine, lead_cos: leadCos` in the secret-quietened call before it. With Better search off `leadCos` is null and `leadLine` is null, so no row gains a field (the snapshot pins this).
 
+The row type must know the new fields, or the test's `lastLog(fx).lead_cos` fails typecheck. In `packages/domain/calibration.ts`, extend `RecallLogRow` now (Task 5 reads these fields): add the optional fields `lead?: boolean; lead_at?: number; lead_cos?: number; intent?: "ack" | "continuation" | "decision"; topic?: "session" | "digest" | "none";`. In `packages/domain/service.ts`, change `recallLog(p)` (the method after `recallPush`) to return `{ rows: this.store.setting<RecallLogRow[]>("recall_log", []) }` with `import type { RecallLogRow } from "./calibration.ts";` in place of its inline row type (the inline type was the same shape without the plan 10 fields; `calibration.ts` already imports from `recall-push.ts`, not from `service.ts`, so there is no cycle).
+
 - [ ] **Step 7: The routes**
 
 In `apps/server/app.ts`, after the two better-search routes (line 898):
@@ -1211,7 +1215,7 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 
 - [ ] **Step 1: Write the failing tests**
 
-Append to `tests/integration/calibration-report.test.ts` (add `meaningLeadFromLog, suggestMeaningLead` to the calibration import; add `import type { MeaningLead } from "../../packages/domain/better-search.ts";`, `import { buildFixture, owner } from "../eval/recall-fixture.ts";`, `import { embedFixture } from "../eval/dense-fixture.ts";`, and a module-level `let cleanup: (() => void)[] = [];` with an `afterEach` that runs and clears it, beside the file's existing `afterEach`):
+Append to `tests/integration/calibration-report.test.ts` (add `meaningLeadFromLog, suggestMeaningLead` to the calibration import; add `import type { MeaningLead } from "../../packages/domain/better-search.ts";`, `import { buildFixture } from "../eval/recall-fixture.ts";` and `import { embedFixture } from "../eval/dense-fixture.ts";`. The file already declares `const owner` (line 219) and a `cleanup` array with its own `afterEach` (line 221): reuse both, declare neither again):
 
 ```ts
 describe("meaning-lead suggestions", () => {
@@ -1327,7 +1331,7 @@ export function meaningLeadFromLog(rows: RecallLogRow[], floor: number, current:
 }
 ```
 
-Extend `RecallLogRow` with the plan 10 fields, all optional: `lead?: boolean; lead_at?: number; lead_cos?: number; intent?: "ack" | "continuation" | "decision"; topic?: "session" | "digest" | "none";`.
+`RecallLogRow` already carries the plan 10 fields (`lead`, `lead_at`, `lead_cos`, `intent`, `topic`) since Task 4; nothing to add here.
 
 5. In `calibrationReport`, after `const dense_near_floor = …`, add `const meaning_lead = input.meaning_lead ?? null;` and append `meaningLeadFromLog(input.recall_log, floor, meaning_lead?.threshold ?? null)` to the `suggestions` array (it is built earlier; move its construction after this point or push onto it). Add `meaning_lead` to the returned `recall` object. Push one more gap: `"The log does not record whether a push was right, so the meaning-lead suggestion from it is weaker evidence than npm run proof:search, which measures the search service on known texts; rows written after a line was applied are never used, so the suggestion cannot feed on its own effect."` (the word "model" must not appear: an existing test asserts the rendered report never contains it).
 
@@ -1354,26 +1358,28 @@ Create `tests/eval/recall-no-answer-v1.json`: twenty more no-answer queries for 
     "how do I rotate an AWS access key",
     "what is the capital of Mongolia",
     "convert this CSV to parquet with pandas",
-    "why does my Docker build cache miss every time",
+    "why does my Docker layer cache keep missing",
     "write a haiku about autumn rain",
     "explain Kubernetes liveness and readiness probes",
     "what is the airspeed of an unladen swallow",
     "fix the null pointer exception in the Java servlet",
     "how many calories are in a banana",
-    "set up a cron job that runs every Sunday at 3am",
-    "translate good morning into Portuguese",
+    "how do I write a crontab line for 3am on Sundays",
+    "translate good evening into Portuguese",
     "what does the borrow checker complain about here",
     "recommend a podcast about Roman history",
     "generate a strong password policy for the intranet",
     "how do I undo the last git commit but keep the changes",
     "what is the difference between a mutex and a semaphore",
     "draft a polite out-of-office reply",
-    "explain how a bloom filter works",
-    "which chess opening should a beginner learn first",
+    "explain how a bloom filter functions",
+    "what is the Sicilian defence in chess",
     "what time zone is Perth in"
   ]
 }
 ```
+
+Every query must be `no_match` by words against the fixture (the Step 1 test pins it; the fixture's FTS uses a Porter stemmer, so "every", "morning", "works", "opening", "scheduling", "bookings" and "name" all match fixture text). Run the test; if any query still comes back `partial`, replace that query with another ordinary one that shares no stem with the fixture and run again, never the other way round. The proof's negative gate (`negative.dense >= 0.85`) counts a negative as passed only on `no_match`, so a query that matches by words would make the proof's PASS line unreachable.
 
 In `scripts/better-search-proof.ts`, import `suggestMeaningLead` from `../packages/domain/calibration.ts` and `readFileSync` is already imported. After the golden `buckets` are built, read the extra file and add its queries to the negative scan as synthetic cases: `const extra = JSON.parse(readFileSync(join(process.cwd(), "tests/eval/recall-no-answer-v1.json"), "utf8")) as { queries: string[] }; buckets.negative.push(...extra.queries.map((query, i) => ({ id: `extra-neg-${i + 1}`, tags: ["negative", "extra"], principal: "owner" as const, query, expect: { must_include: [] } })));`. Count distinct cases, not scans: `const negativeIds = new Set<string>(); const positiveIds = new Set<string>();` and add `c.id` to `negativeIds` in the negative branch and to `positiveIds` in the other branch, once per case regardless of how many buckets it appears in. After the `lowest cosine …` line add:
 
@@ -1592,7 +1598,7 @@ describe("prompt intent", () => {
       "how do I decide between a list and a set", "do you pick the first element when the list is sorted", "Did you choose the right sorting algorithm for this function?",
       "did we pick up the dry cleaning", "did we pick out a venue yet", "the decision on pricing is pending, draft an email", "do we agree on the api shape",
       "can we decide this later", "will we choose a vendor next week", "we decided to use React, now add the router", "I picked the second option, continue the refactor",
-      "did the team agree the schema", "was it decided", "what was the weather like when we picked the venue",
+      "did the team agree the schema", "was it decided", "what was the weather like when we picked the venue", "what was picked up by the linter",
     ])
       expect(promptIntent(p).kind, p).toBe("plain");
     expect(normalizePrompt("  OK, Continue!!  ")).toBe("continue");
@@ -1646,7 +1652,7 @@ describe("the push with intent", () => {
     const first = await brain.recallPush(agent, { prompt: "when does the beta open", session_id: s1, first_prompt: true, seen: [] });
     expect(first.level).toBe("full");
     expect(row(brain)).not.toHaveProperty("intent");
-    expect(fx.store.setting<SessionTopics>(RECALL_SESSION_TOPICS, {})[topicKey(agent.grant_id!, s1)]?.terms).toEqual(["beta", "open"]);
+    expect(fx.store.setting<SessionTopics>(RECALL_SESSION_TOPICS, {})[topicKey((agent as { grant_id: string }).grant_id, s1)]?.terms).toEqual(["beta", "open"]);
     const again = await brain.recallPush(agent, { prompt: "continue", session_id: s1, first_prompt: false, seen: first.hit_ids.map(hashId) });
     expect(again.level).not.toBe("full");
     expect(row(brain)).toMatchObject({ intent: "continuation", topic: "session" });
@@ -1663,7 +1669,7 @@ describe("the push with intent", () => {
     expect(row(brain)).toMatchObject({ intent: "continuation", topic: "none" });
     // A generic prompt stores no topic, and an acknowledgement never searches.
     await brain.recallPush(agent, { prompt: "how do I reverse a linked list in Python", session_id: "3".repeat(64), first_prompt: true, seen: [] });
-    expect(fx.store.setting<SessionTopics>(RECALL_SESSION_TOPICS, {})[topicKey(agent.grant_id!, "3".repeat(64))]).toBeUndefined();
+    expect(fx.store.setting<SessionTopics>(RECALL_SESSION_TOPICS, {})[topicKey((agent as { grant_id: string }).grant_id, "3".repeat(64))]).toBeUndefined();
     expect(await brain.recallPush(agent, { prompt: "thanks", session_id: s1, first_prompt: false, seen: [] })).toEqual({ level: "none", text: "", hit_ids: [], digest: false });
     expect(row(brain)).toMatchObject({ intent: "ack", candidates: 0 });
   });
@@ -1690,7 +1696,7 @@ describe("the push with intent", () => {
     expect(r.level).toBe("full");
     expect(r.hit_ids[0]).toBe(fx.ids["fact:caterer"]);
     expect(row(brain)).toMatchObject({ intent: "decision" });
-    expect(fx.store.setting<SessionTopics>(RECALL_SESSION_TOPICS, {})[topicKey(agent.grant_id!, "6".repeat(64))]?.terms).toEqual(["caterer"]);
+    expect(fx.store.setting<SessionTopics>(RECALL_SESSION_TOPICS, {})[topicKey((agent as { grant_id: string }).grant_id, "6".repeat(64))]?.terms).toEqual(["caterer"]);
     const same = await brain.recallPush(agent, { prompt: "what color did we pick for the launch", session_id: "7".repeat(64), first_prompt: false, seen: [] });
     expect(same.level).toBe("full");
     expect(row(brain)).not.toHaveProperty("intent");
@@ -1774,7 +1780,7 @@ export const CONTINUATION_PROMPTS: readonly string[] = [
 ];
 export const ACK_PROMPTS: readonly string[] = ["thanks", "thank you", "ok", "okay", "yes", "no", "sure", "great", "nice", "cool", "done", "lgtm", "good", "fine", "yep", "nope", "got it", "k", "ty", "thx", "perfect", "sounds good"];
 /** The words a decision question is read without (after questionWords' trailing-s strip). */
-export const DECISION_WORDS: ReadonlySet<string> = new Set(["decide", "decided", "decision", "pick", "picked", "choose", "chose", "chosen", "settle", "settled", "agree", "agreed"]);
+export const DECISION_WORDS: ReadonlySet<string> = new Set(["decide", "decided", "decision", "pick", "picked", "choose", "chose", "chosen", "settle", "settled", "agree", "agreed", "been", "already"]);
 /**
  * Three narrow shapes, all about what WE decided in the past: "did we (…) decide/pick/choose/settle/agree/go with" (not phrasal
  * "pick up/out/off/apart"), "have/had/were/was we (already) decided/agreed/settled/picked/chosen", and "what was/were/has been/have we
@@ -1785,7 +1791,7 @@ const DECISION_INTENT = new RegExp(
   [
     String.raw`\bdid\s+we\s+(?:\S+\s+){0,2}?(?:decide|pick|choose|settle|agree|go\s+with)\b(?!\s+(?:up|out|off|apart)\b)`,
     String.raw`\b(?:have|had|were|was)\s+we\s+(?:already\s+)?(?:decided|agreed|settled|picked|chosen)\b`,
-    String.raw`\bwhat\s+(?:was|were|has\s+been|have\s+we)\s+(?:decided|chosen|picked|agreed|settled)\b`,
+    String.raw`\bwhat\s+(?:was|were|has\s+been|have\s+we)\s+(?:decided|chosen|picked|agreed|settled)\b(?!\s+(?:up|out|off|apart)\b)`,
   ].join("|"),
   "iu",
 );
@@ -2284,3 +2290,4 @@ Report, in the words of `AGENTS.md`: what changed, the commands actually run, wh
 - **Review Focus.** Item 1 is pinned in Task 1 (late, huge, garbage, refused, silent); item 2 in Task 2 (explicit Off with a detected model) and Task 3's journey; item 3 in Task 4 (changed key never leads; floor, sample, source and date refusals); item 4 in Task 7 (empty brain, no topic later in a session) and Task 8 (`short-04`, `dec-07`); item 5 in Task 7 (other session null, expiry at exactly two hours).
 - **Snapshot.** Tasks 2, 4 and 7 each run the plan 5 snapshot test; the reasoning for why it holds is written at each run step, so a failure is diagnosed against a stated expectation rather than regenerated.
 - **Pre-flight (2026-11-06).** Applied: B1 (the probe races its own timer; byte-bounded body); B2 (a prompt with no word hit, `reach` from the leader's cosine); B3 (the agent note is the only dense-only hit, with a reviewed twin that leads); B4 (computed expectation 0.59; the gap sentence avoids "model"); B5 (`/continue` is short, `/continue with the migration` is a command; the unused import is gone); B6 (`ok` rows carry `intent: "ack"`); B7 (Clear sends `{}`; the route test sends `{}` under the JSON content type); B8 (the lead line has a test id, not a second status role; the lead view is refetched after the Better search Save; dates are fixed past dates). I1 (the 10-minute re-probe: `startReprobe`, `shouldReprobe`, `Worker.setEmbed`, a late lane start; spec 1.1, 1.3, 1.4, R1; Tasks 1, 3, 9). I2 (a led push renders only word-found hits and meaning-only hits at or above the line; R13; Task 4 test). I3 (`restart.test.ts` sets `BRAIN_EMBED_PROVIDER: "off"`; a guard test in Task 1; R15). I4 (three narrow regex shapes, participles included, a varied plain list pinned at zero false positives; the spec's 3.1 row). I5 (the proof counts negatives separately, needs 20 of them from a new no-answer file, clamps to 0.99, counts distinct cases; the log suggestion uses `lead_cos`, skips rows with `lead_at`, `lead`, or an `intent`; R14; `RecallLogRow` extended). Minors M1 to M12 applied (M2 as a comment; M4 and M7 as copy; M5 via `betterSearchCanSave`; M6 via `topicKey`; M8 to M10 in Task 9; M11 as "no later than tomorrow (UTC)"; M12 as the two imports and the corrected `brain-eval.mjs` anchors). No fix moved between tasks except the Clear-button route test, which lives in Task 4 beside the other route tests.
+- **Re-check (2026-11-06, plan at 966bc72).** N1: the calibration test reuses the file's existing `owner` and `cleanup`; `RecallLogRow` gains the plan 10 fields in Task 4 and `recallLog()` returns that type; the intent test reads `grant_id` through a cast on the `Principal` union. N2: the guard flags only files that both name the worker entry and spawn a process, and accepts `off` or a fake probe. N3: the five word-matching no-answer queries are replaced and the Task 5 test is the arbiter (replace, never loosen). N4: the agent-note case uses "the deploy" and a hex session id. N5: "been" and "already" are decision words. Minor: the third regex shape excludes phrasal "picked up" and that prompt is pinned plain. No fix moved between tasks; `RecallLogRow`'s extension moved from Task 5 to Task 4 because Task 4's test reads the field.
