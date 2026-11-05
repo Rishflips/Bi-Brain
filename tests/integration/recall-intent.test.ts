@@ -21,7 +21,10 @@ describe("prompt intent", () => {
   it("sorts acknowledgements, continuations, decision questions and everything else", () => {
     for (const p of ["thanks", "Thanks!", "ok", "OK.", "yes", "lgtm", "got it", "sounds good", "  thank you  "]) expect(promptIntent(p).kind, p).toBe("ack");
     // Every entry of the closed list, as typed and capitalised with a full stop.
-    for (const a of ACK_PROMPTS) for (const p of [a, `${a[0].toUpperCase()}${a.slice(1)}.`]) expect(promptIntent(p).kind, p).toBe("ack");
+    // A literal copy on purpose: removing a word from ACK_PROMPTS must fail here, not silently shrink the loop.
+    const expectedAcks = ["thanks", "thank you", "ok", "okay", "yes", "no", "sure", "great", "nice", "cool", "done", "lgtm", "good", "fine", "yep", "nope", "got it", "k", "ty", "thx", "perfect", "sounds good"];
+    expect([...ACK_PROMPTS].sort()).toEqual([...expectedAcks].sort());
+    for (const a of expectedAcks) for (const p of [a, `${a[0].toUpperCase()}${a.slice(1)}.`]) expect(promptIntent(p).kind, p).toBe("ack");
     for (const p of ["continue", "Continue.", "go on", "OK, continue", "please continue", "keep going…", "where were we?", "what did we decide", "what did we decide on", "What did we decide?", "what did we pick", "recap", "and then"]) expect(promptIntent(p), p).toEqual({ kind: "continuation", topicTerms: [] });
     expect(promptIntent("what did we pick for the caterer")).toEqual({ kind: "decision", topicTerms: ["caterer"] });
     expect(promptIntent("what color did we pick for the launch")).toEqual({ kind: "decision", topicTerms: ["color", "launch"] });
