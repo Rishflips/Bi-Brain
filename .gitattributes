@@ -1,3 +1,6 @@
 # Store the CLI entry point with LF endings, so the CRLF that npm ci writes on Windows
 # does not show up as a content change.
 apps/cli/bibrain.mjs text eol=lf
+
+# The Hermes plugin is copied to Linux servers as-is; keep LF in every checkout.
+integrations/hermes/** text eol=lf
