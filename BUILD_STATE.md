@@ -31,7 +31,26 @@ What changed:
 - **Short and decision-shaped prompts.** Acknowledgements never push. `continue` and its list read the session's topic (at most 12 content words, 20 sessions, two hours) or answer the first prompt with the digest. A decision question needs `we` or `I`; the passive `what was decided` stays plain. It reaches `full` only by the usual two-term rule or an exact entity name. A second golden bucket (`tests/eval/recall-short-golden-v1.json`) pins these.
 - **The tools' suggestions.** `proof:search` suggests 0.05 above the loudest no-answer cosine and says "not enough evidence" below 20 no-answer queries. `calibrate` suggests from the log using only rows written before any score was applied, labels it weaker evidence, and prints the fields Settings needs.
 
-Verified: TBD counts from Task 10 (typecheck, lint, build, audit, Vitest, brain-eval, Playwright, files and lines changed, reviews).
+Verified in this worktree on 2026-11-06 (Windows, Node 24.19.0). The second sequential run passed in full:
+
+- `npm run typecheck`, `npm run lint`, `npm run build`: all exit 0. `npm audit --audit-level=high`: exit 0. The two moderate advisories are unchanged.
+- `CI=true npx vitest run --reporter=dot --maxWorkers=2`: 199 files, 2,121 passed, 8 skipped, 0 failed (1,502 s).
+- `npm run brain-eval`: 57/57 passed, including the new short-and-paraphrase bucket. The plan-5 dense-off snapshot is byte-identical.
+- `npx playwright test --workers=1`: 111 passed, 0 failed (6.2m). By project: main 69, today-v2 20, connections 9, system1 6, today-v2-bar 4, empty-brain 3.
+- Code and tests: 32 files changed, 1,942 lines added and 78 removed.
+- The first full run found two real problems, both fixed and committed:
+  1. The page's 2.5-second refresh gained one request. That pushed the shared test address over the per-minute limit, and four open tabs could do the same for an owner. The "meaning matches can lead" line is now read only when Settings opens.
+  2. The Hermes plugin was checked out with Windows line endings. It is now pinned to LF, because it is copied to Linux servers.
+- Reviews:
+  - The pre-flight scan and its two re-checks caught 8 Blocker and 5 Important plan defects before any code was written.
+  - Every task had its own review; Opus reviewed the push-level, settings-authorisation and intent tasks.
+  - Fable's final review: with fixes, 2 Important. Both were fixed and re-reviewed.
+
+Known limits:
+
+- Nothing is calibrated on real data, and `proof:search` has not been run. Until the owner applies a measured threshold, a meaning match never leads a push.
+- Automatic Better search has been tested only against the fake embedder, never a real local Ollama.
+- The new reference cases use the fake embedder; real-model behaviour is measured only by `proof:search`.
 
 Known limits:
 - Nothing has been calibrated on real data and `npm run proof:search` has not been run, so no meaning-lead score is set and a meaning match still never leads a push. The suggestion code has not been tried against a real model.
