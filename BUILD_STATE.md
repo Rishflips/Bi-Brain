@@ -13,13 +13,31 @@ their real counts. The full delivery log from before the reframe is preserved in
 | --- | --- |
 | Local app (Today, Your brain, Connections, Settings) | Works end to end on one computer; verified by Vitest and Playwright on Windows |
 | Agent connections (Codex, Claude Code, Cursor) | One-step Add writes the server entry and a prompt hook or rule file. Native recall runs passed in Claude Code 2.1.283 and Codex 0.156.1 on Windows (2026-10-27); Cursor not yet run natively. Any other agent connects through `bibrain-agent/1` (Hermes plugin, HTTP MCP endpoint, `bibrain recall` and `bibrain note`), tested with fakes and not run natively |
-| Recall | FTS5 index, ranked recall, hook push; golden set gated in CI; owner-run native proof passed for both agents, hook on and off |
-| Better search (embeddings via Ollama or Cloudflare) | Off by default; fake-embedder gates in CI; live run owner-run (`npm run proof:search`) |
+| Recall | FTS5 index, ranked recall, hook push; golden set gated in CI; short and decision-shaped prompts pinned by a second golden bucket; owner-run native proof passed for both agents, hook on and off |
+| Better search (embeddings via Ollama or Cloudflare) | On by itself with a local Ollama (plan 10); fake-embedder gates in CI; the meaning-lead score is unset until the owner applies a measured one; live run owner-run (`npm run proof:search`) |
 | Sorting help (System 1, Clef via Ollama or Cloudflare) | Live call through Ollama Cloud with clef-flash validated 3 of 3 answers (2026-10-27). The durable demotion line moved to 0.20 on that run's evidence (2026-11-01); every other line keeps its first value and is read from `npm run calibrate` |
 | Watch | Per-project switch, on by default |
 | Licence | AGPL-3.0-only for the app, Apache-2.0 for the agent connector |
 | Hosted edition and payments | Paused; the Dodo adapter, the money ledger and the managed runtime are kept but not deployed, and no real payment has been processed. The Paddle code was removed in plan 6 (2026-10-28) |
 | Next plans | Owner-run: `npm run calibrate` once the brain has real answers and pushes, `npm run proof:search`, `scripts/native-client-proof.ts`; a native Hermes run (owner); the next reframe plan is the owner's choice |
+
+## 2026-11-06 — Plan 10: recall by meaning by default (branch reframe/recall-by-meaning)
+
+Spec: `docs/superpowers/specs/2026-11-06-recall-by-meaning-design.md`. Plan: `docs/superpowers/plans/2026-11-06-recall-by-meaning.md`.
+
+What changed:
+- **Better search turns itself on.** At worker start, one loopback request to `http://127.0.0.1:11434/api/tags` (inside 1.5 s, at most 1 MiB, no redirects) looks for Ollama with `bge-m3`; it repeats every 10 minutes while nothing was found. Found means on, with a notice in Settings. A stored Off wins; Cloudflare is never automatic; with it off nothing is called and recall is byte-identical (`tests/eval/recall-dense-off-snapshot.json`).
+- **Meaning matches can lead.** An owner-applied score, unset by default, set in Settings or by `PATCH /api/v1/preferences/meaning-lead` (GET and DELETE too) from `proof:search` or `calibrate` output. It is bound to the search model key; a changed model needs a new measurement. Applied last, so an unreviewed agent note never leads, and a promoted push shows only the leader, hits found by words, and meaning matches at or above the score.
+- **Short and decision-shaped prompts.** Acknowledgements never push. `continue` and its list read the session's topic (at most 12 content words, 20 sessions, two hours) or answer the first prompt with the digest. A decision question needs `we` or `I`; the passive `what was decided` stays plain. It reaches `full` only by the usual two-term rule or an exact entity name. A second golden bucket (`tests/eval/recall-short-golden-v1.json`) pins these.
+- **The tools' suggestions.** `proof:search` suggests 0.05 above the loudest no-answer cosine and says "not enough evidence" below 20 no-answer queries. `calibrate` suggests from the log using only rows written before any score was applied, labels it weaker evidence, and prints the fields Settings needs.
+
+Verified: TBD counts from Task 10 (typecheck, lint, build, audit, Vitest, brain-eval, Playwright, files and lines changed, reviews).
+
+Known limits:
+- Nothing has been calibrated on real data and `npm run proof:search` has not been run, so no meaning-lead score is set and a meaning match still never leads a push. The suggestion code has not been tried against a real model.
+- The probe runs at worker start and every 10 minutes until it finds the model; it then stops until the next start.
+- The golden buckets are synthetic and tested with a fake embedder.
+- Older plan sections below say Better search is off by default; that was true when they were written.
 
 ## 2026-11-05 — Plan 9: works with any agent, Hermes first (branch reframe/any-agent)
 

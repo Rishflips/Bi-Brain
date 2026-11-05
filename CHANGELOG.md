@@ -7,6 +7,9 @@ All notable changes to BiBrain are recorded here. The format follows [Keep a Cha
 Works with any agent, Hermes first.
 
 ### Added
+- Better search turns itself on when Ollama with the search model is found on this computer (loopback only, never Cloudflare), with a notice in Settings and one switch to turn it off.
+- Meaning matches can lead: an owner-applied score (Settings, Better search) that lets a hit found by meaning alone lead a full push; `proof:search` and `calibrate` suggest a value with its sample size; unset by default. Nothing has been calibrated on real data and `proof:search` has not been run, so no score is set.
+- Continuation phrases (`continue`, `what did we decide`) read the session's recent topic or the first-prompt digest; decision questions are read without their decision words; acknowledgements never push.
 - One documented agent contract, `bibrain-agent/1`, returned as `contract` by `GET /api/v1/agent/capabilities`.
 - `bibrain recall` and `bibrain note`: the same recall-before-a-turn and note-after-a-turn as the hooks, with a plain JSON shape on stdin and stdout for any harness on the BiBrain computer.
 - `POST /api/v1/agent/mcp`: the seven tools over MCP Streamable HTTP, for clients that only speak remote MCP.
@@ -15,6 +18,7 @@ Works with any agent, Hermes first.
 - The Connect any agent guide (`docs/CONNECT_ANY_AGENT.md`) and an honest compatibility matrix.
 
 ### Changed
+- The hook sends the continuation phrases even under 12 characters.
 - The empty Today card says "Your coding agents" instead of naming two of them. The README names the contract and links the guide.
 
 ### Security
