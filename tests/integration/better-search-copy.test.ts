@@ -2,10 +2,10 @@ import { describe, expect, it, afterEach } from "vitest";
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { betterSearchCanSave, plainSearchProblem, plainSearchReason } from "../../apps/web/better-search-copy.ts";
+import { AUTOMATIC_NOTICE, DETECTED_HINT, betterSearchCanSave, plainProbe, plainSearchProblem, plainSearchReason } from "../../apps/web/better-search-copy.ts";
 import { Storage } from "../../packages/storage/index.ts";
 import { Brain } from "../../packages/domain/service.ts";
-import { BETTER_SEARCH_PAUSED, modelKey } from "../../packages/domain/better-search.ts";
+import { BETTER_SEARCH_PAUSED, EMBED_OFF_BY_SETUP, PROBE_REASONS, modelKey } from "../../packages/domain/better-search.ts";
 import { embedFromEnv } from "../../packages/providers/embed-env.ts";
 import { publishBetterSearchStatus } from "../../apps/worker/embed.ts";
 import type { Principal } from "../../packages/contracts/index.ts";
@@ -152,5 +152,32 @@ describe("Better search card copy", () => {
     expect(betterSearchCanSave({ ...base, status: { key: "ollama:b:none" } }, "ollama")).toBe(true);
     expect(betterSearchCanSave({ mode: "off", key: null, status: { key: "ollama:b:none" } }, "off")).toBe(false);
     expect(betterSearchCanSave({ ...base, status: null }, "ollama")).toBe(false);
+  });
+});
+
+describe("automatic Better search copy", () => {
+  it("names Ollama only in the one setup instruction the owner has to type, and never a status code", () => {
+    expect(plainProbe("no_ollama")).toBe("Ollama was not found on this computer. Install Ollama and run `ollama pull bge-m3`; BiBrain checks again every 10 minutes.");
+    expect(plainProbe("no_model")).toBe("Ollama is running on this computer, but its search model is not pulled. Run `ollama pull bge-m3`; BiBrain checks again every 10 minutes.");
+    expect(plainProbe("found")).toBeNull();
+    expect(plainProbe("skipped")).toBeNull();
+    expect(plainProbe(null)).toBeNull();
+    for (const s of [AUTOMATIC_NOTICE, DETECTED_HINT]) {
+      expect(s).not.toMatch(/bge|model name|BRAIN_|\b\d{3}\b|token|mcp/i);
+      expect(s).toMatch(/this computer/u);
+    }
+    expect(AUTOMATIC_NOTICE).toContain("Nothing leaves your computer.");
+    // The worker's probe sentences and the off-by-setup sentence map to the closed setup line, never to the generic one.
+    expect(plainSearchReason(PROBE_REASONS.no_ollama)).toBe(SETUP);
+    expect(plainSearchReason(PROBE_REASONS.no_model)).toBe(SETUP);
+    // An owner who chose off on purpose is not told the setup is wrong.
+    expect(plainSearchReason(EMBED_OFF_BY_SETUP)).toBe("Better search is turned off by this computer's setup.");
+    expect(plainSearchProblem(EMBED_OFF_BY_SETUP)).toBe("Better search is turned off by this computer's setup.");
+  });
+  it("lets the owner pin an automatic choice with Save", () => {
+    const status = { key: "ollama:fake-concept-v1:none" };
+    expect(betterSearchCanSave({ mode: "ollama", key: status.key, status, automatic: true }, "ollama")).toBe(true);
+    expect(betterSearchCanSave({ mode: "ollama", key: status.key, status, automatic: false }, "ollama")).toBe(false);
+    expect(betterSearchCanSave({ mode: "ollama", key: status.key, status, automatic: true }, "off")).toBe(true);
   });
 });

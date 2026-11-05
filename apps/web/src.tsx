@@ -23,7 +23,7 @@ import type { OpenSourceOptions } from "./today/types.ts";
 import "./brain/brain.css";
 import { ConnectionsView } from "./connections/ConnectionsView.tsx";
 import "./connections/connections.css";
-import { betterSearchCanSave, plainSearchProblem, plainSearchReason } from "./better-search-copy.ts";
+import { AUTOMATIC_NOTICE, DETECTED_HINT, betterSearchCanSave, plainProbe, plainSearchProblem, plainSearchReason } from "./better-search-copy.ts";
 import {
   AgentClientPicker,
   AgentSetupGuide,
@@ -113,6 +113,9 @@ type BetterSearch = {
   failures: number;
   retry_at: string | null;
   paused_until: string | null;
+  automatic: boolean;
+  detected: boolean | null;
+  probe: "found" | "no_ollama" | "no_model" | "skipped" | null;
 };
 const BETTER_LABELS = { ollama: "Ollama on this computer", cloudflare: "Cloudflare" } as const;
 /** The one plain line Settings shows about better search. */
@@ -122,7 +125,8 @@ function betterSearchLine(b: BetterSearch): string {
   if (!b.effective) return `Words only right now: ${plainSearchReason(b.reason)}`;
   const label = b.status?.label ?? BETTER_LABELS[b.mode];
   const ready = `${b.counts.embedded} of ${b.counts.total} passages ready`;
-  return b.counts.pending > 0 ? `On · ${label} · ${ready}; preparing the rest in the background` : `On · ${label} · ${ready}`;
+  const on = b.automatic ? "On (this computer)" : "On";
+  return b.counts.pending > 0 ? `${on} · ${label} · ${ready}; preparing the rest in the background` : `${on} · ${label} · ${ready}`;
 }
 /**
  * Monotonic auth generation. It advances whenever the browser session is
@@ -1501,6 +1505,9 @@ function App() {
                   <h2>Better search</h2>
                   <p>Find notes by what they mean, not only by the words you used, in any language you write in.</p>
                   <p className="status" role="status">{betterSearchLine(better)}</p>
+                  {better.automatic ? <p className="muted">{AUTOMATIC_NOTICE}</p> : null}
+                  {better.mode === "off" && better.detected === true ? <p className="muted">{DETECTED_HINT}</p> : null}
+                  {better.mode === "off" && plainProbe(better.probe) ? <p className="muted">Last check: {plainProbe(better.probe)}</p> : null}
                   {better.status?.last_error ? <p className="muted">Last problem: {plainSearchProblem(better.status.last_error)}</p> : null}
                   <form
                     onSubmit={(e) => {
