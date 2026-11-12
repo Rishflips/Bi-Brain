@@ -2,7 +2,7 @@
 // throwaway brain, and records what a design audit needs: one full-page
 // screenshot per state and width, plus measured layout and accessibility checks.
 //
-//   node scripts/design-audit-walk.mjs <out-dir> [--only=name,name]
+//   node scripts/design-audit-walk.mjs <out-dir> [--only=name,name] [--dark]
 //
 // It starts its own server (BRAIN_EMBED_PROVIDER=off, a test pairing code, a
 // temporary database and a fake home) and stops it afterwards. Nothing in the
@@ -14,6 +14,7 @@ import { join, resolve } from "node:path";
 import { chromium } from "playwright";
 
 const out = resolve(process.argv[2] ?? "design-audit-out");
+const dark = process.argv.includes("--dark");
 const only = (process.argv.find((a) => a.startsWith("--only=")) ?? "").slice(7).split(",").filter(Boolean);
 const port = Number(process.env.AUDIT_PORT ?? 4517);
 const base = `http://127.0.0.1:${port}`;
@@ -211,6 +212,7 @@ try {
   const page = await context.newPage();
   globalThis.__pages = [page];
   // Sum unexpected layout shifts between captures (shifts within 500ms of input are excluded by the browser).
+  if (dark) await page.addInitScript(() => localStorage.setItem("brain-theme", "dark"));
   await page.addInitScript(() => {
     globalThis.__cls = 0;
     new PerformanceObserver((list) => {

@@ -1217,3 +1217,20 @@ footer {
     min-height: 44px;
   }
 }
+
+/* Dark appearance (first use, Settings): gold-brown text tuned for paper measured
+   about 2.6:1 on the dark canvas. Use the light gold signal and the muted token. */
+:root[data-theme="dark"] .eyebrow,
+:root[data-theme="dark"] .section-kicker,
+:root[data-theme="dark"] .entry-step,
+:root[data-theme="dark"] .status {
+  color: #e6c85e;
+}
+:root[data-theme="dark"] .entry-promises,
+:root[data-theme="dark"] .entry-help,
+:root[data-theme="dark"] .entry-help code {
+  color: var(--muted);
+}
+:root[data-theme="dark"] .entry-details summary {
+  color: #f4f1e9;
+}
