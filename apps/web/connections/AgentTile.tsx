@@ -36,7 +36,13 @@ export function AgentTile({ api, info, available, reason, loading, projects, pro
       </div>
       <ConnectionList api={api} grants={grants} projects={projects} hint={info.hint} onChanged={onChanged} />
       {available && !adding && (
-        <button ref={addButton} type="button" className="tv-btn tv-primary tv-sm" onClick={() => setAdding(true)}>
+        <button
+          ref={addButton}
+          type="button"
+          // One clear next step: only an agent found on this computer, with no connection yet, gets the dark button.
+          className={`tv-btn tv-sm${info.found && grants.length === 0 ? " tv-primary" : ""}`}
+          onClick={() => setAdding(true)}
+        >
           Add to {info.name}
         </button>
       )}

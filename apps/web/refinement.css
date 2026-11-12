@@ -19,6 +19,11 @@
   --amber: #e3b500;
   --attention: #9b4b1b;
   --shadow: 0 12px 32px rgb(31 27 17 / 8%);
+  /* Focus must reach 3:1 against every surface, so it is solid, never a tint. */
+  --focus: #7a5c00;
+  /* One radius for controls, one for cards and dialogs (docs/DESIGN_SYSTEM.md). */
+  --radius-control: 9px;
+  --radius-card: 14px;
   color: #181817;
   background: var(--canvas);
   color-scheme: light;
@@ -87,7 +92,7 @@ p {
 .eyebrow {
   margin: 0;
   color: #755800;
-  font-size: 10px;
+  font-size: 12px;
   font-weight: 750;
   letter-spacing: 0.16em;
 }
@@ -167,8 +172,8 @@ input:focus-visible,
 textarea:focus-visible,
 select:focus-visible,
 summary:focus-visible {
-  outline: 3px solid rgb(227 181 0 / 48%);
-  outline-offset: 3px;
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
 }
 
 .skip-link {
@@ -247,13 +252,6 @@ nav button[aria-current="page"]::before {
   background: #d6a900;
 }
 
-.rail-copy {
-  margin: 34px 12px;
-  padding-left: 12px;
-  border-left-color: #d4c995;
-  color: #77736a;
-  font-size: 12px;
-}
 
 .settings {
   color: #5d594f !important;
@@ -261,7 +259,8 @@ nav button[aria-current="page"]::before {
 
 aside small {
   margin: 14px 2px 0;
-  color: #7b776e;
+  color: var(--muted);
+  font-size: 12px;
 }
 
 main {
@@ -290,7 +289,7 @@ section {
 article,
 .saved-note {
   border: 1px solid var(--line);
-  border-radius: 12px;
+  border-radius: var(--radius-card);
   background: var(--surface);
   box-shadow: 0 1px 2px rgb(28 24 14 / 5%);
   backdrop-filter: none;
@@ -327,7 +326,7 @@ article {
   background: #f1eee6;
   color: #5f594c;
   padding: 3px 7px;
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 600;
 }
 
@@ -343,7 +342,7 @@ article {
 .section-kicker {
   margin: 0 0 8px;
   color: #765900;
-  font-size: 10px;
+  font-size: 12px;
   font-weight: 700;
   letter-spacing: 0.14em;
 }
@@ -450,7 +449,7 @@ article {
 }
 
 .connection-choice:has(input:focus-visible) {
-  outline: 3px solid rgb(214 169 0 / 28%);
+  outline: 2px solid var(--focus);
   outline-offset: 2px;
 }
 
@@ -571,7 +570,7 @@ article {
   background: #f2efe7;
 }
 
-input:not([type="checkbox"]),
+input:not([type="checkbox"]):not([type="radio"]),
 textarea,
 select {
   border: 1px solid var(--line-strong);
@@ -582,7 +581,7 @@ select {
   box-shadow: none;
 }
 
-input:not([type="checkbox"]):focus,
+input:not([type="checkbox"]):not([type="radio"]):focus,
 textarea:focus,
 select:focus {
   border-color: #9d7a00;
@@ -728,6 +727,7 @@ blockquote {
 
 .entry-step {
   color: #765900;
+  font-size: 12px;
 }
 
 .entry-card form {
@@ -774,6 +774,7 @@ footer {
   --pulse-soft: #3b3319;
   --lime: #f2c735;
   --attention: #f0a986;
+  --focus: #ffd247;
   color: #f4f1e9;
   background: var(--canvas);
   color-scheme: dark;
@@ -819,7 +820,7 @@ footer {
 }
 
 :root[data-theme="dark"] button:not(.primary),
-:root[data-theme="dark"] input:not([type="checkbox"]),
+:root[data-theme="dark"] input:not([type="checkbox"]):not([type="radio"]),
 :root[data-theme="dark"] textarea,
 :root[data-theme="dark"] select {
   border-color: var(--line-strong);
@@ -959,7 +960,6 @@ footer {
   }
 
   nav button[aria-current="page"]::before,
-  .rail-copy,
   aside small {
     display: none;
   }
@@ -1059,5 +1059,97 @@ footer {
 @media (prefers-reduced-motion: reduce) {
   html {
     scroll-behavior: auto;
+  }
+}
+
+/* Audit 2026-11: correctness floor -----------------------------------------
+   See docs/design/AUDIT-2026-11.md. Each rule names the page that needed it. */
+
+/* Settings (Better search, sorting, background help) and Connections (Add):
+   a choice and its words sit on one line, the control at the start. */
+:where(label:has(> input[type="checkbox"], > input[type="radio"])) {
+  /* A hanging indent, not flex: the words and any trailing hint stay one line of text. */
+  display: block;
+  position: relative;
+  margin: 6px 0;
+  padding-left: 28px;
+  line-height: 1.5;
+}
+:where(label:has(> input[type="checkbox"], > input[type="radio"])) > input[type="checkbox"],
+:where(label:has(> input[type="checkbox"], > input[type="radio"])) > input[type="radio"] {
+  position: absolute;
+  top: 3px;
+  left: 0;
+  width: 18px;
+  height: 18px;
+  margin: 0;
+  accent-color: #8a6800;
+}
+:root[data-theme="dark"] :where(label) > input[type="radio"] {
+  accent-color: #f2c735;
+}
+
+/* Every page on a phone: controls reach a 44px touch height. */
+@media (max-width: 760px) {
+  button,
+  .primary-link,
+  .tv-btn,
+  summary {
+    min-height: 44px;
+  }
+  summary {
+    display: list-item;
+    padding-block: 11px;
+  }
+  .settings {
+    display: block;
+    min-height: 44px;
+    padding: 12px 0 !important;
+  }
+}
+@media (max-width: 420px) {
+  .masthead .primary {
+    min-height: 44px;
+  }
+}
+/* Your brain on a phone: a section's own action (Save to this project, Choose
+   a goal, New project) is a full touch target, not a 24px line of text. */
+@media (max-width: 760px) {
+  .tv-section-head .tv-link,
+  .yb-plist > .tv-link,
+  .masthead .brand {
+    min-height: 44px;
+  }
+}
+
+/* Audit 2026-11: one heading scale for the signed-in workspace. Today used 40px
+   at weight 750 while Your brain, Connections and Settings used 58px at 620, so
+   the same level of page looked like two products. First use keeps its larger
+   editorial headline (.entry-story h1). */
+.layout:not(.entry-layout) main h1 {
+  max-width: none;
+  margin: 0 0 12px;
+  font-size: clamp(30px, 3.2vw, 40px);
+  font-weight: 650;
+  line-height: 1.08;
+  letter-spacing: -0.03em;
+}
+
+/* Every page on reload: the opening line appears only after 600ms. */
+.loading-note {
+  /* Out of flow, so nothing the real page renders can be pushed by it. */
+  position: fixed;
+  top: 24px;
+  left: 24px;
+  margin: 0;
+  color: var(--muted);
+  animation: loading-note-appear 1ms 600ms both;
+}
+@keyframes loading-note-appear {
+  from {
+    visibility: hidden;
+  }
+  to {
+    visibility: visible;
   }
 }

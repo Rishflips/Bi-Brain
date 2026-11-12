@@ -13,7 +13,7 @@ export function GoalsSection({ goals, busy, projectId, actions }: Props) {
         </button>
       </div>
       {goals.length === 0 ? (
-        <p className="tv-faint">Optional: write down where this project is heading, and BiBrain can prepare a review.</p>
+        <p className="tv-faint">Write down where this project is heading, and BiBrain can prepare a review.</p>
       ) : (
         goals.map((g) => (
           <article key={g.id} className="yb-item">

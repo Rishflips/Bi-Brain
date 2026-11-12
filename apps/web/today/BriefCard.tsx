@@ -205,7 +205,8 @@ export function BriefCard({
           Replaces: <s>{item.before}</s>
         </p>
       )}
-      <p className="tv-why">{item.why}</p>
+      {/* The tag already says "Found in something you saved"; the same words twice add nothing. */}
+      {item.kind !== "memory" && <p className="tv-why">{item.why}</p>}
       {item.evidence.length > 0 && (
         <div className="tv-evidence">
           {item.evidence.map((e) => (
