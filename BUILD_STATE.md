@@ -1,6 +1,6 @@
 # Build state
 
-Updated: 2026-11-05
+Updated: 2026-11-12
 
 This page holds the current, verified state of BiBrain. Each section below
 records one shipped plan of the 2026 reframe, with the commands that ran and
@@ -20,6 +20,28 @@ their real counts. The full delivery log from before the reframe is preserved in
 | Licence | AGPL-3.0-only for the app, Apache-2.0 for the agent connector |
 | Hosted edition and payments | Paused; the Dodo adapter, the money ledger and the managed runtime are kept but not deployed, and no real payment has been processed. The Paddle code was removed in plan 6 (2026-10-28) |
 | Next plans | Owner-run: `npm run calibrate` once the brain has real answers and pushes, `npm run proof:search`, `scripts/native-client-proof.ts`; a native Hermes run (owner); the next reframe plan is the owner's choice |
+
+## 2026-11-12 — Design audit (branch design/audit-2026-11)
+
+Report: `docs/design/AUDIT-2026-11.md`. Evidence: `docs/design/audit-2026-11/`. Walk: `scripts/design-audit-walk.mjs` (fresh throwaway brain, 15 states at 1440, 820 and 390px and at 200% zoom, light and `--dark`).
+
+What changed (web only; no server, data or permission change):
+- **Correctness floor.** Radios were drawn as text fields in Connections → Add and in Settings; focus ring was a 1.3:1 tint; every reload shifted the page 68px (0.47–0.90 layout shift); Tab left open dialogs; dark appearance had 2.1–2.8:1 gold text; text at 10–11.5px; phone targets at 22–38px. All fixed. Walk counts in light appearance, before → after: contrast 56 → 0, text under 12px 68 → 0, targets under 24px 96 → 0, dialog focus leaks 2 → 0.
+- **L1.** One heading scale and weight across the workspace; `--radius-control` and `--radius-card`; repeated slogans and copy removed; Connections tiles size to content, with one dark button where it is the next step; links inside metadata take its size.
+- **L2.** Today's bar has one primary action. Connections' import is one drop panel. Each is a single revertible commit with before and after screenshots.
+- **Docs.** `DESIGN_SYSTEM.md` gains a type scale, shape and focus tokens, and rules for choice controls, loading, file pickers and dark appearance. `DESIGN_BRIEF.md` notes where it is superseded.
+
+Verified in this worktree on 2026-11-12 (Windows, Node 24.19.0):
+
+- `npm run typecheck`, `npm run lint`, `npm run build`: all exit 0. `npm run brain-eval`: 57/57.
+- `CI=true npx vitest run --reporter=dot --maxWorkers=2`: 199 files; 2,118 passed, 8 skipped, 3 failed by timeout (1,650 s). The 3 were in `managed-recovery-review` and `provenance`, both server-side and unchanged here. Rerun alone, those two files passed 17/17.
+- `npx playwright test --workers=1`: 111 passed, 0 failed (6.0m).
+
+Known limits:
+
+- Only Chromium was checked. Screen-reader output was not listened to.
+- A residual 0.08–0.12 layout shift remains when Connections first opens after a reload with a connection.
+- Type is in px, so the browser's default font-size setting is ignored; this is proposed as L3.
 
 ## 2026-11-06 — Plan 10: recall by meaning by default (branch reframe/recall-by-meaning)
 

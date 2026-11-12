@@ -5,10 +5,6 @@
   min-width: 0;
 }
 .tv-title {
-  font-size: clamp(28px, 4.2vw, 40px);
-  letter-spacing: -0.03em;
-  line-height: 1.08;
-  font-weight: 750;
   margin: 0;
 }
 .tv-section {
@@ -36,14 +32,15 @@
 }
 
 .tv-btn {
+  min-height: 40px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   gap: 8px;
-  border-radius: 10px;
+  border-radius: var(--radius-control);
   padding: 9px 15px;
   font: inherit;
-  font-weight: 700;
+  font-weight: 600;
   font-size: 14px;
   border: 1px solid var(--line);
   background: var(--surface);
@@ -90,8 +87,8 @@
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  font-size: 11.5px;
-  font-weight: 700;
+  font-size: 12px;
+  font-weight: 650;
   padding: 2px 8px;
   border-radius: 99px;
   border: 1px solid var(--line);
@@ -106,7 +103,7 @@
 .tv-card {
   background: var(--surface);
   border: 1px solid var(--line);
-  border-radius: 16px;
+  border-radius: var(--radius-card);
   padding: 18px 20px;
   display: grid;
   gap: 12px;
@@ -134,7 +131,7 @@
 
 .tv-quiet {
   border: 1px dashed var(--line);
-  border-radius: 16px;
+  border-radius: var(--radius-card);
   padding: 26px 22px;
   display: grid;
   gap: 6px;
@@ -157,7 +154,7 @@
 .tv-step {
   background: var(--surface);
   border: 1px solid var(--line);
-  border-radius: 16px;
+  border-radius: var(--radius-card);
   padding: 18px;
   display: grid;
   gap: 10px;
@@ -207,7 +204,7 @@
 .tv-proj {
   background: var(--surface);
   border: 1px solid var(--line);
-  border-radius: 16px;
+  border-radius: var(--radius-card);
   padding: 16px 18px;
   display: grid;
   gap: 10px;
@@ -221,7 +218,7 @@
   text-align: left;
   font: inherit;
   font-size: 16.5px;
-  font-weight: 750;
+  font-weight: 650;
   color: inherit;
   cursor: pointer;
   overflow-wrap: anywhere;
@@ -255,7 +252,7 @@
   color: #111;
   border-radius: 8px;
   padding: 5px 11px;
-  font-weight: 800;
+  font-weight: 650;
   font-size: 13px;
   cursor: pointer;
 }
@@ -292,7 +289,7 @@
 .tv-bar {
   background: var(--surface);
   border: 1px solid var(--line);
-  border-radius: 16px;
+  border-radius: var(--radius-card);
   padding: 12px;
   display: grid;
   gap: 10px;
@@ -301,15 +298,19 @@
 .tv-bar:focus-within {
   border-color: var(--green);
 }
-.tv-bar-row {
+.tv-bar-top {
   display: flex;
-  gap: 10px;
-  align-items: flex-start;
-  min-width: 0;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 14px;
 }
-.tv-bar-row textarea {
-  flex: 1;
+.tv-bar > textarea {
+  display: block;
+  width: 100%;
   min-width: 0;
+  margin: 0;
+  padding: 4px 2px;
   resize: vertical;
   border: 0;
   background: transparent;
@@ -323,32 +324,50 @@
   display: flex;
   flex-wrap: wrap;
   align-items: center;
+  justify-content: flex-end;
   gap: 8px 14px;
+  padding-top: 10px;
+  border-top: 1px solid var(--line);
+}
+.tv-bar-project {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-right: auto;
 }
 .tv-bar-foot select {
+  width: auto;
+  max-width: 100%;
+  min-height: 36px;
+  margin: 0;
+  padding: 6px 30px 6px 10px;
   font: inherit;
   font-size: 13px;
-  max-width: 100%;
+  color: inherit;
 }
 .tv-seg {
   display: inline-flex;
   border: 1px solid var(--line);
-  border-radius: 10px;
+  border-radius: var(--radius-control);
   overflow: hidden;
 }
 .tv-seg button {
+  min-height: 32px;
   border: 0;
+  border-radius: 0;
   background: transparent;
   color: var(--muted);
   font: inherit;
   font-size: 13px;
-  font-weight: 700;
-  padding: 5px 12px;
+  font-weight: 600;
+  padding: 5px 14px;
   cursor: pointer;
 }
+/* The chosen mode is marked, not shouted: a gold wash, so the only dark button in
+   the bar is the one that sends. */
 .tv-seg button[aria-pressed="true"] {
-  background: var(--green-deep);
-  color: var(--on-green);
+  background: var(--pulse-soft);
+  color: inherit;
 }
 .tv-seg button:focus-visible {
   outline: 2px solid var(--green);
@@ -357,7 +376,7 @@
 .tv-panel {
   background: var(--surface);
   border: 1px solid var(--line);
-  border-radius: 16px;
+  border-radius: var(--radius-card);
   padding: 16px 18px;
   display: grid;
   gap: 10px;
@@ -369,7 +388,7 @@
 }
 .tv-eyebrow {
   font-size: 12px;
-  font-weight: 800;
+  font-weight: 650;
   letter-spacing: 0.04em;
   text-transform: uppercase;
   color: var(--green);
@@ -409,12 +428,11 @@
   font-size: 13px;
 }
 @media (max-width: 420px) {
-  .tv-bar-row {
-    flex-direction: column;
+  .tv-bar-hint {
+    display: none;
   }
-  .tv-bar-row textarea,
-  .tv-bar-row .tv-btn {
-    width: 100%;
+  .tv-bar-send {
+    flex: 1 1 100%;
   }
 }
 
@@ -461,7 +479,7 @@
   font: inherit;
   padding: 8px 10px;
   border: 1px solid var(--line);
-  border-radius: 10px;
+  border-radius: var(--radius-control);
   background: var(--surface);
   color: inherit;
   resize: vertical;
@@ -482,7 +500,7 @@
   min-width: 0;
   padding: 14px;
   border: 1px solid var(--line);
-  border-radius: 12px;
+  border-radius: var(--radius-card);
   background: var(--surface);
 }
 .tv-proj p {
@@ -542,4 +560,47 @@
 .tv-watch span {
   min-width: 0;
   overflow-wrap: anywhere;
+}
+
+/* Audit 2026-11 (Your brain, Today): a link inside a line of metadata takes that
+   line's size, so "Open the original" never outshouts the fact it belongs to. */
+.tv-link {
+  min-height: 24px;
+  font-weight: 600;
+}
+.yb-meta {
+  font-size: 13px;
+}
+.yb-meta .tv-link,
+.tv-faint .tv-link {
+  font-size: inherit;
+}
+/* A section head with a note and an action keeps the note beside its heading
+   and the action at the end, instead of floating the note in the middle. */
+.tv-section-head:has(> :nth-child(3)) {
+  justify-content: flex-start;
+}
+.tv-section-head:has(> :nth-child(3)) > :last-child {
+  margin-left: auto;
+}
+/* The bar itself shows focus (border); the box inside stays flat in both themes. */
+.tv-bar.tv-bar > textarea,
+.tv-bar.tv-bar > textarea:focus {
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+}
+.tv-bar.tv-bar > textarea:focus-visible {
+  outline: none;
+}
+/* Typing in the box draws one ring around the whole bar instead of two nested ones. */
+.tv-bar:has(> textarea:focus-visible) {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+@media (max-width: 760px) {
+  .tv-seg button,
+  .tv-bar-foot select {
+    min-height: 44px;
+  }
 }

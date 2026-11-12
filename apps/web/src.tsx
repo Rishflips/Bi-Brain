@@ -75,6 +75,16 @@ function NavGlyph({ name }: { name: string }) {
  * Exact dollar display from integer micro-USD. A nonzero amount below the
  * display floor is shown as "<$0.0001", never as a free "$0.0000".
  */
+// Settings, Preparation status: plain words for each job state.
+const JOB_WORDS: Record<string, string> = {
+  succeeded: "Done",
+  failed: "Failed",
+  cancelled: "Cancelled",
+  queued: "Waiting",
+  running: "Working",
+  retry_wait: "Trying again soon",
+};
+
 function formatUsd(microUsd: number): string {
   if (!Number.isFinite(microUsd) || microUsd <= 0) return "$0.0000";
   const usd = microUsd / 1_000_000;
@@ -259,6 +269,25 @@ function Modal({
     <dialog
       className={variant === "inspector" ? "inspector" : undefined}
       ref={ref}
+      onKeyDown={(e) => {
+        // Keep Tab inside the open dialog: wrap from the last control to the first and back.
+        if (e.key !== "Tab") return;
+        const items = Array.from(
+          e.currentTarget.querySelectorAll<HTMLElement>(
+            'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), summary, [tabindex]:not([tabindex="-1"])',
+          ),
+        ).filter((el) => el.getClientRects().length > 0);
+        if (!items.length) return;
+        const first = items[0]!;
+        const last = items[items.length - 1]!;
+        if (e.shiftKey && document.activeElement === first) {
+          e.preventDefault();
+          last.focus();
+        } else if (!e.shiftKey && document.activeElement === last) {
+          e.preventDefault();
+          first.focus();
+        }
+      }}
       onCancel={(e) => {
         e.preventDefault();
         close();
@@ -983,6 +1012,14 @@ function App() {
     if (generation !== authGeneration) return;
     setPreview(result);
   }
+  // While the session is read, show only a status line. Rendering the page frame
+  // first and the header a moment later pushed everything down 68px on every reload.
+  if (phase === "loading")
+    return (
+      <p className="loading-note" role="status">
+        Opening your brain…
+      </p>
+    );
   return (
     <>
       <a className="skip-link" href="#main-content">
@@ -1031,11 +1068,6 @@ function App() {
                 </button>
               ))}
             </nav>
-            <p className="rail-copy">
-              Agents change.
-              <br />
-              Your brain stays yours.
-            </p>
             <button
               className="link settings"
               onClick={() => setNav("Settings")}
@@ -1072,9 +1104,7 @@ function App() {
               {notice}
             </p>
           ) : null}
-          {phase === "loading" ? (
-            <p>Opening your brain…</p>
-          ) : phase === "unknown" ? (
+          {phase === "unknown" ? (
             <ConnectionUnavailable
               busy={busy}
               onRetry={() => setRetryNonce((value) => value + 1)}
@@ -1295,15 +1325,15 @@ function App() {
                 </button>
               </details>
               <h2>Bring more context in</h2>
-              <article>
-                <h3>Bring in files or conversations</h3>
+              {/* One drop panel holds every way in: drop a folder, or choose a
+                  folder, a chat export or one file. */}
+              <article className="import-panel">
                 <p>
-                  Choose a local folder of text or Markdown, or a JSON chat
-                  export for {projectName(connectionProject)}. Review the
-                  detected items before saving. Attachments and unsupported
+                  Text or Markdown folders, a JSON chat export or a single file,
+                  for {projectName(connectionProject)}. You review what was
+                  found before anything is saved. Attachments and unsupported
                   formats are skipped.
                 </p>
-                <button onClick={saveDialog}>Import a file</button>
                 <div
                   className="dropzone"
                   onDragOver={(e) => e.preventDefault()}
@@ -1312,31 +1342,40 @@ function App() {
                     void act(() => droppedFolder(e.dataTransfer));
                   }}
                 >
-                  Drop a folder of text or Markdown files here
+                  <p>Drop a folder of text or Markdown files here, or</p>
+                  <div className="import-actions">
+                    <label className="file-button">
+                      Choose a folder
+                      <input
+                        type="file"
+                        aria-label="Choose a folder"
+                        multiple
+                        accept=".txt,.md"
+                        {...({ webkitdirectory: "" } as any)}
+                        onChange={(e) =>
+                          void act(() =>
+                            previewAdapter("folder", e.target.files),
+                          )
+                        }
+                      />
+                    </label>
+                    <label className="file-button">
+                      Choose a chat export
+                      <input
+                        type="file"
+                        aria-label="Choose a chat JSON export"
+                        multiple
+                        accept=".json,application/json"
+                        onChange={(e) =>
+                          void act(() => previewAdapter("chat", e.target.files))
+                        }
+                      />
+                    </label>
+                    <button type="button" onClick={saveDialog}>
+                      Import a file
+                    </button>
+                  </div>
                 </div>
-                {field(
-                  "Choose a folder",
-                  <input
-                    type="file"
-                    multiple
-                    accept=".txt,.md"
-                    {...({ webkitdirectory: "" } as any)}
-                    onChange={(e) =>
-                      void act(() => previewAdapter("folder", e.target.files))
-                    }
-                  />,
-                )}
-                {field(
-                  "Choose a chat JSON export",
-                  <input
-                    type="file"
-                    multiple
-                    accept=".json,application/json"
-                    onChange={(e) =>
-                      void act(() => previewAdapter("chat", e.target.files))
-                    }
-                  />,
-                )}
               </article>
             </section>
           ) : (
@@ -2103,12 +2142,12 @@ function App() {
                 <h2>Preparation status</h2>
                 <p>
                   {today.status.worker_online
-                    ? "Worker is available."
-                    : "Worker is offline. Run npm run worker to resume."}
+                    ? "The background worker is ready."
+                    : "The background worker is stopped. Run npm run worker to resume."}
                 </p>
                 {today.status.jobs.map((j: any) => (
                   <div className="job" key={j.id}>
-                    <strong>{j.status}</strong>
+                    <strong>{JOB_WORDS[j.status] ?? j.status}</strong>
                     <span>{j.error ?? "Saved work preparation"}</span>
                     {["failed", "cancelled"].includes(j.status) ? (
                       <button
@@ -2141,7 +2180,6 @@ function App() {
             </section>
           )}
           <footer>
-            One brain. Every agent. Always caught up. A little ahead.
             <span>
               {phase !== "ready"
                 ? "Not connected"

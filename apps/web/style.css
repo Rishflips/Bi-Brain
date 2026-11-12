@@ -225,14 +225,6 @@ nav button[aria-current="page"]::before {
   content: "";
   transform: translateY(-50%);
 }
-.rail-copy {
-  color: var(--muted);
-  font-size: 13px;
-  line-height: 1.8;
-  margin: 42px 18px;
-  padding-left: 13px;
-  border-left: 1px solid rgb(23 76 56 / 22%);
-}
 .settings {
   margin-top: auto;
   text-align: left !important;
@@ -475,7 +467,7 @@ footer {
   justify-content: space-between;
   gap: 12px;
 }
-input:not([type="checkbox"]),
+input:not([type="checkbox"]):not([type="radio"]),
 textarea,
 select {
   display: block;
@@ -489,7 +481,7 @@ select {
   margin: 8px 0;
   line-height: 1.45;
 }
-input:not([type="checkbox"]):focus,
+input:not([type="checkbox"]):not([type="radio"]):focus,
 textarea:focus,
 select:focus {
   border-color: rgb(41 113 79 / 60%);
@@ -864,7 +856,7 @@ code {
   background: rgb(12 24 18 / 78%);
 }
 :root[data-theme="dark"] nav button[aria-current="page"],
-:root[data-theme="dark"] input:not([type="checkbox"]),
+:root[data-theme="dark"] input:not([type="checkbox"]):not([type="radio"]),
 :root[data-theme="dark"] textarea,
 :root[data-theme="dark"] select {
   background: rgb(26 44 35 / 76%);
@@ -975,7 +967,6 @@ code {
     font-size: 14px;
     flex: 1;
   }
-  .rail-copy,
   aside small {
     display: none;
   }
@@ -1227,9 +1218,6 @@ nav button[aria-current="page"] {
 nav button[aria-current="page"]::before {
   background: #fabc08;
 }
-.rail-copy {
-  border-left-color: #d2ae3e;
-}
 main {
   max-width: 1380px;
   padding: 54px clamp(28px, 5vw, 78px) 30px;
@@ -1253,7 +1241,7 @@ article {
   background: rgb(255 255 255 / 84%);
   box-shadow: 0 16px 50px rgb(47 36 15 / 7%);
 }
-input:not([type="checkbox"]),
+input:not([type="checkbox"]):not([type="radio"]),
 textarea,
 select {
   border-color: #d8d0c1;

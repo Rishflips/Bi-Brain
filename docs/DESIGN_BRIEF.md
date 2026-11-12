@@ -11,6 +11,15 @@ meta:
 
 # Design the BiBrain product experience
 
+> **Precedence (2026-11 design audit).** This brief was written for a prototype. Where it disagrees with [DESIGN_SYSTEM.md](DESIGN_SYSTEM.md), the design system and the implemented interface win. The known conflicts are:
+>
+> - Inter: the app uses Manrope.
+> - 20px and 28px radii: the app uses 9px and 14px.
+> - 64px display headings inside the app: the app uses 40px; first use keeps up to 66px.
+> - The "living field" with orbital paths: the design system forbids orbit scenes, and the app has none.
+>
+> See [design/AUDIT-2026-11.md](design/AUDIT-2026-11.md), section 1.
+
 This brief defines the complete visual and interaction direction for a responsive BiBrain prototype. Use it with the two supplied official logo files to create the product shell and its principal workflows. The result must feel distinctive, alive, and premium while preserving BiBrain's real product behavior, plain language, and safety boundaries.
 
 ## Use this brief as the source of truth

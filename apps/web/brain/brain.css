@@ -14,7 +14,7 @@
 .yb-head h2 { margin: 0; font-size: 26px; letter-spacing: -0.02em; overflow-wrap: anywhere; }
 .yb-waiting { margin: 0; display: flex; flex-wrap: wrap; gap: 6px 12px; align-items: baseline; }
 .yb-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
-.yb-item { display: grid; gap: 8px; min-width: 0; padding: 12px 14px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); }
+.yb-item { display: grid; gap: 8px; min-width: 0; padding: 12px 14px; border: 1px solid var(--line); border-radius: var(--radius-card); background: var(--surface); }
 .yb-item-row { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; }
 .yb-fact { margin: 0; min-width: 0; overflow-wrap: anywhere; }
 .yb-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; }
@@ -41,7 +41,7 @@
   .yb-timeline li { grid-template-columns: minmax(0, 1fr); gap: 2px; }
 }
 .yb-fix { display: grid; gap: 8px; }
-.yb-fix textarea { width: 100%; box-sizing: border-box; font: inherit; padding: 10px 12px; border-radius: 10px; border: 1px solid var(--line); background: var(--surface); color: inherit; resize: vertical; }
+.yb-fix textarea { width: 100%; box-sizing: border-box; font: inherit; padding: 10px 12px; border-radius: var(--radius-control); border: 1px solid var(--line); background: var(--surface); color: inherit; resize: vertical; }
 .yb-fix textarea:focus-visible { outline: 2px solid var(--green); outline-offset: 2px; }
 
 .yb-source { display: grid; gap: 18px; min-width: 0; }
@@ -51,7 +51,8 @@
 .yb-history li { display: grid; grid-template-columns: 34px minmax(0, 1fr); gap: 10px; }
 .yb-v { color: var(--muted); font-size: 13px; font-variant-numeric: tabular-nums; }
 .yb-search { display: grid; gap: 14px; min-width: 0; }
-.yb-field { width: 100%; box-sizing: border-box; font: inherit; padding: 11px 14px; border-radius: 10px; border: 1px solid var(--line); background: var(--surface); color: inherit; }
-.yb-hit { width: 100%; display: grid; gap: 4px; min-width: 0; text-align: left; font: inherit; padding: 12px 14px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); color: inherit; cursor: pointer; }
+.yb-field { width: 100%; box-sizing: border-box; font: inherit; padding: 11px 14px; border-radius: var(--radius-control); border: 1px solid var(--line); background: var(--surface); color: inherit; }
+.yb-hit { width: 100%; display: grid; gap: 4px; min-width: 0; text-align: left; font: inherit; padding: 12px 14px; border: 1px solid var(--line); border-radius: var(--radius-card); background: var(--surface); color: inherit; cursor: pointer; }
 .yb-hit-title { font-weight: 700; overflow-wrap: anywhere; }
 .yb-hit-snippet { overflow-wrap: anywhere; }
+.yb-review { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin: 0; }

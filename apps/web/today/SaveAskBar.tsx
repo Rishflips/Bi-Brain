@@ -202,34 +202,9 @@ export function SaveAskBar({
         <span className="tv-sr" aria-live="polite">
           {ask ? "Ask mode" : "Save mode"}
         </span>
-        <div className="tv-bar-row">
-          <textarea
-            id="tv-bar"
-            ref={area}
-            rows={2}
-            value={text}
-            placeholder={
-              ask
-                ? "Ask what your brain knows…"
-                : "Paste a note, a decision, or a conversation…"
-            }
-            onChange={(e) => change(e.target.value)}
-            onKeyDown={(e) => {
-              if (
-                e.key === "Enter" &&
-                !e.shiftKey &&
-                !e.nativeEvent.isComposing
-              ) {
-                e.preventDefault();
-                void submit();
-              }
-            }}
-          />
-          <button className="tv-btn tv-primary" type="submit" disabled={busy}>
-            {busy ? (ask ? "Asking…" : "Saving…") : ask ? "Ask" : "Save"}
-          </button>
-        </div>
-        <div className="tv-bar-foot">
+        {/* One primary action. The mode switch is a quiet choice above the box, the
+            project and the send button sit below it, in the order a keyboard meets them. */}
+        <div className="tv-bar-top">
           <div className="tv-seg" role="group" aria-label="What the bar does">
             <button
               type="button"
@@ -256,9 +231,36 @@ export function SaveAskBar({
               Ask
             </button>
           </div>
+          <span className="tv-faint tv-bar-hint">
+            Enter to {ask ? "ask" : "save"} · Shift+Enter for a new line
+          </span>
+        </div>
+        <textarea
+          id="tv-bar"
+          ref={area}
+          rows={2}
+          value={text}
+          placeholder={
+            ask
+              ? "Ask what your brain knows…"
+              : "Paste a note, a decision, or a conversation…"
+          }
+          onChange={(e) => change(e.target.value)}
+          onKeyDown={(e) => {
+            if (
+              e.key === "Enter" &&
+              !e.shiftKey &&
+              !e.nativeEvent.isComposing
+            ) {
+              e.preventDefault();
+              void submit();
+            }
+          }}
+        />
+        <div className="tv-bar-foot">
           {!ask && (
-            <label className="tv-faint">
-              Save to{" "}
+            <label className="tv-faint tv-bar-project">
+              Save to
               <select
                 value={project}
                 onChange={(e) => setProject(e.target.value)}
@@ -271,9 +273,9 @@ export function SaveAskBar({
               </select>
             </label>
           )}
-          <span className="tv-faint">
-            Enter to {ask ? "ask" : "save"} · Shift+Enter for a new line
-          </span>
+          <button className="tv-btn tv-primary tv-bar-send" type="submit" disabled={busy}>
+            {busy ? (ask ? "Asking…" : "Saving…") : ask ? "Ask" : "Save"}
+          </button>
         </div>
       </form>
       {error && (

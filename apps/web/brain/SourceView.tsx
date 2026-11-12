@@ -91,7 +91,7 @@ export function SourceView({ api, source, quote, factId, projectTitle, actions, 
         {source.state !== "active" ? ` · ${source.state}` : ""}
       </p>
       {source.written_by && !source.written_by.reviewed && (
-        <p>
+        <p className="yb-review">
           <button
             type="button"
             className="tv-btn tv-sm"
@@ -103,7 +103,7 @@ export function SourceView({ api, source, quote, factId, projectTitle, actions, 
           >
             Mark as reviewed
           </button>
-          <span className="tv-faint"> Reviewed notes can be pushed to your agents as evidence.</span>
+          <span className="tv-faint">Reviewed notes can be pushed to your agents as evidence.</span>
         </p>
       )}
       <section className="yb-drawer-section" aria-labelledby="yb-src-orig-h">
