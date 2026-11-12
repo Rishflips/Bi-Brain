@@ -1325,15 +1325,15 @@ function App() {
                 </button>
               </details>
               <h2>Bring more context in</h2>
-              <article>
-                <h3>Bring in files or conversations</h3>
+              {/* One drop panel holds every way in: drop a folder, or choose a
+                  folder, a chat export or one file. */}
+              <article className="import-panel">
                 <p>
-                  Choose a local folder of text or Markdown, or a JSON chat
-                  export for {projectName(connectionProject)}. Review the
-                  detected items before saving. Attachments and unsupported
+                  Text or Markdown folders, a JSON chat export or a single file,
+                  for {projectName(connectionProject)}. You review what was
+                  found before anything is saved. Attachments and unsupported
                   formats are skipped.
                 </p>
-                <button onClick={saveDialog}>Import a file</button>
                 <div
                   className="dropzone"
                   onDragOver={(e) => e.preventDefault()}
@@ -1342,31 +1342,40 @@ function App() {
                     void act(() => droppedFolder(e.dataTransfer));
                   }}
                 >
-                  Drop a folder of text or Markdown files here
+                  <p>Drop a folder of text or Markdown files here, or</p>
+                  <div className="import-actions">
+                    <label className="file-button">
+                      Choose a folder
+                      <input
+                        type="file"
+                        aria-label="Choose a folder"
+                        multiple
+                        accept=".txt,.md"
+                        {...({ webkitdirectory: "" } as any)}
+                        onChange={(e) =>
+                          void act(() =>
+                            previewAdapter("folder", e.target.files),
+                          )
+                        }
+                      />
+                    </label>
+                    <label className="file-button">
+                      Choose a chat export
+                      <input
+                        type="file"
+                        aria-label="Choose a chat JSON export"
+                        multiple
+                        accept=".json,application/json"
+                        onChange={(e) =>
+                          void act(() => previewAdapter("chat", e.target.files))
+                        }
+                      />
+                    </label>
+                    <button type="button" onClick={saveDialog}>
+                      Import a file
+                    </button>
+                  </div>
                 </div>
-                {field(
-                  "Choose a folder",
-                  <input
-                    type="file"
-                    multiple
-                    accept=".txt,.md"
-                    {...({ webkitdirectory: "" } as any)}
-                    onChange={(e) =>
-                      void act(() => previewAdapter("folder", e.target.files))
-                    }
-                  />,
-                )}
-                {field(
-                  "Choose a chat JSON export",
-                  <input
-                    type="file"
-                    multiple
-                    accept=".json,application/json"
-                    onChange={(e) =>
-                      void act(() => previewAdapter("chat", e.target.files))
-                    }
-                  />,
-                )}
               </article>
             </section>
           ) : (
