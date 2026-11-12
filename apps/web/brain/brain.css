@@ -55,3 +55,4 @@
 .yb-hit { width: 100%; display: grid; gap: 4px; min-width: 0; text-align: left; font: inherit; padding: 12px 14px; border: 1px solid var(--line); border-radius: var(--radius-card); background: var(--surface); color: inherit; cursor: pointer; }
 .yb-hit-title { font-weight: 700; overflow-wrap: anywhere; }
 .yb-hit-snippet { overflow-wrap: anywhere; }
+.yb-review { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin: 0; }
