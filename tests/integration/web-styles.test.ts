@@ -44,4 +44,12 @@ describe("web stylesheet foundation", () => {
     expect(order.every((at) => at >= 0)).toBe(true);
     expect([...order].sort((a, b) => a - b)).toEqual(order);
   });
+  it("sets type in rem so it follows the person's text-size setting", () => {
+    for (const sheet of SHEETS) {
+      const css = read(sheet);
+      expect(css, sheet).not.toMatch(/font-size:[^;}]*\dpx/);
+      expect(css, sheet).not.toMatch(/font:\s*[\d.]+px/);
+    }
+    expect(block(read("styles/app.css"), ":root")).not.toContain("font-size");
+  });
 });

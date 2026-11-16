@@ -3,10 +3,10 @@
 .cx-tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 320px), 1fr)); gap: 16px; align-items: start; }
 .cx-tile > .tv-btn { justify-self: start; }
 .cx-tile { display: grid; gap: 12px; align-content: start; min-width: 0; padding: 16px; border: 1px solid var(--line); border-radius: var(--radius-card); background: var(--surface); }
-.cx-tile h2 { margin: 0; font-size: 18px; }
+.cx-tile h2 { margin: 0; font-size: 1.125rem; }
 .cx-head { display: flex; gap: 12px; align-items: center; min-width: 0; }
 .cx-head-text { display: grid; gap: 2px; min-width: 0; }
-.cx-mark { flex: none; display: grid; place-items: center; width: 36px; height: 36px; border-radius: 10px; border: 1px solid var(--line); font-weight: 650; font-size: 13px; }
+.cx-mark { flex: none; display: grid; place-items: center; width: 36px; height: 36px; border-radius: 10px; border: 1px solid var(--line); font-weight: 650; font-size: 0.8125rem; }
 .cx-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
 .cx-row { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; min-width: 0; }
 .cx-row-text { display: grid; gap: 2px; min-width: 0; overflow-wrap: anywhere; }
@@ -16,6 +16,6 @@
 /* :where keeps this at the weight of a bare select, so the base focus state still applies. A text input takes the base input style. */
 :where(.cx-field) select { width: 100%; box-sizing: border-box; font: inherit; padding: 9px 12px; border-radius: var(--radius-control); border: 1px solid var(--line); background: var(--surface); color: inherit; }
 .cx-field input:focus-visible, .cx-field select:focus-visible, .cx-add summary:focus-visible { outline: 2px solid var(--signal); outline-offset: 2px; }
-.cx-file { margin: 0; padding: 10px 12px; border-radius: var(--radius-control); border: 1px solid var(--line); font-size: 13px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.cx-file { margin: 0; padding: 10px 12px; border-radius: var(--radius-control); border: 1px solid var(--line); font-size: 0.8125rem; white-space: pre-wrap; overflow-wrap: anywhere; }
 .cx-add summary, .cx-ended summary { cursor: pointer; font-weight: 650; }
 .cx-add p, .cx-add small, .cx-add label, .cx-head-text p { overflow-wrap: anywhere; }

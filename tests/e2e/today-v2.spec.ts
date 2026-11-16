@@ -566,3 +566,26 @@ test("Today fits a 320px screen in dark appearance", async ({ page }) => {
     page.getByLabel(/save to your brain|ask your brain/i),
   ).toBeVisible();
 });
+
+test("text follows a larger default text size on a phone without sideways scrolling", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  // A larger text size in the browser arrives as a larger root font size. The page's policy forbids an inline <style>, so use a constructable sheet.
+  await page.addInitScript(() => {
+    const sheet = new CSSStyleSheet();
+    sheet.replaceSync("html { font-size: 20px; }");
+    document.adoptedStyleSheets = [sheet];
+  });
+  await pair(page);
+  await expect(page.locator("body")).toHaveCSS("font-size", "20px");
+  const title = await page.locator(".tv-title").evaluate((el) => parseFloat(getComputedStyle(el).fontSize));
+  expect(title).toBeGreaterThan(30);
+  const bar = page.getByLabel(/save to your brain|ask your brain/i);
+  await expect(bar).toBeVisible();
+  expect(await bar.evaluate((el) => parseFloat(getComputedStyle(el).fontSize))).toBeGreaterThanOrEqual(18);
+  for (const tab of ["Today", "Your brain", "Connections"]) {
+    await page.getByRole("button", { name: tab, exact: true }).click();
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), tab).toBe(true);
+  }
+  await page.getByRole("button", { name: "Settings & privacy" }).click();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+});

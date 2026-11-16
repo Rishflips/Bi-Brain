@@ -53,6 +53,8 @@ The 2026-11 audit found Today's page title at 40px/750 while the other three use
 | Supporting text and metadata | 13–14px | 400–600 |
 | Smallest text, including eyebrows, tags and pills | 12px | 600–700 |
 
+Sizes are written in rem (px ÷ 16), so the scale follows the text size the person set in their browser; the px figures above are what a default 16px setting renders. The root sets no font size. Spacing, borders, radii and breakpoints stay in px.
+
 - **First use:** may keep its editorial headline at 46–66px. Signed-in headings do not.
 - **Weights:** 400, 600 and 650; 700 is for the small sizes only. The audit found 750 and 800 on Today; both are gone.
 - **Nothing under 12px.** The audit found eyebrows at 10px, the rail note at 11px and tags at 11.5px.

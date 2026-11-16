@@ -21,11 +21,11 @@
 }
 .tv-section-head h2 {
   margin: 0;
-  font-size: 18px;
+  font-size: 1.125rem;
 }
 .tv-faint {
   color: var(--muted);
-  font-size: 13px;
+  font-size: 0.8125rem;
 }
 .tv-error {
   color: var(--attention);
@@ -41,7 +41,7 @@
   padding: 9px 15px;
   font: inherit;
   font-weight: 600;
-  font-size: 14px;
+  font-size: 0.875rem;
   border: 1px solid var(--line);
   background: var(--surface);
   color: inherit;
@@ -69,7 +69,7 @@
 }
 .tv-btn.tv-sm {
   padding: 6px 11px;
-  font-size: 13px;
+  font-size: 0.8125rem;
 }
 .tv-link {
   border: 0;
@@ -87,7 +87,7 @@
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  font-size: 12px;
+  font-size: 0.75rem;
   font-weight: 650;
   padding: 2px 8px;
   border-radius: 99px;
@@ -111,7 +111,7 @@
 }
 .tv-card h3 {
   margin: 0;
-  font-size: 17.5px;
+  font-size: 1.09375rem;
   font-weight: 700;
   letter-spacing: -0.01em;
   line-height: 1.35;
@@ -125,7 +125,7 @@
 }
 .tv-why {
   color: var(--muted);
-  font-size: 14px;
+  font-size: 0.875rem;
   margin: 0;
 }
 
@@ -139,7 +139,7 @@
 }
 .tv-quiet h3 {
   margin: 0;
-  font-size: 17px;
+  font-size: 1.0625rem;
 }
 .tv-quiet p {
   margin: 0;
@@ -163,15 +163,15 @@
 }
 .tv-step h3 {
   margin: 0;
-  font-size: 16px;
+  font-size: 1rem;
 }
 .tv-step p {
   margin: 0;
   color: var(--muted);
-  font-size: 14px;
+  font-size: 0.875rem;
 }
 .tv-step-n {
-  font-size: 12px;
+  font-size: 0.75rem;
   font-weight: 700;
   color: var(--signal);
 }
@@ -217,7 +217,7 @@
   padding: 0;
   text-align: left;
   font: inherit;
-  font-size: 16.5px;
+  font-size: 1.03125rem;
   font-weight: 650;
   color: inherit;
   cursor: pointer;
@@ -242,7 +242,7 @@
   gap: 14px;
   align-items: center;
   box-shadow: var(--shadow);
-  font-size: 14px;
+  font-size: 0.875rem;
   font-weight: 600;
   max-width: calc(100% - 32px);
 }
@@ -254,7 +254,7 @@
   border-radius: 8px;
   padding: 5px 11px;
   font-weight: 650;
-  font-size: 13px;
+  font-size: 0.8125rem;
   cursor: pointer;
 }
 
@@ -317,7 +317,7 @@
   background: transparent;
   color: inherit;
   font: inherit;
-  font-size: 15px;
+  font-size: 0.9375rem;
   line-height: 1.5;
   outline: none;
   box-shadow: none;
@@ -349,7 +349,7 @@
   margin: 0;
   padding: 6px 30px 6px 10px;
   font: inherit;
-  font-size: 13px;
+  font-size: 0.8125rem;
   color: inherit;
 }
 .tv-seg {
@@ -366,7 +366,7 @@
   background: transparent;
   color: var(--muted);
   font: inherit;
-  font-size: 13px;
+  font-size: 0.8125rem;
   font-weight: 600;
   padding: 5px 14px;
   cursor: pointer;
@@ -395,7 +395,7 @@
   overflow-wrap: anywhere;
 }
 .tv-eyebrow {
-  font-size: 12px;
+  font-size: 0.75rem;
   font-weight: 650;
   letter-spacing: 0.04em;
   text-transform: uppercase;
@@ -418,7 +418,7 @@
   padding: 0;
   text-align: left;
   font: inherit;
-  font-size: 13px;
+  font-size: 0.8125rem;
   color: var(--muted);
   font-style: italic;
   cursor: pointer;
@@ -433,7 +433,7 @@
 .tv-btn.tv-ghost {
   background: transparent;
   padding: 4px 10px;
-  font-size: 13px;
+  font-size: 0.8125rem;
 }
 @media (max-width: 420px) {
   .tv-bar-hint {
@@ -450,7 +450,7 @@
 }
 .tv-before {
   margin: 0;
-  font-size: 14px;
+  font-size: 0.875rem;
   color: var(--muted);
 }
 .tv-evidence {
@@ -542,7 +542,7 @@
   text-overflow: ellipsis;
   white-space: nowrap;
   color: var(--muted);
-  font-size: 13px;
+  font-size: 0.8125rem;
 }
 @media (max-width: 420px) {
   .masthead {
@@ -578,7 +578,7 @@
   font-weight: 600;
 }
 .yb-meta {
-  font-size: 13px;
+  font-size: 0.8125rem;
 }
 .yb-meta .tv-link,
 .tv-faint .tv-link {
