@@ -1,4 +1,4 @@
-/* Today v2. Every class is prefixed tv- so nothing collides with style.css or refinement.css. */
+/* Today v2. Every class is prefixed tv- so nothing collides with the base stylesheet (styles/app.css), which loads first. */
 .tv {
   display: grid;
   gap: 28px;
@@ -246,7 +246,8 @@
   font-weight: 600;
   max-width: calc(100% - 32px);
 }
-.tv-toast button {
+/* :where keeps this at the weight of a bare button, so the base hover and pressed states still apply. */
+:where(.tv-toast) button {
   border: 0;
   background: var(--gold);
   color: #111;
@@ -267,8 +268,8 @@
 }
 @media (prefers-reduced-motion: reduce) {
   .tv * {
-    animation: none !important;
-    transition: none !important;
+    animation: none;
+    transition: none;
   }
 }
 
@@ -319,6 +320,12 @@
   font-size: 15px;
   line-height: 1.5;
   outline: none;
+  box-shadow: none;
+}
+/* The bar draws the focus ring (below), so the box inside stays flat when focused, in both appearances. */
+.tv-bar > textarea:focus {
+  border: 0;
+  background: transparent;
 }
 .tv-bar-foot {
   display: flex;
@@ -351,7 +358,8 @@
   border-radius: var(--radius-control);
   overflow: hidden;
 }
-.tv-seg button {
+/* :where keeps this at the weight of a bare button, so the base hover, pressed and disabled states still apply. */
+:where(.tv-seg) button {
   min-height: 32px;
   border: 0;
   border-radius: 0;
@@ -474,7 +482,8 @@
   display: grid;
   gap: 6px;
 }
-.tv-fix textarea {
+/* :where keeps this at the weight of a bare textarea, so the base focus state still applies. */
+:where(.tv-fix) textarea {
   width: 100%;
   font: inherit;
   padding: 8px 10px;
@@ -583,22 +592,13 @@
 .tv-section-head:has(> :nth-child(3)) > :last-child {
   margin-left: auto;
 }
-/* The bar itself shows focus (border); the box inside stays flat in both themes. */
-.tv-bar.tv-bar > textarea,
-.tv-bar.tv-bar > textarea:focus {
-  border: 0;
-  background: transparent;
-  box-shadow: none;
-}
-.tv-bar.tv-bar > textarea:focus-visible {
-  outline: none;
-}
 /* Typing in the box draws one ring around the whole bar instead of two nested ones. */
 .tv-bar:has(> textarea:focus-visible) {
   outline: 2px solid var(--focus);
   outline-offset: 2px;
 }
 @media (max-width: 760px) {
+  .tv-btn,
   .tv-seg button,
   .tv-bar-foot select {
     min-height: 44px;

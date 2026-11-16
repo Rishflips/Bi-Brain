@@ -16,13 +16,10 @@ import { SignIn, ConnectionUnavailable, type RuntimeMode } from "./sign-in.tsx";
 import { BrandLockup } from "./brand.tsx";
 import { takePairToken } from "./pair-link.ts";
 import { TodayView } from "./today/TodayView.tsx";
-import "./today/today.css";
 import { BrainView } from "./brain/BrainView.tsx";
 import { SourceView } from "./brain/SourceView.tsx";
 import type { OpenSourceOptions } from "./today/types.ts";
-import "./brain/brain.css";
 import { ConnectionsView } from "./connections/ConnectionsView.tsx";
-import "./connections/connections.css";
 import { AUTOMATIC_NOTICE, DETECTED_HINT, betterSearchCanSave, meaningLeadLine, type MeaningLeadView, plainProbe, plainSearchProblem, plainSearchReason } from "./better-search-copy.ts";
 import {
   AgentClientPicker,
@@ -34,6 +31,9 @@ import {
 import "./styles/tokens.css";
 import "@fontsource-variable/manrope/wght.css";
 import "./styles/app.css";
+import "./today/today.css";
+import "./brain/brain.css";
+import "./connections/connections.css";
 import { CONTEXT_FILE_MAX_BYTES, isContextFile } from "../../packages/importers/context.ts";
 let csrf = "";
 
@@ -1056,7 +1056,7 @@ function App() {
       <div className={`layout${showProductShell ? "" : " entry-layout"}`}>
         {showProductShell ? (
           <aside>
-            <nav aria-label="Main navigation" data-ui="primary-navigation">
+            <nav className="primary-nav" aria-label="Main navigation" data-ui="primary-navigation">
               {["Today", "Your brain", "Connections"].map((n) => (
                 <button
                   key={n}

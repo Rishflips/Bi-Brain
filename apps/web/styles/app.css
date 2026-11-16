@@ -327,7 +327,7 @@ input[type="checkbox"] {
   letter-spacing: -0.6px;
   gap: 18px;
 }
-nav {
+.primary-nav {
   display: flex;
   flex-direction: column;
   gap: 4px;
@@ -390,7 +390,7 @@ aside {
   border-right: 1px solid var(--line);
   background: var(--canvas);
 }
-nav button {
+.primary-nav button {
   text-align: left;
   background: none;
   position: relative;
@@ -404,18 +404,21 @@ nav button {
   color: #625f57;
   font-weight: 550;
 }
-nav button:hover {
+.primary-nav button:active {
+  background: #e9e5db;
+}
+.primary-nav button:hover {
   border-color: var(--line);
   background: #f0ede5;
 }
-nav button[aria-current="page"] {
+.primary-nav button[aria-current="page"] {
   border-color: #e4d28b;
   background: #fff2b8;
   color: #241e0c;
   font-weight: 650;
   box-shadow: none;
 }
-nav button[aria-current="page"]::before {
+.primary-nav button[aria-current="page"]::before {
   position: absolute;
   top: 50%;
   border-radius: 999px;
@@ -1011,18 +1014,18 @@ blockquote {
     border-right: 0;
     border-bottom: 1px solid var(--line);
   }
-  nav {
+  .primary-nav {
     display: grid;
     grid-template-columns: repeat(3, minmax(0, 1fr));
     gap: 4px;
     overflow: visible;
   }
-  nav button {
+  .primary-nav button {
     width: 100%;
     justify-content: center;
     padding: 9px 10px;
   }
-  nav button[aria-current="page"]::before,
+  .primary-nav button[aria-current="page"]::before,
   aside small {
     display: none;
   }
@@ -1067,7 +1070,6 @@ blockquote {
   /* Every page on a phone: controls reach a 44px touch height. */
   button,
   .primary-link,
-  .tv-btn,
   summary {
     min-height: 44px;
   }
@@ -1084,9 +1086,8 @@ blockquote {
     font-size: 12px;
   }
   /* Your brain on a phone: a section's own action (Save to this project, Choose
-   a goal, New project) is a full touch target, not a 24px line of text. */
+     a goal) is a full touch target, not a 24px line of text. */
   .tv-section-head .tv-link,
-  .yb-plist > .tv-link,
   .masthead .brand {
     min-height: 44px;
   }
@@ -1102,7 +1103,7 @@ blockquote {
     font-size: 13px;
     padding: 10px;
   }
-  nav {
+  .primary-nav {
     flex-direction: row;
     flex-wrap: wrap;
   }
@@ -1132,7 +1133,7 @@ blockquote {
     flex-wrap: wrap;
     top: auto;
   }
-  nav button {
+  .primary-nav button {
     flex: 1;
     font-size: 13px;
     white-space: nowrap;
@@ -1146,11 +1147,11 @@ blockquote {
     width: 116px;
     height: 34px;
   }
-  nav button {
+  .primary-nav button {
     gap: 6px;
     font-size: 12px;
   }
-  nav button svg {
+  .primary-nav button svg {
     display: none;
   }
   .entry-card form button {
@@ -1199,13 +1200,10 @@ blockquote {
 :root[data-theme="dark"] .brand-lockup .brand-cutout {
   fill: #191918;
 }
-:root[data-theme="dark"] nav button {
-  color: #b9b5ac;
-}
-:root[data-theme="dark"] nav button:hover {
+:root[data-theme="dark"] .primary-nav button:hover {
   background: #232321;
 }
-:root[data-theme="dark"] nav button[aria-current="page"] {
+:root[data-theme="dark"] .primary-nav button[aria-current="page"] {
   border-color: #66571e;
   background: #39321a;
   color: #fff4c8;
