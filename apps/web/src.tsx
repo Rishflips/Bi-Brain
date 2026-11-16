@@ -32,8 +32,7 @@ import {
   type AgentClient,
 } from "./agent-connection.tsx";
 import "@fontsource-variable/manrope/wght.css";
-import "./style.css";
-import "./refinement.css";
+import "./styles/app.css";
 import { CONTEXT_FILE_MAX_BYTES, isContextFile } from "../../packages/importers/context.ts";
 let csrf = "";
 
