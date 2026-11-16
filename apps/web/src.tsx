@@ -31,6 +31,7 @@ import {
   clientLabel,
   type AgentClient,
 } from "./agent-connection.tsx";
+import "./styles/tokens.css";
 import "@fontsource-variable/manrope/wght.css";
 import "./styles/app.css";
 import { CONTEXT_FILE_MAX_BYTES, isContextFile } from "../../packages/importers/context.ts";

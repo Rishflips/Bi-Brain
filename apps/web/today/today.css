@@ -52,13 +52,13 @@
 }
 .tv-btn:focus-visible,
 .tv-link:focus-visible {
-  outline: 2px solid var(--green);
+  outline: 2px solid var(--signal);
   outline-offset: 2px;
 }
 .tv-btn.tv-primary {
-  background: var(--green-deep);
-  color: var(--on-green);
-  border-color: var(--green-deep);
+  background: var(--ink);
+  color: var(--on-ink);
+  border-color: var(--ink);
 }
 .tv-btn.tv-primary:hover {
   opacity: 0.9;
@@ -75,7 +75,7 @@
   border: 0;
   background: none;
   padding: 0;
-  color: var(--green);
+  color: var(--signal);
   font: inherit;
   font-weight: 700;
   text-decoration: underline;
@@ -173,7 +173,7 @@
 .tv-step-n {
   font-size: 12px;
   font-weight: 700;
-  color: var(--green);
+  color: var(--signal);
 }
 .tv-file {
   position: relative;
@@ -187,7 +187,7 @@
   inset: 0;
 }
 .tv-file:focus-within {
-  outline: 2px solid var(--green);
+  outline: 2px solid var(--signal);
   outline-offset: 2px;
 }
 .tv-step .tv-btn {
@@ -234,8 +234,8 @@
   transform: translateX(-50%);
   z-index: 50;
   bottom: calc(24px + env(safe-area-inset-bottom, 0px));
-  background: var(--green-deep);
-  color: var(--on-green);
+  background: var(--ink);
+  color: var(--on-ink);
   border-radius: 12px;
   padding: 10px 12px 10px 16px;
   display: flex;
@@ -248,7 +248,7 @@
 }
 .tv-toast button {
   border: 0;
-  background: var(--pulse);
+  background: var(--gold);
   color: #111;
   border-radius: 8px;
   padding: 5px 11px;
@@ -296,7 +296,7 @@
   min-width: 0;
 }
 .tv-bar:focus-within {
-  border-color: var(--green);
+  border-color: var(--signal);
 }
 .tv-bar-top {
   display: flex;
@@ -366,11 +366,11 @@
 /* The chosen mode is marked, not shouted: a gold wash, so the only dark button in
    the bar is the one that sends. */
 .tv-seg button[aria-pressed="true"] {
-  background: var(--pulse-soft);
+  background: var(--gold-wash);
   color: inherit;
 }
 .tv-seg button:focus-visible {
-  outline: 2px solid var(--green);
+  outline: 2px solid var(--signal);
   outline-offset: -2px;
 }
 .tv-panel {
@@ -391,7 +391,7 @@
   font-weight: 650;
   letter-spacing: 0.04em;
   text-transform: uppercase;
-  color: var(--green);
+  color: var(--signal);
 }
 .tv-hit {
   display: grid;
@@ -401,8 +401,8 @@
   justify-items: start;
 }
 .tv-tag.tv-ok {
-  color: var(--green);
-  border-color: var(--green);
+  color: var(--signal);
+  border-color: var(--signal);
 }
 .tv-cite {
   border: 0;
@@ -419,7 +419,7 @@
   text-underline-offset: 3px;
 }
 .tv-cite:focus-visible {
-  outline: 2px solid var(--green);
+  outline: 2px solid var(--signal);
   outline-offset: 2px;
 }
 .tv-btn.tv-ghost {
@@ -464,10 +464,10 @@
   overflow-wrap: anywhere;
 }
 .tv-quote:hover {
-  border-left-color: var(--green);
+  border-left-color: var(--signal);
 }
 .tv-quote:focus-visible {
-  outline: 2px solid var(--green);
+  outline: 2px solid var(--signal);
   outline-offset: 2px;
 }
 .tv-fix {
@@ -523,7 +523,7 @@
   text-decoration: underline;
 }
 .tv-proj-name:focus-visible {
-  outline: 2px solid var(--green);
+  outline: 2px solid var(--signal);
   outline-offset: 2px;
 }
 .tv-state {

@@ -14,7 +14,7 @@
 .cx-add { display: grid; gap: 12px; min-width: 0; }
 .cx-field { display: grid; gap: 4px; min-width: 0; border: 0; padding: 0; margin: 0; }
 .cx-field input[type="text"], .cx-field select { width: 100%; box-sizing: border-box; font: inherit; padding: 9px 12px; border-radius: var(--radius-control); border: 1px solid var(--line); background: var(--surface); color: inherit; }
-.cx-field input:focus-visible, .cx-field select:focus-visible, .cx-add summary:focus-visible { outline: 2px solid var(--green); outline-offset: 2px; }
+.cx-field input:focus-visible, .cx-field select:focus-visible, .cx-add summary:focus-visible { outline: 2px solid var(--signal); outline-offset: 2px; }
 .cx-file { margin: 0; padding: 10px 12px; border-radius: var(--radius-control); border: 1px solid var(--line); font-size: 13px; white-space: pre-wrap; overflow-wrap: anywhere; }
 .cx-add summary, .cx-ended summary { cursor: pointer; font-weight: 650; }
 .cx-add p, .cx-add small, .cx-add label, .cx-head-text p { overflow-wrap: anywhere; }

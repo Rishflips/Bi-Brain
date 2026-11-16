@@ -1,0 +1,40 @@
+/* BiBrain design tokens. Every custom property lives here and nowhere else.
+   Names say what a value is for, not what colour it once was (docs/DESIGN_SYSTEM.md). */
+:root {
+  --canvas: #f7f5ef;
+  --surface: #fffefa;
+  --line: #d9d5ca;
+  --line-strong: #bdb6a8;
+  --muted: #6a6861;
+  --subtle: #eeebe3;
+  /* Ink: text and the one dark button per region. */
+  --ink: #181817;
+  --on-ink: #ffffff;
+  /* Signal: gold dark enough to read as text and links on paper. */
+  --signal: #866400;
+  /* Gold: the brand colour as a fill or a stroke, never as text. */
+  --gold: #e3b500;
+  --gold-wash: #fff3bd;
+  --attention: #9b4b1b;
+  /* Focus must reach 3:1 against every surface, so it is solid, never a tint. */
+  --focus: #7a5c00;
+  --shadow: 0 12px 32px rgb(31 27 17 / 8%);
+  /* One radius for controls, one for cards and dialogs. */
+  --radius-control: 9px;
+  --radius-card: 14px;
+}
+:root[data-theme="dark"] {
+  --canvas: #111111;
+  --surface: #191918;
+  --line: #34332f;
+  --line-strong: #555149;
+  --muted: #aaa69d;
+  --subtle: #232321;
+  --ink: #f8f6ef;
+  --on-ink: #111111;
+  --signal: #f2c735;
+  --gold: #f2c735;
+  --gold-wash: #3b3319;
+  --attention: #f0a986;
+  --focus: #ffd247;
+}
