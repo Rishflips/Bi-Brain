@@ -309,24 +309,6 @@ article button + button {
   padding: 4px 8px;
   border-radius: 4px;
 }
-.quiet {
-  background: transparent;
-  padding: 30px;
-  text-align: center;
-}
-.background {
-  padding: 24px 0;
-  margin-top: 30px;
-  border-top: 1px solid var(--line);
-}
-.background h3 {
-  font-size: 15px;
-}
-.background p {
-  font-size: 13px;
-  margin: 6px 0;
-  color: var(--muted);
-}
 footer {
   border-top: 1px solid var(--line);
   padding-top: 20px;
@@ -378,28 +360,6 @@ input[type="checkbox"] {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 16px;
-}
-.note {
-  width: 100%;
-  border: 0;
-  border-bottom: 1px solid var(--line);
-  border-radius: 0;
-  background: transparent;
-  text-align: left;
-  display: grid;
-  grid-template-columns: 28px 1fr 20px;
-  gap: 16px;
-  padding: 22px 0;
-}
-.note strong {
-  display: block;
-  font-size: 17px;
-  font-weight: 550;
-}
-.count {
-  font-size: 13px;
-  color: var(--muted);
-  margin-left: 8px;
 }
 .actions {
   display: flex;
@@ -744,9 +704,6 @@ code {
   }
   dialog {
     padding: 20px;
-  }
-  .note {
-    gap: 10px;
   }
   .actions {
     gap: 8px;
@@ -1343,12 +1300,6 @@ article {
   border-left: 3px solid #d6a900;
 }
 
-.quiet {
-  border-style: dashed;
-  background: transparent;
-  box-shadow: none;
-}
-
 .entry-card h2 {
   font-size: clamp(25px, 2.8vw, 34px);
   letter-spacing: -0.04em;
@@ -1526,14 +1477,6 @@ article {
   max-width: 100%;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
-}
-
-.note {
-  border-radius: 0;
-}
-
-.note:hover {
-  background: #f2efe7;
 }
 
 input:not([type="checkbox"]):not([type="radio"]),
@@ -1792,7 +1735,6 @@ footer {
   color: var(--muted);
 }
 
-:root[data-theme="dark"] .quiet,
 :root[data-theme="dark"] .dropzone,
 :root[data-theme="dark"] pre {
   background: #171716;
