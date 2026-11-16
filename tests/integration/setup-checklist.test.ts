@@ -23,6 +23,9 @@ describe("connection setup checklist", () => {
   it("is finished, and shown no more, once a push is recorded", () => {
     expect(setupChecklist({ ...waiting, status: "Connected", last_verified_at: "2026-11-16T09:00:00.000Z", recall: pushed })).toBeNull();
   });
+  it("a push recorded before any call proves the agent was open and approved, so no step trails Ask anything", () => {
+    expect(setupChecklist({ ...waiting, status: "Connected", last_verified_at: null, recall: pushed })).toBeNull();
+  });
   it("without a hook BiBrain wrote, the first call is the only signal there will ever be, so it finishes the list", () => {
     for (const files of [[...rule], [...hookExists], []])
       expect(setupChecklist({ ...waiting, client_name: "Cursor", files, status: "Connected", last_verified_at: "2026-11-16T09:00:00.000Z" })).toBeNull();
