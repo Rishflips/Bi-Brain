@@ -14,19 +14,23 @@ focus.
 
 ## Core tokens
 
-| Token           | Light     | Dark      |
-| --------------- | --------- | --------- |
-| Canvas          | `#F7F5EF` | `#111111` |
-| Surface         | `#FFFEFA` | `#191918` |
-| Raised surface  | `#FFFFFF` | `#20201E` |
-| Text            | `#181817` | `#F4F1E9` |
-| Secondary text  | `#6A6861` | `#AAA69D` |
-| Border          | `#D9D5CA` | `#34332F` |
-| Primary action  | `#181817` | `#F4F1E9` |
-| Text on primary | `#FFFFFF` | `#181817` |
-| Gold accent     | `#D6A900` | `#E3B500` |
-| Gold wash       | `#F4E9B4` | `#3B3414` |
-| Attention       | `#9B4B1B` | `#F0A986` |
+| Token | Use | Light | Dark |
+| --- | --- | --- | --- |
+| `--canvas` | Page background | `#F7F5EF` | `#111111` |
+| `--surface` | Cards, dialogs, the masthead | `#FFFEFA` | `#191918` |
+| `--line` | Borders and dividers | `#D9D5CA` | `#34332F` |
+| `--line-strong` | Control borders | `#BDB6A8` | `#555149` |
+| `--muted` | Secondary text | `#6A6861` | `#AAA69D` |
+| `--subtle` | Quiet fills | `#EEEBE3` | `#232321` |
+| `--ink` | Text and the one dark button per region | `#181817` | `#F8F6EF` |
+| `--on-ink` | Text on an ink fill | `#FFFFFF` | `#111111` |
+| `--signal` | Gold that reads as text and links | `#866400` | `#F2C735` |
+| `--gold` | The brand colour as a fill or stroke | `#E3B500` | `#F2C735` |
+| `--gold-wash` | A marked, not shouted, choice | `#FFF3BD` | `#3B3319` |
+| `--attention` | Something needs the person | `#9B4B1B` | `#F0A986` |
+| `--focus` | The focus ring, 2px solid, 2px offset | `#7A5C00` | `#FFD247` |
+
+Every custom property is declared in `apps/web/styles/tokens.css` and nowhere else. `apps/web/styles/app.css` is the one base stylesheet; the screen sheets (`today/today.css`, `brain/brain.css`, `connections/connections.css`) load after it. `--signal` is gold dark enough to read as text; `--gold` is the brand colour as a fill or stroke and is never used for text. `tests/integration/web-styles.test.ts` fails if a stylesheet uses a token that is not defined in both appearances.
 
 Verify contrast against the rendered background. A token name is not evidence of
 accessible contrast.
@@ -40,7 +44,7 @@ One scale for the signed-in workspace (Today, Your brain, Connections, Settings)
 The 2026-11 audit found Today's page title at 40px/750 while the other three used
 58px/620, so the same level of page looked like two products:
 
-| Role | Size | Weight |
+| Role | Size (px at the 16px default; set in rem) | Weight |
 | --- | --- | --- |
 | Page title (h1) | 40px, down to 30px on small screens | 650 |
 | Section heading | 18–22px | 650 |
@@ -48,6 +52,8 @@ The 2026-11 audit found Today's page title at 40px/750 while the other three use
 | Body | 15–16px | 400 |
 | Supporting text and metadata | 13–14px | 400–600 |
 | Smallest text, including eyebrows, tags and pills | 12px | 600–700 |
+
+Sizes are written in rem (px ÷ 16), so the scale follows the text size the person set in their browser; the px figures above are what a default 16px setting renders. The root sets no font size. Spacing, borders, radii and breakpoints stay in px.
 
 - **First use:** may keep its editorial headline at 46–66px. Signed-in headings do not.
 - **Weights:** 400, 600 and 650; 700 is for the small sizes only. The audit found 750 and 800 on Today; both are gone.
@@ -77,7 +83,8 @@ dialog without obscuring the current task.
 
 Mobile places Today, Your brain and Connections in one stable row above the
 content. Detail views become full width, actions wrap intentionally, and the page
-must remain usable at 320px without horizontal scrolling.
+must remain usable at 320px without horizontal scrolling. The header is one row:
+the logo, then Save something where it applies, then the Settings icon button.
 
 First use pairs one product story with one protected opening action. It must
 explain local ownership and optional AI preparation before asking for an

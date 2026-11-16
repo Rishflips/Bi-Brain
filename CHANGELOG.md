@@ -22,6 +22,14 @@ Works with any agent, Hermes first.
 ### Changed
 - The hook sends the continuation phrases even under 12 characters.
 - The empty Today card says "Your coding agents" instead of naming two of them. The README names the contract and links the guide.
+- Today has one way to save: the bar. The header's Save something stays on Your brain, Connections and Settings.
+- Today's status ("Caught up", "2 to look at") sits beside Today's title. On a phone the header is one row, with Settings as an icon button.
+- Settings has one Background help card in three steps: allow it, set the limits, choose what it may do. A choice that is on can always be turned off. Nothing about what is sent, spent or stored changed.
+- After you add an agent, Connections shows a three-step checklist that ticks from the agent's first recorded call and first recorded push; the long instructions are behind Details.
+- Text size follows your browser's text-size setting.
+
+### Internal
+- One stylesheet foundation: `apps/web/styles/tokens.css` and `apps/web/styles/app.css` replace two layered stylesheets; a script compares computed styles before and after (`scripts/design-compare.mjs`).
 
 ### Security
 - The HTTP MCP endpoint takes agent keys only, POST only, one message per request, 256 KiB bodies and 120 requests a minute per client address.

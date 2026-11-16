@@ -1,4 +1,4 @@
-/* Today v2. Every class is prefixed tv- so nothing collides with style.css or refinement.css. */
+/* Today v2. Every class is prefixed tv- so nothing collides with the base stylesheet (styles/app.css), which loads first. */
 .tv {
   display: grid;
   gap: 28px;
@@ -21,11 +21,11 @@
 }
 .tv-section-head h2 {
   margin: 0;
-  font-size: 18px;
+  font-size: 1.125rem;
 }
 .tv-faint {
   color: var(--muted);
-  font-size: 13px;
+  font-size: 0.8125rem;
 }
 .tv-error {
   color: var(--attention);
@@ -41,7 +41,7 @@
   padding: 9px 15px;
   font: inherit;
   font-weight: 600;
-  font-size: 14px;
+  font-size: 0.875rem;
   border: 1px solid var(--line);
   background: var(--surface);
   color: inherit;
@@ -52,13 +52,13 @@
 }
 .tv-btn:focus-visible,
 .tv-link:focus-visible {
-  outline: 2px solid var(--green);
+  outline: 2px solid var(--signal);
   outline-offset: 2px;
 }
 .tv-btn.tv-primary {
-  background: var(--green-deep);
-  color: var(--on-green);
-  border-color: var(--green-deep);
+  background: var(--ink);
+  color: var(--on-ink);
+  border-color: var(--ink);
 }
 .tv-btn.tv-primary:hover {
   opacity: 0.9;
@@ -69,13 +69,13 @@
 }
 .tv-btn.tv-sm {
   padding: 6px 11px;
-  font-size: 13px;
+  font-size: 0.8125rem;
 }
 .tv-link {
   border: 0;
   background: none;
   padding: 0;
-  color: var(--green);
+  color: var(--signal);
   font: inherit;
   font-weight: 700;
   text-decoration: underline;
@@ -87,7 +87,7 @@
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  font-size: 12px;
+  font-size: 0.75rem;
   font-weight: 650;
   padding: 2px 8px;
   border-radius: 99px;
@@ -111,7 +111,7 @@
 }
 .tv-card h3 {
   margin: 0;
-  font-size: 17.5px;
+  font-size: 1.09375rem;
   font-weight: 700;
   letter-spacing: -0.01em;
   line-height: 1.35;
@@ -125,7 +125,7 @@
 }
 .tv-why {
   color: var(--muted);
-  font-size: 14px;
+  font-size: 0.875rem;
   margin: 0;
 }
 
@@ -139,7 +139,7 @@
 }
 .tv-quiet h3 {
   margin: 0;
-  font-size: 17px;
+  font-size: 1.0625rem;
 }
 .tv-quiet p {
   margin: 0;
@@ -163,17 +163,17 @@
 }
 .tv-step h3 {
   margin: 0;
-  font-size: 16px;
+  font-size: 1rem;
 }
 .tv-step p {
   margin: 0;
   color: var(--muted);
-  font-size: 14px;
+  font-size: 0.875rem;
 }
 .tv-step-n {
-  font-size: 12px;
+  font-size: 0.75rem;
   font-weight: 700;
-  color: var(--green);
+  color: var(--signal);
 }
 .tv-file {
   position: relative;
@@ -187,7 +187,7 @@
   inset: 0;
 }
 .tv-file:focus-within {
-  outline: 2px solid var(--green);
+  outline: 2px solid var(--signal);
   outline-offset: 2px;
 }
 .tv-step .tv-btn {
@@ -217,7 +217,7 @@
   padding: 0;
   text-align: left;
   font: inherit;
-  font-size: 16.5px;
+  font-size: 1.03125rem;
   font-weight: 650;
   color: inherit;
   cursor: pointer;
@@ -234,26 +234,27 @@
   transform: translateX(-50%);
   z-index: 50;
   bottom: calc(24px + env(safe-area-inset-bottom, 0px));
-  background: var(--green-deep);
-  color: var(--on-green);
+  background: var(--ink);
+  color: var(--on-ink);
   border-radius: 12px;
   padding: 10px 12px 10px 16px;
   display: flex;
   gap: 14px;
   align-items: center;
   box-shadow: var(--shadow);
-  font-size: 14px;
+  font-size: 0.875rem;
   font-weight: 600;
   max-width: calc(100% - 32px);
 }
-.tv-toast button {
+/* :where keeps this at the weight of a bare button, so the base hover and pressed states still apply. */
+:where(.tv-toast) button {
   border: 0;
-  background: var(--pulse);
+  background: var(--gold);
   color: #111;
   border-radius: 8px;
   padding: 5px 11px;
   font-weight: 650;
-  font-size: 13px;
+  font-size: 0.8125rem;
   cursor: pointer;
 }
 
@@ -267,8 +268,8 @@
 }
 @media (prefers-reduced-motion: reduce) {
   .tv * {
-    animation: none !important;
-    transition: none !important;
+    animation: none;
+    transition: none;
   }
 }
 
@@ -296,7 +297,7 @@
   min-width: 0;
 }
 .tv-bar:focus-within {
-  border-color: var(--green);
+  border-color: var(--signal);
 }
 .tv-bar-top {
   display: flex;
@@ -316,9 +317,15 @@
   background: transparent;
   color: inherit;
   font: inherit;
-  font-size: 15px;
+  font-size: 0.9375rem;
   line-height: 1.5;
   outline: none;
+  box-shadow: none;
+}
+/* The bar draws the focus ring (below), so the box inside stays flat when focused, in both appearances. */
+.tv-bar > textarea:focus {
+  border: 0;
+  background: transparent;
 }
 .tv-bar-foot {
   display: flex;
@@ -342,7 +349,7 @@
   margin: 0;
   padding: 6px 30px 6px 10px;
   font: inherit;
-  font-size: 13px;
+  font-size: 0.8125rem;
   color: inherit;
 }
 .tv-seg {
@@ -351,14 +358,15 @@
   border-radius: var(--radius-control);
   overflow: hidden;
 }
-.tv-seg button {
+/* :where keeps this at the weight of a bare button, so the base hover, pressed and disabled states still apply. */
+:where(.tv-seg) button {
   min-height: 32px;
   border: 0;
   border-radius: 0;
   background: transparent;
   color: var(--muted);
   font: inherit;
-  font-size: 13px;
+  font-size: 0.8125rem;
   font-weight: 600;
   padding: 5px 14px;
   cursor: pointer;
@@ -366,11 +374,11 @@
 /* The chosen mode is marked, not shouted: a gold wash, so the only dark button in
    the bar is the one that sends. */
 .tv-seg button[aria-pressed="true"] {
-  background: var(--pulse-soft);
+  background: var(--gold-wash);
   color: inherit;
 }
 .tv-seg button:focus-visible {
-  outline: 2px solid var(--green);
+  outline: 2px solid var(--signal);
   outline-offset: -2px;
 }
 .tv-panel {
@@ -387,11 +395,11 @@
   overflow-wrap: anywhere;
 }
 .tv-eyebrow {
-  font-size: 12px;
+  font-size: 0.75rem;
   font-weight: 650;
   letter-spacing: 0.04em;
   text-transform: uppercase;
-  color: var(--green);
+  color: var(--signal);
 }
 .tv-hit {
   display: grid;
@@ -401,8 +409,8 @@
   justify-items: start;
 }
 .tv-tag.tv-ok {
-  color: var(--green);
-  border-color: var(--green);
+  color: var(--signal);
+  border-color: var(--signal);
 }
 .tv-cite {
   border: 0;
@@ -410,7 +418,7 @@
   padding: 0;
   text-align: left;
   font: inherit;
-  font-size: 13px;
+  font-size: 0.8125rem;
   color: var(--muted);
   font-style: italic;
   cursor: pointer;
@@ -419,13 +427,13 @@
   text-underline-offset: 3px;
 }
 .tv-cite:focus-visible {
-  outline: 2px solid var(--green);
+  outline: 2px solid var(--signal);
   outline-offset: 2px;
 }
 .tv-btn.tv-ghost {
   background: transparent;
   padding: 4px 10px;
-  font-size: 13px;
+  font-size: 0.8125rem;
 }
 @media (max-width: 420px) {
   .tv-bar-hint {
@@ -442,7 +450,7 @@
 }
 .tv-before {
   margin: 0;
-  font-size: 14px;
+  font-size: 0.875rem;
   color: var(--muted);
 }
 .tv-evidence {
@@ -464,17 +472,18 @@
   overflow-wrap: anywhere;
 }
 .tv-quote:hover {
-  border-left-color: var(--green);
+  border-left-color: var(--signal);
 }
 .tv-quote:focus-visible {
-  outline: 2px solid var(--green);
+  outline: 2px solid var(--signal);
   outline-offset: 2px;
 }
 .tv-fix {
   display: grid;
   gap: 6px;
 }
-.tv-fix textarea {
+/* :where keeps this at the weight of a bare textarea, so the base focus state still applies. */
+:where(.tv-fix) textarea {
   width: 100%;
   font: inherit;
   padding: 8px 10px;
@@ -523,28 +532,26 @@
   text-decoration: underline;
 }
 .tv-proj-name:focus-visible {
-  outline: 2px solid var(--green);
+  outline: 2px solid var(--signal);
   outline-offset: 2px;
 }
-.tv-state {
-  flex: 0 1 auto;
+.tv-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 4px 16px;
   min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  color: var(--muted);
-  font-size: 13px;
+  margin: 0 0 12px;
 }
-@media (max-width: 420px) {
-  .masthead {
-    flex-wrap: wrap;
-  }
-  .tv-state {
-    order: 3;
-    flex-basis: 100%;
-    overflow: visible;
-    white-space: normal;
-  }
+.layout:not(.entry-layout) main .tv-head h1 {
+  margin: 0;
+}
+.tv-state {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.8125rem;
+  overflow-wrap: anywhere;
 }
 
 .tv-watch {
@@ -569,7 +576,7 @@
   font-weight: 600;
 }
 .yb-meta {
-  font-size: 13px;
+  font-size: 0.8125rem;
 }
 .yb-meta .tv-link,
 .tv-faint .tv-link {
@@ -583,22 +590,13 @@
 .tv-section-head:has(> :nth-child(3)) > :last-child {
   margin-left: auto;
 }
-/* The bar itself shows focus (border); the box inside stays flat in both themes. */
-.tv-bar.tv-bar > textarea,
-.tv-bar.tv-bar > textarea:focus {
-  border: 0;
-  background: transparent;
-  box-shadow: none;
-}
-.tv-bar.tv-bar > textarea:focus-visible {
-  outline: none;
-}
 /* Typing in the box draws one ring around the whole bar instead of two nested ones. */
 .tv-bar:has(> textarea:focus-visible) {
   outline: 2px solid var(--focus);
   outline-offset: 2px;
 }
 @media (max-width: 760px) {
+  .tv-btn,
   .tv-seg button,
   .tv-bar-foot select {
     min-height: 44px;

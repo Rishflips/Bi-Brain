@@ -19,6 +19,8 @@ const getJson = (page: Page, url: string) =>
 const factTexts = (r: any) => r.hits.filter((h: any) => h.kind === "fact").map((h: any) => h.text).join("\n");
 // Saves and leaves the original open, so a test can add a fact from it.
 async function saveAndStay(page: Page, title: string, body: string) {
+  // The header's Save something is not shown on Today, where the bar is the capture.
+  await page.getByRole("button", { name: "Your brain", exact: true }).click();
   await page.getByRole("button", { name: "Save something", exact: false }).first().click();
   await page.getByLabel("Title", { exact: true }).fill(title);
   await page.getByLabel("Paste something you are working on").fill(body);

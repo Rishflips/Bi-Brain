@@ -2,13 +2,20 @@
 // throwaway brain, and records what a design audit needs: one full-page
 // screenshot per state and width, plus measured layout and accessibility checks.
 //
-//   node scripts/design-audit-walk.mjs <out-dir> [--only=name,name] [--dark]
+//   node scripts/design-audit-walk.mjs <out-dir> [--only=name,name] [--dark] [--stable]
+//     [--sizes=WxH,WxH,WxH] [--styles|--styles=full]
+//
+//   --stable   use the same work folder every run, so paths shown on screen are identical text in two runs
+//   --sizes    override the desktop, tablet and phone viewports, in that order
+//   --styles   also write <state>--<viewport>.styles.json: every element's computed style (a hash plus a kept list),
+//              and the forced hover, focus and pressed styles of every control. =full adds the text behind each hash.
+//              Compare two outputs with scripts/design-compare.mjs.
 //
 // It starts its own server (BRAIN_EMBED_PROVIDER=off, a test pairing code, a
 // temporary database and a fake home) and stops it afterwards. Nothing in the
 // owner's data folder is read or written.
 import { spawn } from "node:child_process";
-import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { chromium } from "playwright";
@@ -19,14 +26,27 @@ const only = (process.argv.find((a) => a.startsWith("--only=")) ?? "").slice(7).
 const port = Number(process.env.AUDIT_PORT ?? 4517);
 const base = `http://127.0.0.1:${port}`;
 const code = "audit-local-only";
+const stable = process.argv.includes("--stable");
+const stylesArg = process.argv.find((a) => a === "--styles" || a.startsWith("--styles="));
+// "hash": one hash of every computed property per element plus a kept list in clear. "full": also the text behind each hash.
+const styles = stylesArg ? (stylesArg.includes("=") ? stylesArg.split("=")[1] : "hash") : null;
+const sizes = (process.argv.find((a) => a.startsWith("--sizes=")) ?? "").slice(8).split(",").filter(Boolean);
 const widths = [
   { name: "desktop", width: 1440, height: 900 },
   { name: "tablet", width: 820, height: 1180 },
   { name: "phone", width: 390, height: 844 },
-];
+].map((w, i) => {
+  const m = /^(\d+)x(\d+)$/.exec(sizes[i] ?? "");
+  return m ? { ...w, width: Number(m[1]), height: Number(m[2]) } : w;
+});
 
 mkdirSync(out, { recursive: true });
-const work = mkdtempSync(join(tmpdir(), "bibrain-audit-"));
+// --stable: the same folder every run, so a path shown on screen is the same text in two runs.
+const work = stable ? join(tmpdir(), "bibrain-audit-stable") : mkdtempSync(join(tmpdir(), "bibrain-audit-"));
+if (stable) {
+  rmSync(work, { recursive: true, force: true });
+  mkdirSync(work, { recursive: true });
+}
 const home = join(work, "home");
 mkdirSync(join(home, ".codex"), { recursive: true });
 mkdirSync(join(home, ".claude"), { recursive: true });
@@ -139,6 +159,86 @@ function measure() {
   return issues;
 }
 
+// Every element's computed style, keyed by its position in the tree. Runs inside the page.
+function styleSnapshot(mode) {
+  const KEEP = ["display", "position", "box-sizing", "width", "height", "min-width", "min-height", "max-width", "margin-top", "margin-right", "margin-bottom", "margin-left", "padding-top", "padding-right", "padding-bottom", "padding-left", "border-top-width", "border-right-width", "border-bottom-width", "border-left-width", "border-top-style", "border-top-color", "border-right-color", "border-bottom-color", "border-left-color", "border-top-left-radius", "border-top-right-radius", "border-bottom-right-radius", "border-bottom-left-radius", "background-color", "background-image", "color", "font-family", "font-size", "font-weight", "line-height", "letter-spacing", "text-transform", "text-align", "text-decoration-line", "white-space", "opacity", "box-shadow", "outline-style", "outline-width", "outline-color", "outline-offset", "row-gap", "column-gap", "flex-direction", "flex-wrap", "justify-content", "align-items", "grid-template-columns", "order", "z-index", "overflow-x", "overflow-y", "cursor", "visibility", "accent-color"];
+  const hash = (text) => {
+    let h = 2166136261;
+    for (let i = 0; i < text.length; i++) {
+      h ^= text.charCodeAt(i);
+      h = Math.imul(h, 16777619);
+    }
+    return (h >>> 0).toString(16);
+  };
+  // Custom properties are left out: renaming a token must not read as a change.
+  const all = (s) => {
+    let t = "";
+    for (const p of s) if (!p.startsWith("--")) t += `${p}:${s.getPropertyValue(p)};`;
+    return t;
+  };
+  const pathOf = (el) => {
+    const parts = [];
+    for (let n = el; n && n !== document.body; n = n.parentElement) parts.unshift(`${n.tagName.toLowerCase()}:${Array.prototype.indexOf.call(n.parentElement.children, n)}`);
+    return parts.join(">") || "body";
+  };
+  const elements = {};
+  for (const el of document.querySelectorAll("body, body *")) {
+    const tag = el.tagName.toLowerCase();
+    if (tag === "script" || tag === "style" || (el.closest("svg") && tag !== "svg")) continue;
+    const s = getComputedStyle(el);
+    const r = el.getBoundingClientRect();
+    const text = all(s);
+    const row = { all: hash(text), rect: [r.x, r.y, r.width, r.height].map((v) => Math.round(v * 2) / 2).join(" ") };
+    for (const p of KEEP) row[p] = s.getPropertyValue(p);
+    if (mode === "full") row.text = text;
+    for (const pseudo of ["::before", "::after"]) {
+      const ps = getComputedStyle(el, pseudo);
+      if (ps.content !== "none" && ps.content !== "normal") row[pseudo] = mode === "full" ? all(ps) : hash(all(ps));
+    }
+    elements[pathOf(el)] = row;
+  }
+  return { elements };
+}
+
+// Hover, keyboard focus and pressed styles of every control, forced through the DevTools protocol.
+const INTERACTIVE = "button, a[href], input, select, textarea, summary, label";
+async function forcedStates(page, mode) {
+  const paths = await page.evaluate((selector) => {
+    const pathOf = (el) => {
+      const parts = [];
+      for (let n = el; n && n !== document.body; n = n.parentElement) parts.unshift(`${n.tagName.toLowerCase()}:${Array.prototype.indexOf.call(n.parentElement.children, n)}`);
+      return parts.join(">") || "body";
+    };
+    return [...document.querySelectorAll(selector)].map(pathOf);
+  }, INTERACTIVE);
+  const client = await page.context().newCDPSession(page);
+  await client.send("DOM.enable");
+  await client.send("CSS.enable");
+  const { root } = await client.send("DOM.getDocument", { depth: 0 });
+  const { nodeIds } = await client.send("DOM.querySelectorAll", { nodeId: root.nodeId, selector: INTERACTIVE });
+  if (nodeIds.length !== paths.length) throw new Error(`forced states: ${nodeIds.length} nodes, ${paths.length} paths`);
+  const hash = (text) => {
+    let h = 2166136261;
+    for (let i = 0; i < text.length; i++) {
+      h ^= text.charCodeAt(i);
+      h = Math.imul(h, 16777619);
+    }
+    return (h >>> 0).toString(16);
+  };
+  const out = {};
+  for (let i = 0; i < nodeIds.length; i++) {
+    for (const [name, forced] of [["hover", ["hover"]], ["focus", ["focus", "focus-visible"]], ["active", ["hover", "active"]]]) {
+      await client.send("CSS.forcePseudoState", { nodeId: nodeIds[i], forcedPseudoClasses: forced });
+      const { computedStyle } = await client.send("CSS.getComputedStyleForNode", { nodeId: nodeIds[i] });
+      const text = computedStyle.filter((p) => !p.name.startsWith("--")).map((p) => `${p.name}:${p.value};`).join("");
+      out[`${paths[i]} :${name}`] = mode === "full" ? text : hash(text);
+    }
+    await client.send("CSS.forcePseudoState", { nodeId: nodeIds[i], forcedPseudoClasses: [] });
+  }
+  await client.detach();
+  return out;
+}
+
 const report = [];
 // Dialog states are captured at the viewport only: a full-page capture of a modal
 // repeats the sticky header and misplaces the backdrop.
@@ -150,6 +250,12 @@ async function capture(page, state, { dialog = false } = {}) {
     await page.screenshot({ path: join(out, `${state}--${w.name}.png`), fullPage: !dialog });
     const issues = await page.evaluate(measure);
     report.push({ state, viewport: w.name, issues });
+    if (styles) {
+      const snap = await page.evaluate(styleSnapshot, styles);
+      // Forced states once per state, at the widest size.
+      if (w.name === "desktop") snap.forced = await forcedStates(page, styles);
+      writeFileSync(join(out, `${state}--${w.name}.styles.json`), JSON.stringify(snap));
+    }
   }
   // 200% browser zoom on a 1440x900 screen leaves a 720x450 CSS-pixel viewport.
   await page.setViewportSize({ width: 720, height: 450 });
@@ -234,6 +340,13 @@ try {
   const first = await page.evaluate(() => document.activeElement?.className ?? "");
   report.push({ state: "01-first-run", viewport: "keyboard", issues: first.includes("skip-link") ? [] : [{ kind: "skip-link", detail: `first Tab reached "${first}"` }] });
 
+  // The sample view, reachable only before pairing.
+  await page.getByRole("button", { name: "Explore a safe example" }).click();
+  await page.getByRole("heading", { name: "Try one conversation first." }).waitFor();
+  await capture(page, "01b-sample");
+  await page.getByRole("button", { name: "Return to my brain" }).click();
+  await page.getByLabel("Installation code").waitFor();
+
   await page.getByLabel("Installation code").fill(code);
   await page.getByRole("button", { name: "Open my brain" }).click();
   await page.getByRole("navigation", { name: "Main navigation" }).waitFor();
@@ -280,7 +393,10 @@ try {
   await capture(page, "11-connections");
   await codex.getByRole("button", { name: "Add to Codex" }).click();
   await capture(page, "12-connections-add");
-  const folder = mkdtempSync(join(tmpdir(), "bibrain-audit-repo-"));
+  // The project folder must sit outside the data folder (the work folder), or BiBrain refuses it.
+  const folder = stable ? join(tmpdir(), "bibrain-audit-stable-repo") : mkdtempSync(join(tmpdir(), "bibrain-audit-repo-"));
+  if (stable) rmSync(folder, { recursive: true, force: true });
+  mkdirSync(folder, { recursive: true });
   await codex.getByLabel("Project", { exact: true }).selectOption({ label: "Inbox" });
   await codex.getByLabel("Project folder on this computer").fill(folder);
   await codex.getByRole("button", { name: "Add to Codex", exact: true }).last().click();
@@ -296,6 +412,9 @@ try {
   await page.getByRole("button", { name: "Connections", exact: true }).click();
   await codex.waitFor();
   await capture(page, "13-connections-waiting");
+  // A picture of the checklist alone: the whole tile also shows the project folder's path.
+  if (!only.length || only.includes("13-connections-waiting")) await page.setViewportSize({ width: widths[0].width, height: widths[0].height });
+  if (!only.length || only.includes("13-connections-waiting")) await codex.locator(".cx-setup").first().screenshot({ path: join(out, "13-checklist.png") });
   await page.getByRole("button", { name: "Set up by hand" }).click();
   await page.waitForTimeout(300);
   await capture(page, "14-connections-by-hand", { dialog: true });
@@ -318,6 +437,34 @@ try {
   await page.getByRole("heading", { name: /settings/i, level: 1 }).waitFor();
   await page.waitForTimeout(500);
   await capture(page, "15-settings");
+
+  // Dialogs and views the earlier steps do not open, so the stylesheet fold is checked on them too.
+  const openDialog = async (state, open) => {
+    await open();
+    await page.locator("dialog[open]").waitFor();
+    await page.waitForTimeout(300);
+    await capture(page, state, { dialog: true });
+    await page.keyboard.press("Escape");
+    await page.locator("dialog[open]").waitFor({ state: "detached" });
+  };
+  await openDialog("16-settings-import", () => page.getByRole("button", { name: "Import an export" }).click());
+  await page.getByRole("button", { name: "Your brain", exact: true }).click();
+  await page.getByRole("heading", { name: "Your brain", level: 1 }).waitFor();
+  await openDialog("17-save-dialog", () => page.locator("header.masthead").getByRole("button", { name: /Save something/ }).click());
+  await openDialog("18-project-dialog", () => page.getByRole("button", { name: "New project", exact: true }).click());
+  await openDialog("19-goal-dialog", () => page.getByRole("button", { name: "Choose a goal" }).first().click());
+  await page.getByRole("button", { name: "Connections", exact: true }).click();
+  // The handoff text carries a random claim id; pin it so two runs show the same pixels.
+  await openDialog("20-handoff-dialog", async () => {
+    await page.evaluate(() => window.scrollTo(0, 0));
+    await page.waitForTimeout(300);
+    await page.getByRole("button", { name: "Preview handoff" }).click();
+    await page.locator("dialog[open] pre").waitFor();
+    await page.evaluate(() => {
+      const re = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/g;
+      for (const pre of document.querySelectorAll("dialog[open] pre")) pre.textContent = pre.textContent.replace(re, "00000000-0000-0000-0000-000000000000");
+    });
+  });
 
   await browser.close();
 } catch (error) {

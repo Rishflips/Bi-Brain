@@ -103,6 +103,8 @@ test("real capture, evidence, handoff download, correction, delete and reload", 
     path: "docs/screenshots/first-use.png",
     fullPage: true,
   });
+  // The header's Save something is not shown on Today, where the bar is the capture.
+  await page.getByRole("button", { name: "Your brain", exact: true }).click();
   await page
     .getByRole("button", { name: "Save something", exact: false })
     .first()
@@ -171,6 +173,7 @@ test("chosen goal prepares a hypothesis and acceptance undo preserves later edit
     "Beta onboarding requires connecting an agent first.",
     "Beta interview asks to try one conversation before connecting accounts.",
   ]) {
+    await page.getByRole("button", { name: "Your brain", exact: true }).click();
     await page
       .getByRole("button", { name: "Save something", exact: false })
       .first()
@@ -257,6 +260,8 @@ test("keyboard dialog and responsive layout at 320, 360, tablet and desktop", as
       ),
     ).toBe(true);
   }
+  // The header's Save something is not shown on Today, where the bar is the capture.
+  await page.getByRole("button", { name: "Your brain", exact: true }).click();
   await page
     .getByRole("button", { name: "Save something", exact: false })
     .first()
@@ -275,6 +280,8 @@ test("keyboard dialog and responsive layout at 320, 360, tablet and desktop", as
 test("invalid input remains editable, Markdown files persist, and search matches beyond preview snippets", async ({
   page,
 }) => {
+  // The header's Save something is not shown on Today, where the bar is the capture.
+  await page.getByRole("button", { name: "Your brain", exact: true }).click();
   await page
     .getByRole("button", { name: "Save something", exact: false })
     .first()

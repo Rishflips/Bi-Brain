@@ -99,9 +99,16 @@ export function TodayView(props: TodayProps) {
   if (sourceCount === 0)
     return (
       <section className="tv" aria-labelledby="tv-h">
-        <h1 id="tv-h" className="tv-title">
-          Welcome to BiBrain.
-        </h1>
+        <div className="tv-head">
+          <h1 id="tv-h" className="tv-title">
+            Welcome to BiBrain.
+          </h1>
+          {props.stateLine ? (
+            <p className="tv-state" role="status">
+              {props.stateLine}
+            </p>
+          ) : null}
+        </div>
         <SaveAskBar
           api={api}
           projects={props.projects}
@@ -179,9 +186,16 @@ export function TodayView(props: TodayProps) {
 
   return (
     <section className="tv" aria-labelledby="tv-h">
-      <h1 id="tv-h" className="tv-title">
-        Good to see you.
-      </h1>
+      <div className="tv-head">
+        <h1 id="tv-h" className="tv-title">
+          Good to see you.
+        </h1>
+        {props.stateLine ? (
+          <p className="tv-state" role="status">
+            {props.stateLine}
+          </p>
+        ) : null}
+      </div>
       <SaveAskBar
         api={api}
         projects={props.projects}
