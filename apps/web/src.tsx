@@ -1038,19 +1038,17 @@ function App() {
             <BrandLockup className="masthead-lockup" />
             <span className="tagline">One brain. Every agent.</span>
           </a>
-          {brainState ? (
-            <span className="tv-state" role="status">
-              {brainState}
-            </span>
-          ) : null}
-          <button
-            className="primary"
-            data-ui="save-something"
-            disabled={!paired || demo}
-            onClick={saveDialog}
-          >
-            ＋ Save something
-          </button>
+          {/* On Today the bar is the capture, so the header carries no second one (local app; the hosted edition's flows still start here). */}
+          {paired && !demo && nav === "Today" && runtime?.mode === "local" ? null : (
+            <button
+              className="primary"
+              data-ui="save-something"
+              disabled={!paired || demo}
+              onClick={saveDialog}
+            >
+              ＋ Save something
+            </button>
+          )}
         </header>
       ) : null}
       <div className={`layout${showProductShell ? "" : " entry-layout"}`}>
@@ -1163,6 +1161,7 @@ function App() {
               notes={notes.map((n) => ({ id: n.id, title: n.title }))}
               retiredSourceIds={retiredReceipts}
               backgroundOn={!!prefs?.enabled}
+              stateLine={brainState}
               agentNamesByProject={agentNamesByProject}
               onOpenSource={(id, opts) => void openSource(id, opts)}
               onOpenProject={(id) => {

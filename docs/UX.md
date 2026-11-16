@@ -19,7 +19,7 @@ motion, and never implies that queued or unavailable work completed.
 ## Navigation
 
 Primary: Today, Your brain, Connections.
-Global action: Save something.
+Global action: Save something, in the header on Your brain, Connections and Settings. On Today the bar is the capture, so the header shows no second one.
 Settings: appearance, background help, privacy/export, provider setup, and spending.
 
 Projects are scopes inside Your brain, not a required setup ceremony. An unassigned Inbox accepts the first capture. Users may move an item into a project later.
@@ -54,7 +54,7 @@ Do not force sign-up in the local application. Hosted identity and guest-to-acco
 Today is for a glance and a decision. It does one job: let the owner save or ask
 from one bar, then look at what changed.
 
-Header: "Good to see you." A small status beside it says what the brain is doing
+Header: "Good to see you." A small status in the same header, beside the title and under it on a narrow screen, says what the brain is doing
 in plain words (for example "Caught up", "2 to look at", "Background help off",
 or that the Brief could not be checked).
 

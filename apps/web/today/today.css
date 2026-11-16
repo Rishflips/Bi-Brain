@@ -535,25 +535,23 @@
   outline: 2px solid var(--signal);
   outline-offset: 2px;
 }
-.tv-state {
-  flex: 0 1 auto;
+.tv-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 4px 16px;
   min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  margin: 0 0 12px;
+}
+.layout:not(.entry-layout) main .tv-head h1 {
+  margin: 0;
+}
+.tv-state {
+  margin: 0;
   color: var(--muted);
   font-size: 0.8125rem;
-}
-@media (max-width: 420px) {
-  .masthead {
-    flex-wrap: wrap;
-  }
-  .tv-state {
-    order: 3;
-    flex-basis: 100%;
-    overflow: visible;
-    white-space: normal;
-  }
+  overflow-wrap: anywhere;
 }
 
 .tv-watch {

@@ -69,6 +69,8 @@ export type TodayProps = {
   /** Sources whose receipt must go now (for example after a correction). */
   retiredSourceIds: string[];
   backgroundOn: boolean;
+  /** One plain line about what the brain is doing. Empty while it is not known yet. */
+  stateLine: string;
   agentNamesByProject: Record<string, string[]>;
   onOpenSource: (id: string, opts?: OpenSourceOptions) => void;
   onOpenProject: (projectId: string) => void;

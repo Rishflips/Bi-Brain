@@ -589,3 +589,33 @@ test("text follows a larger default text size on a phone without sideways scroll
   await page.getByRole("button", { name: "Settings & privacy" }).click();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
 });
+
+test("Today has one way to save and carries its own status; other pages keep Save something", async ({ page }) => {
+  await pair(page);
+  const header = page.locator("header.masthead");
+  await expect(page.locator("main .tv-head .tv-state")).toHaveText(/Caught up|\d+ to look at|Background help off/);
+  await expect(page.locator(".tv-state")).toHaveCount(1);
+  await expect(header.getByRole("button", { name: /Save something/ })).toHaveCount(0);
+  for (const tab of ["Your brain", "Connections"]) {
+    await page.getByRole("button", { name: tab, exact: true }).click();
+    await expect(header.getByRole("button", { name: /Save something/ })).toBeVisible();
+    await expect(page.locator(".tv-state")).toHaveCount(0);
+  }
+  // The header button still opens the save dialog and takes focus back.
+  await header.getByRole("button", { name: /Save something/ }).click();
+  await expect(page.getByRole("dialog")).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(header.getByRole("button", { name: /Save something/ })).toBeFocused();
+});
+
+test("the status wraps under the title on a 320px screen", async ({ page }) => {
+  await page.setViewportSize({ width: 320, height: 720 });
+  await page.route("**/api/v1/brief", (route) =>
+    route.fulfill({ status: 500, contentType: "application/json", body: JSON.stringify({ error: { code: "INTERNAL", message: "Down." } }) }),
+  );
+  await pair(page);
+  const state = page.locator(".tv-state");
+  await expect(state).toHaveText("Couldn't check for changes");
+  expect(await state.evaluate((el) => el.scrollWidth > el.clientWidth)).toBe(false);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(320);
+});
