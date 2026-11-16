@@ -83,7 +83,8 @@ dialog without obscuring the current task.
 
 Mobile places Today, Your brain and Connections in one stable row above the
 content. Detail views become full width, actions wrap intentionally, and the page
-must remain usable at 320px without horizontal scrolling.
+must remain usable at 320px without horizontal scrolling. The header is one row:
+the logo, then Save something where it applies, then the Settings icon button.
 
 First use pairs one product story with one protected opening action. It must
 explain local ownership and optional AI preparation before asking for an

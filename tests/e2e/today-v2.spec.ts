@@ -619,3 +619,38 @@ test("the status wraps under the title on a 320px screen", async ({ page }) => {
   expect(await state.evaluate((el) => el.scrollWidth > el.clientWidth)).toBe(false);
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(320);
 });
+
+test("on a phone the header is one row and Settings is an icon button in it", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await pair(page);
+  const header = page.locator("header.masthead");
+  const settings = header.getByRole("button", { name: "Settings & privacy" });
+  await expect(settings).toBeVisible();
+  await expect(page.locator("aside").getByRole("button", { name: "Settings & privacy" })).toHaveCount(0);
+  const box = (await settings.boundingBox())!;
+  expect(box.width).toBeGreaterThanOrEqual(44);
+  expect(box.height).toBeGreaterThanOrEqual(44);
+  for (const tab of ["Today", "Your brain", "Connections"]) {
+    await page.getByRole("button", { name: tab, exact: true }).click();
+    expect((await header.boundingBox())!.height, tab).toBeLessThanOrEqual(72);
+  }
+  await page.getByRole("button", { name: "Your brain", exact: true }).click();
+  const newProject = page.getByRole("button", { name: "New project" });
+  await expect(newProject).toBeVisible();
+  expect((await newProject.boundingBox())!.height).toBeGreaterThanOrEqual(44);
+  await settings.click();
+  await expect(page.getByRole("heading", { name: "Settings & privacy", level: 1 })).toBeVisible();
+  await expect(settings).toHaveAttribute("aria-current", "page");
+  // The narrowest screen, with both header actions present.
+  await page.setViewportSize({ width: 320, height: 720 });
+  await expect(header.getByRole("button", { name: /Save something/ })).toBeVisible();
+  expect((await header.boundingBox())!.height).toBeLessThanOrEqual(72);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(320);
+});
+
+test("on a wide screen Settings stays in the side rail", async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await pair(page);
+  await expect(page.locator("header.masthead").getByRole("button", { name: "Settings & privacy" })).toHaveCount(0);
+  await expect(page.locator("aside").getByRole("button", { name: "Settings & privacy" })).toBeVisible();
+});

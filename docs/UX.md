@@ -21,6 +21,7 @@ motion, and never implies that queued or unavailable work completed.
 Primary: Today, Your brain, Connections.
 Global action: Save something, in the header on Your brain, Connections and Settings. On Today the bar is the capture, so the header shows no second one.
 Settings: appearance, background help, privacy/export, provider setup, and spending.
+On a phone (760px and narrower) Settings is an icon button in the header, named "Settings & privacy"; on wider screens it is the link under the navigation.
 
 Projects are scopes inside Your brain, not a required setup ceremony. An unassigned Inbox accepts the first capture. Users may move an item into a project later.
 

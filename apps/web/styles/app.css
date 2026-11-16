@@ -316,6 +316,15 @@ input[type="checkbox"] {
   background: var(--surface);
   backdrop-filter: none;
 }
+.masthead-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.masthead-settings {
+  display: none;
+}
 .brand {
   display: flex;
   align-items: center;
@@ -1076,13 +1085,24 @@ blockquote {
     display: list-item;
     padding-block: 11px;
   }
-  button.settings {
-    display: block;
-    width: 100%;
-    margin: 6px 0 0;
-    padding: 12px 0;
-    text-align: center;
-    font-size: 0.75rem;
+  aside .settings {
+    display: none;
+  }
+  .masthead-settings {
+    display: inline-grid;
+    place-items: center;
+    flex: none;
+    width: 44px;
+    height: 44px;
+    padding: 0;
+    border: 1px solid transparent;
+    border-radius: var(--radius-control);
+    background: transparent;
+    color: inherit;
+  }
+  .masthead-settings[aria-current="page"] {
+    border-color: var(--line);
+    background: var(--subtle);
   }
   /* Your brain on a phone: a section's own action (Save to this project, Choose
      a goal) is a full touch target, not a 24px line of text. */
@@ -1162,6 +1182,12 @@ blockquote {
     min-height: 44px;
   }
 }
+/* The narrowest phones: the header keeps one row by shortening the visible label; its name stays "Save something". */
+@media (max-width: 360px) {
+  .masthead-save-rest {
+    display: none;
+  }
+}
 @media (pointer: fine) {
   html {
     overscroll-behavior: none;
@@ -1220,6 +1246,15 @@ blockquote {
   border-color: #f4f1e9;
   background: #f4f1e9;
   color: #111111;
+}
+:root[data-theme="dark"] .masthead-settings {
+  border-color: transparent;
+  background: transparent;
+  color: inherit;
+}
+:root[data-theme="dark"] .masthead-settings[aria-current="page"] {
+  border-color: var(--line-strong);
+  background: var(--subtle);
 }
 :root[data-theme="dark"] button.link,
 :root[data-theme="dark"] button.settings {

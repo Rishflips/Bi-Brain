@@ -34,6 +34,11 @@
 .yb-details summary { cursor: pointer; font-weight: 650; }
 .yb-details[open] summary { margin-bottom: 10px; }
 .yb-original { margin: 0; font: inherit; line-height: 1.55; white-space: pre-wrap; overflow-wrap: anywhere; }
+/* Phones: every project button and the New project action are 44px touch targets. */
+@media (max-width: 760px) {
+  .yb-plist button,
+  .yb-plist > .tv-link { min-height: 44px; }
+}
 @media (max-width: 720px) {
   .yb-layout { grid-template-columns: minmax(0, 1fr); gap: 16px; }
   .yb-plist ul { display: flex; flex-wrap: wrap; gap: 6px; }

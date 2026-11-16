@@ -63,6 +63,13 @@ function NavGlyph({ name }: { name: string }) {
         <path d="M5 8h3M16 8h3M5 15h3M16 15h3" />
       </svg>
     );
+  if (name === "Settings")
+    return (
+      <svg {...common}>
+        <circle cx="12" cy="12" r="3" />
+        <path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3h.1a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8v.1a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1Z" />
+      </svg>
+    );
   return (
     <svg {...common}>
       <path d="M9.5 14.5 7 17a3.54 3.54 0 0 1-5-5l3-3a3.54 3.54 0 0 1 5 0" />
@@ -1038,17 +1045,31 @@ function App() {
             <BrandLockup className="masthead-lockup" />
             <span className="tagline">One brain. Every agent.</span>
           </a>
-          {/* On Today the bar is the capture, so the header carries no second one (local app; the hosted edition's flows still start here). */}
-          {paired && !demo && nav === "Today" && runtime?.mode === "local" ? null : (
+          <div className="masthead-actions">
+            {/* On Today the bar is the capture, so the header carries no second one (local app; the hosted edition's flows still start here). */}
+            {paired && !demo && nav === "Today" && runtime?.mode === "local" ? null : (
+              <button
+                className="primary"
+                data-ui="save-something"
+                aria-label="Save something"
+                disabled={!paired || demo}
+                onClick={saveDialog}
+              >
+                ＋ Save<span className="masthead-save-rest"> something</span>
+              </button>
+            )}
+            {/* Phones only: the rail's Settings link is hidden there, so exactly one is exposed at any width. */}
             <button
-              className="primary"
-              data-ui="save-something"
+              type="button"
+              className="masthead-settings"
+              aria-label="Settings & privacy"
+              aria-current={nav === "Settings" ? "page" : undefined}
               disabled={!paired || demo}
-              onClick={saveDialog}
+              onClick={() => setNav("Settings")}
             >
-              ＋ Save something
+              <NavGlyph name="Settings" />
             </button>
-          )}
+          </div>
         </header>
       ) : null}
       <div className={`layout${showProductShell ? "" : " entry-layout"}`}>
