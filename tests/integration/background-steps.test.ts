@@ -20,6 +20,14 @@ describe("background help steps", () => {
     expect(choiceDisabled(false, true, true)).toBe(true);
     expect(choiceDisabled(false, true)).toBe(false);
   });
+  it("a block on spending locks an unticked paid consent but never a ticked one", () => {
+    // The page passes "step 3 open and spending not blocked" as the open flag for the paid consent.
+    const open = backgroundSteps({ enabled: true, daily_cap_micro_usd: 50_000, per_job_cap_micro_usd: 10_000 }).choicesOpen;
+    const paidOpen = (blocked: boolean) => open && !blocked;
+    expect(choiceDisabled(true, paidOpen(true))).toBe(false);
+    expect(choiceDisabled(false, paidOpen(true))).toBe(true);
+    expect(choiceDisabled(false, paidOpen(false))).toBe(false);
+  });
   it("says which step is missing, and nothing once a step is open", () => {
     const closed = backgroundSteps(off);
     expect(stepNote(2, closed)).toBe("Allow background help in step 1 first.");

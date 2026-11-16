@@ -271,3 +271,55 @@ test("Sorting help fits a 320px dark screen", async ({ page }) => {
   expect(cardFits).toBe(true);
   await expect(nav(page)).toBeVisible();
 });
+
+test("Background help reads at AA in dark with a step closed, and its controls are 44px at 390px", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 900 });
+  // The app's own theme switch: it sets data-theme="dark" on the root from this stored choice.
+  await page.addInitScript(() => localStorage.setItem("brain-theme", "dark"));
+  await open(page);
+  await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
+  await page.getByRole("button", { name: "Settings & privacy" }).click();
+  const card = page.locator('[data-ui="background-help"]');
+  // Close step 1 without saving, so step 2 and step 3 show their notes and the limits are disabled.
+  const allow = page.getByLabel("Turn on background help (sorting new notes and preparing reviews)");
+  if (await allow.isChecked()) await allow.uncheck();
+  await expect(page.getByLabel("Daily cap (USD)")).toBeDisabled();
+  const ratios = await card.evaluate((root) => {
+    const rgba = (c: string) => (c.match(/[\d.]+/g) ?? []).map(Number).concat([1]).slice(0, 4);
+    const lum = ([r, g, b]: number[]) => {
+      const f = (v: number) => ((v /= 255) <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4);
+      return 0.2126 * f(r) + 0.7152 * f(g) + 0.0722 * f(b);
+    };
+    const background = (el: Element): number[] => {
+      for (let e: Element | null = el; e; e = e.parentElement) {
+        const c = rgba(getComputedStyle(e).backgroundColor);
+        if (c[3] > 0) return c;
+      }
+      return [255, 255, 255, 1];
+    };
+    const ratio = (el: Element) => {
+      let alpha = rgba(getComputedStyle(el).color)[3];
+      for (let e: Element | null = el; e; e = e.parentElement) alpha *= Number(getComputedStyle(e).opacity);
+      const bg = background(el);
+      const fg = rgba(getComputedStyle(el).color).slice(0, 3).map((v, i) => v * alpha + bg[i] * (1 - alpha));
+      const [a, b] = [lum(fg), lum(bg)].sort((x, y) => y - x);
+      return Math.round(((a + 0.05) / (b + 0.05)) * 100) / 100;
+    };
+    const out: Record<string, number> = {};
+    out.legend = ratio(root.querySelector(".bh-fields legend")!);
+    root.querySelectorAll(".bh-fields label.field").forEach((l, i) => (out[`label${i}`] = ratio(l)));
+    root.querySelectorAll(".bh-step > p.muted").forEach((p, i) => (out[`note${i}`] = ratio(p)));
+    return out;
+  });
+  console.log("dark contrast", JSON.stringify(ratios));
+  expect(Object.keys(ratios).length).toBeGreaterThanOrEqual(9);
+  for (const [name, value] of Object.entries(ratios)) expect(value, name).toBeGreaterThanOrEqual(4.5);
+  // Touch targets: every checkbox or radio row and Save preferences are at least 44px tall at 390px.
+  const heights = await card.evaluate((root) => ({
+    rows: [...root.querySelectorAll("label:has(> input[type=checkbox], > input[type=radio])")].map((l) => l.getBoundingClientRect().height),
+    save: [...root.querySelectorAll("button")].find((b) => b.textContent?.trim() === "Save preferences")!.getBoundingClientRect().height,
+  }));
+  expect(heights.rows.length).toBeGreaterThanOrEqual(6);
+  for (const h of heights.rows) expect(h).toBeGreaterThanOrEqual(44);
+  expect(heights.save).toBeGreaterThanOrEqual(44);
+});

@@ -1809,7 +1809,7 @@ function App() {
                           <input
                             type="checkbox"
                             checked={prefs.provider_enabled}
-                            disabled={!!today.status.spend?.blocked || choiceDisabled(prefs.provider_enabled, steps.choicesOpen)}
+                            disabled={choiceDisabled(prefs.provider_enabled, steps.choicesOpen && !today.status.spend?.blocked)}
                             onChange={(e) => setPrefs({ ...prefs, provider_enabled: e.target.checked })}
                           />{" "}
                           I authorize selected text to be processed by OpenAI within these caps
