@@ -42,7 +42,7 @@ All 63 style snapshots differ, because every signed-in screen's header changed, 
 | 08 to 10 Your brain, 11 to 12 Connections, 17 to 19 dialogs (desktop and tablet) | Header band only (about 0.04 to 0.09% of pixels): the header's right side is now one group. | 9a4f56c |
 | Same states at phone | Header is one row (69px instead of 103px); everything below moves up by that amount. Dialog captures are viewport-only, so their backdrops and the rows behind them show larger pixel counts (up to 36% on the Project dialog) from that shift, not from a change in the dialog. | 9a4f56c |
 | 13, 14, 20 Connections after Add, Set up by hand, handoff | A three-step checklist replaces the long setup paragraph; the long instructions are behind Details. Tile is shorter (page 13px shorter at 1280, 150px at 390). | e2324fa |
-| 15, 16 Settings | One "Background help" card in three steps instead of three cards (page 497px taller at 1280, because every step is now shown with its explanation and gating hints). | 212a7d9, 5c4d0fd |
+| 15, 16 Settings | One "Background help" card in three steps instead of three cards (page 497px taller at 1280, because every step is now shown with its explanation and gating hints). After the final review, "Save preferences" moved to the end of the card, below Better search, and the Settings pictures were retaken. | 212a7d9, 5c4d0fd |
 | Every state | Text sizes are rem; at the default browser size they equal the old pixel values. | e91e0f6 |
 
 Not in the table, by design: no first-run, sample-body, Today-body, Your brain-body or dialog-body change. The first-run screen has no pixel change at all.

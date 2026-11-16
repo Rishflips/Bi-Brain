@@ -1263,6 +1263,7 @@ function App() {
             </nav>
             <button
               className="link settings"
+              aria-current={nav === "Settings" ? "page" : undefined}
               onClick={() => setNav("Settings")}
               disabled={!paired || demo}
             >
@@ -1788,7 +1789,7 @@ function App() {
                   </form>
                   <section className="bh-step" aria-labelledby="bh-choices-h">
                     <h3 id="bh-choices-h">3. Choose what it may do</h3>
-                    {stepNote(3, steps) ? <p className="muted">{stepNote(3, steps)}</p> : null}
+                    {stepNote(3, steps) ? <p className="muted" id="bh-choices-note">{stepNote(3, steps)}</p> : null}
                     {/* These boxes sit outside the form (a form cannot hold Better search's own form), so they mark the preferences as edited themselves. */}
                     <div
                       className="bh-consents"
@@ -1810,6 +1811,7 @@ function App() {
                             type="checkbox"
                             checked={prefs.provider_enabled}
                             disabled={choiceDisabled(prefs.provider_enabled, steps.choicesOpen && !today.status.spend?.blocked)}
+                            aria-describedby={steps.choicesOpen || !stepNote(3, steps) ? undefined : "bh-choices-note"}
                             onChange={(e) => setPrefs({ ...prefs, provider_enabled: e.target.checked })}
                           />{" "}
                           I authorize selected text to be processed by OpenAI within these caps
@@ -1846,6 +1848,7 @@ function App() {
                                   type="checkbox"
                                   checked={prefs.decision_provider_enabled}
                                   disabled={choiceDisabled(prefs.decision_provider_enabled, steps.choicesOpen, !sorting.configured)}
+                                  aria-describedby={steps.choicesOpen || !stepNote(3, steps) ? undefined : "bh-choices-note"}
                                   onChange={(e) => {
                                     sortingConsentTouched.current = true;
                                     setPrefs({ ...prefs, decision_provider_enabled: e.target.checked });
@@ -1858,6 +1861,7 @@ function App() {
                                   type="checkbox"
                                   checked={recallHelp}
                                   disabled={choiceDisabled(recallHelp, steps.choicesOpen, !(sorting.configured && prefs.decision_provider_enabled))}
+                                  aria-describedby={steps.choicesOpen || !stepNote(3, steps) ? undefined : "bh-choices-note"}
                                   onChange={(e) => {
                                     recallConsentTouched.current = true;
                                     setRecallHelp(e.target.checked);
@@ -1893,11 +1897,6 @@ function App() {
                           </small>
                         </section>
                       ) : null}
-                      <div className="actions">
-                        <button className="primary" type="submit" form="background-help-form" disabled={busy}>
-                          Save preferences
-                        </button>
-                      </div>
                     </div>
                     {better ? (
                       <section aria-labelledby="bh-search-h">
@@ -1996,6 +1995,11 @@ function App() {
                       </section>
                     ) : null}
                   </section>
+                  <div className="actions">
+                    <button className="primary" type="submit" form="background-help-form" disabled={busy}>
+                      Save preferences
+                    </button>
+                  </div>
                   <p className="muted">
                     {`Provider key ${
                       today.status.provider_configured
