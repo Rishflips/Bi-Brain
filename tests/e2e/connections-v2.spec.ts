@@ -183,3 +183,37 @@ test("Hermes is set up by hand: the steps name the HTTPS domain, the snippets ca
   const connections = (await (await page.request.get("/api/v1/connections")).json()) as { client: string; client_name: string; status: string }[];
   expect(connections.some((g) => g.client === "hermes" && g.client_name === "Hermes" && g.status === "Not connected")).toBe(true);
 });
+
+test("the waiting checklist ticks only from what BiBrain recorded, then goes away", async ({ page, request }) => {
+  await open(page);
+  const folder = mkdtempSync(join(tmpdir(), "bibrain-steps-"));
+  const codex = tile(page, "Codex");
+  await codex.getByRole("button", { name: "Add to Codex" }).click();
+  await codex.getByLabel("Project", { exact: true }).selectOption({ label: "Inbox" });
+  await codex.getByLabel("Project folder on this computer").fill(folder);
+  await codex.getByRole("button", { name: "Add to Codex", exact: true }).last().click();
+  const row = codex.getByRole("listitem").filter({ hasText: folder });
+  await expect(row).toContainText("Waiting for its first call");
+  const steps = row.getByRole("list", { name: "Getting Codex started" });
+  await expect(steps.getByRole("listitem")).toHaveText([/^Open Codex here \(not yet\)$/, /^Approve BiBrain \(not yet\)$/, /^Ask anything \(not yet\)$/]);
+  // The long instructions are behind Details, closed until asked for.
+  const hint = row.getByText("Open Codex in this folder.", { exact: false });
+  await expect(hint).toBeHidden();
+  await row.getByText("Details", { exact: true }).click();
+  await expect(hint).toBeVisible();
+
+  const written = readFileSync(join(folder, ".codex", "config.toml"), "utf8");
+  const id = /"--connection", "([0-9a-f-]{36})"/.exec(written)![1];
+  const { key } = JSON.parse(readFileSync(join("data", "agent-keys", `${id}.json`), "utf8"));
+  const auth = { Authorization: `Bearer ${key}` };
+  // The first call: the agent was opened here and approved. No push yet, so the third step stays open.
+  expect((await request.post("/api/v1/agent/verify", { headers: auth, data: {} })).ok()).toBe(true);
+  await expect(steps.getByRole("listitem")).toHaveText([/\(done\)$/, /\(done\)$/, /^Ask anything \(not yet\)$/], { timeout: 10_000 });
+  await expect(row).toContainText("Connected");
+  // The first push, as the prompt hook sends it.
+  const push = await request.post("/api/v1/agent/recall-push", { headers: auth, data: { prompt: "What did we decide about the launch?", session_id: "a".repeat(64), first_prompt: true, client: "codex" } });
+  expect(push.ok()).toBe(true);
+  await expect(steps).toHaveCount(0, { timeout: 10_000 });
+  await expect(row).toContainText(/Recall on every prompt: on(?! after)/);
+  await row.getByRole("button", { name: `Revoke access for ${folder}` }).click();
+});

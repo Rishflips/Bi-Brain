@@ -191,8 +191,13 @@ cancel.
 
 **Waiting.** After Add, the connection reads "Waiting for its first call", with
 the project, the access level and the folder. A key that exists is never treated
-as an active agent, and a hint tells the person to open the agent in that folder
-and approve BiBrain once. When the hook was written the line under the
+as an active agent. Under it a three-step checklist says what is left: "Open
+{agent} here", "Approve BiBrain" and "Ask anything". A step is ticked only from
+what BiBrain has recorded for that connection: the first two from its first
+authenticated call, the third from its first recorded push (or, where BiBrain
+wrote no prompt hook, from that same first call). The agent's own instructions
+sit behind "Details". The checklist goes away once every step is ticked, and it
+is never shown for access that has ended. When the hook was written the line under the
 connection reads "Recall on every prompt: on after your next prompt" until
 BiBrain has recorded a push, then "Recall on every prompt: on" ("Rule file added"
 for Cursor). For Codex it reads "Recall on every prompt: on after Codex trusts

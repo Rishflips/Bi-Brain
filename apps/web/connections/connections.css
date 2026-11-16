@@ -19,3 +19,12 @@
 .cx-file { margin: 0; padding: 10px 12px; border-radius: var(--radius-control); border: 1px solid var(--line); font-size: 0.8125rem; white-space: pre-wrap; overflow-wrap: anywhere; }
 .cx-add summary, .cx-ended summary { cursor: pointer; font-weight: 650; }
 .cx-add p, .cx-add small, .cx-add label, .cx-head-text p { overflow-wrap: anywhere; }
+.cx-setup { display: grid; gap: 6px; min-width: 0; margin-top: 6px; }
+.cx-steps { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.cx-step { display: flex; gap: 8px; align-items: center; min-width: 0; font-size: 0.875rem; }
+.cx-tick { flex: none; display: grid; place-items: center; width: 18px; height: 18px; border: 1px solid var(--line-strong); border-radius: 50%; font-size: 0.75rem; line-height: 1; }
+.cx-step[data-done="true"] .cx-tick { border-color: var(--ink); background: var(--ink); color: var(--on-ink); }
+.cx-step[data-done="true"] { color: var(--muted); }
+.cx-details summary { cursor: pointer; font-size: 0.8125rem; color: var(--muted); }
+.cx-details summary:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+.cx-details p { margin: 4px 0 0; overflow-wrap: anywhere; }

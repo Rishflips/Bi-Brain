@@ -1,6 +1,7 @@
 import { Fragment, useState } from "react";
 import { friendlyError } from "../today/BriefCard.tsx";
 import { shortDate } from "../brain/format.ts";
+import { SetupChecklist } from "./SetupChecklist.tsx";
 import { secondFileLabel, stopEntryFor, writebackLabel } from "./second-file.ts";
 import type { AgentClient, Api, Grant } from "./types.ts";
 
@@ -82,7 +83,7 @@ export function ConnectionList({ api, grants, projects, hint = "", onChanged }: 
                     </Fragment>
                   );
                   })}
-                {g.status !== "Connected" && g.folder && hint && <p className="tv-faint">{hint}</p>}
+                {g.folder && hint && <SetupChecklist grant={g} hint={hint} />}
               </div>
               <button
                 type="button"

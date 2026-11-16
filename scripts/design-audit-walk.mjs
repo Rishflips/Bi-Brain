@@ -412,6 +412,8 @@ try {
   await page.getByRole("button", { name: "Connections", exact: true }).click();
   await codex.waitFor();
   await capture(page, "13-connections-waiting");
+  // A picture of the checklist alone: the whole tile also shows the project folder's path.
+  if (!only.length || only.includes("13-connections-waiting")) await codex.locator(".cx-setup").first().screenshot({ path: join(out, "13-checklist.png") });
   await page.getByRole("button", { name: "Set up by hand" }).click();
   await page.waitForTimeout(300);
   await capture(page, "14-connections-by-hand", { dialog: true });
