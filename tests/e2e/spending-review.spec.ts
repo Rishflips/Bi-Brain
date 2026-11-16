@@ -143,7 +143,7 @@ test("blocked paid processing is honest and honest money stays visible", async (
     );
     expect(live.csrf).toBe(session.csrf);
 
-    // Capture stays globally available while paid processing is blocked.
+    // The signed-in app shell is up while paid processing is blocked.
     await expect(page.getByRole("navigation", { name: "Main navigation" })).toBeVisible();
 
     // The stored preference is still opted in; only the effective view is off.

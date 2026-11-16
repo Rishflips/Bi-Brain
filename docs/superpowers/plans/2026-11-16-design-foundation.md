@@ -12,7 +12,7 @@
 
 ## Global Constraints
 
-- Work only in the worktree `C:/Users/Gowrishankar/Desktop/Bi Brain/.worktrees/design` (branch `reframe/design-foundation`, from main `4730d25`). Never touch `C:/Users/Gowrishankar/Desktop/Bi Brain` itself. Never read `data/` in the main checkout or any `.env`.
+- Work only in the worktree `<worktree>` (branch `reframe/design-foundation`, from main `4730d25`). Never touch `<main checkout>` itself. Never read `data/` in the main checkout or any `.env`.
 - Never `git add .`; add explicit paths. No rebase, no force-push, no bare `git stash`, no push. Commit trailer on every commit: `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`.
 - Frozen, never touch: any `dodo*`, `billing*`, `managed*`, `paddle*` file (source and tests, including `tests/e2e/managed*.spec.ts` and `tests/e2e/billing-ui.spec.ts`); `managedPreferencesPatchSchema`; applied migrations; `docs/DODO_PAYMENTS.md`, `docs/RELEASE.md`, `docs/IMPLEMENTATION_PLAN.md`, `docs/PRICING_PROPOSAL_2026-10-21.md`, `docs/BUSINESS.md`. The billing card's CSS (`.billing-card`, `.plan-actions`) lives in the shared stylesheet and must keep working; the frozen specs must pass unedited.
 - No server change of any kind: nothing under `apps/server`, `apps/worker`, `apps/mcp`, `apps/cli`, `packages/` is edited. No permission, budget, preference schema or API contract changes.
@@ -20,12 +20,12 @@
 - Primary navigation stays exactly Today, Your brain, Connections. Every visible control has real behaviour or a plainly stated unavailable reason. No invented ticks or state. Plain language; no model names, MCP, tokens or queues in the primary flow (existing Settings copy that names a service is moved verbatim, not rewritten).
 - Accessibility: native semantic controls, visible focus (`--focus`, 2px solid, 2px offset), contrast AA in both appearances, 44px touch targets at 760px and below, nothing under 12px at the default text size, text follows the browser's text-size setting, no horizontal scroll at 320px.
 - Token names, verbatim: `--canvas`, `--surface`, `--line`, `--line-strong`, `--muted`, `--subtle`, `--ink`, `--on-ink`, `--signal`, `--gold`, `--gold-wash`, `--attention`, `--focus`, `--shadow`, `--radius-control` (9px), `--radius-card` (14px). Old names that must not survive: `--green`, `--green-deep`, `--on-green`, `--pulse`, `--pulse-soft`, `--lime`, `--amber`, `--surface-glass`.
-- Tests: Vitest with `--maxWorkers=2` (a single file with `--maxWorkers=1`), Playwright with `--workers=1`, never both at once, always sequential. Run `npm run build` before any Playwright run or walk (the server serves `dist/web`). After every Playwright run: `git restore docs/screenshots`. The frozen billing tests need the folder `C:/Users/Gowrishankar/AppData/Local/Temp/opencode` (`New-Item -ItemType Directory -Force`). Every run uses its own throwaway `BRAIN_DB` (the Playwright config and the walk script already do) with `BRAIN_EMBED_PROVIDER=off` or the fake embedder. Never call a real Ollama or Cloudflare.
+- Tests: Vitest with `--maxWorkers=2` (a single file with `--maxWorkers=1`), Playwright with `--workers=1`, never both at once, always sequential. Run `npm run build` before any Playwright run or walk (the server serves `dist/web`). After every Playwright run: `git restore docs/screenshots`. The frozen billing tests need the folder `%TEMP%/opencode` (`New-Item -ItemType Directory -Force`). Every run uses its own throwaway `BRAIN_DB` (the Playwright config and the walk script already do) with `BRAIN_EMBED_PROVIDER=off` or the fake embedder. Never call a real Ollama or Cloudflare.
 - Pairing is limited to 10 a minute per server: new browser tests go into the existing spec files named in each task and use that file's shared sign-in helper. Do not add a new spec file.
 - The repository is public: neutral wording in code, comments, commits and docs. A committed image must not show a local path or a user name; look at each before `git add`.
 - Owner's standing rule: every decision must make it better for the person using it, the developer and the agent together, without breaking anything.
 - Gate baseline (BUILD_STATE.md, 2026-11-12): Vitest 2,118–2,121 passed and 8 skipped across 199 files; Playwright 111 passed; `npm run brain-eval` 57/57; `npm run typecheck`, `npm run lint`, `npm run build` exit 0.
-- Evidence folder outside the repository (large JSON never committed): `C:/Users/Gowrishankar/AppData/Local/Temp/bibrain-plan11/` (called `$EVID` below).
+- Evidence folder outside the repository (large JSON never committed): `%TEMP%/bibrain-plan11/` (called `$EVID` below).
 
 ## Rulings made while planning
 
@@ -392,7 +392,7 @@ Expected: both exit 0.
 Run, one after the other (PowerShell; each takes several minutes):
 
 ```powershell
-$EVID = "C:/Users/Gowrishankar/AppData/Local/Temp/bibrain-plan11"
+$EVID = "%TEMP%/bibrain-plan11"
 $flags = "--stable", "--styles", "--sizes=1280x900,768x1024,390x844"
 node scripts/design-audit-walk.mjs "$EVID/before-light" @flags
 node scripts/design-audit-walk.mjs "$EVID/selfcheck-light" @flags
@@ -566,7 +566,7 @@ In `apps/web/src.tsx` add `import "./styles/tokens.css";` immediately before `im
 Remove every custom-property declaration (`--name: value;`) from `apps/web/styles/app.css`, keeping the other declarations in those `:root` blocks (`font-family`, `color`, `background`, `font-size`, `font-synthesis`, `color-scheme`). Then rename uses in all four sheets (Bash tool; the longer names first):
 
 ```bash
-cd "C:/Users/Gowrishankar/Desktop/Bi Brain/.worktrees/design/apps/web"
+cd "<worktree>/apps/web"
 sed -i -e 's/var(--green-deep)/var(--ink)/g' -e 's/var(--on-green)/var(--on-ink)/g' -e 's/var(--green)/var(--signal)/g' \
   -e 's/var(--pulse-soft)/var(--gold-wash)/g' -e 's/var(--pulse)/var(--gold)/g' -e 's/var(--lime)/var(--gold)/g' \
   -e 's/var(--surface-glass)/var(--surface)/g' styles/app.css today/today.css brain/brain.css connections/connections.css
@@ -580,7 +580,7 @@ Expected: the grep prints nothing. Run the gate (0 differences), then commit `ap
 List class selectors no source file uses (Bash tool):
 
 ```bash
-cd "C:/Users/Gowrishankar/Desktop/Bi Brain/.worktrees/design/apps/web"
+cd "<worktree>/apps/web"
 grep -o "\.[a-zA-Z][a-zA-Z0-9_-]*" styles/app.css | sort -u | while read c; do n=${c#.}; grep -rqE "[\"'\` ]$n[\"'\` ]" --include=*.tsx --include=*.ts --include=*.html . || printf "%s\n" "$n"; done
 ```
 
@@ -638,7 +638,7 @@ npx vitest run tests/integration/web-styles.test.ts --reporter=dot --maxWorkers=
 npm run typecheck
 npm run lint
 npm run build
-New-Item -ItemType Directory -Force C:/Users/Gowrishankar/AppData/Local/Temp/opencode | Out-Null
+New-Item -ItemType Directory -Force %TEMP%/opencode | Out-Null
 npx playwright test tests/e2e/billing-ui.spec.ts tests/e2e/consumer-first-use-review.spec.ts tests/e2e/your-brain-v2.spec.ts --workers=1
 git restore docs/screenshots
 ```
@@ -725,7 +725,7 @@ Expected: the Vitest case fails on a `px` font size; the browser test fails at `
 Run (Bash tool):
 
 ```bash
-cd "C:/Users/Gowrishankar/Desktop/Bi Brain/.worktrees/design/apps/web"
+cd "<worktree>/apps/web"
 node -e '
 const fs = require("fs");
 for (const file of process.argv.slice(1)) {
@@ -1506,7 +1506,7 @@ npm run typecheck
 npm run lint
 npx vitest run tests/integration/background-steps.test.ts tests/integration/better-search-copy.test.ts tests/integration/web-styles.test.ts --reporter=dot --maxWorkers=1
 npm run build
-New-Item -ItemType Directory -Force C:/Users/Gowrishankar/AppData/Local/Temp/opencode | Out-Null
+New-Item -ItemType Directory -Force %TEMP%/opencode | Out-Null
 npx playwright test tests/e2e/system-one.spec.ts tests/e2e/better-search.spec.ts tests/e2e/spending-review.spec.ts tests/e2e/managed-consent-review.spec.ts tests/e2e/managed-decision-consent-review.spec.ts tests/e2e/managed-spending-review.spec.ts tests/e2e/managed.spec.ts tests/e2e/billing-ui.spec.ts --workers=1
 git restore docs/screenshots
 git diff --stat main -- apps/server apps/worker apps/mcp apps/cli packages
@@ -1786,7 +1786,7 @@ git commit -m "feat(connections): a setup checklist that ticks from recorded cal
 
 ```powershell
 npm run build
-$EVID = "C:/Users/Gowrishankar/AppData/Local/Temp/bibrain-plan11"
+$EVID = "%TEMP%/bibrain-plan11"
 $flags = "--stable", "--styles", "--sizes=1280x900,768x1024,390x844"
 node scripts/design-audit-walk.mjs "$EVID/after-light" @flags
 node scripts/design-audit-walk.mjs "$EVID/after-dark" @flags --dark
@@ -1816,7 +1816,7 @@ Look at each file; none may show a local path or a user name. Write `docs/design
 - [ ] **Step 4: Run the full gate, sequentially**
 
 ```powershell
-New-Item -ItemType Directory -Force C:/Users/Gowrishankar/AppData/Local/Temp/opencode | Out-Null
+New-Item -ItemType Directory -Force %TEMP%/opencode | Out-Null
 npm run typecheck
 npm run lint
 npm run build

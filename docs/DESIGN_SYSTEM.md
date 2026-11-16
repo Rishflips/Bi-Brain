@@ -44,7 +44,7 @@ One scale for the signed-in workspace (Today, Your brain, Connections, Settings)
 The 2026-11 audit found Today's page title at 40px/750 while the other three used
 58px/620, so the same level of page looked like two products:
 
-| Role | Size | Weight |
+| Role | Size (px at the 16px default; set in rem) | Weight |
 | --- | --- | --- |
 | Page title (h1) | 40px, down to 30px on small screens | 650 |
 | Section heading | 18–22px | 650 |
