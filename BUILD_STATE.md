@@ -1,6 +1,6 @@
 # Build state
 
-Updated: 2026-11-12
+Updated: 2026-11-17
 
 This page holds the current, verified state of BiBrain. Each section below
 records one shipped plan of the 2026 reframe, with the commands that ran and
@@ -20,6 +20,33 @@ their real counts. The full delivery log from before the reframe is preserved in
 | Licence | AGPL-3.0-only for the app, Apache-2.0 for the agent connector |
 | Hosted edition and payments | Paused; the Dodo adapter, the money ledger and the managed runtime are kept but not deployed, and no real payment has been processed. The Paddle code was removed in plan 6 (2026-10-28) |
 | Next plans | Owner-run: `npm run calibrate` once the brain has real answers and pushes, `npm run proof:search`, `scripts/native-client-proof.ts`; a native Hermes run (owner); the next reframe plan is the owner's choice |
+
+## 2026-11-17 — Plan 11: design foundation and the audit's L3 proposals (branch reframe/design-foundation)
+
+Plan: `docs/superpowers/plans/2026-11-16-design-foundation.md`. Report and pictures: `docs/design/plan-11/REPORT.md`.
+
+What changed (web only; no server, data, permission or API change):
+- **One stylesheet foundation.** `apps/web/styles/tokens.css` and `apps/web/styles/app.css` replace two layered stylesheets; honest token names; base loads first; main navigation scoped to `.primary-nav`; a static test pins the invariants. `b2937e9`, `7a56a76`, `8cc5176`, `5fc158a`, `90d375e`, `e0420fc`; the walk and compare tools are `7fc95c4`.
+- **Type in rem.** The type scale follows the browser's text-size setting. `e91e0f6`.
+- **One way to save on Today.** The header's Save something is hidden on Today in the local app; Today's status sits in Today's own header. `67b2f46`.
+- **One-row phone header.** Settings is an icon button; New project is 44px. `9a4f56c`.
+- **One Background help card in three steps** (allow it, set the limits, choose what it may do) in the local app; a choice that is on can always be turned off, even while spending is blocked. The managed card is unchanged. `212a7d9`, `5c4d0fd`.
+- **Connections setup checklist** that ticks from recorded signals, with the long instructions behind Details. `e2324fa`.
+
+Verified in this worktree on 2026-11-17 (Windows, Node 24.19.0):
+
+- `npm run typecheck`, `npm run lint`, `npm run build`: all exit 0.
+- `CI=true npx vitest run --reporter=dot --maxWorkers=2`: 202 files; 2,133 passed, 8 skipped, 6 failed in 3 files (`bibrain-cli`, `mcp`, `restore-barrier`). The 6 failed because the worktree's `node_modules` folder is empty and those tests start `tsx` by a path inside it (`Cannot find module ...
+ode_modules	sx`); no timeout was involved. With junctions for `tsx` and `@modelcontextprotocol` temporarily pointing at the main checkout's install, the three files were rerun with `--maxWorkers=1`: 18 of 18 passed. Together: 2,139 passed, 8 skipped, 0 failed across 202 files. The junctions were removed afterwards.
+- `npm run brain-eval`: 57/57 (needed a temporary `vitest` junction for the same reason).
+- `npx playwright test --workers=1`: 117 passed, 2 failed (119), twice in a row. The two are in `today-v2.spec.ts` (`Today has one way to save and carries its own status; other pages keep Save something` and `the status wraps under the title on a 320px screen`); the page returned `RATE_LIMITED` when the test opened it in the full run. `today-v2.spec.ts` alone: 25 passed. Not yet explained; see Known limits. `review-journeys.spec.ts` did not time out in either run.
+- Style comparison (`scripts/design-compare.mjs`): the fold changed 0 of 84 screenshots in each appearance; after-versus-before differences are all in headers, Settings and the Connections checklist (`docs/design/plan-11/REPORT.md`).
+
+Known limits:
+
+- The two `today-v2` specs above fail in the full serial Playwright run on a rate limit but pass alone; the cause (the request limit being reached by earlier specs in one run) has not been confirmed, and no limit or test was changed.
+- The hosted edition keeps the header Save on Today and its own background card; steps 1 and 2 of the checklist share one signal (the first recorded call).
+- Chromium only. The residual 0.08-0.12 Connections layout shift and the unexplained disabled "Add to Codex" from the audit remain open.
 
 ## 2026-11-12 — Design audit (branch design/audit-2026-11)
 
@@ -41,7 +68,7 @@ Known limits:
 
 - Only Chromium was checked. Screen-reader output was not listened to.
 - A residual 0.08–0.12 layout shift remains when Connections first opens after a reload with a connection.
-- Type is in px, so the browser's default font-size setting is ignored; this is proposed as L3.
+- Type was in px, so the browser's default font-size setting was ignored; type is now in rem (plan 11).
 
 ## 2026-11-06 — Plan 10: recall by meaning by default (branch reframe/recall-by-meaning)
 
