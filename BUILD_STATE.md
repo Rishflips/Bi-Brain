@@ -39,12 +39,11 @@ Verified in this worktree on 2026-11-17 (Windows, Node 24.19.0):
 - `CI=true npx vitest run --reporter=dot --maxWorkers=2`: 202 files; 2,133 passed, 8 skipped, 6 failed in 3 files (`bibrain-cli`, `mcp`, `restore-barrier`). The 6 failed because the worktree's `node_modules` folder is empty and those tests start `tsx` by a path inside it (`Cannot find module ...
 ode_modules	sx`); no timeout was involved. With junctions for `tsx` and `@modelcontextprotocol` temporarily pointing at the main checkout's install, the three files were rerun with `--maxWorkers=1`: 18 of 18 passed. Together: 2,139 passed, 8 skipped, 0 failed across 202 files. The junctions were removed afterwards.
 - `npm run brain-eval`: 57/57 (needed a temporary `vitest` junction for the same reason).
-- `npx playwright test --workers=1`: 117 passed, 2 failed (119), twice in a row. The two are in `today-v2.spec.ts` (`Today has one way to save and carries its own status; other pages keep Save something` and `the status wraps under the title on a 320px screen`); the page returned `RATE_LIMITED` when the test opened it in the full run. `today-v2.spec.ts` alone: 25 passed. Not yet explained; see Known limits. `review-journeys.spec.ts` did not time out in either run.
+- `npx playwright test --workers=1`: 119 passed, 0 failed. After the final review the five plan 11 header journeys moved from `today-v2.spec.ts` (which had reached the per-minute request limit) to the end of `today-v2-bar.spec.ts`, which has its own server; no limit, config or assertion changed. Typecheck, lint and build exit 0; `setup-checklist` and `web-styles`/`background-steps` Vitest files pass.
 - Style comparison (`scripts/design-compare.mjs`): the fold changed 0 of 84 screenshots in each appearance; after-versus-before differences are all in headers, Settings and the Connections checklist (`docs/design/plan-11/REPORT.md`).
 
 Known limits:
 
-- The two `today-v2` specs above fail in the full serial Playwright run on a rate limit but pass alone; the cause (the request limit being reached by earlier specs in one run) has not been confirmed, and no limit or test was changed.
 - The hosted edition keeps the header Save on Today and its own background card; steps 1 and 2 of the checklist share one signal (the first recorded call).
 - Chromium only. The residual 0.08-0.12 Connections layout shift and the unexplained disabled "Add to Codex" from the audit remain open.
 
