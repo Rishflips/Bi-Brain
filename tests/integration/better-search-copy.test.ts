@@ -14,7 +14,7 @@ const owner: Principal = { kind: "owner" };
 const GENERIC = "Something went wrong preparing passages.";
 const WORDS_ONLY = "Search is using words only right now.";
 const SETUP = "Better search is not set up correctly on this computer. See Providers in the docs.";
-const LIMITS_NOT_SET = "Set a daily limit and a per-preparation limit above $0 below.";
+const LIMITS_NOT_SET = "Set a daily limit and a per-preparation limit above $0 in step 2.";
 const NEEDS_LIMITS = "Better search with Cloudflare needs a daily limit and a per-preparation limit above $0 in Background help & spending.";
 // Nothing the card shows may carry a service, model, credential, setting name or status code.
 const LEAKS = /model|token|mcp|cloudflare|ollama|bge|BRAIN_|credential|endpoint|api\b|https?:|\b\d{3}\b/i;

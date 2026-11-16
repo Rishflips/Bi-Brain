@@ -14,7 +14,7 @@ async function open(page: Page) {
   }
   await expect(bar).toBeVisible();
 }
-const card = (page: Page) => page.getByRole("article").filter({ has: page.getByRole("heading", { name: "Better search" }) });
+const card = (page: Page) => page.getByRole("region", { name: "Better search" });
 async function search(page: Page, q: string) {
   await page.getByRole("button", { name: "Your brain", exact: true }).click();
   const field = page.getByPlaceholder("Search facts and originals");

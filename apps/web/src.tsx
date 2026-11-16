@@ -20,6 +20,7 @@ import { BrainView } from "./brain/BrainView.tsx";
 import { SourceView } from "./brain/SourceView.tsx";
 import type { OpenSourceOptions } from "./today/types.ts";
 import { ConnectionsView } from "./connections/ConnectionsView.tsx";
+import { backgroundSteps, choiceDisabled, stepNote } from "./settings/background-steps.ts";
 import { AUTOMATIC_NOTICE, DETECTED_HINT, betterSearchCanSave, meaningLeadLine, type MeaningLeadView, plainProbe, plainSearchProblem, plainSearchReason } from "./better-search-copy.ts";
 import {
   AgentClientPicker,
@@ -112,10 +113,10 @@ function sortingLine(status: SortingStatus, prefs: Preferences): string {
   if (!status.configured)
     return `Off on this computer: ${status.reason ?? "sorting help is not set up."}`;
   if (!status.worker_running) return "Waiting for BiBrain's background worker to start.";
-  if (prefs.daily_cap_micro_usd <= 0) return "Needs a daily limit above $0 below.";
-  if (prefs.per_job_cap_micro_usd <= 0) return "Needs a per-note limit above $0 below.";
-  if (!prefs.enabled) return "Needs background help turned on below.";
-  if (!prefs.decision_provider_enabled) return "Waiting for your consent below.";
+  if (prefs.daily_cap_micro_usd <= 0) return "Needs a daily limit above $0 in step 2.";
+  if (prefs.per_job_cap_micro_usd <= 0) return "Needs a per-note limit above $0 in step 2.";
+  if (!prefs.enabled) return "Needs background help allowed in step 1.";
+  if (!prefs.decision_provider_enabled) return "Waiting for your consent here.";
   return `On · ${status.label ?? "sorting service"} · ${status.answers} ${status.answers === 1 ? "note" : "notes"} sorted, ${status.reviewed} reviewed`;
 }
 type BetterSearch = {
@@ -1027,6 +1028,179 @@ function App() {
         Opening your brain…
       </p>
     );
+  function saveBackgroundPreferences() {
+    void act(async () => {
+      const body = backgroundPatchBody(
+        sortingConsentTouched.current && prefs
+          ? { decision_provider_enabled: prefs.decision_provider_enabled }
+          : {},
+      );
+      if (runtime?.mode === "managed") {
+        // Send each consent field ONLY when the user explicitly
+        // toggled it; otherwise omit it so the raw stored value is
+        // preserved (never rewrite from the effective getter). The
+        // two overrides are independent.
+        if (consentOverride !== null)
+          body.provider_enabled = consentOverride;
+        if (decisionConsentOverride !== null)
+          body.decision_provider_enabled =
+            decisionConsentOverride;
+      }
+      let saved: Preferences;
+      try {
+        saved = await api("/preferences/background", body, "PATCH");
+      } catch (error) {
+        // A refused consent should say why in the worker's words.
+        if (body.decision_provider_enabled === true && runtime?.mode !== "managed") {
+          const now = await api<SortingStatus>("/system-one/status").catch(() => null);
+          if (now) setSorting(now);
+          if (now?.reason) throw new Error(now.reason);
+        }
+        throw error;
+      }
+      setPrefs(saved);
+      setSavedPrefs(saved);
+      if (runtime?.mode !== "managed") {
+        if (recallConsentTouched.current) {
+          try {
+            const r = await api<{ enabled: boolean }>("/preferences/recall-help", { enabled: recallHelp }, "PATCH");
+            setRecallHelp(r.enabled);
+            setSavedRecallHelp(r.enabled);
+          } catch (error) {
+            // A refused "on" says why and the box goes back to what is saved.
+            setRecallHelp(savedRecallHelp);
+            throw error;
+          } finally {
+            recallConsentTouched.current = false;
+          }
+        } else {
+          // Switching sorting help off also withdraws recall help; show what is stored now.
+          const r = await api<{ enabled: boolean }>("/preferences/recall-help").catch(() => null);
+          if (r) {
+            setRecallHelp(r.enabled);
+            setSavedRecallHelp(r.enabled);
+          }
+        }
+      }
+      api<SortingStatus>("/system-one/status")
+        .then((now) => {
+          setSorting(now);
+          setSortingUnavailable(false);
+        })
+        .catch(() => {});
+      setConsentOverride(null);
+      setDecisionConsentOverride(null);
+      preferencesDirty.current = false;
+      sortingConsentTouched.current = false;
+      setNotice("Background preferences saved.");
+    });
+  }
+  const scheduleFields = prefs ? (
+    <>
+      {field(
+        "Time zone",
+        <input
+          required
+          value={prefs.time_zone}
+          onChange={(e) =>
+            setPrefs({ ...prefs, time_zone: e.target.value })
+          }
+        />,
+      )}
+      {field(
+        "Daily check hour (0–23)",
+        <input
+          type="number"
+          min="0"
+          max="23"
+          value={prefs.digest_hour}
+          onChange={(e) =>
+            setPrefs({
+              ...prefs,
+              digest_hour: Number(e.target.value),
+            })
+          }
+        />,
+      )}
+      {field(
+        "Quiet hours start",
+        <input
+          type="number"
+          min="0"
+          max="23"
+          value={prefs.quiet_start}
+          onChange={(e) =>
+            setPrefs({
+              ...prefs,
+              quiet_start: Number(e.target.value),
+            })
+          }
+        />,
+      )}
+      {field(
+        "Quiet hours end",
+        <input
+          type="number"
+          min="0"
+          max="23"
+          value={prefs.quiet_end}
+          onChange={(e) =>
+            setPrefs({
+              ...prefs,
+              quiet_end: Number(e.target.value),
+            })
+          }
+        />,
+      )}
+    </>
+  ) : null;
+  const capFields = prefs ? (
+    <>
+      {field(
+        "Daily cap (USD)",
+        // Caps are integer micro-USD; 6-decimal USD precision
+        // keeps a valid sub-cent cap from tripping the browser
+        // stepMismatch and blocking Save preferences.
+        <input
+          type="number"
+          min="0"
+          max="100"
+          step="0.000001"
+          value={prefs.daily_cap_micro_usd / 1000000}
+          onChange={(e) =>
+            setPrefs({
+              ...prefs,
+              daily_cap_micro_usd: Math.round(
+                Number(e.target.value) * 1000000,
+              ),
+            })
+          }
+        />,
+      )}
+      {field(
+        "Per preparation cap (USD)",
+        // Caps are integer micro-USD; 6-decimal USD precision
+        // keeps a valid sub-cent cap from tripping the browser
+        // stepMismatch and blocking Save preferences.
+        <input
+          type="number"
+          min="0"
+          max="10"
+          step="0.000001"
+          value={prefs.per_job_cap_micro_usd / 1000000}
+          onChange={(e) =>
+            setPrefs({
+              ...prefs,
+              per_job_cap_micro_usd: Math.round(
+                Number(e.target.value) * 1000000,
+              ),
+            })
+          }
+        />,
+      )}
+    </>
+  ) : null;
+  const steps = backgroundSteps(prefs ?? { enabled: false, daily_cap_micro_usd: 0, per_job_cap_micro_usd: 0 });
   return (
     <>
       <a className="skip-link" href="#main-content">
@@ -1575,151 +1749,275 @@ function App() {
                   </button>
                 </article>
               ) : null}
-              {better && runtime?.mode !== "managed" ? (
-                <article>
-                  <h2>Better search</h2>
-                  <p>Find notes by what they mean, not only by the words you used, in any language you write in.</p>
-                  <p className="status" role="status">{betterSearchLine(better)}</p>
-                  {better.automatic ? <p className="muted">{AUTOMATIC_NOTICE}</p> : null}
-                  {better.mode === "off" && better.detected === true ? <p className="muted">{DETECTED_HINT}</p> : null}
-                  {better.mode === "off" && plainProbe(better.probe) ? <p className="muted">Last check: {plainProbe(better.probe)}</p> : null}
-                  {better.status?.last_error ? <p className="muted">Last problem: {plainSearchProblem(better.status.last_error)}</p> : null}
+              {prefs && runtime?.mode !== "managed" ? (
+                <article className="bh" data-ui="background-help">
+                  <h2>Background help</h2>
+                  <p>
+                    BiBrain can sort new notes, prepare reviews and help your agents find the right notes while this
+                    computer is awake. It stays off until you allow it, and it stays inside the limits you set.
+                  </p>
                   <form
+                    id="background-help-form"
+                    onChange={() => {
+                      preferencesDirty.current = true;
+                    }}
                     onSubmit={(e) => {
                       e.preventDefault();
-                      void act(async () => {
-                        try {
-                          const saved = await api<{ mode: BetterSearch["mode"] }>("/preferences/better-search", { mode: betterChoice }, "PATCH");
-                          const now = await api<BetterSearch>("/preferences/better-search");
-                          setBetter(now);
-                          setLead(await api<MeaningLeadView>("/preferences/meaning-lead").catch(() => null));
-                          setBetterChoice(saved.mode);
-                          betterTouched.current = false;
-                          setNotice(saved.mode === "off" ? "Better search is off." : "Better search saved. Your notes are being prepared in the background.");
-                        } catch (error) {
-                          // A refused choice says why and the choice goes back to what is saved.
-                          setBetterChoice(better.mode);
-                          betterTouched.current = false;
-                          throw error;
-                        }
-                      });
+                      saveBackgroundPreferences();
                     }}
                   >
-                    <fieldset>
-                      <legend>Better search</legend>
-                      {(["off", "ollama", "cloudflare"] as const).map((mode) => {
-                        const available = mode === "off" || better.status?.provider === mode;
-                        return (
-                          <label key={mode}>
-                            <input type="radio" name="better-search" value={mode} checked={betterChoice === mode} disabled={!available && betterChoice !== mode} onChange={() => { betterTouched.current = true; setBetterChoice(mode); }} />{" "}
-                            {mode === "off"
-                              ? "Off. Search matches the words you used."
-                              : mode === "ollama"
-                                ? "On this computer (Ollama). Nothing leaves this computer."
-                                : "Cloudflare. The text of your notes, your searches and the questions your connected agents ask is sent to Cloudflare Workers AI to be turned into numbers that stay on this computer. Private notes are never sent. About 1 cent for every 250,000 words of English text; other languages can cost more, counted against your daily limit."}
-                            {!available ? <span className="muted"> Not set up on this computer.</span> : null}
-                            {mode === "cloudflare" && available && !better.caps_ok ? <span className="muted"> Needs a daily limit and a per-preparation limit above $0 below.</span> : null}
-                          </label>
-                        );
-                      })}
-                    </fieldset>
-                    <div className="actions">
-                      <button type="submit" disabled={busy || !betterSearchCanSave(better, betterChoice)}>Save better search</button>
-                    </div>
-                    <small className="muted">Changing this choice later clears what was prepared and starts again.</small>
+                    <section className="bh-step" aria-labelledby="bh-allow-h">
+                      <h3 id="bh-allow-h">1. Allow background help</h3>
+                      <label>
+                        <input type="checkbox" checked={prefs.enabled} onChange={(e) => setPrefs({ ...prefs, enabled: e.target.checked })} />{" "}
+                        Turn on background help (sorting new notes and preparing reviews)
+                      </label>
+                      <p className="muted">Preparation runs while this computer and the worker are awake. One bounded daily catch-up follows missed checks.</p>
+                    </section>
+                    <section className="bh-step" aria-labelledby="bh-limits-h">
+                      <h3 id="bh-limits-h">2. Set the limits</h3>
+                      {stepNote(2, steps) ? <p className="muted" id="bh-limits-note">{stepNote(2, steps)}</p> : null}
+                      <fieldset className="bh-fields" disabled={!steps.limitsOpen} aria-describedby={steps.limitsOpen ? undefined : "bh-limits-note"}>
+                        <legend>How much it may spend, and when it runs</legend>
+                        <div className="grid">
+                          {capFields}
+                          {scheduleFields}
+                        </div>
+                      </fieldset>
+                    </section>
                   </form>
-                  {lead ? (
-                    <section aria-labelledby="meaning-lead-heading">
-                      <h3 id="meaning-lead-heading">Meaning matches can lead</h3>
-                      <p className="status" data-testid="meaning-lead-line" aria-live="polite">{meaningLeadLine(lead)}</p>
-                      {lead.reason !== "Turn Better search on first." && lead.reason !== "Better search is not running right now." ? (
+                  <section className="bh-step" aria-labelledby="bh-choices-h">
+                    <h3 id="bh-choices-h">3. Choose what it may do</h3>
+                    {stepNote(3, steps) ? <p className="muted">{stepNote(3, steps)}</p> : null}
+                    {/* These boxes sit outside the form (a form cannot hold Better search's own form), so they mark the preferences as edited themselves. */}
+                    <div
+                      className="bh-consents"
+                      onChange={() => {
+                        preferencesDirty.current = true;
+                      }}
+                    >
+                      <section aria-labelledby="bh-prepare-h">
+                        <h4 id="bh-prepare-h">Prepared reviews</h4>
+                        <p>
+                          OpenAI receives selected shareable source text when you
+                          enable paid preparation. Private sources stay local.
+                          Backend key, model, and verified prices must be configured
+                          by the operator. Your Codex subscription does not cover
+                          these calls.
+                        </p>
+                        <label>
+                          <input
+                            type="checkbox"
+                            checked={prefs.provider_enabled}
+                            disabled={!!today.status.spend?.blocked || choiceDisabled(prefs.provider_enabled, steps.choicesOpen)}
+                            onChange={(e) => setPrefs({ ...prefs, provider_enabled: e.target.checked })}
+                          />{" "}
+                          I authorize selected text to be processed by OpenAI within these caps
+                        </label>
+                      </section>
+                      {savedPrefs && (sorting || sortingUnavailable) ? (
+                        <section aria-labelledby="bh-sorting-h">
+                          <h4 id="bh-sorting-h">Sorting help</h4>
+                          <p>
+                            BiBrain can suggest where a new note belongs and what is
+                            worth your attention. It only suggests: nothing moves
+                            without your Keep.
+                          </p>
+                          <p className="status" role="status">
+                            {sorting
+                              ? sortingLine(sorting, savedPrefs)
+                              : "Sorting help status is unavailable right now."}
+                          </p>
+                          {sorting &&
+                          (prefs.enabled !== savedPrefs.enabled ||
+                            prefs.daily_cap_micro_usd !== savedPrefs.daily_cap_micro_usd ||
+                            prefs.per_job_cap_micro_usd !== savedPrefs.per_job_cap_micro_usd ||
+                            prefs.decision_provider_enabled !== savedPrefs.decision_provider_enabled) ? (
+                            <p className="muted">Save to apply.</p>
+                          ) : null}
+                          <p className="muted">{savedRecallHelp ? "Recall help: on" : "Recall help: off"}</p>
+                          {sorting?.configured && sorting.last_error ? (
+                            <p className="muted">Last problem: {sorting.last_error}</p>
+                          ) : null}
+                          {sorting ? (
+                            <>
+                              <label>
+                                <input
+                                  type="checkbox"
+                                  checked={prefs.decision_provider_enabled}
+                                  disabled={choiceDisabled(prefs.decision_provider_enabled, steps.choicesOpen, !sorting.configured)}
+                                  onChange={(e) => {
+                                    sortingConsentTouched.current = true;
+                                    setPrefs({ ...prefs, decision_provider_enabled: e.target.checked });
+                                  }}
+                                />{" "}
+                                Let BiBrain sort new notes with {sorting.label ?? "the sorting service"}. Costs count against the limits in step 2.
+                              </label>
+                              <label>
+                                <input
+                                  type="checkbox"
+                                  checked={recallHelp}
+                                  disabled={choiceDisabled(recallHelp, steps.choicesOpen, !(sorting.configured && prefs.decision_provider_enabled))}
+                                  onChange={(e) => {
+                                    recallConsentTouched.current = true;
+                                    setRecallHelp(e.target.checked);
+                                  }}
+                                />{" "}
+                                Recall help: when a connected agent asks a question, BiBrain may send that question, the matching passages and the names of your projects and topics to the same service to pick the right ones. Off by default.
+                                {!recallHelp && !(sorting.configured && prefs.decision_provider_enabled) && <span className="muted"> Needs sorting help on first.</span>}
+                              </label>
+                            </>
+                          ) : null}
+                          <div className="actions">
+                            <button
+                              type="button"
+                              disabled={busy}
+                              onClick={() =>
+                                void act(async () => {
+                                  const log = await api("/system-one/log");
+                                  download(
+                                    "bibrain-review-log.json",
+                                    JSON.stringify(log, null, 2),
+                                    "application/json",
+                                  );
+                                  setNotice("Review log downloaded.");
+                                })
+                              }
+                            >
+                              Download the review log
+                            </button>
+                          </div>
+                          <small className="muted">
+                            The log lists what sorting help suggested and what you did
+                            with it. It never contains your notes.
+                          </small>
+                        </section>
+                      ) : null}
+                      <div className="actions">
+                        <button className="primary" type="submit" form="background-help-form" disabled={busy}>
+                          Save preferences
+                        </button>
+                      </div>
+                    </div>
+                    {better ? (
+                      <section aria-labelledby="bh-search-h">
+                        <h4 id="bh-search-h">Better search</h4>
+                        <p>Find notes by what they mean, not only by the words you used, in any language you write in.</p>
+                        <p className="status" role="status">{betterSearchLine(better)}</p>
+                        {better.automatic ? <p className="muted">{AUTOMATIC_NOTICE}</p> : null}
+                        {better.mode === "off" && better.detected === true ? <p className="muted">{DETECTED_HINT}</p> : null}
+                        {better.mode === "off" && plainProbe(better.probe) ? <p className="muted">Last check: {plainProbe(better.probe)}</p> : null}
+                        {better.status?.last_error ? <p className="muted">Last problem: {plainSearchProblem(better.status.last_error)}</p> : null}
                         <form
                           onSubmit={(e) => {
                             e.preventDefault();
                             void act(async () => {
-                              setLeadError("");
                               try {
-                                await api("/preferences/meaning-lead", { threshold: Number(leadForm.threshold), sample: Number(leadForm.sample), source: leadForm.source, measured_at: leadForm.measured_at }, "PATCH");
+                                const saved = await api<{ mode: BetterSearch["mode"] }>("/preferences/better-search", { mode: betterChoice }, "PATCH");
+                                const now = await api<BetterSearch>("/preferences/better-search");
+                                setBetter(now);
+                                setLead(await api<MeaningLeadView>("/preferences/meaning-lead").catch(() => null));
+                                setBetterChoice(saved.mode);
+                                betterTouched.current = false;
+                                setNotice(saved.mode === "off" ? "Better search is off." : "Better search saved. Your notes are being prepared in the background.");
                               } catch (error) {
-                                setLeadError(error instanceof Error ? error.message : "That value could not be applied.");
-                                return;
+                                // A refused choice says why and the choice goes back to what is saved.
+                                setBetterChoice(better.mode);
+                                betterTouched.current = false;
+                                throw error;
                               }
-                              setLead(await api<MeaningLeadView>("/preferences/meaning-lead"));
-                              setLeadForm({ threshold: "", sample: "", source: "proof:search", measured_at: "" });
-                              setNotice("Meaning matches can now lead a push at the value you entered.");
                             });
                           }}
                         >
-                          <label>Score (from the tool's suggestion) <input type="number" step="0.01" min="0" max="0.99" required value={leadForm.threshold} onChange={(e) => setLeadForm({ ...leadForm, threshold: e.target.value })} /></label>
-                          <label>{leadForm.source === "calibrate" ? "Pushes measured" : "Queries measured"} <input type="number" step="1" min="20" required value={leadForm.sample} onChange={(e) => setLeadForm({ ...leadForm, sample: e.target.value })} /></label>
-                          <label>Measured by <select value={leadForm.source} onChange={(e) => setLeadForm({ ...leadForm, source: e.target.value })}><option value="proof:search">npm run proof:search</option><option value="calibrate">npm run calibrate</option></select></label>
-                          <label>Measured on <input type="date" required value={leadForm.measured_at} onChange={(e) => setLeadForm({ ...leadForm, measured_at: e.target.value })} /></label>
-                          {leadError ? <p className="status" role="alert" data-testid="meaning-lead-error">{leadError}</p> : null}
+                          <fieldset>
+                            <legend>Better search</legend>
+                            {(["off", "ollama", "cloudflare"] as const).map((mode) => {
+                              const available = mode === "off" || better.status?.provider === mode;
+                              const cloudflareOpen = !!savedPrefs?.enabled && better.caps_ok;
+                              return (
+                                <label key={mode}>
+                                  <input type="radio" name="better-search" value={mode} checked={betterChoice === mode} disabled={betterChoice !== mode && (!available || (mode === "cloudflare" && !cloudflareOpen))} onChange={() => { betterTouched.current = true; setBetterChoice(mode); }} />{" "}
+                                  {mode === "off"
+                                    ? "Off. Search matches the words you used."
+                                    : mode === "ollama"
+                                      ? "On this computer (Ollama). Nothing leaves this computer."
+                                      : "Cloudflare. The text of your notes, your searches and the questions your connected agents ask is sent to Cloudflare Workers AI to be turned into numbers that stay on this computer. Private notes are never sent. About 1 cent for every 250,000 words of English text; other languages can cost more, counted against your daily limit."}
+                                  {!available ? <span className="muted"> Not set up on this computer.</span> : null}
+                                  {mode === "cloudflare" && available && !cloudflareOpen ? <span className="muted"> Needs steps 1 and 2 saved first.</span> : null}
+                                </label>
+                              );
+                            })}
+                          </fieldset>
                           <div className="actions">
-                            <button type="submit" disabled={busy}>Apply this value</button>
+                            <button type="submit" disabled={busy || !betterSearchCanSave(better, betterChoice)}>Save better search</button>
                           </div>
-                          <small className="muted">Nothing is applied by itself. Enter the value a measurement printed, with its sample size and date.</small>
+                          <small className="muted">Changing this choice later clears what was prepared and starts again.</small>
                         </form>
-                      ) : null}
-                      {lead.lead ? (
-                        <div className="actions">
-                          <button type="button" disabled={busy} onClick={() => void act(async () => { setLeadError(""); await api("/preferences/meaning-lead", {}, "DELETE"); setLead(await api<MeaningLeadView>("/preferences/meaning-lead")); setLeadForm({ threshold: "", sample: "", source: "proof:search", measured_at: "" }); setNotice("Meaning matches no longer lead a push."); })}>Clear this value</button>
-                        </div>
-                      ) : null}
-                    </section>
+                        {lead ? (
+                          <section aria-labelledby="meaning-lead-heading">
+                            <h5 id="meaning-lead-heading">Meaning matches can lead</h5>
+                            <p className="status" data-testid="meaning-lead-line" aria-live="polite">{meaningLeadLine(lead)}</p>
+                            {lead.reason !== "Turn Better search on first." && lead.reason !== "Better search is not running right now." ? (
+                              <form
+                                onSubmit={(e) => {
+                                  e.preventDefault();
+                                  void act(async () => {
+                                    setLeadError("");
+                                    try {
+                                      await api("/preferences/meaning-lead", { threshold: Number(leadForm.threshold), sample: Number(leadForm.sample), source: leadForm.source, measured_at: leadForm.measured_at }, "PATCH");
+                                    } catch (error) {
+                                      setLeadError(error instanceof Error ? error.message : "That value could not be applied.");
+                                      return;
+                                    }
+                                    setLead(await api<MeaningLeadView>("/preferences/meaning-lead"));
+                                    setLeadForm({ threshold: "", sample: "", source: "proof:search", measured_at: "" });
+                                    setNotice("Meaning matches can now lead a push at the value you entered.");
+                                  });
+                                }}
+                              >
+                                <label>Score (from the tool's suggestion) <input type="number" step="0.01" min="0" max="0.99" required value={leadForm.threshold} onChange={(e) => setLeadForm({ ...leadForm, threshold: e.target.value })} /></label>
+                                <label>{leadForm.source === "calibrate" ? "Pushes measured" : "Queries measured"} <input type="number" step="1" min="20" required value={leadForm.sample} onChange={(e) => setLeadForm({ ...leadForm, sample: e.target.value })} /></label>
+                                <label>Measured by <select value={leadForm.source} onChange={(e) => setLeadForm({ ...leadForm, source: e.target.value })}><option value="proof:search">npm run proof:search</option><option value="calibrate">npm run calibrate</option></select></label>
+                                <label>Measured on <input type="date" required value={leadForm.measured_at} onChange={(e) => setLeadForm({ ...leadForm, measured_at: e.target.value })} /></label>
+                                {leadError ? <p className="status" role="alert" data-testid="meaning-lead-error">{leadError}</p> : null}
+                                <div className="actions">
+                                  <button type="submit" disabled={busy}>Apply this value</button>
+                                </div>
+                                <small className="muted">Nothing is applied by itself. Enter the value a measurement printed, with its sample size and date.</small>
+                              </form>
+                            ) : null}
+                            {lead.lead ? (
+                              <div className="actions">
+                                <button type="button" disabled={busy} onClick={() => void act(async () => { setLeadError(""); await api("/preferences/meaning-lead", {}, "DELETE"); setLead(await api<MeaningLeadView>("/preferences/meaning-lead")); setLeadForm({ threshold: "", sample: "", source: "proof:search", measured_at: "" }); setNotice("Meaning matches no longer lead a push."); })}>Clear this value</button>
+                              </div>
+                            ) : null}
+                          </section>
+                        ) : null}
+                      </section>
+                    ) : null}
+                  </section>
+                  <p className="muted">
+                    {`Provider key ${
+                      today.status.provider_configured
+                        ? "configured"
+                        : "not configured"
+                    }`}{" "}
+                    · settled{" "}
+                    {formatUsd(today.status.spend?.settled_micro_usd ?? 0)} ·
+                    unresolved (usage unknown){" "}
+                    {formatUsd(today.status.spend?.unresolved_micro_usd ?? 0)}
+                    {today.status.spend?.time_zone
+                      ? ` · ${today.status.spend.budget_day} ${today.status.spend.time_zone}`
+                      : ""}
+                  </p>
+                  {today.status.spend?.blocked ? (
+                    <p className="muted" role="status">
+                      {today.status.spend.blocked_message}
+                    </p>
                   ) : null}
                 </article>
               ) : null}
-              {prefs && savedPrefs && (sorting || sortingUnavailable) && runtime?.mode !== "managed" ? (
-                <article>
-                  <h2>Sorting help</h2>
-                  <p>
-                    BiBrain can suggest where a new note belongs and what is
-                    worth your attention. It only suggests: nothing moves
-                    without your Keep.
-                  </p>
-                  <p className="status" role="status">
-                    {sorting
-                      ? sortingLine(sorting, savedPrefs)
-                      : "Sorting help status is unavailable right now."}
-                  </p>
-                  {sorting &&
-                  (prefs.enabled !== savedPrefs.enabled ||
-                    prefs.daily_cap_micro_usd !== savedPrefs.daily_cap_micro_usd ||
-                    prefs.per_job_cap_micro_usd !== savedPrefs.per_job_cap_micro_usd ||
-                    prefs.decision_provider_enabled !== savedPrefs.decision_provider_enabled) ? (
-                    <p className="muted">Save to apply.</p>
-                  ) : null}
-                  <p className="muted">{savedRecallHelp ? "Recall help: on" : "Recall help: off"}</p>
-                  {sorting?.configured && sorting.last_error ? (
-                    <p className="muted">Last problem: {sorting.last_error}</p>
-                  ) : null}
-                  <div className="actions">
-                    <button
-                      type="button"
-                      disabled={busy}
-                      onClick={() =>
-                        void act(async () => {
-                          const log = await api("/system-one/log");
-                          download(
-                            "bibrain-review-log.json",
-                            JSON.stringify(log, null, 2),
-                            "application/json",
-                          );
-                          setNotice("Review log downloaded.");
-                        })
-                      }
-                    >
-                      Download the review log
-                    </button>
-                  </div>
-                  <small className="muted">
-                    The log lists what sorting help suggested and what you did
-                    with it. It never contains your notes.
-                  </small>
-                </article>
-              ) : null}
-              {prefs ? (
+              {prefs && runtime?.mode === "managed" ? (
                 <article>
                   <h2>Background help & spending</h2>
                   <p>
@@ -1732,71 +2030,7 @@ function App() {
                     }}
                     onSubmit={(e) => {
                       e.preventDefault();
-                      void act(async () => {
-                        const body = backgroundPatchBody(
-                          sortingConsentTouched.current && prefs
-                            ? { decision_provider_enabled: prefs.decision_provider_enabled }
-                            : {},
-                        );
-                        if (runtime?.mode === "managed") {
-                          // Send each consent field ONLY when the user explicitly
-                          // toggled it; otherwise omit it so the raw stored value is
-                          // preserved (never rewrite from the effective getter). The
-                          // two overrides are independent.
-                          if (consentOverride !== null)
-                            body.provider_enabled = consentOverride;
-                          if (decisionConsentOverride !== null)
-                            body.decision_provider_enabled =
-                              decisionConsentOverride;
-                        }
-                        let saved: Preferences;
-                        try {
-                          saved = await api("/preferences/background", body, "PATCH");
-                        } catch (error) {
-                          // A refused consent should say why in the worker's words.
-                          if (body.decision_provider_enabled === true && runtime?.mode !== "managed") {
-                            const now = await api<SortingStatus>("/system-one/status").catch(() => null);
-                            if (now) setSorting(now);
-                            if (now?.reason) throw new Error(now.reason);
-                          }
-                          throw error;
-                        }
-                        setPrefs(saved);
-                        setSavedPrefs(saved);
-                        if (runtime?.mode !== "managed") {
-                          if (recallConsentTouched.current) {
-                            try {
-                              const r = await api<{ enabled: boolean }>("/preferences/recall-help", { enabled: recallHelp }, "PATCH");
-                              setRecallHelp(r.enabled);
-                              setSavedRecallHelp(r.enabled);
-                            } catch (error) {
-                              // A refused "on" says why and the box goes back to what is saved.
-                              setRecallHelp(savedRecallHelp);
-                              throw error;
-                            } finally {
-                              recallConsentTouched.current = false;
-                            }
-                          } else {
-                            // Switching sorting help off also withdraws recall help; show what is stored now.
-                            const r = await api<{ enabled: boolean }>("/preferences/recall-help").catch(() => null);
-                            if (r) {
-                              setRecallHelp(r.enabled);
-                              setSavedRecallHelp(r.enabled);
-                            }
-                          }
-                        }
-                        api<SortingStatus>("/system-one/status")
-                          .then((now) => {
-                            setSorting(now);
-                            setSortingUnavailable(false);
-                          })
-                          .catch(() => {});
-                        setConsentOverride(null);
-                        setDecisionConsentOverride(null);
-                        preferencesDirty.current = false;
-                        sortingConsentTouched.current = false;
-                        setNotice("Background preferences saved.");
-                      });
+                      saveBackgroundPreferences();
                     }}
                   >
                     <label>
@@ -1810,103 +2044,8 @@ function App() {
                       Turn on background help (sorting new notes and preparing reviews)
                     </label>
                     <div className="grid">
-                      {field(
-                        "Time zone",
-                        <input
-                          required
-                          value={prefs.time_zone}
-                          onChange={(e) =>
-                            setPrefs({ ...prefs, time_zone: e.target.value })
-                          }
-                        />,
-                      )}
-                      {field(
-                        "Daily check hour (0–23)",
-                        <input
-                          type="number"
-                          min="0"
-                          max="23"
-                          value={prefs.digest_hour}
-                          onChange={(e) =>
-                            setPrefs({
-                              ...prefs,
-                              digest_hour: Number(e.target.value),
-                            })
-                          }
-                        />,
-                      )}
-                      {field(
-                        "Quiet hours start",
-                        <input
-                          type="number"
-                          min="0"
-                          max="23"
-                          value={prefs.quiet_start}
-                          onChange={(e) =>
-                            setPrefs({
-                              ...prefs,
-                              quiet_start: Number(e.target.value),
-                            })
-                          }
-                        />,
-                      )}
-                      {field(
-                        "Quiet hours end",
-                        <input
-                          type="number"
-                          min="0"
-                          max="23"
-                          value={prefs.quiet_end}
-                          onChange={(e) =>
-                            setPrefs({
-                              ...prefs,
-                              quiet_end: Number(e.target.value),
-                            })
-                          }
-                        />,
-                      )}
-                      {field(
-                        "Daily cap (USD)",
-                        // Caps are integer micro-USD; 6-decimal USD precision
-                        // keeps a valid sub-cent cap from tripping the browser
-                        // stepMismatch and blocking Save preferences.
-                        <input
-                          type="number"
-                          min="0"
-                          max="100"
-                          step="0.000001"
-                          value={prefs.daily_cap_micro_usd / 1000000}
-                          onChange={(e) =>
-                            setPrefs({
-                              ...prefs,
-                              daily_cap_micro_usd: Math.round(
-                                Number(e.target.value) * 1000000,
-                              ),
-                            })
-                          }
-                        />,
-                      )}
-                      {field(
-                        "Per preparation cap (USD)",
-                        // Caps are integer micro-USD; 6-decimal USD precision
-                        // keeps a valid sub-cent cap from tripping the browser
-                        // stepMismatch and blocking Save preferences.
-                        <input
-                          type="number"
-                          min="0"
-                          max="10"
-                          step="0.000001"
-                          value={prefs.per_job_cap_micro_usd / 1000000}
-                          onChange={(e) =>
-                            setPrefs({
-                              ...prefs,
-                              per_job_cap_micro_usd: Math.round(
-                                Number(e.target.value) * 1000000,
-                              ),
-                            })
-                          }
-                        />,
-                      )}
+                      {scheduleFields}
+                      {capFields}
                     </div>
                     <p>
                       OpenAI receives selected shareable source text when you
@@ -1961,43 +2100,6 @@ function App() {
                       I authorize selected text to be processed by OpenAI within
                       these caps
                     </label>
-                    {runtime?.mode !== "managed" && sorting ? (
-                      <div>
-                        <label>
-                          <input
-                            type="checkbox"
-                            checked={prefs.decision_provider_enabled}
-                            disabled={
-                              !prefs.decision_provider_enabled &&
-                              !sorting.configured
-                            }
-                            onChange={(e) => {
-                              sortingConsentTouched.current = true;
-                              setPrefs({
-                                ...prefs,
-                                decision_provider_enabled: e.target.checked,
-                              });
-                            }}
-                          />{" "}
-                          Let BiBrain sort new notes with{" "}
-                          {sorting.label ?? "the sorting service"}. Costs count
-                          against the limits below.
-                        </label>
-                        <label>
-                          <input
-                            type="checkbox"
-                            checked={recallHelp}
-                            disabled={!recallHelp && !(sorting.configured && prefs.decision_provider_enabled)}
-                            onChange={(e) => {
-                              recallConsentTouched.current = true;
-                              setRecallHelp(e.target.checked);
-                            }}
-                          />{" "}
-                          Recall help: when a connected agent asks a question, BiBrain may send that question, the matching passages and the names of your projects and topics to the same service to pick the right ones. Off by default.
-                          {!recallHelp && !(sorting.configured && prefs.decision_provider_enabled) && <span className="muted"> Needs sorting help on first.</span>}
-                        </label>
-                      </div>
-                    ) : null}
                     {runtime?.mode === "managed" ? (
                       <div>
                         <label>

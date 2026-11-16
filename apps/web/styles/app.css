@@ -733,6 +733,50 @@ article {
 .billing-card h2 {
   margin-top: 4px;
 }
+/* Settings, Background help: three steps in one card. */
+.bh-step {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+  padding-top: 18px;
+  margin-top: 18px;
+  border-top: 1px solid var(--line);
+}
+.bh-step h3,
+.bh-step h4,
+.bh-step h5 {
+  margin: 0;
+}
+.bh-step h4 {
+  font-size: 1rem;
+}
+.bh-fields {
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+.bh-fields legend {
+  padding: 0;
+  margin-bottom: 8px;
+  color: var(--muted);
+  font-size: 0.8125rem;
+}
+/* Dim only the inputs: the labels and legend keep their AA contrast while the step is closed. */
+.bh-fields:disabled input {
+  opacity: 0.6;
+}
+.bh-consents {
+  display: grid;
+  gap: 16px;
+  min-width: 0;
+}
+.bh-consents > section,
+.bh-step > section {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
 .dropzone {
   margin: 16px 0;
   padding: 28px;

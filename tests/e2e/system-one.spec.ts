@@ -49,23 +49,67 @@ async function api(page: Page, path: string, method = "GET", body?: unknown) {
 const fileCard = (page: Page) =>
   page.getByRole("article").filter({ has: page.getByRole("heading", { name: "File in Northstar?" }) });
 
+test("Background help opens one step at a time and never locks a choice that is on", async ({ page }) => {
+  await open(page);
+  await page.getByRole("button", { name: "Settings & privacy" }).click();
+  const card = page.locator('[data-ui="background-help"]');
+  await expect(card.getByRole("heading", { name: "Background help", level: 2 })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Sorting help", level: 2 })).toHaveCount(0);
+  await expect(page.getByRole("heading", { name: "Better search", level: 2 })).toHaveCount(0);
+  for (const name of ["1. Allow background help", "2. Set the limits", "3. Choose what it may do"]) await expect(card.getByRole("heading", { name, level: 3 })).toBeVisible();
+  const allow = page.getByLabel("Turn on background help (sorting new notes and preparing reviews)");
+  const daily = page.getByLabel("Daily cap (USD)");
+  const each = page.getByLabel("Per preparation cap (USD)");
+  const sort = page.getByLabel(/Let BiBrain sort new notes with/);
+  const paid = page.getByRole("checkbox", { name: /I authorize selected text/ });
+  await expect(allow).not.toBeChecked();
+  await expect(daily).toBeDisabled();
+  await expect(card.getByText("Allow background help in step 1 first.").first()).toBeVisible();
+  await expect(sort).toBeDisabled();
+  await expect(paid).toBeDisabled();
+  await allow.check();
+  await expect(daily).toBeEnabled();
+  await expect(card.getByText("Set a daily limit and a per-preparation limit above $0 in step 2 first.")).toBeVisible();
+  await expect(sort).toBeDisabled();
+  await daily.fill("0.05");
+  await each.fill("0.01");
+  // The worker publishes its status a moment after start; the box enables once it has.
+  await expect(sort).toBeEnabled({ timeout: 20000 });
+  await sort.check();
+  // Undo step 1: the limits close, an unticked choice closes, and the ticked one can still be turned off.
+  await allow.uncheck();
+  await expect(daily).toBeDisabled();
+  await expect(paid).toBeDisabled();
+  await expect(sort).toBeEnabled();
+  await sort.uncheck();
+  await expect(sort).toBeDisabled();
+  // Better search on this computer is never gated: nothing leaves the computer and nothing is spent.
+  const search = page.getByRole("region", { name: "Better search" });
+  await expect(search.getByRole("radio", { name: /^Off\./ })).toBeEnabled();
+});
+
 test("sorting help is switched on in Settings and a note is filed with Keep", async ({ page }) => {
   await open(page);
 
   // Settings explains the state, then turns on with limits and consent.
   await page.getByRole("button", { name: "Settings & privacy" }).click();
-  const card = page.getByRole("article").filter({ has: page.getByRole("heading", { name: "Sorting help" }) });
+  const card = page.getByRole("region", { name: "Sorting help" });
   await expect(card).toBeVisible();
-  await expect(card.getByText("Needs a daily limit above $0 below.")).toBeVisible();
+  await expect(card.getByText("Needs a daily limit above $0 in step 2.")).toBeVisible();
   await page.getByLabel("Turn on background help (sorting new notes and preparing reviews)").check();
   await page.getByLabel("Daily cap (USD)").fill("0.05");
   await page.getByLabel("Per preparation cap (USD)").fill("0.01");
   const consent = page.getByLabel(/Let BiBrain sort new notes with/);
   // The worker publishes its status a moment after start; the box enables once it has.
   await expect(consent).toBeEnabled({ timeout: 20000 });
-  await expect(consent).toHaveAccessibleName(`Let BiBrain sort new notes with ${LABEL}. Costs count against the limits below.`);
+  await expect(consent).toHaveAccessibleName(`Let BiBrain sort new notes with ${LABEL}. Costs count against the limits in step 2.`);
   await consent.check();
-  await page.getByRole("button", { name: "Save preferences" }).click();
+  const [saved] = await Promise.all([
+    page.waitForRequest((r) => r.url().endsWith("/api/v1/preferences/background") && r.method() === "PATCH"),
+    page.getByRole("button", { name: "Save preferences" }).click(),
+  ]);
+  expect(Object.keys(saved.postDataJSON()).sort()).toEqual(["daily_cap_micro_usd", "decision_provider_enabled", "digest_hour", "enabled", "per_job_cap_micro_usd", "provider_enabled", "quiet_end", "quiet_start", "time_zone"]);
+  expect(saved.postDataJSON()).toMatchObject({ enabled: true, daily_cap_micro_usd: 50000, per_job_cap_micro_usd: 10000, decision_provider_enabled: true });
   await expect(page.getByText("Background preferences saved.")).toBeVisible();
   await page.getByRole("checkbox", { name: /^Recall help: when a connected agent asks a question/ }).check();
   await page.getByRole("button", { name: "Save preferences" }).click();
@@ -218,7 +262,7 @@ test("Sorting help fits a 320px dark screen", async ({ page }) => {
   await page.emulateMedia({ colorScheme: "dark" });
   await open(page);
   await page.getByRole("button", { name: "Settings & privacy" }).click();
-  const card = page.getByRole("article").filter({ has: page.getByRole("heading", { name: "Sorting help" }) });
+  const card = page.getByRole("region", { name: "Sorting help" });
   await expect(card).toBeVisible();
   await expect(card.getByRole("button", { name: "Download the review log" })).toBeVisible();
   const fits = await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth);

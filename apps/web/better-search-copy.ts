@@ -11,7 +11,7 @@ function known(text: string): string | null {
   if (text === PAUSED) return PAUSED;
   if (/could not sign in to the search service/i.test(text)) return SIGN_IN;
   if (/^The search service refused every passage/i.test(text)) return ALL_REFUSED;
-  if (/needs a daily limit and a per-preparation limit/i.test(text)) return "Set a daily limit and a per-preparation limit above $0 below.";
+  if (/needs a daily limit and a per-preparation limit/i.test(text)) return "Set a daily limit and a per-preparation limit above $0 in step 2.";
   if (/Today's spending cap is reached/i.test(text)) return "Today's spending limit was reached.";
   if (/spending cap|could not reserve its spending/i.test(text)) return "A preparation went over its spending limit.";
   if (/used more than its estimate/i.test(text)) return "A preparation cost more than expected and was stopped.";
